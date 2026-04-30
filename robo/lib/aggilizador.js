@@ -304,6 +304,22 @@ async function lerCampo(page, nomes) {
   } catch { return null }
 }
 
+// Lê o valor exibido em um mat-select (Angular Material).
+// O valor real fica no <span class="mat-mdc-select-value-text"> dentro do trigger.
+async function lerMatSelect(page, nomes) {
+  for (const n of nomes) {
+    const sel = `mat-select[name="${n}"] .mat-mdc-select-value-text, mat-select[formcontrolname="${n}"] .mat-mdc-select-value-text`
+    try {
+      const el = await page.$(sel)
+      if (el) {
+        const txt = await el.textContent()
+        if (txt && txt.trim()) return txt.trim()
+      }
+    } catch {}
+  }
+  return null
+}
+
 // Selecionar opção em <select> nativo OU em mat-select (Angular Material).
 // O aggilizador usa só mat-select, mas mantemos suporte ao <select> pra
 // compatibilidade com outros sites.
@@ -478,7 +494,7 @@ async function extrairResultado(page) {
 
 module.exports = {
   URL, login, logout, abrirCotacaoAuto,
-  preencher, selecionar, selecionarPorIndex, lerCampo,
+  preencher, selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
   clicarProximo, clicarCalcular, extrairResultado,
   primeiroSeletor,
 }

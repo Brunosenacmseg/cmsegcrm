@@ -237,6 +237,30 @@ app.post('/consultar-cpf', async (req, res) => {
   }
 })
 
+// Consulta por PLACA — preenche placa e captura modelo/ano/fipe auto-preenchidos
+app.post('/consultar-placa', async (req, res) => {
+  const { placa } = req.body || {}
+  const placaLimpa = String(placa || '').toUpperCase().replace(/\W/g, '')
+  if (placaLimpa.length < 7) return res.status(400).json({ ok: false, erro: 'Placa inválida (precisa 7 caracteres)' })
+
+  let session = null
+  const ag = require('./lib/aggilizador')
+  try {
+    session = await browser.newSession()
+    const r = await consulta.consultarPlaca(session.page, placaLimpa)
+    res.json({ ok: true, ...r })
+  } catch (err) {
+    log.error('Erro em /consultar-placa', { erro: err.message })
+    if (session) await salvarErroScreenshot(session.page, 'placa')
+    res.status(500).json({ ok: false, erro: err.message })
+  } finally {
+    if (session) {
+      try { await ag.logout(session.page) } catch {}
+      await session.close()
+    }
+  }
+})
+
 // Cotação completa de auto
 app.post(['/','/cotacao'], async (req, res) => {
   const { produto, dados } = req.body || {}
