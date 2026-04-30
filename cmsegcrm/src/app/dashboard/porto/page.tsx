@@ -13,6 +13,39 @@ const TIPOS_ARQUIVO = [
   { key:'IMOBILIARIA', label:'Imobiliária',   icon:'🏢', desc:'Seguros imobiliários' },
 ]
 
+function UploadArquivoPorto({ onUpload, disabled }: { onUpload: (file: File, tipo: string) => void; disabled: boolean }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [tipo, setTipo] = useState<string>('AUTO')
+  const inp: React.CSSProperties = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
+  const tamanhoMB = file ? (file.size / 1024 / 1024).toFixed(2) : '0'
+  const viaStorage = file && file.size > 3 * 1024 * 1024
+  return (
+    <div>
+      <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+        <input type="file" accept=".ret,.RET,.sap,.SAP,.cbs,.CBS,.app,.APP,.si2,.SI2,.com,.COM,.txt,.TXT"
+          onChange={e => setFile(e.target.files?.[0] || null)}
+          style={{...inp, flex:'1 1 280px', minWidth:200}} />
+        <select value={tipo} onChange={e=>setTipo(e.target.value)} style={{...inp, minWidth:170}}>
+          <option value="AUTO">Detectar automaticamente</option>
+          <option value="COBRANCA">Cobrança (.SAP/.RET/.CBS)</option>
+          <option value="APOLICES">Apólices (.APP/.IRE/etc)</option>
+          <option value="SINISTRO">Sinistro (.SI2)</option>
+          <option value="COMISSOES">Comissões (.COM)</option>
+        </select>
+        <button onClick={()=>{ if (file) onUpload(file, tipo === 'AUTO' ? '' : tipo) }} disabled={!file || disabled}
+          className="btn-primary" style={{padding:'7px 18px',fontSize:13, opacity: !file ? 0.5 : 1}}>
+          {disabled ? '⏳ Processando...' : '📤 Enviar e processar'}
+        </button>
+      </div>
+      {file && (
+        <div style={{marginTop:10, fontSize:11, color: 'var(--text-muted)'}}>
+          📄 {file.name} · {tamanhoMB} MB {viaStorage && ' — usará Supabase Storage (arquivo grande)'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function PortoIntegracaoPage() {
   const supabase = createClient()
 
@@ -161,6 +194,85 @@ export default function PortoIntegracaoPage() {
     setResultado({ ok: true, configCheck: d })
   }
 
+  async function processarUpload(file: File, tipoForcado: string) {
+    console.log('[upload] iniciando', { name: file.name, size: file.size, tipo: tipoForcado })
+    setSincronizando(true); setResultado(null)
+    try {
+      const tamanhoMB = file.size / 1024 / 1024
+      const usaStorage = file.size > 3 * 1024 * 1024 // > 3MB → vai por storage
+      console.log('[upload] tamanho', tamanhoMB.toFixed(2), 'MB, via storage:', usaStorage)
+
+      if (usaStorage) {
+        // Upload direto pro Supabase Storage (sem passar pela função serverless)
+        const path = `porto-uploads/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+        console.log('[upload] enviando ao storage:', path)
+        const { error: upErr } = await supabase.storage.from('cmsegcrm').upload(path, file, {
+          upsert: true, contentType: 'application/octet-stream',
+        })
+        if (upErr) {
+          setResultado({ erro: `Erro no upload pro storage: ${upErr.message}` })
+          return
+        }
+        console.log('[upload] storage ok, processando no backend')
+
+        const r = await fetch('/api/porto/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'processar_upload',
+            storage_path: path,
+            nome_arquivo: file.name,
+            tipo_forcado: tipoForcado,
+          }),
+        })
+        console.log('[upload] resposta HTTP', r.status)
+        let d: any = null
+        try { d = await r.json() } catch { d = { error: `HTTP ${r.status} sem JSON` } }
+        console.log('[upload] resposta body:', d)
+
+        // Limpa o arquivo do storage depois de processar
+        await supabase.storage.from('cmsegcrm').remove([path]).catch(()=>{})
+
+        if (!r.ok || d.error) {
+          setResultado({ erro: d?.error || `HTTP ${r.status}` })
+        } else {
+          setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
+        }
+      } else {
+        // Inline (rápido): manda o conteúdo direto no body
+        const buf = await file.arrayBuffer()
+        const conteudo = new TextDecoder('latin1').decode(buf)
+        console.log('[upload] arquivo lido inline, chars:', conteudo.length)
+
+        const r = await fetch('/api/porto/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'processar_upload',
+            conteudo,
+            nome_arquivo: file.name,
+            tipo_forcado: tipoForcado,
+          }),
+        })
+        let d: any = null
+        try { d = await r.json() } catch { d = { error: `HTTP ${r.status} sem JSON` } }
+        console.log('[upload] resposta body:', d)
+
+        if (!r.ok || d.error) {
+          setResultado({ erro: d?.error || `HTTP ${r.status}` })
+        } else {
+          setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
+        }
+      }
+      await carregarHistorico(); await carregarStats()
+    } catch (err: any) {
+      console.error('[upload] erro:', err)
+      setResultado({ erro: `${err?.name || 'Erro'}: ${err?.message || 'falha desconhecida'}` })
+    } finally {
+      setSincronizando(false)
+    }
+  }
+
   const isAdmin = profile?.role === 'admin' || profile?.role === 'lider'
   const inp: React.CSSProperties = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
 
@@ -277,6 +389,17 @@ export default function PortoIntegracaoPage() {
                 ))}
               </div>
             </div>
+
+            {/* Upload manual */}
+            {isAdmin && (
+              <div className="card" style={{marginBottom:20, padding:'18px 20px'}}>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:6}}>📤 Upload manual de arquivo</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14, lineHeight:1.6}}>
+                  Para processar um arquivo .RET, .SAP, .CBS, .APP, .SI2 ou .COM que está no seu computador (sem precisar buscar no portal da Porto).
+                </div>
+                <UploadArquivoPorto disabled={sincronizando} onUpload={processarUpload} />
+              </div>
+            )}
 
             {/* Info de credenciais */}
             <div className="card" style={{padding:'16px 20px'}}>

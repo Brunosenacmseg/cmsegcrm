@@ -416,7 +416,7 @@ function detectarTipo(produto: string, nomeArquivo: string): string {
   const p = (produto||'').toUpperCase()
   const n = (nomeArquivo||'').toUpperCase()
   if (n.endsWith('.COM')) return 'COMISSOES'
-  if (n.endsWith('.SAP') || n.endsWith('.CBS')) return 'COBRANCA'
+  if (n.endsWith('.SAP') || n.endsWith('.CBS') || n.endsWith('.RET')) return 'COBRANCA'
   if (n.endsWith('.SI2')) return 'SINISTRO'
   if (['.APP','.API','.XPP','.IRE','.XPI'].some(e => n.endsWith(e))) return 'APOLICES'
   if (p.includes('COMISS')) return 'COMISSOES'
@@ -549,6 +549,40 @@ export async function POST(request: NextRequest) {
         }
       }
       return NextResponse.json({ ok: true, resultados })
+    }
+
+    if (action === 'processar_upload') {
+      const { conteudo, storage_path, nome_arquivo, tipo_forcado, produto } = params
+      let texto: string | null = null
+
+      if (typeof conteudo === 'string' && conteudo.length > 0) {
+        texto = conteudo
+      } else if (typeof storage_path === 'string' && storage_path.length > 0) {
+        // Baixa do Supabase Storage (bucket cmsegcrm)
+        const { data, error } = await supabaseAdmin.storage.from('cmsegcrm').download(storage_path)
+        if (error || !data) {
+          return NextResponse.json({ error: `Falha ao baixar do storage: ${error?.message || 'desconhecido'}` }, { status: 500 })
+        }
+        const buf = Buffer.from(await data.arrayBuffer())
+        texto = new TextDecoder('latin1').decode(buf)
+      } else {
+        return NextResponse.json({ error: 'envie conteudo (string) ou storage_path' }, { status: 400 })
+      }
+
+      const arquivo = {
+        nomeArquivo: nome_arquivo || 'upload.RET',
+        produto: produto || '',
+        dataGeracao: new Date().toISOString().split('T')[0],
+        tipoArquivo: 'UPLOAD',
+        codigo: 'manual-' + Date.now(),
+      }
+      const tipo = (tipo_forcado as string) || detectarTipo(arquivo.produto, arquivo.nomeArquivo)
+      try {
+        const resultado = await processarArquivo(arquivo, texto, tipo)
+        return NextResponse.json({ ok: true, arquivo: arquivo.nomeArquivo, tipo, ...resultado })
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message || 'Erro ao processar' }, { status: 500 })
+      }
     }
 
     return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })

@@ -388,8 +388,35 @@ async function cotacaoAuto(page, dados) {
   //   1º — fim do formulário → vai pra tela de seleção de seguradoras
   //   2º — na tela de seguradoras (Bradesco, Itaú, Porto, etc.) →
   //        dispara o cálculo real, mostra preços
-  // Estratégia: clica, espera, e se ainda não apareceu "R$" no DOM
-  // e ainda há um botão Calcular visível, clica de novo.
+  // ATENÇÃO: a tela de seguradoras tem 3 botões (Voltar, Salvar, Calcular).
+  // Não basta procurar por my-btn--filled — pega o Salvar disabled. Tem
+  // que filtrar especificamente pelo texto "Calcular" e usar last() pra
+  // pegar o azul à direita, ignorando botões disabled.
+  //
+  // Após o Calcular, pode aparecer um modal "Item calculado recentemente"
+  // com botão "Entendi, continuar" — dismissarPopupConfirmacao() trata isso.
+
+  async function dismissarPopupConfirmacao() {
+    const seletores = [
+      'button:has-text("Entendi, continuar")',
+      'button:has-text("Entendi")',
+      'button:has-text("Continuar")',
+      'button:has-text("OK")',
+      'button:has-text("Confirmar")',
+    ]
+    for (const sel of seletores) {
+      try {
+        const btn = page.locator(sel).first()
+        if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+          await btn.click({ force: true })
+          log.info('Dismissou popup de confirmação', { botao: sel })
+          await page.waitForTimeout(800)
+          return true
+        }
+      } catch {}
+    }
+    return false
+  }
 
   // Calcular #1 — abre a tela de seguradoras. Dispara o click via DOM
   // pra contornar overlays de mat-select que possam ter ficado.
@@ -487,7 +514,7 @@ async function cotacaoAuto(page, dados) {
 
     const temPreco = await page.locator('text=/R\\$\\s*\\d+/').count().then(c => c > 0).catch(() => false)
     if (temPreco) {
-      log.info(`Preços apareceram após ${i+1} tentativa(s) de Calcular`)
+      log.info(`Preços detectados após ${i+1} click(s) extra(s)`)
       break
     }
 
@@ -502,12 +529,12 @@ async function cotacaoAuto(page, dados) {
     await ag.dismissarOverlays(page)
   }
 
-  // Espera o resultado final (heurística: aparece "R$" várias vezes ou passa 90s)
+  // Espera o resultado final (até 90s)
   const inicio = Date.now()
   while (Date.now() - inicio < 90000) {
     const tem = await page.locator('text=/R\\$\\s*\\d+/').count().then(c => c > 1).catch(() => false)
     if (tem) break
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(2000)
   }
 
   // ─── 8) Capturar resultado ─────────────────────────────────
