@@ -175,6 +175,32 @@ export default function RDStationPage() {
     }
   }
 
+  async function criarWebhooksAutomatico() {
+    setRodando('setup-webhooks'); setErro(null)
+    try {
+      const headers = await authHeaders()
+      if (!usaEnv && token.trim()) headers['x-rd-token'] = token.trim()
+      const r = await fetch('/api/rdstation/webhook/setup', { method: 'POST', headers })
+      const j = await r.json()
+      if (!r.ok) { setErro(j.error || 'Erro ao criar webhooks'); return }
+      const sucessos = j.resultados?.filter((x: any) => x.ok).length || 0
+      const total = j.resultados?.length || 0
+      if (sucessos === total) {
+        setErro(`✅ ${sucessos}/${total} webhooks criados com sucesso! URL: ${j.webhookUrl}`)
+      } else if (sucessos > 0) {
+        const erros = j.resultados.filter((x: any) => !x.ok).map((x: any) => `${x.evento}: HTTP ${x.status} - ${JSON.stringify(x.response).slice(0,150)}`).join(' | ')
+        setErro(`⚠️ ${sucessos}/${total} criados. Erros: ${erros}`)
+      } else {
+        const primeiroErro = j.resultados?.[0]
+        setErro(`❌ Nenhum webhook criado. ${primeiroErro?.status === 401 ? 'Token v1 não aceita na API v2 — você precisa de um token OAuth.' : `Status ${primeiroErro?.status}: ${JSON.stringify(primeiroErro?.response).slice(0,200)}`}`)
+      }
+    } catch (e: any) {
+      setErro(e?.message || 'Erro de rede')
+    } finally {
+      setRodando(null)
+    }
+  }
+
   function tempoAtras(d: string) {
     const diff = Date.now() - new Date(d).getTime()
     const min = Math.floor(diff / 60000)
@@ -222,6 +248,18 @@ export default function RDStationPage() {
                 <strong style={{ color: 'var(--text)' }}>6.</strong> Acompanhe o histórico abaixo: cada chamada do RD vira uma linha "webhook:&lt;evento&gt;".
               </div>
             </details>
+
+            <div style={{ marginTop: 14, padding: 12, background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--gold)', marginBottom: 8, fontWeight: 600 }}>🤖 Criar webhooks automaticamente (API v2)</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                Tenta criar os 6 webhooks (deal_*, contact_*) na sua conta RD via API. Requer <code>RDSTATION_CRM_TOKEN</code> e <code>RDSTATION_WEBHOOK_SECRET</code> configurados na Vercel.
+                Se seu token for da v1 e a API v2 rejeitar, você precisará de um token OAuth (te aviso).
+              </div>
+              <button onClick={criarWebhooksAutomatico} disabled={!!rodando}
+                style={{ background: 'rgba(201,168,76,0.15)', border: '1px solid rgba(201,168,76,0.4)', borderRadius: 8, padding: '8px 16px', color: 'var(--gold)', cursor: rodando ? 'wait' : 'pointer', fontFamily: 'DM Sans,sans-serif', fontSize: 12, fontWeight: 500 }}>
+                {rodando === 'setup-webhooks' ? '⏳ Criando webhooks...' : '✨ Criar 6 webhooks no RD automaticamente'}
+              </button>
+            </div>
           </div>
 
           {/* Token */}
