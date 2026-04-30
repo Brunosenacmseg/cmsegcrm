@@ -23,19 +23,14 @@ async function checarAdmin(request: NextRequest): Promise<{ ok: boolean; erro?: 
 const V1_BASE = 'https://crm.rdstation.com/api/v1'
 const V2_BASE = 'https://api.rd.services/crm/v2'
 
-const EVENTOS_V2 = [
-  'crm_deal_created',
-  'crm_deal_updated',
-  'crm_deal_deleted',
-  'crm_contact_created',
-  'crm_contact_updated',
-  'crm_contact_deleted',
-]
-
-// Eventos no formato v1 — o RD usa nomenclaturas como "deal.created" / "deal_created"
-const EVENTOS_V1 = [
-  'deal.created', 'deal.updated', 'deal.deleted',
-  'contact.created', 'contact.updated', 'contact.deleted',
+// Eventos válidos no RD CRM v1 — em MAIÚSCULAS (descoberto via mensagem de erro do RD)
+const EVENTOS = [
+  'CRM_DEAL_CREATED',
+  'CRM_DEAL_UPDATED',
+  'CRM_DEAL_DELETED',
+  'CRM_CONTACT_CREATED',
+  'CRM_CONTACT_UPDATED',
+  'CRM_CONTACT_DELETED',
 ]
 
 async function fetchJson(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
@@ -45,82 +40,23 @@ async function fetchJson(url: string, init: RequestInit): Promise<{ ok: boolean;
   return { ok: res.ok, status: res.status, data }
 }
 
-// Tenta criar webhook na API v1 (token query string).
-// O RD v1 exige o campo "event_type" (string) e provavelmente um "entity_type".
-async function criarV1(rdToken: string, eventoDotted: string, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any; tentativa: string }> {
+// Cria webhook na API v1 (token query string).
+// Campo event_type DEVE ser MAIÚSCULO (ex: CRM_DEAL_UPDATED).
+async function criarV1(rdToken: string, eventType: string, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any }> {
   const baseUrl = `${V1_BASE}/webhooks?token=${rdToken}`
-  // eventoDotted: "deal.created" → entity="deal", action="created"
-  const [entity, action] = eventoDotted.split('.')
-
-  const corpos = [
-    // Formato 1: event_type singular (mais provável dado o erro CANNOT_BE_NULL em event_type)
-    {
-      tentativa: 'event_type',
-      body: {
-        name: `CMSEGCRM - ${eventoDotted}`,
-        url,
-        http_method: 'POST',
-        event_type: eventoDotted,
-        entity_type: entity,
-        auth_header: 'X-Auth-Key',
-        auth_key: secret,
-      },
-    },
-    // Formato 2: separa entity_type e action
-    {
-      tentativa: 'entity_action',
-      body: {
-        name: `CMSEGCRM - ${eventoDotted}`,
-        url,
-        http_method: 'POST',
-        entity_type: entity,
-        event_type: action,
-        auth_header: 'X-Auth-Key',
-        auth_key: secret,
-      },
-    },
-    // Formato 3: event_type com underscore
-    {
-      tentativa: 'underscore',
-      body: {
-        name: `CMSEGCRM - ${eventoDotted}`,
-        url,
-        http_method: 'POST',
-        event_type: `${entity}_${action}`,
-        auth_header: 'X-Auth-Key',
-        auth_key: secret,
-      },
-    },
-    // Formato 4: wrapped em "webhook"
-    {
-      tentativa: 'wrapped',
-      body: {
-        webhook: {
-          name: `CMSEGCRM - ${eventoDotted}`,
-          url,
-          http_method: 'POST',
-          event_type: eventoDotted,
-          entity_type: entity,
-          auth_header: 'X-Auth-Key',
-          auth_key: secret,
-        },
-      },
-    },
-  ]
-
-  // Tenta todos os formatos e coleta TODOS os erros pra debug
-  const todasTentativas: any[] = []
-  for (const { tentativa, body } of corpos) {
-    const r = await fetchJson(baseUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (r.ok) return { ...r, tentativa }
-    todasTentativas.push({ tentativa, status: r.status, data: r.data, body_enviado: body })
-    if (r.status === 401 || r.status === 403) break
+  const body = {
+    name: `CMSEGCRM - ${eventType}`,
+    url,
+    http_method: 'POST',
+    event_type: eventType,
+    auth_header: 'X-Auth-Key',
+    auth_key: secret,
   }
-  return { ok: false, status: todasTentativas[0]?.status || 0, data: { todas_tentativas: todasTentativas }, tentativa: 'todas_falharam' }
+  return await fetchJson(baseUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 // Tenta criar webhook na API v2 (OAuth Bearer)
@@ -163,35 +99,31 @@ export async function POST(request: NextRequest) {
   const webhookUrl = `${request.nextUrl.origin}/api/rdstation/webhook`
   const resultados: any[] = []
 
-  // Estratégia: para cada evento, tenta v1 primeiro (mais simples), depois v2
-  for (let i = 0; i < EVENTOS_V2.length; i++) {
-    const eventoV2 = EVENTOS_V2[i]
-    const eventoV1 = EVENTOS_V1[i]
+  // Para cada evento, tenta v1 (token) primeiro, depois v2 (OAuth) se v1 falhar
+  for (const evento of EVENTOS) {
     let respV1: any = null, respV2: any = null
 
     if (v1Token) {
-      respV1 = await criarV1(v1Token, eventoV1, webhookUrl, secret)
+      respV1 = await criarV1(v1Token, evento, webhookUrl, secret)
       if (respV1.ok) {
-        resultados.push({ evento: eventoV1, api: 'v1', ok: true, status: respV1.status, formato: respV1.tentativa })
+        resultados.push({ evento, api: 'v1', ok: true, status: respV1.status })
         continue
       }
     }
     if (oauthToken) {
-      respV2 = await criarV2(oauthToken, eventoV2, webhookUrl, secret)
+      respV2 = await criarV2(oauthToken, evento.toLowerCase(), webhookUrl, secret)
       if (respV2.ok) {
-        resultados.push({ evento: eventoV2, api: 'v2', ok: true, status: respV2.status })
+        resultados.push({ evento, api: 'v2', ok: true, status: respV2.status })
         continue
       }
     }
 
-    // Falhou em ambos
     resultados.push({
-      evento: eventoV2,
+      evento,
       api: 'falhou',
       ok: false,
       v1_status: respV1?.status,
       v1_resposta: respV1?.data,
-      v1_tentativa: respV1?.tentativa,
       v2_status: respV2?.status,
       v2_resposta: respV2 ? respV2.data : 'OAuth não conectado',
     })
