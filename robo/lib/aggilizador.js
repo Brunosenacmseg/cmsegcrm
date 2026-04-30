@@ -266,11 +266,17 @@ async function primeiroSeletor(page, seletores) {
 // Aggilizador usa Angular Material com `formcontrolname` ou `name` no input.
 async function preencher(page, nomes, valor) {
   if (valor === undefined || valor === null || valor === '') return false
+  // IMPORTANTE: prioriza name e id sobre formcontrolname.
+  // Segurado e condutor têm formcontrolname iguais (cpfCnpj, nome, dataNasc)
+  // mas names diferentes (cpfCnpj vs perfilCpfCnpj). Se procurarmos
+  // formcontrolname primeiro, sempre acertamos o do segurado por engano.
   const candidatos = []
   for (const n of nomes) {
-    candidatos.push(`input[formcontrolname="${n}"]`)
     candidatos.push(`input[name="${n}"]`)
     candidatos.push(`input[id="${n}"]`)
+  }
+  for (const n of nomes) {
+    candidatos.push(`input[formcontrolname="${n}"]`)
   }
   const sel = await primeiroSeletor(page, candidatos)
   if (!sel) {
