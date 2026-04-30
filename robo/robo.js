@@ -192,12 +192,23 @@ async function capturarPagina(page) {
       type: b.type, id: b.id,
       class: (b.className || '').slice(0, 80),
     })).filter(b => b.text)
+    // Itens clicáveis dentro de overlays (Material dropdowns/menus)
+    const overlay_items = Array.from(document.querySelectorAll(
+      '.cdk-overlay-container li, .cdk-overlay-container .menu-item, ' +
+      '.cdk-overlay-container [role="option"], .cdk-overlay-container .item, ' +
+      '.cdk-overlay-container a, .cdk-overlay-container span[class*="item"]'
+    )).map(el => ({
+      tag: el.tagName.toLowerCase(),
+      text: (el.innerText || el.textContent || '').trim().slice(0, 60),
+      class: (el.className || '').slice(0, 80),
+    })).filter(el => el.text).slice(0, 30)
     return {
       url: location.href,
       title: document.title,
       texto_visivel: document.body.innerText.slice(0, 1500),
       inputs, selects, labels,
       buttons: buttons.slice(0, 40),
+      overlay_items,
     }
   })
 }

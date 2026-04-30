@@ -169,22 +169,40 @@ async function abrirCotacaoAuto(page) {
   }
   await page.waitForTimeout(2000)
 
-  // 3) Wizard abre — selecionar Automóvel
-  const opcaoAuto = await primeiroSeletor(page, [
-    '[data-testid*="auto" i]',
-    'button:has-text("Automóvel")',
-    'a:has-text("Automóvel")',
-    'div[role="menuitem"]:has-text("Automóvel")',
-    '.menu-item:has-text("Automóvel")',
-    'mat-list-item:has-text("Automóvel")',
-  ])
-  if (opcaoAuto) {
-    await page.click(opcaoAuto, { force: true }).catch(() => {})
-    await page.waitForTimeout(2000)
-  } else {
-    log.warn('Opção "Automóvel" não encontrada após Nova Cotação')
+  // 3) Wizard abre com categorias e produtos. Estrutura observada:
+  //    Automóvel
+  //      → Carro     ← é onde clicamos pra cotação de auto
+  //      → Caminhão
+  //      → Motocicleta
+  //    Compreensivos / Vida / Diversos / Saúde
+  //
+  // Os itens são divs/links sem name específico. Usamos getByText com
+  // exact match pra acertar o "Carro" certo.
+  await page.waitForTimeout(800)
+
+  let clicouCarro = false
+  try {
+    const opcaoCarro = page.getByText('Carro', { exact: true }).first()
+    await opcaoCarro.waitFor({ state: 'visible', timeout: 8000 })
+    await opcaoCarro.click({ force: true })
+    clicouCarro = true
+    log.info('Clicou em "Carro"')
+  } catch {
+    // Talvez precise expandir "Automóvel" primeiro
+    log.warn('Não achei "Carro" direto, tentando expandir "Automóvel"')
+    try {
+      await page.getByText('Automóvel', { exact: true }).first().click({ force: true })
+      await page.waitForTimeout(800)
+      await page.getByText('Carro', { exact: true }).first().click({ force: true })
+      clicouCarro = true
+    } catch (err) {
+      throw new Error('Não consegui chegar no produto "Carro" do wizard: ' + err.message)
+    }
   }
 
+  if (!clicouCarro) throw new Error('Não consegui selecionar "Carro" no wizard')
+
+  await page.waitForTimeout(2500)
   await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {})
   await page.waitForTimeout(1500)
 }
