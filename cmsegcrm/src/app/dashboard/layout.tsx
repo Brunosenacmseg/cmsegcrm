@@ -63,6 +63,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => clearInterval(interval)
   }, [user])
 
+  // Bloqueia acesso direto via URL para rotas adminOnly. Precisa estar
+  // ANTES de qualquer early return para respeitar as Rules of Hooks
+  // (caso contrário gera React error #310 — hooks chamados condicionalmente).
+  useEffect(() => {
+    if (!profile) return
+    const isAdminUser = profile.role === 'admin'
+    const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
+    if (rotaAdmin && !isAdminUser) {
+      router.replace('/dashboard')
+    }
+  }, [profile, pathname, router])
+
   async function carregarProfile(userId: string) {
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
@@ -124,15 +136,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   let lastSection = ''
   const isAdmin = profile?.role === 'admin'
   const navVisible = NAV.filter(item => !item.adminOnly || isAdmin)
-
-  // Bloqueia acesso direto via URL para rotas adminOnly
-  useEffect(() => {
-    if (!profile) return
-    const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
-    if (rotaAdmin && !isAdmin) {
-      router.replace('/dashboard')
-    }
-  }, [profile, pathname])
 
   return (
     <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
