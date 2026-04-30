@@ -432,6 +432,11 @@ async function cotacaoAuto(page, dados) {
   }
   await page.waitForTimeout(800)
 
+  // Dispensa popup "Item calculado recentemente" / "Entendi, continuar"
+  // que aparece quando o veículo já foi cotado antes
+  await ag.dismissarOverlays(page)
+  await page.waitForTimeout(400)
+
   // Helper robusto pra clicar no Calcular da tela de seguradoras
   async function tentarCalcularSeguradoras(label) {
     // Localiza o botão preferindo o azul/filled e excluindo "Configurar"
@@ -477,6 +482,9 @@ async function cotacaoAuto(page, dados) {
 
   // Tenta clicar em "Calcular" de novo (até 4 vezes ou até aparecer R$).
   for (let i = 0; i < 4; i++) {
+    // Dispensa overlays antes de checar preços e tentar clicar
+    await ag.dismissarOverlays(page)
+
     const temPreco = await page.locator('text=/R\\$\\s*\\d+/').count().then(c => c > 0).catch(() => false)
     if (temPreco) {
       log.info(`Preços apareceram após ${i+1} tentativa(s) de Calcular`)
@@ -489,6 +497,9 @@ async function cotacaoAuto(page, dados) {
       break
     }
     await page.waitForTimeout(4000)
+    // Dispensa popups que podem ter aparecido após o click (ex: "Item
+    // calculado recentemente" / "Entendi, continuar")
+    await ag.dismissarOverlays(page)
   }
 
   // Espera o resultado final (heurística: aparece "R$" várias vezes ou passa 90s)

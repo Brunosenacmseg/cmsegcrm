@@ -252,8 +252,13 @@ async function dismissarOverlays(page) {
         }
       }
 
-      // 3) Banner "Comunicados"
-      const aviso = Array.from(document.querySelectorAll('button')).find(b => /marcar como visto|entendi/i.test(b.textContent || ''))
+      // 3) Banner "Comunicados" / popup "Item calculado recentemente"
+      // Botões: "Marcar como visto", "Entendi", "Entendi, continuar"
+      const aviso = Array.from(document.querySelectorAll('button')).find(b => {
+        const t = norm(b.textContent || '')
+        return /^(marcar como visto|entendi|entendi, continuar|entendi continuar)$/.test(t)
+            || t.startsWith('entendi')
+      })
       if (aviso) { try { aviso.click(); agiuJs = true; return { agiuJs, etapa: 'aviso' } } catch {} }
 
       // 4) Backdrop visível
