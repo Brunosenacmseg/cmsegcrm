@@ -20,7 +20,10 @@ async function checarAdmin(request: NextRequest): Promise<{ ok: boolean; erro?: 
   return { ok: true }
 }
 
-const EVENTOS = [
+const V1_BASE = 'https://crm.rdstation.com/api/v1'
+const V2_BASE = 'https://api.rd.services/crm/v2'
+
+const EVENTOS_V2 = [
   'crm_deal_created',
   'crm_deal_updated',
   'crm_deal_deleted',
@@ -29,22 +32,99 @@ const EVENTOS = [
   'crm_contact_deleted',
 ]
 
-const V2_BASE = 'https://api.rd.services/crm/v2'
+// Eventos no formato v1 — o RD usa nomenclaturas como "deal.created" / "deal_created"
+const EVENTOS_V1 = [
+  'deal.created', 'deal.updated', 'deal.deleted',
+  'contact.created', 'contact.updated', 'contact.deleted',
+]
 
-async function criarWebhook(rdToken: string, body: any): Promise<{ ok: boolean; status: number; data: any }> {
-  const res = await fetch(`${V2_BASE}/webhooks`, {
+async function fetchJson(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
+  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15000) })
+  let data: any = null
+  try { data = await res.json() } catch { try { data = await res.text() } catch {} }
+  return { ok: res.ok, status: res.status, data }
+}
+
+// Tenta criar webhook na API v1 (token query string)
+async function criarV1(rdToken: string, evento: string, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any; tentativa: string }> {
+  const baseUrl = `${V1_BASE}/webhooks?token=${rdToken}`
+  const corpos = [
+    // Tentativa 1 — formato wrapped em "webhook"
+    {
+      tentativa: 'wrapped',
+      body: {
+        webhook: {
+          name: `CMSEGCRM - ${evento}`,
+          url,
+          http_method: 'POST',
+          event_identifiers: [evento],
+          include_relations: [],
+          auth_header: 'X-Auth-Key',
+          auth_key: secret,
+        },
+      },
+    },
+    // Tentativa 2 — flat sem wrapper
+    {
+      tentativa: 'flat',
+      body: {
+        name: `CMSEGCRM - ${evento}`,
+        url,
+        http_method: 'POST',
+        event_identifiers: [evento],
+        auth_header: 'X-Auth-Key',
+        auth_key: secret,
+      },
+    },
+    // Tentativa 3 — singular event_identifier
+    {
+      tentativa: 'singular',
+      body: {
+        name: `CMSEGCRM - ${evento}`,
+        url,
+        http_method: 'POST',
+        event_identifier: evento,
+        auth_header: 'X-Auth-Key',
+        auth_key: secret,
+      },
+    },
+  ]
+
+  let ultimaResp: any = null
+  for (const { tentativa, body } of corpos) {
+    const r = await fetchJson(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (r.ok) return { ...r, tentativa }
+    ultimaResp = { ...r, tentativa }
+    // Se status é 401/403, não adianta tentar outros formatos
+    if (r.status === 401 || r.status === 403) break
+  }
+  return ultimaResp || { ok: false, status: 0, data: null, tentativa: 'nenhuma' }
+}
+
+// Tenta criar webhook na API v2 (OAuth Bearer)
+async function criarV2(accessToken: string, evento: string, url: string, secret: string) {
+  return await fetchJson(`${V2_BASE}/webhooks`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${rdToken}`,
+      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15000),
+    body: JSON.stringify({
+      data: {
+        name: `CMSEGCRM - ${evento}`,
+        event_name: evento,
+        http_method: 'POST',
+        url,
+        auth_header: 'X-Auth-Key',
+        auth_key: secret,
+      },
+    }),
   })
-  let data: any = null
-  try { data = await res.json() } catch { data = await res.text() }
-  return { ok: res.ok, status: res.status, data }
 }
 
 export async function POST(request: NextRequest) {
@@ -54,37 +134,48 @@ export async function POST(request: NextRequest) {
   const secret = process.env.RDSTATION_WEBHOOK_SECRET
   if (!secret) return NextResponse.json({ error: 'RDSTATION_WEBHOOK_SECRET não configurado' }, { status: 400 })
 
-  // Prioriza OAuth (v2). Se não tiver, cai para o token v1 do header/env (provavelmente vai dar 401 na v2).
-  let rdToken: string
-  try {
-    rdToken = await getAccessTokenValido()
-  } catch (e: any) {
-    const fallback = request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN
-    if (!fallback) return NextResponse.json({ error: e?.message || 'OAuth não conectado' }, { status: 400 })
-    rdToken = fallback
+  const v1Token = request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN
+  let oauthToken: string | null = null
+  try { oauthToken = await getAccessTokenValido() } catch {}
+
+  if (!v1Token && !oauthToken) {
+    return NextResponse.json({ error: 'Configure RDSTATION_CRM_TOKEN (v1) ou conecte via OAuth (v2)' }, { status: 400 })
   }
 
-  const origin = request.nextUrl.origin
-  const webhookUrl = `${origin}/api/rdstation/webhook`
-
+  const webhookUrl = `${request.nextUrl.origin}/api/rdstation/webhook`
   const resultados: any[] = []
-  for (const evento of EVENTOS) {
-    const payload = {
-      data: {
-        name: `CMSEGCRM - ${evento}`,
-        event_name: evento,
-        http_method: 'POST',
-        url: webhookUrl,
-        auth_header: 'X-Auth-Key',
-        auth_key: secret,
-      },
+
+  // Estratégia: para cada evento, tenta v1 primeiro (mais simples), depois v2
+  for (let i = 0; i < EVENTOS_V2.length; i++) {
+    const eventoV2 = EVENTOS_V2[i]
+    const eventoV1 = EVENTOS_V1[i]
+    let respV1: any = null, respV2: any = null
+
+    if (v1Token) {
+      respV1 = await criarV1(v1Token, eventoV1, webhookUrl, secret)
+      if (respV1.ok) {
+        resultados.push({ evento: eventoV1, api: 'v1', ok: true, status: respV1.status, formato: respV1.tentativa })
+        continue
+      }
     }
-    try {
-      const r = await criarWebhook(rdToken, payload)
-      resultados.push({ evento, ok: r.ok, status: r.status, response: r.data })
-    } catch (e: any) {
-      resultados.push({ evento, ok: false, erro: e?.message?.slice(0, 200) })
+    if (oauthToken) {
+      respV2 = await criarV2(oauthToken, eventoV2, webhookUrl, secret)
+      if (respV2.ok) {
+        resultados.push({ evento: eventoV2, api: 'v2', ok: true, status: respV2.status })
+        continue
+      }
     }
+
+    // Falhou em ambos
+    resultados.push({
+      evento: eventoV2,
+      api: 'falhou',
+      ok: false,
+      v1_status: respV1?.status,
+      v1_resposta: typeof respV1?.data === 'string' ? respV1.data.slice(0, 200) : JSON.stringify(respV1?.data).slice(0, 300),
+      v2_status: respV2?.status,
+      v2_resposta: respV2 ? (typeof respV2.data === 'string' ? respV2.data.slice(0, 200) : JSON.stringify(respV2.data).slice(0, 300)) : 'OAuth não conectado',
+    })
   }
 
   const ok = resultados.every(r => r.ok)
@@ -96,19 +187,12 @@ export async function GET(request: NextRequest) {
   const auth = await checarAdmin(request)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
-  const rdToken = request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN
-  if (!rdToken) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
+  const v1Token = request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN
+  if (!v1Token) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
 
-  // Lista webhooks existentes na conta RD
-  try {
-    const res = await fetch(`${V2_BASE}/webhooks`, {
-      headers: { 'Authorization': `Bearer ${rdToken}`, 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(15000),
-    })
-    let data: any = null
-    try { data = await res.json() } catch { data = await res.text() }
-    return NextResponse.json({ ok: res.ok, status: res.status, data })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, erro: e?.message }, { status: 500 })
-  }
+  // Lista webhooks existentes via v1
+  const r = await fetchJson(`${V1_BASE}/webhooks?token=${v1Token}`, {
+    headers: { Accept: 'application/json' },
+  })
+  return NextResponse.json({ ok: r.ok, status: r.status, data: r.data })
 }
