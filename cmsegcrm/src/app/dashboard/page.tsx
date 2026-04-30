@@ -12,7 +12,14 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router   = useRouter()
   const [profile, setProfile]   = useState<any>(null)
-  const [dados, setDados]       = useState<any>({ premioMes:0, novosClientes:0, apolicesAtivas:0, renovacoes30d:0, mediaComissao:0, atividades:[], alertas:[] })
+  const [dados, setDados]       = useState<any>({
+    premioMes:0, premioMesAnterior:0,
+    novosClientes:0, novosClientesAnterior:0,
+    apolicesAtivas:0, renovacoes30d:0,
+    mediaComissao:0, tarefasPendentes:0, ligacoesHoje:0,
+    atividades:[], alertas:[],
+    tendencia:[] as { mes:string; valor:number }[],
+  })
   const [ranking, setRanking]   = useState<any[]>([])
   const [atendimentos, setAtendimentos] = useState<any[]>([])
   const [loading, setLoading]   = useState(true)
@@ -23,33 +30,91 @@ export default function DashboardPage() {
 
   async function carregarDados() {
     const hoje = new Date()
-    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()
-    const em30dias  = new Date(hoje.getTime() + 30*24*60*60*1000).toISOString().slice(0,10)
+    const inicioMes      = new Date(hoje.getFullYear(), hoje.getMonth(),   1).toISOString()
+    const inicioMesAnt   = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1).toISOString()
+    const em30dias       = new Date(hoje.getTime() + 30*24*60*60*1000).toISOString().slice(0,10)
+    const inicioHoje     = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString()
+    const inicioSemestre = new Date(hoje.getFullYear(), hoje.getMonth()-5, 1).toISOString()
+
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
 
-    const [{ data: negs }, { count: novosCount }, { data: renovs }, { data: hist }, { data: usr }] = await Promise.all([
-      supabase.from('negocios').select('premio, comissao_pct, etapa, funil_id, funis(tipo), vendedor_id'),
-      supabase.from('clientes').select('id', {count:'exact',head:true}).gte('created_at', inicioMes),
-      supabase.from('negocios').select('id, vencimento, produto, clientes(nome)').lte('vencimento', em30dias).gt('vencimento', hoje.toISOString().slice(0,10)).order('vencimento'),
-      supabase.from('historico').select('*, clientes(nome), negocios(produto)').order('created_at', {ascending:false}).limit(8),
+    // Escopo por role: corretor vê só os próprios dados.
+    // Para admin/líder, escopo é null = sem filtro.
+    const onlyMine = prof?.role === 'corretor'
+    const meId = user?.id || ''
+
+    // Helpers para aplicar filtro condicional sem repetir a lógica.
+    const scoped = <T,>(q: any, col: string = 'vendedor_id'): T => onlyMine ? q.eq(col, meId) : q
+
+    const [
+      { data: negs },
+      { count: novosCount },
+      { count: novosCountAnterior },
+      { data: renovs },
+      { data: hist },
+      { data: usr },
+      { count: tarefasPendentes },
+      { count: ligacoesHoje },
+      { data: negsSemestre },
+    ] = await Promise.all([
+      scoped(supabase.from('negocios').select('premio, comissao_pct, etapa, funil_id, funis(tipo), vendedor_id, created_at')),
+      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMes)),
+      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMesAnt).lt('created_at', inicioMes)),
+      scoped(supabase.from('negocios').select('id, vencimento, produto, clientes(nome)').lte('vencimento', em30dias).gt('vencimento', hoje.toISOString().slice(0,10)).order('vencimento')),
+      supabase.from('historico').select('*, clientes(nome), negocios(produto)').order('created_at', { ascending: false }).limit(8),
       supabase.from('users').select('id, nome').order('nome'),
+      onlyMine
+        ? supabase.from('tarefas').select('id', { count: 'exact', head: true }).eq('status', 'pendente').eq('responsavel_id', meId)
+        : supabase.from('tarefas').select('id', { count: 'exact', head: true }).eq('status', 'pendente'),
+      onlyMine
+        ? supabase.from('ligacoes').select('id', { count: 'exact', head: true }).eq('user_id', meId).gte('criado_em', inicioHoje)
+        : supabase.from('ligacoes').select('id', { count: 'exact', head: true }).gte('criado_em', inicioHoje),
+      scoped(supabase.from('negocios').select('premio, etapa, created_at').gte('created_at', inicioSemestre)),
     ])
 
     const negAtivos  = (negs||[]).filter((n:any) => !ETAPAS_FECHADAS.includes(n.etapa))
-    const premioMes  = negAtivos.reduce((s:number,n:any)=>s+(n.premio||0),0)
+    const negFechadosMes    = (negs||[]).filter((n:any) => ['Fechado Ganho','Renovado','Pago','Concluído'].includes(n.etapa) && n.created_at >= inicioMes)
+    const negFechadosAntMes = (negs||[]).filter((n:any) => ['Fechado Ganho','Renovado','Pago','Concluído'].includes(n.etapa) && n.created_at >= inicioMesAnt && n.created_at < inicioMes)
+    const premioMes         = negFechadosMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
+    const premioMesAnterior = negFechadosAntMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
+
     const comissoes  = negAtivos.filter((n:any)=>n.comissao_pct>0).map((n:any)=>n.comissao_pct)
     const mediaComissao = comissoes.length?(comissoes.reduce((a:number,b:number)=>a+b,0)/comissoes.length):0
 
-    // Atendimentos por usuário
+    // Tendência dos últimos 6 meses (prêmio fechado por mês)
+    const ETAPAS_FECHADAS_GANHAS = ['Fechado Ganho','Renovado','Pago','Concluído']
+    const tendencia: { mes: string; valor: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1)
+      const ini = d.toISOString()
+      const fim = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
+      const valor = (negsSemestre||[])
+        .filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= ini && n.created_at < fim)
+        .reduce((s:number,n:any) => s+(n.premio||0), 0)
+      tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
+    }
+
+    // Atendimentos por usuário (admin/líder veem time inteiro)
     const atendMap: Record<string,{nome:string,qtd:number}> = {}
     ;(usr||[]).forEach((u:any) => { atendMap[u.id] = { nome: u.nome, qtd: 0 } })
     negAtivos.forEach((n:any) => { if(n.vendedor_id && atendMap[n.vendedor_id]) atendMap[n.vendedor_id].qtd++ })
     const atendArr = Object.values(atendMap).filter((a:any)=>a.qtd>0).sort((a:any,b:any)=>b.qtd-a.qtd)
     setAtendimentos(atendArr)
 
-    setDados({ premioMes, novosClientes: novosCount||0, apolicesAtivas: negAtivos.length, renovacoes30d: (renovs||[]).length, mediaComissao, atividades: hist||[], alertas: (renovs||[]).slice(0,3) })
+    setDados({
+      premioMes, premioMesAnterior,
+      novosClientes: novosCount||0, novosClientesAnterior: novosCountAnterior||0,
+      apolicesAtivas: negAtivos.length,
+      renovacoes30d: (renovs||[]).length,
+      mediaComissao,
+      tarefasPendentes: tarefasPendentes||0,
+      ligacoesHoje:     ligacoesHoje||0,
+      atividades: hist||[],
+      alertas:    (renovs||[]).slice(0,3),
+      tendencia,
+    })
     setLoading(false)
   }
 
@@ -90,6 +155,18 @@ export default function DashboardPage() {
   const isAdmin = profile?.role === 'admin'
   const isLider = profile?.role === 'lider'
 
+  // Calcula variação percentual entre dois valores. Retorna { texto, cor }.
+  function delta(atual: number, anterior: number): { texto: string; cor: string } {
+    if (anterior === 0 && atual === 0) return { texto: '—',                 cor: 'var(--text-muted)' }
+    if (anterior === 0)                return { texto: '+ novo',            cor: 'var(--teal)' }
+    const pct = Math.round(((atual - anterior) / anterior) * 100)
+    if (pct === 0)                     return { texto: '= mês ant.',        cor: 'var(--text-muted)' }
+    const sinal = pct > 0 ? '↑' : '↓'
+    return { texto: `${sinal} ${Math.abs(pct)}% vs mês ant.`, cor: pct > 0 ? 'var(--teal)' : 'var(--red)' }
+  }
+  const dPremio  = delta(dados.premioMes, dados.premioMesAnterior)
+  const dClientes = delta(dados.novosClientes, dados.novosClientesAnterior)
+
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
   return (
@@ -100,23 +177,73 @@ export default function DashboardPage() {
       </div>
 
       <div style={{padding:'28px 28px 40px'}}>
-        {/* KPIs */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:16,marginBottom:24}}>
+        {/* Indicador de escopo (corretor vê só os próprios) */}
+        {profile?.role === 'corretor' && (
+          <div style={{marginBottom:16,fontSize:12,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:8}}>
+            <span style={{width:8,height:8,borderRadius:'50%',background:'var(--teal)'}}/>
+            Mostrando apenas seus dados
+          </div>
+        )}
+
+        {/* KPIs principais — agora 4 cards com comparação */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}>
           {[
-            {label:'Prêmio Total (mês)',  value:fmt(dados.premioMes),         color:'linear-gradient(90deg,var(--gold),var(--gold-light))'},
-            {label:'Novos Clientes',      value:dados.novosClientes,           color:'linear-gradient(90deg,var(--teal),#4dd9c7)'},
-            {label:'Negócios Ativos',     value:dados.apolicesAtivas,          color:'linear-gradient(90deg,#4a80f0,#7aa3f8)'},
-            {label:'Renovações (30d)',    value:dados.renovacoes30d,           color:'linear-gradient(90deg,var(--red),#f08080)', sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente'},
-            {label:'Média Comissão',      value:`${dados.mediaComissao.toFixed(1)}%`, color:'linear-gradient(90deg,var(--teal),var(--gold))', sub:'Sobre negócios ativos'},
-          ].map(({label,value,color,sub})=>(
+            {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),         color:'linear-gradient(90deg,var(--gold),var(--gold-light))', sub: dPremio.texto, subCor: dPremio.cor},
+            {label:'Novos Clientes (mês)', value:dados.novosClientes,           color:'linear-gradient(90deg,var(--teal),#4dd9c7)',          sub: dClientes.texto, subCor: dClientes.cor},
+            {label:'Negócios Ativos',      value:dados.apolicesAtivas,          color:'linear-gradient(90deg,#4a80f0,#7aa3f8)',              sub:'Em pipeline'},
+            {label:'Renovações (30d)',     value:dados.renovacoes30d,           color:'linear-gradient(90deg,var(--red),#f08080)',           sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente', subCor: dados.renovacoes30d>0?'var(--red)':'var(--text-muted)'},
+          ].map(({label,value,color,sub,subCor})=>(
             <div key={label} className="card fade-up" style={{position:'relative',overflow:'hidden'}}>
               <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:color,borderRadius:'14px 14px 0 0'}}/>
               <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>{label}</div>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:28,lineHeight:1}}>{value}</div>
-              {sub&&<div style={{fontSize:12,color:'var(--text-muted)',marginTop:6}}>{sub}</div>}
+              {sub&&<div style={{fontSize:12,color:subCor||'var(--text-muted)',marginTop:6}}>{sub}</div>}
             </div>
           ))}
         </div>
+
+        {/* KPIs secundários — operacionais do dia */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>
+          {[
+            {label:'Tarefas Pendentes', value:dados.tarefasPendentes, icon:'📋', cor:'var(--gold)',  link:'/dashboard/tarefas'},
+            {label:'Ligações Hoje',     value:dados.ligacoesHoje,     icon:'📞', cor:'var(--teal)',  link:'/dashboard/telefone'},
+            {label:'Média Comissão',    value:`${dados.mediaComissao.toFixed(1)}%`, icon:'💰', cor:'var(--gold)', link:'/dashboard/comissoes'},
+          ].map(({label,value,icon,cor,link}) => (
+            <div key={label} className="card" onClick={() => router.push(link)}
+              style={{display:'flex',alignItems:'center',gap:14,cursor:'pointer',transition:'background 0.16s'}}
+              onMouseEnter={e => e.currentTarget.style.background='rgba(201,168,76,0.04)'}
+              onMouseLeave={e => e.currentTarget.style.background='var(--card-bg)'}>
+              <div style={{fontSize:32}}>{icon}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{label}</div>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:24,lineHeight:1,color:cor}}>{value}</div>
+              </div>
+              <span style={{fontSize:18,color:'var(--text-muted)'}}>→</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Tendência: prêmio fechado por mês — últimos 6 meses */}
+        {dados.tendencia && dados.tendencia.length > 0 && (() => {
+          const max = Math.max(1, ...dados.tendencia.map((p:any) => p.valor))
+          return (
+            <div className="card" style={{marginBottom:16}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:14}}>📈 Prêmio fechado — últimos 6 meses</div>
+              <div style={{display:'grid',gridTemplateColumns:`repeat(${dados.tendencia.length},1fr)`,gap:10,alignItems:'end',height:120}}>
+                {dados.tendencia.map((p:any, i:number) => {
+                  const altura = max > 0 ? Math.max(4, (p.valor / max) * 100) : 4
+                  return (
+                    <div key={i} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+                      <div style={{fontSize:10,color:'var(--text-muted)',height:14}}>{p.valor > 0 ? `R$ ${(p.valor/1000).toFixed(0)}k` : ''}</div>
+                      <div style={{width:'100%',height:`${altura}%`,background:'linear-gradient(180deg,var(--gold),rgba(201,168,76,0.2))',borderRadius:'6px 6px 2px 2px',transition:'height 0.6s'}}/>
+                      <div style={{fontSize:11,color:'var(--text-muted)',textTransform:'capitalize'}}>{p.mes}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
 
