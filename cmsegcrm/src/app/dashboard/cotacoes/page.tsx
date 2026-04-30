@@ -137,9 +137,11 @@ export default function CotacoesPage() {
   }
 
   // Indicadores de auto-preenchimento (mostra spinner ao consultar)
-  const [consultandoCpf, setConsultandoCpf] = useState(false)
-  const [consultandoCep, setConsultandoCep] = useState<'res'|'pernoite'|null>(null)
-  const [ultimoCpfConsultado, setUltimoCpfConsultado] = useState('')
+  const [consultandoCpf, setConsultandoCpf]     = useState(false)
+  const [consultandoPlaca, setConsultandoPlaca] = useState(false)
+  const [consultandoCep, setConsultandoCep]     = useState<'res'|'pernoite'|null>(null)
+  const [ultimoCpfConsultado, setUltimoCpfConsultado]     = useState('')
+  const [ultimaPlacaConsultada, setUltimaPlacaConsultada] = useState('')
 
   // Quando o CPF tem 11 dígitos completos, chama /api/cotacoes/consultar
   // que tenta achar na base local primeiro, depois no robô (se configurado).
@@ -177,6 +179,42 @@ export default function CotacoesPage() {
       }
     } catch {} finally {
       setConsultandoCpf(false)
+    }
+  }
+
+  // Quando a placa tem 7 caracteres válidos, chama /api/cotacoes/consultar-placa
+  // que delega ao robô — ele loga no aggilizador, digita a placa e captura
+  // modelo, ano, fipe, etc. preenchidos automaticamente.
+  async function consultarPlaca(placaFormatada: string) {
+    const placaLimpa = (placaFormatada || '').toUpperCase().replace(/\W/g, '')
+    if (placaLimpa.length < 7) return
+    if (placaLimpa === ultimaPlacaConsultada) return
+    setUltimaPlacaConsultada(placaLimpa)
+    setConsultandoPlaca(true)
+    try {
+      const res = await fetch('/api/cotacoes/consultar-placa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ placa: placaLimpa }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (json?.encontrado && json?.dados) {
+        const d = json.dados
+        setForm(f => ({
+          ...f,
+          modelo:      f.modelo      || d.modelo           || '',
+          ano_fab:     f.ano_fab     || d.ano_fab          || '',
+          ano_mod:     f.ano_mod     || d.ano_mod          || '',
+          combustivel: f.combustivel || d.combustivel      || '',
+        }))
+        setMsg('✅ Veículo encontrado pela placa')
+        setTimeout(() => setMsg(''), 3000)
+      } else if (json?.error) {
+        setMsg('⚠ ' + json.error)
+        setTimeout(() => setMsg(''), 4000)
+      }
+    } catch {} finally {
+      setConsultandoPlaca(false)
     }
   }
 
@@ -261,48 +299,31 @@ export default function CotacoesPage() {
     }).select().single()
 
     try {
+      // Modo assíncrono: o robô recebe o cotacao_id, retorna 202 imediato e
+      // processa em background, escrevendo o resultado direto no Supabase.
+      // O CRM faz polling pra detectar o status final.
       const res = await fetch(ROBO_PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ produto: 'carro', dados }),
+        body: JSON.stringify({ cotacao_id: cot?.id, produto: 'carro', dados }),
       })
-      const resultado = await res.json().catch(() => ({}))
+      const ack = await res.json().catch(() => ({}))
 
-      // Erro retornado pelo proxy (robô offline, timeout, etc.)
-      if (!res.ok || resultado.ok === false) {
-        const erroMsg = resultado.error || `HTTP ${res.status}`
+      if (!res.ok || ack.ok === false) {
+        const erroMsg = ack.error || `HTTP ${res.status}`
         if (cot?.id) await supabase.from('cotacoes').update({ status: 'erro', dados: { ...dados, erro: erroMsg } }).eq('id', cot.id)
         setMsg('❌ ' + erroMsg)
         await carregarCotacoes()
         return
       }
 
-      // Salvar screenshot se vier
-      let screenshotUrl: string | null = null
-      if (resultado.screenshot && cot?.id) {
-        try {
-          const bs = atob(resultado.screenshot)
-          const ab = new ArrayBuffer(bs.length)
-          const ia = new Uint8Array(ab)
-          for (let i = 0; i < bs.length; i++) ia[i] = bs.charCodeAt(i)
-          const blob = new Blob([ab], { type: 'image/png' })
-          const fn = `cotacoes/${cot.id}.png`
-          const { data: up } = await supabase.storage.from('cmsegcrm').upload(fn, blob, { contentType: 'image/png', upsert: true })
-          if (up) {
-            const { data: url } = supabase.storage.from('cmsegcrm').getPublicUrl(fn)
-            screenshotUrl = url.publicUrl
-          }
-        } catch {}
-      }
-
-      if (cot?.id) await supabase.from('cotacoes').update({
-        status: resultado.ok ? 'concluido' : 'erro',
-        screenshot_url: screenshotUrl,
-      }).eq('id', cot.id)
-
-      setMsg(resultado.ok ? '✅ Cotação concluída!' : '⚠ Robô retornou erro')
-      if (resultado.ok) setModal(false)
+      // Robô aceitou e está processando. Fecha o modal e mostra na lista.
+      setMsg('⏳ Cotação iniciada. Aguardando o robô (~2-3 min)...')
+      setModal(false)
       await carregarCotacoes()
+
+      // Polling: a cada 5s checa o status no Supabase. Para após 6 minutos.
+      if (cot?.id) iniciarPollingCotacao(cot.id)
     } catch (err: any) {
       if (cot?.id) await supabase.from('cotacoes').update({ status: 'erro' }).eq('id', cot.id)
       setMsg('❌ Erro inesperado: ' + (err?.message || 'falha na rede'))
@@ -311,7 +332,66 @@ export default function CotacoesPage() {
     }
   }
 
+  // Acompanha uma cotação em processamento até status='concluido' ou 'erro'.
+  function iniciarPollingCotacao(cotId: string) {
+    let tries = 0
+    const MAX_TRIES = 80  // 80 * 5s = 400s (mais que suficiente pros 250s do robô)
+    const interval = setInterval(async () => {
+      tries++
+      const { data } = await supabase
+        .from('cotacoes')
+        .select('id, status, screenshot_url')
+        .eq('id', cotId)
+        .single()
+      if (!data) return
+      if (data.status === 'concluido' || data.status === 'erro') {
+        clearInterval(interval)
+        setMsg(data.status === 'concluido' ? '✅ Cotação concluída!' : '❌ Cotação falhou — veja a lista')
+        await carregarCotacoes()
+        setTimeout(() => setMsg(''), 6000)
+        return
+      }
+      if (tries >= MAX_TRIES) {
+        clearInterval(interval)
+        setMsg('⚠ Timeout aguardando o robô — veja a lista')
+        await carregarCotacoes()
+      }
+    }, 5000)
+  }
+
   const abas = [['segurado','👤 Segurado'],['veiculo','🚗 Veículo'],['condutor','👨 Condutor'],['questionario','📋 Questionário'],['seguro','🛡 Seguro']] as const
+
+  // Abre o modal pré-preenchido com os dados de uma cotação existente.
+  // Usado quando o usuário clica numa linha pra refazer/editar/recalcular.
+  function abrirCotacaoExistente(c: any) {
+    const d = c.dados || {}
+    // Mescla formVazio com os dados salvos — campos faltantes ficam com default
+    const formPreenchido = { ...formVazio, ...d }
+    // Garante que campos legacy/computados não polluam (cpf, nome, etc.)
+    delete (formPreenchido as any).cpf
+    delete (formPreenchido as any).nome
+    delete (formPreenchido as any).nascimento
+    delete (formPreenchido as any).cep
+    delete (formPreenchido as any).precos
+    delete (formPreenchido as any).valor
+    delete (formPreenchido as any).resultado
+    delete (formPreenchido as any).coberturas
+    delete (formPreenchido as any).erro
+    setForm(formPreenchido as typeof formVazio)
+    if (c.cliente_id || c.clientes) {
+      setClienteSel({
+        id: c.cliente_id,
+        nome: c.clientes?.nome || c.nome_segurado,
+        cpf_cnpj: c.cpf_cnpj,
+      })
+    } else {
+      setClienteSel(null)
+    }
+    setClienteBusca(c.clientes?.nome || c.nome_segurado || '')
+    setAba('segurado')
+    setMsg('')
+    setModal(true)
+  }
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -329,7 +409,12 @@ export default function CotacoesPage() {
               <thead><tr>{['Cliente','Placa / Modelo','Usuário','Status','Data',''].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
               <tbody>
                 {cotacoes.map(c=>(
-                  <tr key={c.id} onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.03)')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                  <tr key={c.id}
+                      onClick={()=>abrirCotacaoExistente(c)}
+                      onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.06)')}
+                      onMouseLeave={e=>(e.currentTarget.style.background='')}
+                      style={{cursor:'pointer'}}
+                      title="Clique para editar / refazer">
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:13}}>{c.clientes?.nome||c.nome_segurado||'—'}</td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{c.placa||'—'}{c.modelo?` · ${c.modelo}`:''}</td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--gold)'}}>{c.users?.nome?.split(' ')[0]||'—'}</td>
@@ -339,7 +424,18 @@ export default function CotacoesPage() {
                       </span>
                     </td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11,color:'var(--text-muted)'}}>{new Date(c.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>{c.screenshot_url&&<a href={c.screenshot_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',textDecoration:'none'}}>Ver resultado</a>}</td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',whiteSpace:'nowrap'}} onClick={e=>e.stopPropagation()}>
+                      {c.screenshot_url && (
+                        <a href={c.screenshot_url} target="_blank" rel="noopener noreferrer"
+                           style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',textDecoration:'none',marginRight:6}}>
+                          Ver resultado
+                        </a>
+                      )}
+                      <button onClick={()=>abrirCotacaoExistente(c)}
+                              style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',cursor:'pointer'}}>
+                        ✏ Editar / Refazer
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {cotacoes.length===0&&<tr><td colSpan={6} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>Nenhuma cotação realizada</td></tr>}
@@ -431,7 +527,15 @@ export default function CotacoesPage() {
 
               {aba==='veiculo' && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <Inp label="Placa *"                  value={form.placa}       onChange={setMasked('placa', maskPlaca)} placeholder="ABC-1D23" />
+                  <Campo label={`Placa *${consultandoPlaca ? ' 🔄 buscando dados...' : ''}`}>
+                    <input
+                      value={form.placa}
+                      onChange={e => setForm(f => ({ ...f, placa: maskPlaca(e.target.value) }))}
+                      onBlur={e => consultarPlaca(e.target.value)}
+                      placeholder="ABC-1D23"
+                      style={INP_STYLE}
+                    />
+                  </Campo>
                   <Inp label="Chassi"                   value={form.chassi}      onChange={set('chassi')}      placeholder="Opcional" />
                   <Inp label="Ano Fabricação *"         value={form.ano_fab}     onChange={set('ano_fab')}     placeholder="2020" />
                   <Inp label="Ano Modelo *"             value={form.ano_mod}     onChange={set('ano_mod')}     placeholder="2021" />

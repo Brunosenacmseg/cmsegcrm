@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
 import Avatar from '@/components/Avatar'
 
-const NAV = [
+const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
   { href:'/dashboard/funis',        icon:'🏗', label:'Funis' },
   { href:'/dashboard/cotacoes',     icon:'🔍', label:'Cotações' },
@@ -20,8 +20,8 @@ const NAV = [
   { href:'/dashboard/renovacoes',   icon:'🔄', label:'Renovações' },
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
-  { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações' },
-  { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM' },
+  { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
+  { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', adminOnly:true },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
@@ -122,6 +122,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   let lastSection = ''
+  const isAdmin = profile?.role === 'admin'
+  const navVisible = NAV.filter(item => !item.adminOnly || isAdmin)
+
+  // Bloqueia acesso direto via URL para rotas adminOnly
+  useEffect(() => {
+    if (!profile) return
+    const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
+    if (rotaAdmin && !isAdmin) {
+      router.replace('/dashboard')
+    }
+  }, [profile, pathname])
 
   return (
     <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
@@ -134,7 +145,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <nav style={{flex:1,padding:'18px 0',overflowY:'auto'}}>
-          {NAV.map((item) => {
+          {navVisible.map((item) => {
             const showSection = item.section && item.section !== lastSection
             if (item.section) lastSection = item.section
             const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
