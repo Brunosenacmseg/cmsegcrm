@@ -194,9 +194,11 @@ async function cotacaoAuto(page, dados) {
   await ag.preencher(page, ['cepImovel', 'cep'],                dados.cep)
   await ag.preencher(page, ['emailSegurado', 'email'],          dados.email)
   await ag.preencher(page, ['fone'], dados.telefone)
-  // Sexo e Estado Civil do segurado: primeiro mat-select com cada nome
-  if (dados.sexo_segurado)         await ag.selecionarPorIndex(page, 'sexo', 0, dados.sexo_segurado)
-  if (dados.estado_civil_segurado) await ag.selecionarPorIndex(page, 'estadoCivil', 0, dados.estado_civil_segurado)
+  // Sexo e Estado Civil do segurado.
+  // Quando há ambos (segurado + condutor), o `selecionar` pega o primeiro
+  // (segurado). Se condutor=Próprio, o segundo está disabled.
+  if (dados.sexo_segurado)         await ag.selecionar(page, ['sexo'], dados.sexo_segurado)
+  if (dados.estado_civil_segurado) await ag.selecionar(page, ['estadoCivil'], dados.estado_civil_segurado)
 
   // ─── 2) Veículo ────────────────────────────────────────────
   await ag.preencher(page, ['placa'], dados.placa)

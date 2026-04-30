@@ -268,14 +268,34 @@ async function dismissarOverlays(page) {
     if (!agiu) break
   }
 
-  // Último recurso: se ainda há overlay ativo bloqueando, força-fecha
-  // removendo a classe "showing" do backdrop e ocultando o pane.
-  // Não removemos o nó pra não quebrar o ciclo de vida do Angular.
+  // NUCLEAR: força fechamento de qualquer overlay que ainda esteja
+  // bloqueando. Remove pointer-events do backdrop, oculta panes que
+  // contenham modais customizados (modal-header-content, mat-expansion-
+  // panel) e limpa atributos aria-hidden/disabled que possam manter
+  // os campos do form bloqueados.
   await page.evaluate(() => {
-    const back = document.querySelector('.cdk-overlay-backdrop-showing')
-    if (back) {
-      back.classList.remove('cdk-overlay-backdrop-showing')
-      back.style.pointerEvents = 'none'
+    // 1) Backdrop transparente — não bloqueia mais cliques
+    document.querySelectorAll('.cdk-overlay-backdrop, .cdk-overlay-backdrop-showing').forEach(b => {
+      b.classList.remove('cdk-overlay-backdrop-showing')
+      b.style.pointerEvents = 'none'
+      b.style.display = 'none'
+    })
+    // 2) Panes que contenham modal-header-content (FIPE selector etc)
+    //    ou mat-expansion-panel — claramente não são overlays de mat-select.
+    document.querySelectorAll('.cdk-overlay-pane').forEach(pane => {
+      const ehSelectMat = pane.querySelector('.mat-mdc-select-panel, .mat-mdc-autocomplete-panel')
+      if (ehSelectMat) return // mantém panes de mat-select abertos
+      const ehModalCustom = pane.querySelector('.modal-header-content, mat-expansion-panel, [matsort]')
+      if (ehModalCustom) {
+        pane.style.display = 'none'
+        pane.style.pointerEvents = 'none'
+      }
+    })
+    // 3) cdk-overlay-container inteiro: se NÃO tiver mat-select panel ativo,
+    //    zera pointer-events pra liberar o resto da página
+    const cont = document.querySelector('.cdk-overlay-container')
+    if (cont && !cont.querySelector('.mat-mdc-select-panel, .mat-mdc-autocomplete-panel')) {
+      cont.style.pointerEvents = 'none'
     }
   }).catch(() => {})
 }
@@ -317,8 +337,6 @@ async function preencher(page, nomes, valor) {
   try {
     await page.fill(sel, '')
     await page.fill(sel, String(valor))
-    // Dispara blur via evento pra Angular marcar como touched e validar
-    // (Playwright Locator não tem .blur() — usar evaluate dispatchEvent)
     await page.evaluate((s) => {
       const el = document.querySelector(s)
       if (!el) return
@@ -328,8 +346,29 @@ async function preencher(page, nomes, valor) {
     }, sel).catch(() => {})
     return true
   } catch (err) {
-    log.warn('Falha ao preencher', { sel, erro: err.message })
-    return false
+    // Fallback: preenche via evaluate quando overlay bloqueia page.fill
+    log.debug('page.fill falhou, tentando via DOM', { sel, erro: err.message })
+    try {
+      const ok = await page.evaluate(({ sel, valor }) => {
+        const el = document.querySelector(sel)
+        if (!el) return false
+        const proto = Object.getPrototypeOf(el)
+        const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+        const setter = desc && desc.set
+        if (setter) setter.call(el, '')
+        else el.value = ''
+        if (setter) setter.call(el, String(valor))
+        else el.value = String(valor)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        el.dispatchEvent(new Event('blur', { bubbles: true }))
+        return true
+      }, { sel, valor })
+      return !!ok
+    } catch (e2) {
+      log.warn('Falha ao preencher (DOM fallback)', { sel, erro: e2.message })
+      return false
+    }
   }
 }
 
@@ -580,8 +619,9 @@ async function selecionar(page, nomes, valor) {
   }
 }
 
-// Seleciona o n-ésimo mat-select que match um nome (útil quando há
-// vários mat-select com o mesmo `name`, ex: sexo do segurado e do condutor).
+// Seleciona o n-ésimo mat-select que match um nome — usando a mesma
+// lógica robusta do selecionar() (dispatch via DOM). Bypassa overlays
+// que bloqueariam page.click().
 async function selecionarPorIndex(page, name, index, valor) {
   if (valor === undefined || valor === null || valor === '') return false
   const v = String(valor).trim()
@@ -592,24 +632,81 @@ async function selecionarPorIndex(page, name, index, valor) {
     log.debug('mat-select index fora do range', { name, index, total: matches.length })
     return false
   }
+
   try {
-    await matches[index].click({ timeout: 5000 })
-    await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
-    const opcoes = await page.$$('mat-option, .mat-mdc-option')
-    for (const opt of opcoes) {
-      const txt = (await opt.textContent().catch(() => '') || '').trim().toLowerCase()
-      if (txt === vLower || txt.includes(vLower) || vLower.includes(txt)) {
-        await opt.click({ force: true }).catch(() => {})
-        await page.waitForTimeout(300)
-        return true
-      }
+    // Limpa overlays anteriores
+    await page.evaluate(() => {
+      document.querySelectorAll('.cdk-overlay-backdrop').forEach(b => { try { b.click() } catch (e) {} })
+    }).catch(() => {})
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(150)
+
+    // Abre via DOM no índice específico
+    const abriu = await page.evaluate(({ name, index }) => {
+      const els = document.querySelectorAll(`mat-select[name="${name}"]`)
+      const el = els[index]
+      if (!el) return 'nao-encontrado'
+      const desab = el.getAttribute('aria-disabled') === 'true'
+                 || el.classList.contains('mat-mdc-select-disabled')
+                 || el.classList.contains('mat-select-disabled')
+                 || el.hasAttribute('disabled')
+      if (desab) return 'disabled'
+      el.scrollIntoView({ block: 'center', behavior: 'instant' })
+      const trigger = el.querySelector('.mat-mdc-select-trigger') || el
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { trigger.dispatchEvent(new PointerEvent('pointerdown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+      try { trigger.click() } catch (e) {}
+      return 'ok'
+    }, { name, index })
+
+    if (abriu === 'disabled') { log.debug('mat-select por idx desabilitado', { name, index }); return false }
+    if (abriu !== 'ok') { log.debug('mat-select por idx não encontrado', { name, index }); return false }
+
+    // Espera painel abrir
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]').length > 0,
+        { timeout: 2500 }
+      )
+    } catch {
+      log.debug('Painel não apareceu (selecionarPorIndex)', { name, index })
+      return false
     }
-    await page.keyboard.press('Escape').catch(() => {})
+
+    // Pega opções do painel mais recente
+    const ret = await page.evaluate((vLower) => {
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => p.getBoundingClientRect().width > 0)
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return { ok: false }
+      const items = Array.from(painel.querySelectorAll('mat-option, .mat-mdc-option'))
+      const idx = items.findIndex(o => (o.textContent || '').trim().toLowerCase() === vLower)
+      const idxLoose = idx >= 0 ? idx : items.findIndex(o => {
+        const t = (o.textContent || '').trim().toLowerCase()
+        return t.includes(vLower) || vLower.includes(t)
+      })
+      if (idxLoose < 0) return { ok: false, items: items.map(i => (i.textContent || '').trim()).slice(0, 8) }
+      const o = items[idxLoose]
+      const ev = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { o.dispatchEvent(new PointerEvent('pointerdown', ev)) } catch (e) {}
+      try { o.dispatchEvent(new MouseEvent('mousedown', ev)) } catch (e) {}
+      try { o.click() } catch (e) {}
+      return { ok: true }
+    }, vLower)
+
+    if (!ret.ok) {
+      await page.keyboard.press('Escape').catch(() => {})
+      log.warn('Opção não encontrada (selecionarPorIndex)', { name, index, valor: v, disponiveis: ret.items })
+      return false
+    }
+    await page.waitForTimeout(350)
+    return true
   } catch (err) {
-    log.warn('Erro selecionarPorIndex', { name, erro: err.message })
+    log.warn('Erro selecionarPorIndex', { name, index, erro: err.message })
     await page.keyboard.press('Escape').catch(() => {})
+    return false
   }
-  return false
 }
 
 async function clicarProximo(page) {
