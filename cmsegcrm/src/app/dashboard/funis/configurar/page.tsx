@@ -24,8 +24,11 @@ export default function ConfigurarFunisPage() {
   const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [funis, setFunis] = useState<Funil[]>([])
+  const [equipes, setEquipes] = useState<{id:string; nome:string}[]>([])
+  const [funilEquipes, setFunilEquipes] = useState<Record<string,string[]>>({}) // funil_id → equipe_ids[]
   const [editandoId, setEditandoId] = useState<string|'novo'|null>(null)
   const [form, setForm] = useState<Funil>({ id:'', nome:'', tipo:'', emoji:'🆕', cor:'#c9a84c', etapas:[], ordem:0, descricao:'' })
+  const [equipeIds, setEquipeIds] = useState<string[]>([]) // equipes selecionadas no editor
   const [novaEtapa, setNovaEtapa] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string|null>(null)
@@ -43,18 +46,32 @@ export default function ConfigurarFunisPage() {
   }
 
   async function carregar() {
-    const { data } = await supabase.from('funis').select('*').order('ordem')
-    setFunis((data||[]) as Funil[])
+    const [{ data: fs }, { data: eqs }, { data: fe }] = await Promise.all([
+      supabase.from('funis').select('*').order('ordem'),
+      supabase.from('equipes').select('id, nome').order('nome'),
+      supabase.from('funis_equipes').select('funil_id, equipe_id'),
+    ])
+    setFunis((fs||[]) as Funil[])
+    setEquipes((eqs||[]) as any[])
+    const mapa: Record<string,string[]> = {}
+    for (const r of fe || []) {
+      const fid = (r as any).funil_id
+      if (!mapa[fid]) mapa[fid] = []
+      mapa[fid].push((r as any).equipe_id)
+    }
+    setFunilEquipes(mapa)
   }
 
   function novoFunil() {
     const proxOrdem = (funis.reduce((m,f)=>Math.max(m, f.ordem||0), 0)) + 1
     setForm({ id:'', nome:'', tipo:'custom', emoji:'🆕', cor:'#c9a84c', etapas:['Novo'], ordem: proxOrdem, descricao:'' })
+    setEquipeIds([])
     setEditandoId('novo'); setErro(null); setNovaEtapa('')
   }
 
   function editarFunil(f: Funil) {
     setForm({ ...f, etapas: [...(f.etapas||[])] })
+    setEquipeIds(funilEquipes[f.id] || [])
     setEditandoId(f.id); setErro(null); setNovaEtapa('')
   }
 
@@ -96,14 +113,28 @@ export default function ConfigurarFunisPage() {
       ordem:     form.ordem ?? 0,
       descricao: form.descricao || null,
     }
-    let res
+    let funilId: string | null = null
     if (editandoId === 'novo') {
-      res = await supabase.from('funis').insert(payload)
+      const r = await supabase.from('funis').insert(payload).select('id').single()
+      if (r.error) { setSalvando(false); setErro(r.error.message); return }
+      funilId = (r.data as any)?.id || null
     } else {
-      res = await supabase.from('funis').update(payload).eq('id', editandoId!)
+      const r = await supabase.from('funis').update(payload).eq('id', editandoId!)
+      if (r.error) { setSalvando(false); setErro(r.error.message); return }
+      funilId = editandoId as string
     }
+
+    // Sincroniza visibilidade por equipe (funis_equipes)
+    if (funilId) {
+      await supabase.from('funis_equipes').delete().eq('funil_id', funilId)
+      if (equipeIds.length > 0) {
+        const linhas = equipeIds.map(eid => ({ funil_id: funilId, equipe_id: eid }))
+        const { error: eFE } = await supabase.from('funis_equipes').insert(linhas)
+        if (eFE) { setSalvando(false); setErro('Funil salvo, mas falhou ao gravar equipes: ' + eFE.message); return }
+      }
+    }
+
     setSalvando(false)
-    if (res.error) { setErro(res.error.message); return }
     setEditandoId(null)
     await carregar()
   }
@@ -162,7 +193,18 @@ export default function ConfigurarFunisPage() {
               <div key={f.id} style={{padding:'12px 14px',background:'rgba(255,255,255,0.04)',border:'1px solid '+(editandoId===f.id?'var(--gold)':'var(--border)'),borderRadius:12,display:'flex',alignItems:'center',gap:10}}>
                 <div style={{width:36,height:36,borderRadius:8,background:(f.cor||'#333')+'22',border:'1px solid '+(f.cor||'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{f.emoji||'📁'}</div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{f.nome}</div>
+                  <div style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'flex',alignItems:'center',gap:6}}>
+                    {f.nome}
+                    {(funilEquipes[f.id]?.length || 0) > 0 ? (
+                      <span title={`Restrito a ${funilEquipes[f.id].length} equipe(s)`} style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:5,background:'rgba(28,181,160,0.15)',color:'var(--teal)',border:'1px solid rgba(28,181,160,0.3)',letterSpacing:'1px',textTransform:'uppercase'}}>
+                        🔒 {funilEquipes[f.id].length} eq.
+                      </span>
+                    ) : (
+                      <span title="Visível para todos" style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:5,background:'rgba(255,255,255,0.05)',color:'var(--text-muted)',border:'1px solid var(--border)',letterSpacing:'1px',textTransform:'uppercase'}}>
+                        🌐 Todos
+                      </span>
+                    )}
+                  </div>
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>{(f.etapas||[]).length} etapa(s) · ordem {f.ordem??0} {f.tipo?`· ${f.tipo}`:''}</div>
                 </div>
                 <div style={{display:'flex',gap:4}}>
@@ -234,6 +276,42 @@ export default function ConfigurarFunisPage() {
                 <div>
                   <label style={lbl}>Descrição (opcional)</label>
                   <input value={form.descricao||''} onChange={e=>setForm(f=>({...f,descricao:e.target.value}))} placeholder="Para que serve este funil..." style={inp} />
+                </div>
+
+                {/* Visibilidade por equipe */}
+                <div>
+                  <label style={lbl}>Visível para</label>
+                  {equipes.length === 0 ? (
+                    <div style={{padding:'10px 12px',background:'rgba(255,255,255,0.03)',border:'1px dashed var(--border)',borderRadius:8,fontSize:12,color:'var(--text-muted)'}}>
+                      Nenhuma equipe cadastrada. Crie equipes em <b style={{color:'var(--text)'}}>/dashboard/usuarios</b> para liberar este funil para grupos específicos.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
+                        <button onClick={()=>setEquipeIds([])}
+                          style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid '+(equipeIds.length===0?'var(--gold)':'var(--border)'),background:equipeIds.length===0?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:equipeIds.length===0?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                          🌐 Todos os usuários
+                        </button>
+                        <span style={{fontSize:11,color:'var(--text-muted)'}}>ou selecione equipes:</span>
+                      </div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                        {equipes.map(eq => {
+                          const sel = equipeIds.includes(eq.id)
+                          return (
+                            <button key={eq.id} onClick={()=>setEquipeIds(prev => sel ? prev.filter(x=>x!==eq.id) : [...prev, eq.id])}
+                              style={{padding:'5px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:'1px solid '+(sel?'var(--teal)':'var(--border)'),background:sel?'rgba(28,181,160,0.12)':'rgba(255,255,255,0.04)',color:sel?'var(--teal)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                              {sel ? '✓ ' : ''}{eq.nome}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div style={{fontSize:11,color:'var(--text-muted)',marginTop:6}}>
+                        {equipeIds.length === 0
+                          ? 'Sem restrição: todos os usuários autenticados verão este funil.'
+                          : `Apenas líderes/membros das ${equipeIds.length} equipe(s) selecionada(s) verão este funil. Admins sempre veem tudo.`}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Etapas */}

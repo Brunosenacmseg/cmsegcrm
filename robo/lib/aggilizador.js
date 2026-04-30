@@ -208,7 +208,13 @@ async function abrirCotacaoAuto(page) {
 }
 
 // Fecha qualquer popup/modal/overlay que possa estar bloqueando interações.
-// Estratégia: ESC + clicar em botões de fechar + clicar no backdrop.
+// Inclui:
+//  - ESC pra modais Material
+//  - botões close/fechar/X
+//  - "Marcar como visto" / "Entendi" / "Prosseguir"
+//  - modais com botão "Selecionar"/"Confirmar" (escolhe o primeiro)
+//  - clique no backdrop como último recurso
+//  - força-fechamento via DOM (display:none) quando nada funciona
 async function dismissarOverlays(page) {
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     let agiu = false
@@ -217,36 +223,86 @@ async function dismissarOverlays(page) {
     await page.keyboard.press('Escape').catch(() => {})
     await page.waitForTimeout(200)
 
-    // Botões com texto "close" ou X visíveis dentro de overlays
-    const closes = await page.$$('.cdk-overlay-container button, .cdk-overlay-container [role="button"]').catch(() => [])
-    for (const el of closes) {
-      const txt = await el.textContent().catch(() => '')
-      const aria = await el.getAttribute('aria-label').catch(() => '')
-      if (/close|fechar|x/i.test((txt || '') + (aria || ''))) {
-        await el.click({ force: true }).catch(() => {})
-        agiu = true
-        await page.waitForTimeout(200)
+    // Roda tudo num único evaluate pra ser rápido e não dispender tempo
+    // em operações Playwright entre cada tentativa
+    const ret = await page.evaluate(() => {
+      let agiuJs = false
+      const norm = (s) => (s || '').toString().trim().toLowerCase()
+
+      // 1) Botões close/fechar/X dentro de overlays
+      const overlays = document.querySelectorAll('.cdk-overlay-container, mat-dialog-container, .modal, [role="dialog"]')
+      for (const ov of overlays) {
+        const btns = ov.querySelectorAll('button, [role="button"], a')
+        for (const b of btns) {
+          const t = norm(b.textContent || '') + ' ' + norm(b.getAttribute('aria-label') || '')
+          if (/^(close|fechar|x|cancelar|cancel|voltar|fechar modal)\b/.test(t.trim()) || t.includes(' close ')) {
+            try { b.click(); agiuJs = true; return { agiuJs, etapa: 'close-button' } } catch {}
+          }
+        }
       }
-    }
 
-    // Banner "Comunicados" tem botão "Marcar como visto"
-    const ok = await page.$('button:has-text("Marcar como visto"), button:has-text("Entendi")').catch(() => null)
-    if (ok) {
-      await ok.click({ force: true }).catch(() => {})
-      agiu = true
-      await page.waitForTimeout(200)
-    }
+      // 2) Modais de confirmação genéricos (Selecionar/Confirmar/OK)
+      for (const ov of overlays) {
+        const btns = ov.querySelectorAll('button, [role="button"]')
+        for (const b of btns) {
+          const t = norm(b.textContent || '')
+          if (/^(selecionar|confirmar|ok|prosseguir|continuar|aplicar)$/.test(t)) {
+            try { b.click(); agiuJs = true; return { agiuJs, etapa: 'confirm-button' } } catch {}
+          }
+        }
+      }
 
-    // Clica no backdrop pra fechar (último recurso)
-    const backdrop = await page.$('.cdk-overlay-backdrop-showing').catch(() => null)
-    if (backdrop) {
-      await backdrop.click({ force: true, position: { x: 5, y: 5 } }).catch(() => {})
-      agiu = true
-      await page.waitForTimeout(200)
-    }
+      // 3) Banner "Comunicados" / popup "Item calculado recentemente"
+      // Botões: "Marcar como visto", "Entendi", "Entendi, continuar"
+      const aviso = Array.from(document.querySelectorAll('button')).find(b => {
+        const t = norm(b.textContent || '')
+        return /^(marcar como visto|entendi|entendi, continuar|entendi continuar)$/.test(t)
+            || t.startsWith('entendi')
+      })
+      if (aviso) { try { aviso.click(); agiuJs = true; return { agiuJs, etapa: 'aviso' } } catch {} }
+
+      // 4) Backdrop visível
+      const backdrop = document.querySelector('.cdk-overlay-backdrop-showing')
+      if (backdrop) { try { backdrop.click(); agiuJs = true; return { agiuJs, etapa: 'backdrop' } } catch {} }
+
+      return { agiuJs, etapa: null }
+    }).catch(() => ({ agiuJs: false }))
+
+    if (ret.agiuJs) { agiu = true; await page.waitForTimeout(300) }
 
     if (!agiu) break
   }
+
+  // NUCLEAR: força fechamento de qualquer overlay que ainda esteja
+  // bloqueando. Remove pointer-events do backdrop, oculta panes que
+  // contenham modais customizados (modal-header-content, mat-expansion-
+  // panel) e limpa atributos aria-hidden/disabled que possam manter
+  // os campos do form bloqueados.
+  await page.evaluate(() => {
+    // 1) Backdrop transparente — não bloqueia mais cliques
+    document.querySelectorAll('.cdk-overlay-backdrop, .cdk-overlay-backdrop-showing').forEach(b => {
+      b.classList.remove('cdk-overlay-backdrop-showing')
+      b.style.pointerEvents = 'none'
+      b.style.display = 'none'
+    })
+    // 2) Panes que contenham modal-header-content (FIPE selector etc)
+    //    ou mat-expansion-panel — claramente não são overlays de mat-select.
+    document.querySelectorAll('.cdk-overlay-pane').forEach(pane => {
+      const ehSelectMat = pane.querySelector('.mat-mdc-select-panel, .mat-mdc-autocomplete-panel')
+      if (ehSelectMat) return // mantém panes de mat-select abertos
+      const ehModalCustom = pane.querySelector('.modal-header-content, mat-expansion-panel, [matsort]')
+      if (ehModalCustom) {
+        pane.style.display = 'none'
+        pane.style.pointerEvents = 'none'
+      }
+    })
+    // 3) cdk-overlay-container inteiro: se NÃO tiver mat-select panel ativo,
+    //    zera pointer-events pra liberar o resto da página
+    const cont = document.querySelector('.cdk-overlay-container')
+    if (cont && !cont.querySelector('.mat-mdc-select-panel, .mat-mdc-autocomplete-panel')) {
+      cont.style.pointerEvents = 'none'
+    }
+  }).catch(() => {})
 }
 
 // ─── Helpers genéricos de preenchimento ──────────────────────────────
@@ -266,26 +322,72 @@ async function primeiroSeletor(page, seletores) {
 // Aggilizador usa Angular Material com `formcontrolname` ou `name` no input.
 async function preencher(page, nomes, valor) {
   if (valor === undefined || valor === null || valor === '') return false
+  // IMPORTANTE: prioriza name e id sobre formcontrolname.
+  // Segurado e condutor têm formcontrolname iguais (cpfCnpj, nome, dataNasc)
+  // mas names diferentes (cpfCnpj vs perfilCpfCnpj). Se procurarmos
+  // formcontrolname primeiro, sempre acertamos o do segurado por engano.
   const candidatos = []
   for (const n of nomes) {
-    candidatos.push(`input[formcontrolname="${n}"]`)
     candidatos.push(`input[name="${n}"]`)
     candidatos.push(`input[id="${n}"]`)
+  }
+  for (const n of nomes) {
+    candidatos.push(`input[formcontrolname="${n}"]`)
   }
   const sel = await primeiroSeletor(page, candidatos)
   if (!sel) {
     log.debug('Campo não encontrado', { nomes })
     return false
   }
+
+  // Pula campos disabled (relacaoSegurado=Próprio desabilita campos do
+  // condutor; placa errada desabilita anoMod, etc) — tentar preencher
+  // gera page.fill timeout 15s sem benefício.
+  const desabilitado = await page.evaluate((s) => {
+    const el = document.querySelector(s)
+    if (!el) return false
+    return el.disabled || el.getAttribute('aria-disabled') === 'true' || el.readOnly
+  }, sel).catch(() => false)
+  if (desabilitado) {
+    log.debug('Campo desabilitado — pulando', { sel })
+    return false
+  }
+
   try {
     await page.fill(sel, '')
     await page.fill(sel, String(valor))
-    // Disparar blur pra Angular reagir e validar
-    await page.locator(sel).first().blur().catch(() => {})
+    await page.evaluate((s) => {
+      const el = document.querySelector(s)
+      if (!el) return
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      el.dispatchEvent(new Event('blur', { bubbles: true }))
+    }, sel).catch(() => {})
     return true
   } catch (err) {
-    log.warn('Falha ao preencher', { sel, erro: err.message })
-    return false
+    // Fallback: preenche via evaluate quando overlay bloqueia page.fill
+    log.debug('page.fill falhou, tentando via DOM', { sel, erro: err.message })
+    try {
+      const ok = await page.evaluate(({ sel, valor }) => {
+        const el = document.querySelector(sel)
+        if (!el) return false
+        const proto = Object.getPrototypeOf(el)
+        const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+        const setter = desc && desc.set
+        if (setter) setter.call(el, '')
+        else el.value = ''
+        if (setter) setter.call(el, String(valor))
+        else el.value = String(valor)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        el.dispatchEvent(new Event('blur', { bubbles: true }))
+        return true
+      }, { sel, valor })
+      return !!ok
+    } catch (e2) {
+      log.warn('Falha ao preencher (DOM fallback)', { sel, erro: e2.message })
+      return false
+    }
   }
 }
 
@@ -293,15 +395,51 @@ async function preencher(page, nomes, valor) {
 async function lerCampo(page, nomes) {
   const candidatos = []
   for (const n of nomes) {
-    candidatos.push(`input[formcontrolname="${n}"]`)
     candidatos.push(`input[name="${n}"]`)
     candidatos.push(`input[id="${n}"]`)
+  }
+  for (const n of nomes) {
+    candidatos.push(`input[formcontrolname="${n}"]`)
   }
   const sel = await primeiroSeletor(page, candidatos)
   if (!sel) return null
   try {
     return await page.inputValue(sel)
   } catch { return null }
+}
+
+// Preenche um input quando ele NÃO tem name/formcontrolname identificáveis.
+// Localiza pelo texto do label associado (label[for=...] com `texto`) e
+// preenche o input cujo id bate. Útil pra "Comissão Padrão %" e similares.
+async function preencherPorLabel(page, textoLabel, valor) {
+  if (valor === undefined || valor === null || valor === '') return false
+  try {
+    const ok = await page.evaluate(({ textoLabel, valor }) => {
+      const norm = (s) => (s || '').toString().trim().toLowerCase()
+      const alvo = norm(textoLabel)
+      const labels = Array.from(document.querySelectorAll('label[for]'))
+      const lbl = labels.find(l => norm(l.innerText).startsWith(alvo))
+      if (!lbl) return false
+      const id = lbl.getAttribute('for')
+      const input = id && document.getElementById(id)
+      if (!input || input.tagName !== 'INPUT') return false
+      // Preenche e dispara eventos pro Angular reagir
+      input.focus()
+      const proto = Object.getPrototypeOf(input)
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set
+      if (setter) setter.call(input, String(valor))
+      else input.value = String(valor)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      input.dispatchEvent(new Event('blur', { bubbles: true }))
+      return true
+    }, { textoLabel, valor })
+    if (!ok) log.debug('Label/input não encontrado em preencherPorLabel', { textoLabel })
+    return ok
+  } catch (err) {
+    log.warn('Erro em preencherPorLabel', { textoLabel, erro: err.message })
+    return false
+  }
 }
 
 // Lê o valor exibido em um mat-select (Angular Material).
@@ -340,13 +478,16 @@ async function selecionar(page, nomes, valor) {
     try { await page.selectOption(selNativo, { value: v }); return true } catch {}
   }
 
-  // 2) Tenta como mat-select (Angular Material)
+  // 2) Tenta como mat-select (Angular Material).
+  // Prioriza name/id sobre formcontrolname, pelos mesmos motivos do preencher
+  // (segurado e condutor têm formcontrolname iguais em alguns campos).
   const candidatosMat = []
   for (const n of nomes) {
     candidatosMat.push(`mat-select[name="${n}"]`)
     candidatosMat.push(`mat-select[id="${n}"]`)
+  }
+  for (const n of nomes) {
     candidatosMat.push(`mat-select[formcontrolname="${n}"]`)
-    candidatosMat.push(`[formcontrolname="${n}"] mat-select`)
   }
   const selMat = await primeiroSeletor(page, candidatosMat)
   if (!selMat) {
@@ -355,43 +496,140 @@ async function selecionar(page, nomes, valor) {
   }
 
   try {
-    // Fecha qualquer dropdown anterior cujo backdrop ainda esteja na tela
-    // (o cdk-overlay-backdrop intercepta cliques nos próximos mat-selects).
+    // Garante que nenhum dropdown anterior tem o backdrop aberto
+    // (se tiver, o cdk-overlay-backdrop intercepta os próximos cliques
+    // E as opções antigas continuam no DOM, fazendo o robô clicar
+    // numa opção do select errado).
+    await page.evaluate(() => {
+      const backs = document.querySelectorAll('.cdk-overlay-backdrop')
+      backs.forEach(b => { try { b.click() } catch (e) {} })
+    }).catch(() => {})
     await page.keyboard.press('Escape').catch(() => {})
+
+    // Espera o overlay/painel anterior sair do DOM antes de abrir o novo
+    await page.waitForFunction(
+      () => document.querySelectorAll('.mat-mdc-select-panel, .cdk-overlay-backdrop-showing').length === 0,
+      { timeout: 2000 }
+    ).catch(() => {})
     await page.waitForTimeout(150)
-    // Click com force: true ignora o backdrop, evitando o erro
-    // "subtree intercepts pointer events".
-    await page.click(selMat, { timeout: 8000, force: true })
-    await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
-    // Lista as opções e tenta achar match
-    const opcoes = await page.$$('mat-option, .mat-mdc-option')
-    let clicou = false
-    for (const opt of opcoes) {
-      const txt = (await opt.textContent().catch(() => '') || '').trim()
-      const txtLower = txt.toLowerCase()
-      if (txtLower === vLower) {
-        await opt.click({ force: true }).catch(() => {})
-        clicou = true; break
-      }
-    }
-    // Se não achou exato, tenta contém
-    if (!clicou) {
-      for (const opt of opcoes) {
-        const txt = (await opt.textContent().catch(() => '') || '').trim()
-        const txtLower = txt.toLowerCase()
-        if (txtLower.includes(vLower) || vLower.includes(txtLower)) {
-          await opt.click({ force: true }).catch(() => {})
-          clicou = true; break
-        }
-      }
-    }
-    if (!clicou) {
-      // Fecha o dropdown
-      await page.keyboard.press('Escape').catch(() => {})
-      log.warn('Opção não encontrada no mat-select', { nomes, valor: v })
+
+    // Abre o mat-select disparando eventos no DOM —
+    // assim o Playwright não bloqueia por causa do backdrop ainda visível.
+    // Angular Material listens for pointerdown/mousedown — só .click() não basta.
+    const abriu = await page.evaluate((sel) => {
+      const el = document.querySelector(sel)
+      if (!el) return 'nao-encontrado'
+      // Detecta disabled em todas as formas que Angular Material usa
+      const desab = el.getAttribute('aria-disabled') === 'true'
+                 || el.classList.contains('mat-mdc-select-disabled')
+                 || el.classList.contains('mat-select-disabled')
+                 || el.hasAttribute('disabled')
+                 || el.getAttribute('tabindex') === '-1'
+      if (desab) return 'disabled'
+      el.scrollIntoView({ block: 'center', behavior: 'instant' })
+      const trigger = el.querySelector('.mat-mdc-select-trigger') || el
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { trigger.dispatchEvent(new PointerEvent('pointerdown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mouseup', opts)) } catch (e) {}
+      try { trigger.click() } catch (e) {}
+      return 'ok'
+    }, selMat)
+
+    if (abriu === 'disabled') {
+      log.debug('mat-select está desabilitado — pulando', { nomes, valor: v })
       return false
     }
-    await page.waitForTimeout(300)
+    if (abriu !== 'ok') { log.warn('mat-select não encontrado', { nomes }); return false }
+
+    // Espera o NOVO painel aparecer (aria-expanded=true no select clicado).
+    // Se em 2.5s não abriu, provavelmente o select estava disabled mas
+    // não declarou — não vale a pena perder mais tempo.
+    try {
+      await page.waitForFunction(
+        (s) => {
+          const el = document.querySelector(s)
+          return el && el.getAttribute('aria-expanded') === 'true'
+        },
+        selMat,
+        { timeout: 2500 }
+      )
+    } catch {
+      log.debug('mat-select não abriu (provavelmente disabled silencioso) — pulando', { nomes, valor: v })
+      return false
+    }
+
+    // Pega as opções do painel CORRENTE — não usa $$('mat-option') geral
+    // pois pode pegar opções de painéis ainda não removidos do DOM.
+    // Estratégia: pega o overlay-pane que NÃO tem display:none e está visível agora.
+    const opcoes = await page.evaluate((vLower) => {
+      // Acha o mat-mdc-select-panel visível (o último mounted normalmente)
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => {
+          const r = p.getBoundingClientRect()
+          return r.width > 0 && r.height > 0 && getComputedStyle(p).display !== 'none'
+        })
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return { painel: false, items: [] }
+      const items = Array.from(painel.querySelectorAll('mat-option, .mat-mdc-option'))
+        .map((o, idx) => ({ idx, txt: (o.textContent || '').trim() }))
+      return { painel: true, items }
+    }, vLower)
+
+    if (!opcoes.painel) {
+      log.warn('Painel de opções não apareceu', { nomes, valor: v })
+      await page.keyboard.press('Escape').catch(() => {})
+      return false
+    }
+
+    // Match exato → contém → primeira palavra (tolerante a "Compreensivo (...)" vs "Compreensiva")
+    function normLocal(s) {
+      return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+    }
+    function tokenMatch(a, b) {
+      const na = normLocal(a)
+      const nb = normLocal(b)
+      if (!na || !nb) return false
+      if (na === nb) return true
+      if (na.includes(nb) || nb.includes(na)) return true
+      // Primeira palavra (sem parênteses) — útil pra "Compreensivo (Colisão...)" → "Compreensiva"
+      const wa = na.replace(/\(.*?\)/g, '').trim().split(/\s+/)[0]
+      const wb = nb.replace(/\(.*?\)/g, '').trim().split(/\s+/)[0]
+      if (wa.length >= 5 && wb.length >= 5) {
+        const min = Math.min(wa.length, wb.length)
+        const overlap = wa.slice(0, min - 1) === wb.slice(0, min - 1) // tolera diferença na última letra
+        if (overlap) return true
+      }
+      return false
+    }
+
+    let match = opcoes.items.find(o => normLocal(o.txt) === vLower)
+    if (!match) match = opcoes.items.find(o => tokenMatch(o.txt, v))
+    if (!match) {
+      await page.keyboard.press('Escape').catch(() => {})
+      log.warn('Opção não encontrada no mat-select', {
+        nomes, valor: v,
+        disponiveis: opcoes.items.map(i => i.txt).slice(0, 10)
+      })
+      return false
+    }
+
+    // Clica na opção do painel CORRENTE pelo índice
+    await page.evaluate((idx) => {
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => p.getBoundingClientRect().width > 0)
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return
+      const items = painel.querySelectorAll('mat-option, .mat-mdc-option')
+      const opt = items[idx]
+      if (opt) {
+        const o = { bubbles: true, cancelable: true, view: window, button: 0 }
+        try { opt.dispatchEvent(new PointerEvent('pointerdown', o)) } catch (e) {}
+        try { opt.dispatchEvent(new MouseEvent('mousedown', o)) } catch (e) {}
+        try { opt.click() } catch (e) {}
+      }
+    }, match.idx)
+    await page.waitForTimeout(350)
     return true
   } catch (err) {
     log.warn('Erro ao selecionar mat-select', { nomes, erro: err.message })
@@ -400,8 +638,9 @@ async function selecionar(page, nomes, valor) {
   }
 }
 
-// Seleciona o n-ésimo mat-select que match um nome (útil quando há
-// vários mat-select com o mesmo `name`, ex: sexo do segurado e do condutor).
+// Seleciona o n-ésimo mat-select que match um nome — usando a mesma
+// lógica robusta do selecionar() (dispatch via DOM). Bypassa overlays
+// que bloqueariam page.click().
 async function selecionarPorIndex(page, name, index, valor) {
   if (valor === undefined || valor === null || valor === '') return false
   const v = String(valor).trim()
@@ -412,24 +651,150 @@ async function selecionarPorIndex(page, name, index, valor) {
     log.debug('mat-select index fora do range', { name, index, total: matches.length })
     return false
   }
+
   try {
-    await matches[index].click({ timeout: 5000 })
-    await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
-    const opcoes = await page.$$('mat-option, .mat-mdc-option')
-    for (const opt of opcoes) {
-      const txt = (await opt.textContent().catch(() => '') || '').trim().toLowerCase()
-      if (txt === vLower || txt.includes(vLower) || vLower.includes(txt)) {
-        await opt.click({ force: true }).catch(() => {})
-        await page.waitForTimeout(300)
-        return true
-      }
+    // Limpa overlays anteriores
+    await page.evaluate(() => {
+      document.querySelectorAll('.cdk-overlay-backdrop').forEach(b => { try { b.click() } catch (e) {} })
+    }).catch(() => {})
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(150)
+
+    // Abre via DOM no índice específico
+    const abriu = await page.evaluate(({ name, index }) => {
+      const els = document.querySelectorAll(`mat-select[name="${name}"]`)
+      const el = els[index]
+      if (!el) return 'nao-encontrado'
+      const desab = el.getAttribute('aria-disabled') === 'true'
+                 || el.classList.contains('mat-mdc-select-disabled')
+                 || el.classList.contains('mat-select-disabled')
+                 || el.hasAttribute('disabled')
+      if (desab) return 'disabled'
+      el.scrollIntoView({ block: 'center', behavior: 'instant' })
+      const trigger = el.querySelector('.mat-mdc-select-trigger') || el
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { trigger.dispatchEvent(new PointerEvent('pointerdown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+      try { trigger.click() } catch (e) {}
+      return 'ok'
+    }, { name, index })
+
+    if (abriu === 'disabled') { log.debug('mat-select por idx desabilitado', { name, index }); return false }
+    if (abriu !== 'ok') { log.debug('mat-select por idx não encontrado', { name, index }); return false }
+
+    // Espera painel abrir
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]').length > 0,
+        { timeout: 2500 }
+      )
+    } catch {
+      log.debug('Painel não apareceu (selecionarPorIndex)', { name, index })
+      return false
     }
-    await page.keyboard.press('Escape').catch(() => {})
+
+    // Pega opções do painel mais recente
+    const ret = await page.evaluate((vLower) => {
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => p.getBoundingClientRect().width > 0)
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return { ok: false }
+      const items = Array.from(painel.querySelectorAll('mat-option, .mat-mdc-option'))
+      const idx = items.findIndex(o => (o.textContent || '').trim().toLowerCase() === vLower)
+      const idxLoose = idx >= 0 ? idx : items.findIndex(o => {
+        const t = (o.textContent || '').trim().toLowerCase()
+        return t.includes(vLower) || vLower.includes(t)
+      })
+      if (idxLoose < 0) return { ok: false, items: items.map(i => (i.textContent || '').trim()).slice(0, 8) }
+      const o = items[idxLoose]
+      const ev = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { o.dispatchEvent(new PointerEvent('pointerdown', ev)) } catch (e) {}
+      try { o.dispatchEvent(new MouseEvent('mousedown', ev)) } catch (e) {}
+      try { o.click() } catch (e) {}
+      return { ok: true }
+    }, vLower)
+
+    if (!ret.ok) {
+      await page.keyboard.press('Escape').catch(() => {})
+      log.warn('Opção não encontrada (selecionarPorIndex)', { name, index, valor: v, disponiveis: ret.items })
+      return false
+    }
+    await page.waitForTimeout(350)
+    return true
   } catch (err) {
-    log.warn('Erro selecionarPorIndex', { name, erro: err.message })
+    log.warn('Erro selecionarPorIndex', { name, index, erro: err.message })
     await page.keyboard.press('Escape').catch(() => {})
+    return false
   }
-  return false
+}
+
+// Seleciona a PRIMEIRA opção disponível em um mat-select.
+// Útil pra campos required que aparecem em alguns veículos (utilitário/
+// caminhão) sem valor default — só precisamos satisfazer a validação.
+async function selecionarPrimeiraOpcaoDisponivel(page, nomes) {
+  const candidatos = []
+  for (const n of nomes) {
+    candidatos.push(`mat-select[name="${n}"]`)
+    candidatos.push(`mat-select[id="${n}"]`)
+    candidatos.push(`mat-select[formcontrolname="${n}"]`)
+  }
+  const sel = await primeiroSeletor(page, candidatos)
+  if (!sel) return false
+
+  try {
+    await page.evaluate(() => {
+      document.querySelectorAll('.cdk-overlay-backdrop').forEach(b => { try { b.click() } catch (e) {} })
+    }).catch(() => {})
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(150)
+
+    const abriu = await page.evaluate((s) => {
+      const el = document.querySelector(s)
+      if (!el) return 'nao-encontrado'
+      const desab = el.getAttribute('aria-disabled') === 'true'
+                 || el.classList.contains('mat-mdc-select-disabled')
+                 || el.hasAttribute('disabled')
+      if (desab) return 'disabled'
+      el.scrollIntoView({ block: 'center', behavior: 'instant' })
+      const trigger = el.querySelector('.mat-mdc-select-trigger') || el
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { trigger.dispatchEvent(new PointerEvent('pointerdown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+      try { trigger.click() } catch (e) {}
+      return 'ok'
+    }, sel)
+
+    if (abriu !== 'ok') return false
+
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]').length > 0,
+        { timeout: 2500 }
+      )
+    } catch { return false }
+
+    const ok = await page.evaluate(() => {
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => p.getBoundingClientRect().width > 0)
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return false
+      const items = painel.querySelectorAll('mat-option, .mat-mdc-option')
+      const primeira = items[0]
+      if (!primeira) return false
+      const ev = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { primeira.dispatchEvent(new PointerEvent('pointerdown', ev)) } catch (e) {}
+      try { primeira.dispatchEvent(new MouseEvent('mousedown', ev)) } catch (e) {}
+      try { primeira.click() } catch (e) {}
+      return true
+    })
+
+    await page.waitForTimeout(300)
+    return ok
+  } catch (err) {
+    log.debug('selecionarPrimeiraOpcaoDisponivel falhou', { nomes, erro: err.message })
+    await page.keyboard.press('Escape').catch(() => {})
+    return false
+  }
 }
 
 async function clicarProximo(page) {
@@ -464,6 +829,125 @@ async function clicarCalcular(page) {
   return false
 }
 
+// Verifica se o formulário tem erros de validação ou campos obrigatórios vazios.
+// Retorna { ok, problemas: [{ campo, motivo, valor }] }.
+// Heurística baseada em Angular Material (mat-form-field-invalid, mat-error,
+// ng-invalid, aria-invalid). Sempre devolve algo — se não encontrar, ok=true.
+async function verificarErrosFormulario(page) {
+  try {
+    return await page.evaluate(() => {
+      const problemas = []
+      const norm = (s) => (s || '').toString().trim().replace(/\s+/g, ' ')
+
+      // Função pra achar o "label" do campo: matFormField label, label[for],
+      // placeholder, ou label visível mais próximo
+      function rotuloDoCampo(el) {
+        // 1) Sobe até o mat-form-field e pega o mat-label
+        const mff = el.closest('mat-form-field, .mat-form-field, .mat-mdc-form-field')
+        if (mff) {
+          const lbl = mff.querySelector('mat-label, .mat-mdc-floating-label, .mat-form-field-label')
+          if (lbl && lbl.innerText) return norm(lbl.innerText)
+        }
+        // 2) label[for=id]
+        if (el.id) {
+          const lblFor = document.querySelector(`label[for="${el.id}"]`)
+          if (lblFor) return norm(lblFor.innerText)
+        }
+        // 3) placeholder ou aria-label
+        return norm(el.getAttribute('aria-label') || el.placeholder || el.name || el.id || el.tagName)
+      }
+
+      // 1) Campos com classes/atributos de inválido
+      const invalidos = Array.from(document.querySelectorAll(
+        '.mat-form-field-invalid input, .mat-form-field-invalid mat-select, ' +
+        '.ng-invalid.ng-touched:not(form):not([formgroup]), ' +
+        '[aria-invalid="true"]'
+      ))
+      const vistos = new Set()
+      for (const el of invalidos) {
+        const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
+        if (vistos.has(rotulo)) continue
+        vistos.add(rotulo)
+        const valor = (el.value || el.innerText || '').toString().slice(0, 40)
+        problemas.push({ campo: rotulo, motivo: 'inválido', valor })
+      }
+
+      // 2) Mensagens de erro renderizadas (mat-error, .error-message)
+      const erros = Array.from(document.querySelectorAll('mat-error, .mat-mdc-form-field-error, .mat-error, .error-message, .field-error'))
+      for (const el of erros) {
+        const txt = norm(el.innerText)
+        if (!txt) continue
+        const mff = el.closest('mat-form-field, .mat-form-field, .mat-mdc-form-field')
+        let rotulo = '(sem rótulo)'
+        if (mff) {
+          const lbl = mff.querySelector('mat-label, .mat-mdc-floating-label')
+          if (lbl) rotulo = norm(lbl.innerText)
+        }
+        if (vistos.has(rotulo + ':' + txt)) continue
+        vistos.add(rotulo + ':' + txt)
+        problemas.push({ campo: rotulo, motivo: txt, valor: '' })
+      }
+
+      // 3) Inputs obrigatórios visíveis sem valor
+      const inputsObrig = Array.from(document.querySelectorAll('input[required], select[required], textarea[required]'))
+      for (const el of inputsObrig) {
+        if (el.disabled) continue
+        const visivel = el.offsetParent !== null || (el.getBoundingClientRect && el.getBoundingClientRect().height > 0)
+        if (!visivel) continue
+        const v = (el.value || '').toString().trim()
+        if (v) continue
+        const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
+        if (vistos.has(rotulo + ':obrig')) continue
+        vistos.add(rotulo + ':obrig')
+        problemas.push({ campo: rotulo, motivo: 'obrigatório vazio', valor: '' })
+      }
+
+      // 4) mat-select obrigatórios visíveis sem valor (Angular Material usa
+      //    .mat-mdc-select-required em vez de attr [required], e o valor real
+      //    fica em .mat-mdc-select-value-text dentro do componente)
+      const matSelObrig = Array.from(document.querySelectorAll(
+        'mat-select.mat-mdc-select-required, mat-select[aria-required="true"]'
+      ))
+      for (const el of matSelObrig) {
+        // Pula desabilitados — esperado ficarem vazios
+        if (el.classList.contains('mat-mdc-select-disabled')
+            || el.getAttribute('aria-disabled') === 'true') continue
+        const visivel = el.offsetParent !== null || (el.getBoundingClientRect && el.getBoundingClientRect().height > 0)
+        if (!visivel) continue
+        // Lê valor exibido
+        const valEl = el.querySelector('.mat-mdc-select-value-text, .mat-select-value-text')
+        const v = (valEl ? valEl.innerText : '').trim()
+        // mat-select-empty é sinal explícito que não tem valor
+        const ehVazio = !v || el.classList.contains('mat-mdc-select-empty')
+        if (!ehVazio) continue
+        const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
+        if (vistos.has(rotulo + ':obrig')) continue
+        vistos.add(rotulo + ':obrig')
+        problemas.push({ campo: rotulo, motivo: 'obrigatório vazio', valor: '' })
+      }
+
+      return { ok: problemas.length === 0, problemas }
+    })
+  } catch (err) {
+    return { ok: true, problemas: [], aviso: 'falha ao escanear: ' + err.message }
+  }
+}
+
+// Tenta forçar o "blur" em todos os campos pra que o Angular marque os
+// inválidos antes de inspecionar (mat-form-field só fica invalid após touched).
+async function forcarValidacao(page) {
+  try {
+    await page.evaluate(() => {
+      const els = document.querySelectorAll('input, mat-select, select, textarea')
+      for (const el of els) {
+        try {
+          el.dispatchEvent(new Event('blur', { bubbles: true }))
+        } catch {}
+      }
+    })
+  } catch {}
+}
+
 // Tenta extrair preço/parcelas/seguradora da tela de resultado em formato JSON.
 // Heurística: pega blocos com "R$", "parcela", "seguradora". Sempre devolve algo,
 // mesmo que parcial — o screenshot é o backup oficial.
@@ -478,8 +962,14 @@ async function extrairResultado(page) {
       let m
       while ((m = REGEX_VALOR.exec(txt)) !== null) precos.push(m[1])
 
-      // Detectar seguradoras conhecidas no texto
-      const NOMES = ['Porto Seguro','Bradesco','Allianz','HDI','Tokio','Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali','Yelum']
+      // Detectar seguradoras conhecidas no texto (lista expandida com base
+      // no painel do aggilizador do cliente)
+      const NOMES = [
+        'Porto Seguro','Bradesco','Allianz','HDI','Tokio Marine','Tokio',
+        'Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali',
+        'Yelum','Pier','Sancor','Suhai','Mitsui','Justos','Darwin','Ezze',
+        'Novo Seguros','Novo','Usebens','Youse','Zurich'
+      ]
       for (const n of NOMES) if (txt.includes(n) && !seguradoras.includes(n)) seguradoras.push(n)
 
       const parcelaMatch = txt.match(/(\d+)\s*x\s*de\s*R\$\s*([\d.]+,\d{2})/i)
@@ -499,7 +989,10 @@ async function extrairResultado(page) {
 
 module.exports = {
   URL, login, logout, abrirCotacaoAuto,
-  preencher, selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
+  preencher, preencherPorLabel,
+  selecionar, selecionarPorIndex, selecionarPrimeiraOpcaoDisponivel,
+  lerCampo, lerMatSelect,
   clicarProximo, clicarCalcular, extrairResultado,
-  primeiroSeletor,
+  verificarErrosFormulario, forcarValidacao,
+  primeiroSeletor, dismissarOverlays,
 }
