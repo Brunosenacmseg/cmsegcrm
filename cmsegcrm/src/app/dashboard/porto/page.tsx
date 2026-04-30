@@ -18,7 +18,7 @@ function UploadArquivoPorto({ onUpload, disabled }: { onUpload: (file: File, tip
   const [tipo, setTipo] = useState<string>('AUTO')
   const inp: React.CSSProperties = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
   const tamanhoMB = file ? (file.size / 1024 / 1024).toFixed(2) : '0'
-  const grande = file && file.size > 4 * 1024 * 1024
+  const viaStorage = file && file.size > 3 * 1024 * 1024
   return (
     <div>
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
@@ -32,14 +32,14 @@ function UploadArquivoPorto({ onUpload, disabled }: { onUpload: (file: File, tip
           <option value="SINISTRO">Sinistro (.SI2)</option>
           <option value="COMISSOES">Comissões (.COM)</option>
         </select>
-        <button onClick={()=>{ if (file) onUpload(file, tipo === 'AUTO' ? '' : tipo) }} disabled={!file || disabled || !!grande}
-          className="btn-primary" style={{padding:'7px 18px',fontSize:13, opacity: !file || grande ? 0.5 : 1}}>
+        <button onClick={()=>{ if (file) onUpload(file, tipo === 'AUTO' ? '' : tipo) }} disabled={!file || disabled}
+          className="btn-primary" style={{padding:'7px 18px',fontSize:13, opacity: !file ? 0.5 : 1}}>
           {disabled ? '⏳ Processando...' : '📤 Enviar e processar'}
         </button>
       </div>
       {file && (
-        <div style={{marginTop:10, fontSize:11, color: grande ? 'var(--red)' : 'var(--text-muted)'}}>
-          📄 {file.name} · {tamanhoMB} MB {grande && ' — ❌ Maior que 4 MB. Vercel limita o body. Comprima ou divida.'}
+        <div style={{marginTop:10, fontSize:11, color: 'var(--text-muted)'}}>
+          📄 {file.name} · {tamanhoMB} MB {viaStorage && ' — usará Supabase Storage (arquivo grande)'}
         </div>
       )}
     </div>
@@ -199,36 +199,70 @@ export default function PortoIntegracaoPage() {
     setSincronizando(true); setResultado(null)
     try {
       const tamanhoMB = file.size / 1024 / 1024
-      if (tamanhoMB > 4) {
-        setResultado({ erro: `Arquivo muito grande (${tamanhoMB.toFixed(1)} MB). Limite é 4 MB. Comprime ou divide o arquivo.` })
-        return
-      }
+      const usaStorage = file.size > 3 * 1024 * 1024 // > 3MB → vai por storage
+      console.log('[upload] tamanho', tamanhoMB.toFixed(2), 'MB, via storage:', usaStorage)
 
-      const buf = await file.arrayBuffer()
-      const decoder = new TextDecoder('latin1')
-      const conteudo = decoder.decode(buf)
-      console.log('[upload] arquivo lido, chars:', conteudo.length)
+      if (usaStorage) {
+        // Upload direto pro Supabase Storage (sem passar pela função serverless)
+        const path = `porto-uploads/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+        console.log('[upload] enviando ao storage:', path)
+        const { error: upErr } = await supabase.storage.from('cmsegcrm').upload(path, file, {
+          upsert: true, contentType: 'application/octet-stream',
+        })
+        if (upErr) {
+          setResultado({ erro: `Erro no upload pro storage: ${upErr.message}` })
+          return
+        }
+        console.log('[upload] storage ok, processando no backend')
 
-      const r = await fetch('/api/porto/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'processar_upload',
-          conteudo,
-          nome_arquivo: file.name,
-          tipo_forcado: tipoForcado,
-        }),
-      })
-      console.log('[upload] resposta HTTP', r.status)
+        const r = await fetch('/api/porto/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'processar_upload',
+            storage_path: path,
+            nome_arquivo: file.name,
+            tipo_forcado: tipoForcado,
+          }),
+        })
+        console.log('[upload] resposta HTTP', r.status)
+        let d: any = null
+        try { d = await r.json() } catch { d = { error: `HTTP ${r.status} sem JSON` } }
+        console.log('[upload] resposta body:', d)
 
-      let d: any = null
-      try { d = await r.json() } catch { d = { error: `HTTP ${r.status} sem JSON na resposta` } }
-      console.log('[upload] resposta body:', d)
+        // Limpa o arquivo do storage depois de processar
+        await supabase.storage.from('cmsegcrm').remove([path]).catch(()=>{})
 
-      if (!r.ok || d.error) {
-        setResultado({ erro: d?.error || `HTTP ${r.status}` })
+        if (!r.ok || d.error) {
+          setResultado({ erro: d?.error || `HTTP ${r.status}` })
+        } else {
+          setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
+        }
       } else {
-        setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
+        // Inline (rápido): manda o conteúdo direto no body
+        const buf = await file.arrayBuffer()
+        const conteudo = new TextDecoder('latin1').decode(buf)
+        console.log('[upload] arquivo lido inline, chars:', conteudo.length)
+
+        const r = await fetch('/api/porto/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'processar_upload',
+            conteudo,
+            nome_arquivo: file.name,
+            tipo_forcado: tipoForcado,
+          }),
+        })
+        let d: any = null
+        try { d = await r.json() } catch { d = { error: `HTTP ${r.status} sem JSON` } }
+        console.log('[upload] resposta body:', d)
+
+        if (!r.ok || d.error) {
+          setResultado({ erro: d?.error || `HTTP ${r.status}` })
+        } else {
+          setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
+        }
       }
       await carregarHistorico(); await carregarStats()
     } catch (err: any) {
