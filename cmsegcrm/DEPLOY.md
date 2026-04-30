@@ -91,6 +91,16 @@ Para importar contatos, funis, negócios e atividades do RD Station CRM:
 
 A importação é idempotente — pode ser executada quantas vezes precisar; registros existentes (mesmo `rd_id`) são atualizados em vez de duplicados. Ordem recomendada: usuários → funis → contatos → negócios → atividades (o botão "Importar tudo" já segue essa ordem).
 
+### Sincronização em tempo real (webhook)
+
+Para que mudanças no RD Station apareçam aqui automaticamente:
+
+1. Adicione mais uma env var na Vercel: `RDSTATION_WEBHOOK_SECRET` = qualquer valor secreto (uma senha forte de 32+ caracteres aleatórios)
+2. Faça redeploy
+3. No CRM, abra **Integrações → RD Station CRM**, copie a URL do webhook (substituindo `SEU_SECRET` pelo valor da env var)
+4. No RD Station CRM, vá em **Configurações → Integrações → Webhooks** e cadastre essa URL com os eventos: `deal_updated`, `deal_won`, `deal_lost`, `deal_created`, `deal_deleted`, `contact_updated`, `contact_created`
+5. Pronto — qualquer movimentação de negócio no RD será refletida aqui em segundos
+
 ---
 
 ## Suporte

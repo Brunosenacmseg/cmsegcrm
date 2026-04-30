@@ -104,6 +104,34 @@ export default function RDStationPage() {
       <div style={{ flex: 1, overflow: 'auto', padding: '28px' }}>
         <div style={{ maxWidth: 980, margin: '0 auto' }}>
 
+          {/* Webhook — sincronização em tempo real */}
+          <div className="card" style={{ marginBottom: 20, background: 'linear-gradient(135deg, rgba(28,181,160,0.08), rgba(74,128,240,0.06))' }}>
+            <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 16, marginBottom: 8 }}>⚡ Sincronização em tempo real (Webhook)</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.6 }}>
+              Configure no RD Station para que mudanças em negócios e contatos sejam refletidas aqui automaticamente, sem precisar rodar "Importar tudo" toda hora.
+            </div>
+            <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--gold)' }}>URL do webhook (cole no RD Station):</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <input readOnly id="webhook-url" value={typeof window !== 'undefined' ? `${window.location.origin}/api/rdstation/webhook?secret=SEU_SECRET` : ''}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+              <button onClick={() => { const i = document.getElementById('webhook-url') as HTMLInputElement; if (i) { i.select(); document.execCommand('copy') } }}
+                style={{ background: 'rgba(28,181,160,0.15)', border: '1px solid rgba(28,181,160,0.4)', borderRadius: 8, padding: '8px 14px', color: 'var(--teal)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontSize: 12 }}>
+                📋 Copiar
+              </button>
+            </div>
+            <details style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--teal)' }}>Como configurar passo-a-passo</summary>
+              <div style={{ marginTop: 10, lineHeight: 1.7 }}>
+                <strong style={{ color: 'var(--text)' }}>1.</strong> Defina a env var <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>RDSTATION_WEBHOOK_SECRET</code> com um valor aleatório (ex: senha forte de 32+ caracteres) na Vercel e faça redeploy.<br/>
+                <strong style={{ color: 'var(--text)' }}>2.</strong> Substitua <code>SEU_SECRET</code> na URL acima pelo valor da env var.<br/>
+                <strong style={{ color: 'var(--text)' }}>3.</strong> No RD Station CRM, vá em <strong>Configurações → Integrações → Webhooks</strong> (ou "API" se for a versão antiga).<br/>
+                <strong style={{ color: 'var(--text)' }}>4.</strong> Crie um novo webhook colando a URL e selecione os eventos: <em>deal_updated, deal_won, deal_lost, deal_created, deal_deleted, contact_updated, contact_created</em>.<br/>
+                <strong style={{ color: 'var(--text)' }}>5.</strong> Salve e teste movendo um negócio no RD — ele deve aparecer atualizado aqui em segundos.<br/>
+                <strong style={{ color: 'var(--text)' }}>6.</strong> Acompanhe o histórico abaixo: cada chamada do RD vira uma linha "webhook:&lt;evento&gt;".
+              </div>
+            </details>
+          </div>
+
           {/* Token */}
           <div className="card" style={{ marginBottom: 20 }}>
             <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 16, marginBottom: 12 }}>🔑 Token de acesso</div>
