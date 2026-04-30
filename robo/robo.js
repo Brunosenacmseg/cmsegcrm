@@ -148,11 +148,31 @@ app.post('/debug-cotacao', async (req, res) => {
     res.json({ ok: true, ...info })
   } catch (err) {
     log.error('Erro em /debug-cotacao', { erro: err.message })
-    let screenshot = null
+    let screenshotPath = null
+    let pageInfo = null
     if (session) {
-      try { screenshot = (await session.page.screenshot({ fullPage: true })).toString('base64') } catch {}
+      try {
+        const dir = process.env.LOG_DIR || './logs'
+        fs.mkdirSync(dir, { recursive: true })
+        screenshotPath = path.join(dir, `debug-cotacao-${Date.now()}.png`)
+        await session.page.screenshot({ path: screenshotPath, fullPage: true })
+        // Captura estrutura da página atual (mesmo se não chegou em /cotacoes)
+        pageInfo = await session.page.evaluate(() => ({
+          url: location.href,
+          title: document.title,
+          texto_visivel: document.body.innerText.slice(0, 800),
+          inputs: Array.from(document.querySelectorAll('input')).slice(0, 15).map(i => ({
+            type: i.type, id: i.id, name: i.name,
+            visible: i.offsetParent !== null,
+          })),
+        })).catch(() => null)
+      } catch {}
     }
-    res.status(500).json({ ok: false, erro: err.message, screenshot_base64_size: screenshot?.length || 0 })
+    res.status(500).json({
+      ok: false, erro: err.message,
+      screenshot_path: screenshotPath,
+      page_info: pageInfo,
+    })
   } finally {
     if (session) await session.close()
   }
