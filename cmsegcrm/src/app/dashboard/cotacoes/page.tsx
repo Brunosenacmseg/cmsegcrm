@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { maskCpfCnpj, maskTelefone, maskCEP, maskPlaca } from '@/lib/masks'
 
 const COMBUSTIVEIS      = ['Flex','Gasolina','Álcool','Diesel','Elétrico','Híbrido','GNV']
 const RASTREADORES      = ['Não Possui','Blink','Autotrac','Sigmatek','OnixSat','Sascar','Outros']
@@ -23,7 +24,9 @@ const ESTADOS_CIVIS     = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)'
 const BOOL_OPTS         = ['Sim','Não']
 const FIPE_OPTS         = ['70%','75%','80%','85%','90%','95%','100%']
 const NOVO_BONUS        = ['0','10','20','30','40','43','50','60']
-const ROBO_URL          = 'http://177.7.38.7:3001'
+// O robô é chamado via proxy server-side (/api/cotacoes/calcular) para evitar
+// mixed content (HTTPS → HTTP) e esconder a URL real do cliente.
+const ROBO_PROXY        = '/api/cotacoes/calcular'
 
 const INP_STYLE: React.CSSProperties = {
   width:'100%', background:'rgba(255,255,255,0.06)', border:'1px solid var(--border)',
@@ -128,6 +131,10 @@ export default function CotacoesPage() {
   function set(field: string) {
     return (v: string) => setForm(f => ({ ...f, [field]: v }))
   }
+  // Variante com máscara aplicada antes de gravar
+  function setMasked(field: string, mask: (v: string) => string) {
+    return (v: string) => setForm(f => ({ ...f, [field]: mask(v) }))
+  }
 
   useEffect(() => { init() }, [])
 
@@ -173,27 +180,73 @@ export default function CotacoesPage() {
       setMsg('❌ Preencha pelo menos: CPF, Nome e Placa'); return
     }
     setCalculando(true); setMsg('')
-    const dados = { ...form, cpf: form.cpf_cnpj.replace(/\D/g,''), nome: form.nome_segurado, nascimento: form.nascimento_segurado, cep: form.cep_residencial.replace(/\D/g,''), placa: form.placa.toUpperCase(), combustivel: form.combustivel.toUpperCase(), cep_pernoite: (form.cep_pernoite||form.cep_residencial).replace(/\D/g,'') }
-    const { data: cot } = await supabase.from('cotacoes').insert({ cliente_id: clienteSel?.id||null, produto:'carro', status:'calculando', user_id: profile?.id, dados, cpf_cnpj: form.cpf_cnpj, nome_segurado: form.nome_segurado, placa: form.placa, modelo: form.modelo, combustivel: form.combustivel, cep_residencial: form.cep_residencial }).select().single()
+    const dados = {
+      ...form,
+      cpf:          form.cpf_cnpj.replace(/\D/g,''),
+      nome:         form.nome_segurado,
+      nascimento:   form.nascimento_segurado,
+      cep:          form.cep_residencial.replace(/\D/g,''),
+      placa:        form.placa.toUpperCase().replace(/\W/g,''),
+      combustivel:  form.combustivel.toUpperCase(),
+      cep_pernoite: (form.cep_pernoite||form.cep_residencial).replace(/\D/g,''),
+    }
+    const { data: cot } = await supabase.from('cotacoes').insert({
+      cliente_id: clienteSel?.id||null, produto:'carro', status:'calculando',
+      user_id: profile?.id, dados,
+      cpf_cnpj: form.cpf_cnpj, nome_segurado: form.nome_segurado,
+      placa: form.placa, modelo: form.modelo, combustivel: form.combustivel,
+      cep_residencial: form.cep_residencial,
+    }).select().single()
+
     try {
-      const res = await fetch(ROBO_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ produto:'carro', dados }) })
-      const resultado = await res.json()
-      let screenshotUrl = null
-      if (resultado.screenshot && cot?.id) {
-        const bs = atob(resultado.screenshot); const ab = new ArrayBuffer(bs.length); const ia = new Uint8Array(ab)
-        for (let i=0;i<bs.length;i++) ia[i]=bs.charCodeAt(i)
-        const blob = new Blob([ab],{type:'image/png'}); const fn = `cotacoes/${cot.id}.png`
-        const { data: up } = await supabase.storage.from('cmsegcrm').upload(fn, blob, {contentType:'image/png',upsert:true})
-        if (up) { const { data: url } = supabase.storage.from('cmsegcrm').getPublicUrl(fn); screenshotUrl = url.publicUrl }
+      const res = await fetch(ROBO_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ produto: 'carro', dados }),
+      })
+      const resultado = await res.json().catch(() => ({}))
+
+      // Erro retornado pelo proxy (robô offline, timeout, etc.)
+      if (!res.ok || resultado.ok === false) {
+        const erroMsg = resultado.error || `HTTP ${res.status}`
+        if (cot?.id) await supabase.from('cotacoes').update({ status: 'erro', dados: { ...dados, erro: erroMsg } }).eq('id', cot.id)
+        setMsg('❌ ' + erroMsg)
+        await carregarCotacoes()
+        return
       }
-      if (cot?.id) await supabase.from('cotacoes').update({ status: resultado.ok?'concluido':'erro', screenshot_url: screenshotUrl }).eq('id', cot.id)
-      setMsg('✅ Cotação enviada!'); setModal(false)
+
+      // Salvar screenshot se vier
+      let screenshotUrl: string | null = null
+      if (resultado.screenshot && cot?.id) {
+        try {
+          const bs = atob(resultado.screenshot)
+          const ab = new ArrayBuffer(bs.length)
+          const ia = new Uint8Array(ab)
+          for (let i = 0; i < bs.length; i++) ia[i] = bs.charCodeAt(i)
+          const blob = new Blob([ab], { type: 'image/png' })
+          const fn = `cotacoes/${cot.id}.png`
+          const { data: up } = await supabase.storage.from('cmsegcrm').upload(fn, blob, { contentType: 'image/png', upsert: true })
+          if (up) {
+            const { data: url } = supabase.storage.from('cmsegcrm').getPublicUrl(fn)
+            screenshotUrl = url.publicUrl
+          }
+        } catch {}
+      }
+
+      if (cot?.id) await supabase.from('cotacoes').update({
+        status: resultado.ok ? 'concluido' : 'erro',
+        screenshot_url: screenshotUrl,
+      }).eq('id', cot.id)
+
+      setMsg(resultado.ok ? '✅ Cotação concluída!' : '⚠ Robô retornou erro')
+      if (resultado.ok) setModal(false)
       await carregarCotacoes()
     } catch (err: any) {
-      if (cot?.id) await supabase.from('cotacoes').update({ status:'erro' }).eq('id', cot.id)
-      setMsg('❌ Erro: ' + err.message)
+      if (cot?.id) await supabase.from('cotacoes').update({ status: 'erro' }).eq('id', cot.id)
+      setMsg('❌ Erro inesperado: ' + (err?.message || 'falha na rede'))
+    } finally {
+      setCalculando(false)
     }
-    setCalculando(false)
   }
 
   const abas = [['segurado','👤 Segurado'],['veiculo','🚗 Veículo'],['condutor','👨 Condutor'],['questionario','📋 Questionário'],['seguro','🛡 Seguro']] as const
@@ -284,27 +337,27 @@ export default function CotacoesPage() {
             <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
               {aba==='segurado' && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <Inp label="CPF / CNPJ *"        value={form.cpf_cnpj}              onChange={set('cpf_cnpj')}              placeholder="000.000.000-00" />
+                  <Inp label="CPF / CNPJ *"        value={form.cpf_cnpj}              onChange={setMasked('cpf_cnpj', maskCpfCnpj)} placeholder="000.000.000-00" />
                   <Inp label="Nome Completo *"      value={form.nome_segurado}         onChange={set('nome_segurado')}         placeholder="Nome completo" />
                   <Inp label="Data de Nascimento *" value={form.nascimento_segurado}   onChange={set('nascimento_segurado')}   type="date" />
                   <Sel label="Sexo *"               value={form.sexo_segurado}         onChange={set('sexo_segurado')}         opts={SEXOS} />
                   <Sel label="Estado Civil *"       value={form.estado_civil_segurado} onChange={set('estado_civil_segurado')} opts={ESTADOS_CIVIS} />
-                  <Inp label="CEP Residencial *"    value={form.cep_residencial}       onChange={set('cep_residencial')}       placeholder="00000-000" />
-                  <Inp label="Telefone"             value={form.telefone}              onChange={set('telefone')}              placeholder="(00) 00000-0000" />
+                  <Inp label="CEP Residencial *"    value={form.cep_residencial}       onChange={setMasked('cep_residencial', maskCEP)} placeholder="00000-000" />
+                  <Inp label="Telefone"             value={form.telefone}              onChange={setMasked('telefone', maskTelefone)} placeholder="(00) 00000-0000" />
                   <Inp label="Email"                value={form.email}                 onChange={set('email')}                 type="email" placeholder="email@email.com" />
                 </div>
               )}
 
               {aba==='veiculo' && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <Inp label="Placa *"                  value={form.placa}       onChange={set('placa')}       placeholder="ABC1D23" />
+                  <Inp label="Placa *"                  value={form.placa}       onChange={setMasked('placa', maskPlaca)} placeholder="ABC-1D23" />
                   <Inp label="Chassi"                   value={form.chassi}      onChange={set('chassi')}      placeholder="Opcional" />
                   <Inp label="Ano Fabricação *"         value={form.ano_fab}     onChange={set('ano_fab')}     placeholder="2020" />
                   <Inp label="Ano Modelo *"             value={form.ano_mod}     onChange={set('ano_mod')}     placeholder="2021" />
                   <Sel label="Zero KM *"                value={form.zero_km}     onChange={set('zero_km')}     opts={BOOL_OPTS} />
                   <Inp label="Modelo *"                 value={form.modelo}      onChange={set('modelo')}      placeholder="Ex: Toyota Corolla" />
                   <Sel label="Combustível *"            value={form.combustivel} onChange={set('combustivel')} opts={COMBUSTIVEIS} />
-                  <Inp label="CEP Pernoite *"           value={form.cep_pernoite} onChange={set('cep_pernoite')} placeholder="00000-000" />
+                  <Inp label="CEP Pernoite *"           value={form.cep_pernoite} onChange={setMasked('cep_pernoite', maskCEP)} placeholder="00000-000" />
                   <Sel label="Rastreador *"             value={form.rastreador}  onChange={set('rastreador')}  opts={RASTREADORES} />
                   <Sel label="Dispositivo Anti-furto *" value={form.antifurto}   onChange={set('antifurto')}   opts={ANTIFURTOS} />
                   <Sel label="Blindado *"               value={form.blindado}    onChange={set('blindado')}    opts={BOOL_OPTS} />

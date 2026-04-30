@@ -21,6 +21,7 @@ export default function PortoIntegracaoPage() {
   const [historico, setHistorico]           = useState<any[]>([])
   const [loading, setLoading]               = useState(false)
   const [sincronizando, setSincronizando]   = useState(false)
+  const [progresso, setProgresso]           = useState<{ atual: number; total: number; arquivo: string } | null>(null)
   const [resultado, setResultado]           = useState<any>(null)
   const [aba, setAba]                       = useState<'dashboard'|'arquivos'|'historico'>('dashboard')
   const [dataInicio, setDataInicio]         = useState(() => {
@@ -78,34 +79,86 @@ export default function PortoIntegracaoPage() {
     setLoading(false)
   }
 
+  // Processa um arquivo de cada vez para evitar timeout da função serverless.
+  async function processarLista(arquivosLista: any[]) {
+    const resultados: any[] = []
+    for (let i = 0; i < arquivosLista.length; i++) {
+      const a = arquivosLista[i]
+      setProgresso({ atual: i + 1, total: arquivosLista.length, arquivo: a.nomeArquivo })
+      try {
+        const r = await fetch('/api/porto/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'sincronizar_arquivo',
+            codigo: a.codigo, nomeArquivo: a.nomeArquivo, produto: a.produto,
+            dataGeracao: a.dataGeracao, tipoArquivo: a.tipoArquivo,
+          }),
+        })
+        const d = await r.json()
+        resultados.push(d.error ? { arquivo: a.nomeArquivo, erro: d.error } : d)
+      } catch (err: any) {
+        resultados.push({ arquivo: a.nomeArquivo, erro: err.message || 'Falha de rede' })
+      }
+    }
+    setProgresso(null)
+    return resultados
+  }
+
   async function sincronizarTudo() {
-    setSincronizando(true)
-    setResultado(null)
-    const res = await fetch('/api/porto/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sincronizar' }),
-    })
-    const data = await res.json()
-    setResultado(data)
-    setSincronizando(false)
-    await carregarHistorico()
-    await carregarStats()
+    setSincronizando(true); setResultado(null); setProgresso(null)
+    try {
+      // Lista arquivos do dia, fallback pra últimos 7 dias se vazio
+      const inicio = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0] })()
+      const fim    = new Date().toISOString().split('T')[0]
+      let r = await fetch('/api/porto/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'listar', inicio, fim }) })
+      let d = await r.json()
+      if (d.erro) { setResultado({ erro: d.erro }); return }
+      let lista: any[] = d.arquivos || []
+      if (!lista.length) {
+        const ini7 = (() => { const d2 = new Date(); d2.setDate(d2.getDate() - 6); return d2.toISOString().split('T')[0] })()
+        r = await fetch('/api/porto/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'listar', inicio: ini7, fim }) })
+        d = await r.json()
+        lista = d.arquivos || []
+      }
+      if (!lista.length) { setResultado({ ok: true, resultados: [], total: 0, aviso: 'Nenhum arquivo disponível na Porto' }); return }
+      const resultados = await processarLista(lista)
+      setResultado({ ok: true, resultados, total: lista.length })
+    } catch (err: any) {
+      setResultado({ erro: err.message || 'Erro inesperado' })
+    } finally {
+      setSincronizando(false)
+      await carregarHistorico()
+      await carregarStats()
+    }
   }
 
   async function sincronizarTipo(tipo: string) {
-    setSincronizando(true)
+    setSincronizando(true); setResultado(null); setProgresso(null)
+    try {
+      const ini = (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0] })()
+      const fim = new Date().toISOString().split('T')[0]
+      const r = await fetch('/api/porto/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'listar', inicio: ini, fim }) })
+      const d = await r.json()
+      if (d.erro) { setResultado({ erro: d.erro }); return }
+      const lista = (d.arquivos || []).filter((a: any) => (a.produto||'').toUpperCase().includes(tipo.toUpperCase()))
+      if (!lista.length) { setResultado({ ok: true, resultados: [], total: 0, aviso: `Nenhum arquivo do tipo ${tipo}` }); return }
+      const resultados = await processarLista(lista)
+      setResultado({ ok: true, resultados, total: lista.length })
+    } catch (err: any) {
+      setResultado({ erro: err.message || 'Erro inesperado' })
+    } finally {
+      setSincronizando(false)
+      await carregarHistorico()
+      await carregarStats()
+    }
+  }
+
+  async function testarConfig() {
     setResultado(null)
-    const res = await fetch('/api/porto/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sincronizar_tipo', tipo_produto: tipo }),
-    })
-    const data = await res.json()
-    setResultado(data)
-    setSincronizando(false)
-    await carregarHistorico()
-    await carregarStats()
+    const r = await fetch('/api/porto/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'config' }) })
+    const d = await r.json()
+    setResultado({ ok: true, configCheck: d })
   }
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'lider'
@@ -127,25 +180,58 @@ export default function PortoIntegracaoPage() {
           ))}
         </div>
         {isAdmin && (
-          <button onClick={sincronizarTudo} disabled={sincronizando} className="btn-primary" style={{display:'flex',alignItems:'center',gap:8,minWidth:140,justifyContent:'center'}}>
-            {sincronizando ? <><span style={{display:'inline-block',width:12,height:12,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>Sincronizando...</> : '🔄 Sincronizar Tudo'}
-          </button>
+          <>
+            <button onClick={testarConfig} disabled={sincronizando}
+              style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+              🔍 Testar Config
+            </button>
+            <button onClick={sincronizarTudo} disabled={sincronizando} className="btn-primary" style={{display:'flex',alignItems:'center',gap:8,minWidth:140,justifyContent:'center'}}>
+              {sincronizando ? <><span style={{display:'inline-block',width:12,height:12,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>Sincronizando...</> : '🔄 Sincronizar Tudo'}
+            </button>
+          </>
         )}
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
+
+        {/* Progresso em tempo real durante a sincronização */}
+        {progresso && (
+          <div style={{marginBottom:20,padding:'14px 18px',background:'rgba(201,168,76,0.08)',border:'1px solid rgba(201,168,76,0.3)',borderRadius:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--gold)'}}>⏳ Processando arquivo {progresso.atual} de {progresso.total}</span>
+              <span style={{fontSize:12,color:'var(--text-muted)'}}>{Math.round((progresso.atual/progresso.total)*100)}%</span>
+            </div>
+            <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8,fontFamily:'monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{progresso.arquivo}</div>
+            <div style={{height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${(progresso.atual/progresso.total)*100}%`,background:'linear-gradient(90deg,var(--teal),var(--gold))',transition:'width 0.4s'}}/>
+            </div>
+          </div>
+        )}
 
         {/* Resultado da sincronização */}
         {resultado && (
           <div style={{marginBottom:20,padding:'14px 18px',background:resultado.erro?'rgba(224,82,82,0.08)':'rgba(28,181,160,0.08)',border:`1px solid ${resultado.erro?'rgba(224,82,82,0.3)':'rgba(28,181,160,0.3)'}`,borderRadius:12,fontSize:13}}>
             {resultado.erro ? (
               <div style={{color:'var(--red)'}}>❌ {resultado.erro}</div>
+            ) : resultado.configCheck ? (
+              <div>
+                <div style={{fontWeight:600,marginBottom:8,color:'var(--gold)'}}>🔍 Configuração da integração Porto</div>
+                {Object.entries(resultado.configCheck).map(([k,v])=>(
+                  <div key={k} style={{fontSize:12,marginBottom:4}}>
+                    <span style={{color:'var(--text-muted)',display:'inline-block',width:160}}>{k}:</span>
+                    <span style={{color: typeof v === 'string' && (v.includes('NÃO') || v.includes('FALTA')) ? 'var(--red)' : 'var(--teal)'}}>{String(v)}</span>
+                  </div>
+                ))}
+              </div>
             ) : (
               <>
-                <div style={{fontWeight:600,marginBottom:8,color:'var(--teal)'}}>✅ Sincronização concluída — {resultado.total || resultado.resultados?.length || 0} arquivo(s) processados</div>
+                <div style={{fontWeight:600,marginBottom:8,color:'var(--teal)'}}>
+                  ✅ Sincronização concluída — {resultado.total || resultado.resultados?.length || 0} arquivo(s) processados
+                  {resultado.aviso && <span style={{color:'var(--gold)',fontWeight:400}}> · {resultado.aviso}</span>}
+                </div>
                 {(resultado.resultados||[]).map((r:any,i:number)=>(
                   <div key={i} style={{fontSize:12,color:'var(--text-muted)',marginBottom:2}}>
-                    {r.erro ? `❌ ${r.arquivo}: ${r.erro}` : `✓ ${r.arquivo} (${r.tipo}) — ${r.importados} importados${r.erros>0?`, ${r.erros} erros`:''}`}
+                    {r.erro ? `❌ ${r.arquivo}: ${r.erro}` : `✓ ${r.arquivo} (${r.tipo}) — ${r.importados||0} importados${r.erros>0?`, ${r.erros} erros`:''}`}
                   </div>
                 ))}
               </>

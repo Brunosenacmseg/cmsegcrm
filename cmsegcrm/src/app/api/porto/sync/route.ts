@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { gunzipSync, inflateRawSync } from 'zlib'
 
+// Vercel: estender o tempo limite. Plano Hobby max 60s, Pro/Enterprise até 300s.
+// O Porto SOAP é lento e cada arquivo leva 5-30s; sem isso a função expira em 10s.
+export const runtime  = 'nodejs'
+export const dynamic  = 'force-dynamic'
+export const maxDuration = 300
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -123,6 +129,9 @@ function parsearSAP(texto: string): RegistroCobranca[] {
 }
 
 async function soapRequest(body: string): Promise<string> {
+  if (!PORTO_LOGIN || !PORTO_SENHA) {
+    throw new Error('Credenciais Porto não configuradas (PORTO_LOGIN/PORTO_SENHA).')
+  }
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ws="http://ws.centraldownloadsics.pecorporativo.corporativo.porto.com/">
   <soapenv:Header>
@@ -132,7 +141,14 @@ async function soapRequest(body: string): Promise<string> {
   </soapenv:Header>
   <soapenv:Body>${body}</soapenv:Body>
 </soapenv:Envelope>`
-  const res = await fetch(PORTO_URL, { method:'POST', headers:{'Content-Type':'text/xml;charset=UTF-8','SOAPAction':''}, body: envelope, signal: AbortSignal.timeout(30000) })
+  // Timeout reduzido para 25s para sobrar margem antes do limite da função.
+  const res = await fetch(PORTO_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/xml;charset=UTF-8', 'SOAPAction': '' },
+    body: envelope,
+    signal: AbortSignal.timeout(25000),
+  })
+  if (!res.ok) throw new Error(`Porto SOAP HTTP ${res.status}`)
   return await res.text()
 }
 
@@ -439,9 +455,40 @@ export async function POST(request: NextRequest) {
     const { action, ...params } = await request.json()
     const hoje = new Date().toISOString().split('T')[0]
 
+    // Diagnóstico: confere se as credenciais e ENV estão configuradas
+    if (action === 'config') {
+      return NextResponse.json({
+        ok: true,
+        susep: PORTO_SUSEP,
+        login_configurado: PORTO_LOGIN ? `sim (${PORTO_LOGIN.length} chars)` : 'NÃO CONFIGURADO',
+        senha_configurada: PORTO_SENHA ? 'sim' : 'NÃO CONFIGURADA',
+        supabase_url:  process.env.NEXT_PUBLIC_SUPABASE_URL ? 'configurado' : 'FALTA',
+        supabase_role: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configurado' : 'FALTA',
+        nota: PORTO_LOGIN && PORTO_SENHA ? 'Credenciais OK. Use action=listar para testar a conexão.' : 'Configure as variáveis PORTO_LOGIN, PORTO_SENHA e PORTO_SUSEP no painel do Vercel/Supabase.',
+      })
+    }
+
     if (action === 'debug') {
       const ini = subDias(hoje, 6)
       return NextResponse.json({ susep: PORTO_SUSEP, periodo: `${ini} a ${hoje}`, ...await listarArquivos(ini, hoje) })
+    }
+
+    // Processa UM arquivo por vez. Frontend chama em loop para evitar timeout.
+    if (action === 'sincronizar_arquivo') {
+      if (!params.codigo) return NextResponse.json({ error: 'Parâmetro `codigo` obrigatório' }, { status: 400 })
+      const arquivo = {
+        codigo:      params.codigo,
+        nomeArquivo: params.nomeArquivo || '',
+        produto:     params.produto     || '',
+        dataGeracao: params.dataGeracao || '',
+        tipoArquivo: params.tipoArquivo || '',
+      }
+      const tipo = detectarTipo(arquivo.produto, arquivo.nomeArquivo)
+      if (tipo === 'OUTRO') return NextResponse.json({ ok: true, arquivo: arquivo.nomeArquivo, tipo: 'IGNORADO' })
+      const { texto, nome } = await recuperarTexto(arquivo.codigo)
+      if (!texto.trim()) return NextResponse.json({ ok: true, arquivo: arquivo.nomeArquivo, tipo, aviso: 'Vazio' })
+      const resultado = await processarArquivo(arquivo, texto, tipo)
+      return NextResponse.json({ ok: true, arquivo: nome || arquivo.nomeArquivo, tipo, ...resultado })
     }
 
     if (action === 'debug_conteudo') {

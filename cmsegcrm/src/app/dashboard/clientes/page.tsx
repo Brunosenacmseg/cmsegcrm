@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { maskCpfCnpj, maskTelefone, maskCEP } from '@/lib/masks'
 
 const SEXOS         = ['Masculino','Feminino','Outro']
 const ESTADOS_CIVIS = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)','União Estável']
@@ -160,7 +161,7 @@ export default function ClientesPage() {
         <div style={{ fontSize:13, fontWeight:600, color:'var(--gold)', marginBottom:12, paddingBottom:6, borderBottom:'1px solid var(--border)' }}>{titulo}</div>
         <div style={{ display:'grid', gridTemplateColumns:'140px 1fr 80px', gap:10, marginBottom:10 }}>
           <Campo label="CEP">
-            <input value={(form as any)[`cep${p}`]} onChange={e=>setForm(f=>({...f,[`cep${p}`]:e.target.value}))}
+            <input value={(form as any)[`cep${p}`]} onChange={e=>setForm(f=>({...f,[`cep${p}`]:maskCEP(e.target.value)}))}
               onBlur={e=>buscarCep(e.target.value, p)} placeholder="00000-000" style={inp} />
           </Campo>
           <Campo label="Endereço">
@@ -280,7 +281,7 @@ export default function ClientesPage() {
                       </select>
                     </Campo>
                     <Campo label="CPF / CNPJ">
-                      <input value={form.cpf_cnpj} onChange={e=>setForm(f=>({...f,cpf_cnpj:e.target.value}))} placeholder={form.tipo==='PF'?'000.000.000-00':'00.000.000/0000-00'} style={inp} />
+                      <input value={form.cpf_cnpj} onChange={e=>setForm(f=>({...f,cpf_cnpj:maskCpfCnpj(e.target.value)}))} placeholder={form.tipo==='PF'?'000.000.000-00':'00.000.000/0000-00'} style={inp} />
                     </Campo>
                   </div>
                   <Campo label="Nome Completo">
@@ -313,9 +314,9 @@ export default function ClientesPage() {
                 <div style={{display:'flex',flexDirection:'column',gap:14}}>
                   <div style={{fontSize:13,fontWeight:600,color:'var(--gold)',marginBottom:4}}>Telefones</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
-                    <Campo label="Telefone 1"><input value={form.telefone} onChange={e=>setForm(f=>({...f,telefone:e.target.value}))} placeholder="(00) 00000-0000" style={inp} /></Campo>
-                    <Campo label="Telefone 2"><input value={form.telefone2} onChange={e=>setForm(f=>({...f,telefone2:e.target.value}))} placeholder="(00) 00000-0000" style={inp} /></Campo>
-                    <Campo label="Telefone 3"><input value={form.telefone3} onChange={e=>setForm(f=>({...f,telefone3:e.target.value}))} placeholder="(00) 00000-0000" style={inp} /></Campo>
+                    <Campo label="Telefone 1"><input value={form.telefone} onChange={e=>setForm(f=>({...f,telefone:maskTelefone(e.target.value)}))} placeholder="(00) 00000-0000" style={inp} /></Campo>
+                    <Campo label="Telefone 2"><input value={form.telefone2} onChange={e=>setForm(f=>({...f,telefone2:maskTelefone(e.target.value)}))} placeholder="(00) 00000-0000" style={inp} /></Campo>
+                    <Campo label="Telefone 3"><input value={form.telefone3} onChange={e=>setForm(f=>({...f,telefone3:maskTelefone(e.target.value)}))} placeholder="(00) 00000-0000" style={inp} /></Campo>
                   </div>
                   <div style={{fontSize:13,fontWeight:600,color:'var(--gold)',marginTop:8,marginBottom:4}}>E-mails</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
