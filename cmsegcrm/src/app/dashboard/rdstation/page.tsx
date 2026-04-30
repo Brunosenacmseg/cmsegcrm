@@ -218,11 +218,18 @@ export default function RDStationPage() {
       if (sucessos === total) {
         setErro(`✅ ${sucessos}/${total} webhooks criados com sucesso! URL: ${j.webhookUrl}`)
       } else if (sucessos > 0) {
-        const erros = j.resultados.filter((x: any) => !x.ok).map((x: any) => `${x.evento}: HTTP ${x.status} - ${JSON.stringify(x.response).slice(0,150)}`).join(' | ')
+        const erros = (j.resultados || []).filter((x: any) => !x.ok).map((x: any) => {
+          const v1 = x.v1_status ? `v1:${x.v1_status} ${String(x.v1_resposta || '').slice(0, 80)}` : ''
+          const v2 = x.v2_status ? `v2:${x.v2_status} ${String(x.v2_resposta || '').slice(0, 80)}` : ''
+          return `${x.evento || '?'} → ${[v1, v2].filter(Boolean).join(' | ')}`
+        }).join(' || ')
         setErro(`⚠️ ${sucessos}/${total} criados. Erros: ${erros}`)
       } else {
-        const primeiroErro = j.resultados?.[0]
-        setErro(`❌ Nenhum webhook criado. ${primeiroErro?.status === 401 ? 'Token v1 não aceita na API v2 — você precisa de um token OAuth.' : `Status ${primeiroErro?.status}: ${JSON.stringify(primeiroErro?.response).slice(0,200)}`}`)
+        const primeiro = j.resultados?.[0] || {}
+        const v1 = primeiro.v1_status ? `v1 HTTP ${primeiro.v1_status}: ${String(primeiro.v1_resposta || '').slice(0, 250)}` : ''
+        const v2 = primeiro.v2_status ? `v2 HTTP ${primeiro.v2_status}: ${String(primeiro.v2_resposta || '').slice(0, 250)}` : ''
+        const detalhe = [v1, v2].filter(Boolean).join(' | ') || JSON.stringify(primeiro).slice(0, 300)
+        setErro(`❌ Nenhum webhook criado. ${detalhe}`)
       }
     } catch (e: any) {
       setErro(e?.message || 'Erro de rede')
