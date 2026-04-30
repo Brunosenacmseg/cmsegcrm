@@ -139,45 +139,49 @@ async function cotacaoAuto(page, dados) {
   //   1º — fim do formulário → vai pra tela de seleção de seguradoras
   //   2º — na tela de seguradoras (Bradesco, Itaú, Porto, etc.) →
   //        dispara o cálculo real, mostra preços
-  // Estratégia: clica, espera, e se ainda não apareceu "R$" no DOM
-  // e ainda há um botão Calcular visível, clica de novo.
+  // ATENÇÃO: a tela de seguradoras tem 3 botões (Voltar, Salvar, Calcular).
+  // Não basta procurar por my-btn--filled — pega o Salvar disabled. Tem
+  // que filtrar especificamente pelo texto "Calcular" e usar last() pra
+  // pegar o azul à direita, ignorando botões disabled.
 
   const btnCalcular = await page.$('button:has-text("Calcular"):not(:has-text("Configurar"))')
-                    || await page.$('button.my-btn--filled')
   if (!btnCalcular) throw new Error('Botão Calcular não foi encontrado')
+  const urlAntes = page.url()
   await btnCalcular.click({ force: true })
   log.info('Clicou em Calcular #1 (formulário → seguradoras)')
-  await page.waitForTimeout(4000)
+  await page.waitForTimeout(6000)
+  log.info('Estado após Calcular #1', { url_antes: urlAntes, url_agora: page.url() })
 
-  // Tenta clicar em "Calcular" de novo (até 3 vezes ou até aparecer R$).
-  // Pode haver: tela de seguradoras → tela de resultados.
-  for (let i = 0; i < 3; i++) {
-    const temPreco = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 0).catch(() => false)
+  // Loop: até clicar no Calcular da tela de seguradoras (até 2 cliques extras).
+  // Espera mais tempo entre cliques porque o cálculo real é lento (15-30s).
+  for (let i = 0; i < 2; i++) {
+    const temPreco = await page.locator('text=/R\\$\\s*\\d/').count().then(c => c > 2).catch(() => false)
     if (temPreco) {
-      log.info(`Preços apareceram após ${i+1} tentativa(s) de Calcular`)
+      log.info(`Preços detectados após ${i+1} click(s) extra(s)`)
       break
     }
 
-    const btnNext = page.locator('button.my-btn--filled, button:has-text("Calcular")')
-                        .filter({ hasNotText: 'Configurar' })
-                        .first()
+    // Procura SOMENTE botões habilitados (sem [disabled]) com texto Calcular
+    const btnNext = page.locator('button:not([disabled]):has-text("Calcular")').last()
     const visivel = await btnNext.isVisible().catch(() => false)
-    if (!visivel) {
-      log.info('Botão Calcular não está mais visível — aguardando resultado')
+    const habilitado = await btnNext.isEnabled().catch(() => false)
+    if (!visivel || !habilitado) {
+      log.info('Calcular não disponível — aguardando resultados', { visivel, habilitado })
       break
     }
 
     await btnNext.click({ force: true }).catch(() => {})
-    log.info(`Clicou em Calcular #${i+2}`)
-    await page.waitForTimeout(3500)
+    log.info(`Clicou em Calcular #${i+2} (seguradoras → resultados)`)
+    // Cálculo real pode demorar — aguarda 15s antes do próximo check
+    await page.waitForTimeout(15000)
   }
 
-  // Espera o resultado final (heurística: aparece "R$" várias vezes ou passa 90s)
+  // Espera o resultado final (até 90s)
   const inicio = Date.now()
   while (Date.now() - inicio < 90000) {
-    const tem = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 1).catch(() => false)
+    const tem = await page.locator('text=/R\\$\\s*\\d/').count().then(c => c > 2).catch(() => false)
     if (tem) break
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(2000)
   }
 
   // ─── 8) Capturar resultado ─────────────────────────────────
