@@ -211,25 +211,36 @@ export default function RDStationPage() {
       const headers = await authHeaders()
       if (!usaEnv && token.trim()) headers['x-rd-token'] = token.trim()
       const r = await fetch('/api/rdstation/webhook/setup', { method: 'POST', headers })
-      const j = await r.json()
-      if (!r.ok) { setErro(j.error || 'Erro ao criar webhooks'); return }
-      const sucessos = j.resultados?.filter((x: any) => x.ok).length || 0
-      const total = j.resultados?.length || 0
-      if (sucessos === total) {
-        setErro(`✅ ${sucessos}/${total} webhooks criados com sucesso! URL: ${j.webhookUrl}`)
-      } else if (sucessos > 0) {
-        const erros = (j.resultados || []).filter((x: any) => !x.ok).map((x: any) => {
-          const v1 = x.v1_status ? `v1:${x.v1_status} ${String(x.v1_resposta || '').slice(0, 80)}` : ''
-          const v2 = x.v2_status ? `v2:${x.v2_status} ${String(x.v2_resposta || '').slice(0, 80)}` : ''
-          return `${x.evento || '?'} → ${[v1, v2].filter(Boolean).join(' | ')}`
-        }).join(' || ')
-        setErro(`⚠️ ${sucessos}/${total} criados. Erros: ${erros}`)
-      } else {
-        const primeiro = j.resultados?.[0] || {}
-        const v1 = primeiro.v1_status ? `v1 HTTP ${primeiro.v1_status}: ${String(primeiro.v1_resposta || '').slice(0, 250)}` : ''
-        const v2 = primeiro.v2_status ? `v2 HTTP ${primeiro.v2_status}: ${String(primeiro.v2_resposta || '').slice(0, 250)}` : ''
-        const detalhe = [v1, v2].filter(Boolean).join(' | ') || JSON.stringify(primeiro).slice(0, 300)
-        setErro(`❌ Nenhum webhook criado. ${detalhe}`)
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setErro(j?.error || `Erro HTTP ${r.status}`); return }
+
+      try {
+        const lista = Array.isArray(j?.resultados) ? j.resultados : []
+        const sucessos = lista.filter((x: any) => x?.ok).length
+        const total = lista.length
+
+        if (total === 0) {
+          setErro(`⚠️ Resposta sem resultados. Resposta crua: ${JSON.stringify(j).slice(0, 400)}`)
+          return
+        }
+
+        if (sucessos === total) {
+          setErro(`✅ ${sucessos}/${total} webhooks criados! URL: ${j?.webhookUrl || '?'}`)
+        } else {
+          const partes: string[] = []
+          for (const x of lista) {
+            if (x?.ok) continue
+            const ev = String(x?.evento || '?')
+            const v1 = x?.v1_status ? `v1[${x.v1_status}]:${String(x?.v1_resposta || '').substring(0, 100)}` : ''
+            const v2 = x?.v2_status ? `v2[${x.v2_status}]:${String(x?.v2_resposta || '').substring(0, 100)}` : ''
+            const det = [v1, v2].filter(Boolean).join(' / ') || JSON.stringify(x).substring(0, 200)
+            partes.push(`${ev} → ${det}`)
+          }
+          const prefixo = sucessos > 0 ? `⚠️ ${sucessos}/${total} criados.` : `❌ Nenhum criado.`
+          setErro(`${prefixo} ${partes.join(' || ')}`)
+        }
+      } catch (parseErr: any) {
+        setErro(`Resposta recebida mas erro ao formatar: ${parseErr?.message}. Resposta: ${JSON.stringify(j).substring(0, 400)}`)
       }
     } catch (e: any) {
       setErro(e?.message || 'Erro de rede')
