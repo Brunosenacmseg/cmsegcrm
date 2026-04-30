@@ -33,15 +33,28 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
   throw new Error(`RD: rate limit excedido em ${path}`)
 }
 
-// Iterador paginado — RD usa { contacts: [...], page, limit, total } ou { deals: [...] } etc.
+// Extrai array de itens da resposta — tenta a chave primária e algumas alternativas comuns
+function extrairItens<T>(data: any, key: string): T[] {
+  if (!data) return []
+  if (Array.isArray(data?.[key])) return data[key]
+  // Tenta chaves comuns alternativas
+  const alternativas = [key, `${key}s`, key.replace(/s$/, ''), 'items', 'data', 'results']
+  for (const k of alternativas) if (Array.isArray(data?.[k])) return data[k]
+  // Última tentativa: primeiro array dentro do objeto
+  for (const v of Object.values(data || {})) if (Array.isArray(v)) return v as T[]
+  return []
+}
+
+// Iterador paginado — para no limite de 10k da RD (page=50, limit=200)
 export async function* paginar<T = any>(path: string, token: string, key: string, extraParams: Record<string, string | number> = {}): AsyncGenerator<T> {
   let page = 1
   const limit = 200
   while (true) {
     const data = await rdFetch<any>(path, token, { ...extraParams, page, limit })
-    const itens: T[] = data?.[key] || []
+    const itens = extrairItens<T>(data, key)
     for (const item of itens) yield item
     if (itens.length < limit) break
+    if (page * limit >= 10000) break // limite duro da RD
     page++
     if (page > 1000) break
   }
@@ -51,6 +64,20 @@ export async function listarTodos<T = any>(path: string, token: string, key: str
   const out: T[] = []
   for await (const item of paginar<T>(path, token, key, extraParams)) out.push(item)
   return out
+}
+
+// Lista por janela de data — usa q[created_at_gt] / q[created_at_lt] do Ransack
+export async function listarPorJanela<T = any>(
+  path: string, token: string, key: string,
+  fromIso: string, toIso: string,
+  extraParams: Record<string, string | number> = {}
+): Promise<T[]> {
+  const params: Record<string, string | number> = {
+    ...extraParams,
+    'q[created_at_gt]': fromIso,
+    'q[created_at_lt]': toIso,
+  }
+  return listarTodos<T>(path, token, key, params)
 }
 
 export async function ping(token: string): Promise<{ ok: boolean; total?: number; erro?: string }> {

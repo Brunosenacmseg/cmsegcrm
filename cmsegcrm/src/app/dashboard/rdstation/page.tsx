@@ -31,6 +31,37 @@ const RECURSOS: { key: string; label: string; emoji: string; descricao: string }
   { key: 'atividades', label: 'Atividades', emoji: '✅', descricao: 'Importa tarefas, ligações, e-mails e notas' },
 ]
 
+// Recursos que precisam de fatiamento por janela de tempo (>10k limit da RD)
+const RECURSOS_JANELA = new Set(['contatos', 'negocios', 'atividades', 'all'])
+
+function dataDefaultInicio(): string {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 5)
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`
+}
+
+function dataHoje(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+// Gera lista de janelas mensais entre duas datas (YYYY-MM-DD)
+function gerarJanelasMensais(inicio: string, fim: string): { from: string, to: string }[] {
+  const janelas: { from: string, to: string }[] = []
+  const [yi, mi] = inicio.split('-').map(Number)
+  const [yf, mf] = fim.split('-').map(Number)
+  let y = yi, m = mi
+  while (y < yf || (y === yf && m <= mf)) {
+    const ultimoDia = new Date(y, m, 0).getDate()
+    const from = `${y}-${String(m).padStart(2,'0')}-01T00:00:00`
+    const to   = `${y}-${String(m).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}T23:59:59`
+    janelas.push({ from, to })
+    m++; if (m > 12) { m = 1; y++ }
+    if (janelas.length > 600) break // segurança: 50 anos
+  }
+  return janelas
+}
+
 export default function RDStationPage() {
   const supabase = createClient()
   const [token, setToken]       = useState('')
@@ -39,6 +70,9 @@ export default function RDStationPage() {
   const [resultados, setResultados] = useState<Record<string, Stats>>({})
   const [historico, setHistorico]   = useState<Sync[]>([])
   const [erro, setErro]         = useState<string | null>(null)
+  const [dataInicio, setDataInicio] = useState(dataDefaultInicio())
+  const [dataFim, setDataFim]       = useState(dataHoje())
+  const [progresso, setProgresso]   = useState<{ atual: number, total: number, mes: string } | null>(null)
 
   async function authHeaders(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession()
@@ -57,25 +91,83 @@ export default function RDStationPage() {
 
   useEffect(() => { carregarHistorico() }, [])
 
+  async function chamarSync(action: string, from?: string, to?: string): Promise<any> {
+    const headers = await authHeaders()
+    if (!usaEnv && token.trim()) headers['x-rd-token'] = token.trim()
+    const r = await fetch('/api/rdstation/sync', {
+      method: 'POST', headers, body: JSON.stringify({ action, from, to }),
+    })
+    return { ok: r.ok, json: await r.json() }
+  }
+
+  function acumular(prev: Stats | undefined, novo: Stats): Stats {
+    return {
+      qtd_lidos: (prev?.qtd_lidos || 0) + (novo.qtd_lidos || 0),
+      qtd_criados: (prev?.qtd_criados || 0) + (novo.qtd_criados || 0),
+      qtd_atualizados: (prev?.qtd_atualizados || 0) + (novo.qtd_atualizados || 0),
+      qtd_erros: (prev?.qtd_erros || 0) + (novo.qtd_erros || 0),
+      erros: [...(prev?.erros || []), ...(novo.erros || [])].slice(0, 50),
+    }
+  }
+
   async function executar(action: string) {
-    setRodando(action); setErro(null)
+    setRodando(action); setErro(null); setProgresso(null)
     try {
-      const headers = await authHeaders()
-      if (!usaEnv && token.trim()) headers['x-rd-token'] = token.trim()
-
-      const r = await fetch('/api/rdstation/sync', {
-        method: 'POST', headers, body: JSON.stringify({ action }),
-      })
-      const j = await r.json()
-
-      if (!r.ok) { setErro(j.error || 'Erro desconhecido'); return }
+      // Test: chamada simples
       if (action === 'test') {
-        if (j.ok) setErro(`✅ Conexão OK — ${j.total ?? '?'} contatos disponíveis`)
-        else setErro(`❌ ${j.erro || 'Falhou'}`)
+        const { ok, json } = await chamarSync(action)
+        if (!ok) { setErro(json.error || 'Erro desconhecido'); return }
+        if (json.ok) setErro(`✅ Conexão OK — ${json.total ?? '?'} contatos disponíveis`)
+        else setErro(`❌ ${json.erro || 'Falhou'}`)
         return
       }
-      if (j.resultados) setResultados(prev => ({ ...prev, ...j.resultados }))
+
+      // Recursos pequenos (sem janela): chamada única
+      if (!RECURSOS_JANELA.has(action)) {
+        const { ok, json } = await chamarSync(action)
+        if (!ok) { setErro(json.error || 'Erro desconhecido'); return }
+        if (json.resultados) setResultados(prev => ({ ...prev, ...json.resultados }))
+        await carregarHistorico()
+        return
+      }
+
+      // Recursos grandes: fatia por mês
+      const janelas = gerarJanelasMensais(dataInicio, dataFim)
+      setProgresso({ atual: 0, total: janelas.length, mes: '' })
+
+      // Para "all": primeiro processa usuarios e funis (sem janela)
+      if (action === 'all') {
+        await chamarSync('usuarios')
+        await chamarSync('funis')
+        await carregarHistorico()
+      }
+
+      // Quais recursos iterar mês a mês
+      const recursosIterar = action === 'all'
+        ? ['contatos', 'negocios', 'atividades']
+        : [action]
+
+      // Itera de trás pra frente (mais recente primeiro)
+      for (let i = janelas.length - 1; i >= 0; i--) {
+        const j = janelas[i]
+        const mes = j.from.slice(0, 7)
+        setProgresso({ atual: janelas.length - i, total: janelas.length, mes })
+
+        for (const rec of recursosIterar) {
+          const { ok, json } = await chamarSync(rec, j.from, j.to)
+          if (!ok) {
+            setErro(`Erro em ${rec} ${mes}: ${json.error || 'desconhecido'}`)
+            continue
+          }
+          const stats = json?.resultados?.[rec]
+          if (stats) {
+            setResultados(prev => ({ ...prev, [rec]: acumular(prev[rec], stats) }))
+          }
+        }
+      }
+
       await carregarHistorico()
+      setProgresso(null)
     } catch (e: any) {
       setErro(e?.message || 'Erro de rede')
     } finally {
@@ -162,13 +254,34 @@ export default function RDStationPage() {
             </div>
           )}
 
+          {/* Janela de datas */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 16, marginBottom: 10 }}>📅 Janela de importação</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.6 }}>
+              A API do RD limita 10.000 registros por consulta — fatiamos por mês para pegar tudo. Defina a janela de datas (recomendado: do início da sua conta no RD até hoje).
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>De:
+                <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+                  style={{ marginLeft: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', color: 'var(--text)', fontSize: 12, outline: 'none' }} />
+              </label>
+              <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Até:
+                <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)}
+                  style={{ marginLeft: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', color: 'var(--text)', fontSize: 12, outline: 'none' }} />
+              </label>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {gerarJanelasMensais(dataInicio, dataFim).length} meses serão processados
+              </span>
+            </div>
+          </div>
+
           {/* Importar tudo */}
           <div className="card" style={{ marginBottom: 20, background: 'linear-gradient(135deg, rgba(201,168,76,0.08), rgba(28,181,160,0.06))' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
               <div>
                 <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 18, marginBottom: 4 }}>🚀 Importar tudo</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  Sincroniza usuários → funis → contatos → negócios → atividades, na ordem correta.
+                  Sincroniza usuários → funis → contatos → negócios → atividades, na ordem correta, mês a mês.
                   Pode levar vários minutos. Re-execuções fazem upsert (não duplicam).
                 </div>
               </div>
@@ -177,6 +290,19 @@ export default function RDStationPage() {
                 {rodando === 'all' ? '⏳ Sincronizando...' : '🚀 Importar tudo'}
               </button>
             </div>
+
+            {progresso && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                  <span>Mês atual: <strong style={{ color: 'var(--gold)' }}>{progresso.mes || '-'}</strong></span>
+                  <span style={{ color: 'var(--teal)', fontWeight: 600 }}>{progresso.atual} / {progresso.total} ({Math.round((progresso.atual / progresso.total) * 100)}%)</span>
+                </div>
+                <div style={{ height: 8, background: 'rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(progresso.atual / progresso.total) * 100}%`, background: 'linear-gradient(90deg,var(--teal),var(--gold))', borderRadius: 8, transition: 'width 0.3s' }} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Não feche esta aba. A importação continua em segundo plano para cada mês.</div>
+              </div>
+            )}
           </div>
 
           {/* Recursos individuais */}

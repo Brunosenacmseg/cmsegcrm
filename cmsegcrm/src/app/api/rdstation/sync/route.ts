@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
-  listarTodos, ping, rdId,
+  listarTodos, listarPorJanela, ping, rdId,
   RDContact, RDDeal, RDPipeline, RDActivity, RDUser, RDStage,
 } from '@/lib/rdstation'
 
@@ -114,7 +114,17 @@ async function importarUsuarios(token: string) {
 
 async function importarFunis(token: string) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  const pipelines = await listarTodos<RDPipeline>('/deal_pipelines', token, 'deal_pipelines')
+  // Tenta múltiplos endpoints — RD usa nomes diferentes em versões da API
+  let pipelines: RDPipeline[] = []
+  for (const path of ['/deal_pipelines', '/pipelines']) {
+    for (const key of ['deal_pipelines', 'pipelines']) {
+      try {
+        const r = await listarTodos<RDPipeline>(path, token, key)
+        if (r.length > 0) { pipelines = r; break }
+      } catch {}
+    }
+    if (pipelines.length > 0) break
+  }
   stats.qtd_lidos = pipelines.length
 
   for (const p of pipelines) {
@@ -142,9 +152,11 @@ async function importarFunis(token: string) {
   return stats
 }
 
-async function importarContatos(token: string) {
+async function importarContatos(token: string, from?: string, to?: string) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  const contatos = await listarTodos<RDContact>('/contacts', token, 'contacts')
+  const contatos = (from && to)
+    ? await listarPorJanela<RDContact>('/contacts', token, 'contacts', from, to)
+    : await listarTodos<RDContact>('/contacts', token, 'contacts')
   stats.qtd_lidos = contatos.length
 
   // Carregar mapas existentes
@@ -198,7 +210,7 @@ async function importarContatos(token: string) {
   return stats
 }
 
-async function importarNegocios(token: string) {
+async function importarNegocios(token: string, from?: string, to?: string) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
 
   // Mapas auxiliares
@@ -224,7 +236,9 @@ async function importarNegocios(token: string) {
     if (sid && s.deal_pipeline_id) pipelinePorStage[sid] = s.deal_pipeline_id
   }
 
-  const deals = await listarTodos<RDDeal>('/deals', token, 'deals')
+  const deals = (from && to)
+    ? await listarPorJanela<RDDeal>('/deals', token, 'deals', from, to)
+    : await listarTodos<RDDeal>('/deals', token, 'deals')
   stats.qtd_lidos = deals.length
 
   // Pré-carrega clientes por rd_id
@@ -323,13 +337,14 @@ async function importarNegocios(token: string) {
   return stats
 }
 
-async function importarAtividades(token: string) {
+async function importarAtividades(token: string, from?: string, to?: string) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
   let activities: RDActivity[] = []
   try {
-    activities = await listarTodos<RDActivity>('/activities', token, 'activities')
+    activities = (from && to)
+      ? await listarPorJanela<RDActivity>('/activities', token, 'activities', from, to)
+      : await listarTodos<RDActivity>('/activities', token, 'activities')
   } catch (e: any) {
-    // Algumas contas RD não têm /activities habilitado
     return { ...stats, qtd_erros: 1, erros: [`activities: ${e?.message?.slice(0, 100)}`] }
   }
   stats.qtd_lidos = activities.length
@@ -390,7 +405,14 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Token RD Station não configurado. Defina RDSTATION_CRM_TOKEN ou envie no header x-rd-token.' }, { status: 400 })
 
   let action: string = ''
-  try { ({ action } = await request.json()) } catch {}
+  let from: string | undefined
+  let to: string | undefined
+  try {
+    const body = await request.json()
+    action = body.action
+    from = body.from
+    to = body.to
+  } catch {}
 
   try {
     if (action === 'test') {
@@ -402,14 +424,15 @@ export async function POST(request: NextRequest) {
     const resultados: Record<string, any> = {}
 
     for (const r of recursos) {
-      const logId = await logSync(r, auth.userId)
+      const recursoLog = (from && to && (r === 'contatos' || r === 'negocios' || r === 'atividades')) ? `${r} ${from.slice(0,10)}→${to.slice(0,10)}` : r
+      const logId = await logSync(recursoLog, auth.userId)
       let stats
       try {
         if (r === 'usuarios')        stats = await importarUsuarios(token)
         else if (r === 'funis')      stats = await importarFunis(token)
-        else if (r === 'contatos')   stats = await importarContatos(token)
-        else if (r === 'negocios')   stats = await importarNegocios(token)
-        else if (r === 'atividades') stats = await importarAtividades(token)
+        else if (r === 'contatos')   stats = await importarContatos(token, from, to)
+        else if (r === 'negocios')   stats = await importarNegocios(token, from, to)
+        else if (r === 'atividades') stats = await importarAtividades(token, from, to)
         else { resultados[r] = { error: 'recurso inválido' }; continue }
       } catch (e: any) {
         stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 1, erros: [e?.message?.slice(0, 200) || 'erro'] }
