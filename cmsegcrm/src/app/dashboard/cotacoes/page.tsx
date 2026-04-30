@@ -136,6 +136,68 @@ export default function CotacoesPage() {
     return (v: string) => setForm(f => ({ ...f, [field]: mask(v) }))
   }
 
+  // Indicadores de auto-preenchimento (mostra spinner ao consultar)
+  const [consultandoCpf, setConsultandoCpf] = useState(false)
+  const [consultandoCep, setConsultandoCep] = useState<'res'|'pernoite'|null>(null)
+  const [ultimoCpfConsultado, setUltimoCpfConsultado] = useState('')
+
+  // Quando o CPF tem 11 dígitos completos, chama /api/cotacoes/consultar
+  // que tenta achar na base local primeiro, depois no robô (se configurado).
+  async function consultarCpf(cpfFormatado: string) {
+    const cpfLimpo = cpfFormatado.replace(/\D/g, '')
+    if (cpfLimpo.length !== 11) return
+    if (cpfLimpo === ultimoCpfConsultado) return  // evita re-consulta
+    setUltimoCpfConsultado(cpfLimpo)
+    setConsultandoCpf(true)
+    try {
+      const res = await fetch('/api/cotacoes/consultar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpf: cpfLimpo }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (json?.encontrado && json?.dados) {
+        const d = json.dados
+        // Preenche apenas campos vazios pra não sobrescrever digitação manual
+        setForm(f => ({
+          ...f,
+          nome_segurado:         f.nome_segurado         || d.nome         || '',
+          nascimento_segurado:   f.nascimento_segurado   || d.nascimento   || '',
+          sexo_segurado:         f.sexo_segurado         || d.sexo         || '',
+          estado_civil_segurado: f.estado_civil_segurado || d.estado_civil || '',
+          cep_residencial:       f.cep_residencial       || d.cep          || '',
+          telefone:              f.telefone              || d.telefone     || '',
+          email:                 f.email                 || d.email        || '',
+        }))
+        if (d.cliente_id) {
+          setClienteSel({ id: d.cliente_id, nome: d.nome, cpf_cnpj: cpfFormatado })
+        }
+        setMsg(`✅ Dados encontrados (${json.fonte === 'base_local' ? 'base local' : 'consulta automática'})`)
+        setTimeout(() => setMsg(''), 3000)
+      }
+    } catch {} finally {
+      setConsultandoCpf(false)
+    }
+  }
+
+  // ViaCEP: preenche cidade/estado a partir do CEP. Atualiza o campo `cidade_*`
+  // se existir no form (não temos no formVazio, mas preserva extensibilidade).
+  async function buscarCep(cepFormatado: string, dest: 'res'|'pernoite') {
+    const c = cepFormatado.replace(/\D/g, '')
+    if (c.length !== 8) return
+    setConsultandoCep(dest)
+    try {
+      const res  = await fetch(`https://viacep.com.br/ws/${c}/json/`)
+      const data = await res.json()
+      if (!data.erro) {
+        // Apenas cidade/UF são úteis pro contexto da cotação auto.
+        setForm(f => ({ ...f, cidade: data.localidade || (f as any).cidade || '', estado: data.uf || (f as any).estado || '' }))
+      }
+    } catch {} finally {
+      setConsultandoCep(null)
+    }
+  }
+
   useEffect(() => { init() }, [])
 
   async function init() {
@@ -337,12 +399,31 @@ export default function CotacoesPage() {
             <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
               {aba==='segurado' && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <Inp label="CPF / CNPJ *"        value={form.cpf_cnpj}              onChange={setMasked('cpf_cnpj', maskCpfCnpj)} placeholder="000.000.000-00" />
+                  <Campo label={`CPF / CNPJ *${consultandoCpf ? ' 🔄 consultando...' : ''}`}>
+                    <input
+                      value={form.cpf_cnpj}
+                      onChange={e => {
+                        const masked = maskCpfCnpj(e.target.value)
+                        setForm(f => ({ ...f, cpf_cnpj: masked }))
+                        if (masked.replace(/\D/g, '').length === 11) consultarCpf(masked)
+                      }}
+                      placeholder="000.000.000-00"
+                      style={INP_STYLE}
+                    />
+                  </Campo>
                   <Inp label="Nome Completo *"      value={form.nome_segurado}         onChange={set('nome_segurado')}         placeholder="Nome completo" />
                   <Inp label="Data de Nascimento *" value={form.nascimento_segurado}   onChange={set('nascimento_segurado')}   type="date" />
                   <Sel label="Sexo *"               value={form.sexo_segurado}         onChange={set('sexo_segurado')}         opts={SEXOS} />
                   <Sel label="Estado Civil *"       value={form.estado_civil_segurado} onChange={set('estado_civil_segurado')} opts={ESTADOS_CIVIS} />
-                  <Inp label="CEP Residencial *"    value={form.cep_residencial}       onChange={setMasked('cep_residencial', maskCEP)} placeholder="00000-000" />
+                  <Campo label={`CEP Residencial *${consultandoCep === 'res' ? ' 🔄' : ''}`}>
+                    <input
+                      value={form.cep_residencial}
+                      onChange={e => setForm(f => ({ ...f, cep_residencial: maskCEP(e.target.value) }))}
+                      onBlur={e => buscarCep(e.target.value, 'res')}
+                      placeholder="00000-000"
+                      style={INP_STYLE}
+                    />
+                  </Campo>
                   <Inp label="Telefone"             value={form.telefone}              onChange={setMasked('telefone', maskTelefone)} placeholder="(00) 00000-0000" />
                   <Inp label="Email"                value={form.email}                 onChange={set('email')}                 type="email" placeholder="email@email.com" />
                 </div>
@@ -357,7 +438,15 @@ export default function CotacoesPage() {
                   <Sel label="Zero KM *"                value={form.zero_km}     onChange={set('zero_km')}     opts={BOOL_OPTS} />
                   <Inp label="Modelo *"                 value={form.modelo}      onChange={set('modelo')}      placeholder="Ex: Toyota Corolla" />
                   <Sel label="Combustível *"            value={form.combustivel} onChange={set('combustivel')} opts={COMBUSTIVEIS} />
-                  <Inp label="CEP Pernoite *"           value={form.cep_pernoite} onChange={setMasked('cep_pernoite', maskCEP)} placeholder="00000-000" />
+                  <Campo label={`CEP Pernoite *${consultandoCep === 'pernoite' ? ' 🔄' : ''}`}>
+                    <input
+                      value={form.cep_pernoite}
+                      onChange={e => setForm(f => ({ ...f, cep_pernoite: maskCEP(e.target.value) }))}
+                      onBlur={e => buscarCep(e.target.value, 'pernoite')}
+                      placeholder="00000-000"
+                      style={INP_STYLE}
+                    />
+                  </Campo>
                   <Sel label="Rastreador *"             value={form.rastreador}  onChange={set('rastreador')}  opts={RASTREADORES} />
                   <Sel label="Dispositivo Anti-furto *" value={form.antifurto}   onChange={set('antifurto')}   opts={ANTIFURTOS} />
                   <Sel label="Blindado *"               value={form.blindado}    onChange={set('blindado')}    opts={BOOL_OPTS} />
