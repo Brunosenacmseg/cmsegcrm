@@ -303,7 +303,6 @@ async function preencher(page, nomes, valor) {
 }
 
 // Lê o valor atual de um input (depois que o aggilizador auto-preencheu).
-// Mesma prioridade do `preencher`: name/id antes de formcontrolname.
 async function lerCampo(page, nomes) {
   const candidatos = []
   for (const n of nomes) {
@@ -318,6 +317,40 @@ async function lerCampo(page, nomes) {
   try {
     return await page.inputValue(sel)
   } catch { return null }
+}
+
+// Preenche um input quando ele NÃO tem name/formcontrolname identificáveis.
+// Localiza pelo texto do label associado (label[for=...] com `texto`) e
+// preenche o input cujo id bate. Útil pra "Comissão Padrão %" e similares.
+async function preencherPorLabel(page, textoLabel, valor) {
+  if (valor === undefined || valor === null || valor === '') return false
+  try {
+    const ok = await page.evaluate(({ textoLabel, valor }) => {
+      const norm = (s) => (s || '').toString().trim().toLowerCase()
+      const alvo = norm(textoLabel)
+      const labels = Array.from(document.querySelectorAll('label[for]'))
+      const lbl = labels.find(l => norm(l.innerText).startsWith(alvo))
+      if (!lbl) return false
+      const id = lbl.getAttribute('for')
+      const input = id && document.getElementById(id)
+      if (!input || input.tagName !== 'INPUT') return false
+      // Preenche e dispara eventos pro Angular reagir
+      input.focus()
+      const proto = Object.getPrototypeOf(input)
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set
+      if (setter) setter.call(input, String(valor))
+      else input.value = String(valor)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      input.dispatchEvent(new Event('blur', { bubbles: true }))
+      return true
+    }, { textoLabel, valor })
+    if (!ok) log.debug('Label/input não encontrado em preencherPorLabel', { textoLabel })
+    return ok
+  } catch (err) {
+    log.warn('Erro em preencherPorLabel', { textoLabel, erro: err.message })
+    return false
+  }
 }
 
 // Lê o valor exibido em um mat-select (Angular Material).
@@ -740,7 +773,8 @@ async function extrairResultado(page) {
 
 module.exports = {
   URL, login, logout, abrirCotacaoAuto,
-  preencher, selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
+  preencher, preencherPorLabel,
+  selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
   clicarProximo, clicarCalcular, extrairResultado,
   verificarErrosFormulario, forcarValidacao,
   primeiroSeletor,

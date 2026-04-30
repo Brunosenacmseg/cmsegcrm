@@ -327,6 +327,11 @@ async function cotacaoAuto(page, dados) {
     await ag.selecionar(page, ['carroReservaAr'], dados.carro_reserva_ar)
   }
 
+  // Comissão Padrão %: campo sem name/formcontrolname; localizar via label.
+  // Default 20 conforme padrão da corretora.
+  const comissao = dados.comissao_pct || dados.comissao_padrao || '20'
+  await ag.preencherPorLabel(page, 'Comissão Padrão', String(comissao))
+
   // ─── 6.5) Validar formulário antes do Calcular #1 ──────────
   // Força blur em todos os campos pra Angular marcar os "touched"
   // e depois escaneia mat-form-field-invalid / mat-error / required vazios.
