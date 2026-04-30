@@ -365,17 +365,30 @@ async function selecionar(page, nomes, valor) {
     await page.keyboard.press('Escape').catch(() => {})
     await page.waitForTimeout(250)
 
-    // Abre o mat-select disparando .click() direto no DOM —
+    // Abre o mat-select disparando eventos no DOM —
     // assim o Playwright não bloqueia por causa do backdrop ainda visível.
+    // Angular Material listens for pointerdown/mousedown — só .click() não basta.
     const abriu = await page.evaluate((sel) => {
       const el = document.querySelector(sel)
-      if (!el) return false
-      // Scroll pra trazer pra perto do meio da tela
+      if (!el) return 'nao-encontrado'
+      if (el.getAttribute('aria-disabled') === 'true' || el.classList.contains('mat-mdc-select-disabled')) {
+        return 'disabled'
+      }
       el.scrollIntoView({ block: 'center', behavior: 'instant' })
-      el.click()
-      return true
+      const trigger = el.querySelector('.mat-mdc-select-trigger') || el
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { trigger.dispatchEvent(new PointerEvent('pointerdown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mouseup', opts)) } catch (e) {}
+      try { trigger.click() } catch (e) {}
+      return 'ok'
     }, selMat)
-    if (!abriu) { log.warn('mat-select não abriu', { nomes }); return false }
+
+    if (abriu === 'disabled') {
+      log.debug('mat-select está desabilitado — pulando', { nomes, valor: v })
+      return false
+    }
+    if (abriu !== 'ok') { log.warn('mat-select não encontrado', { nomes }); return false }
 
     await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
     // Lista as opções e tenta achar match
