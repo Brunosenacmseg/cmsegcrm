@@ -132,11 +132,47 @@ const SELECTORES_SENHA = [
 ]
 
 // ─── Navegação para cotação de auto ──────────────────────────────────
+// Após login, o aggilizador vai pra /cotacoes (lista). Pra criar nova,
+// precisa clicar em "Nova Cotação", que abre um wizard pra escolher o
+// tipo (Automóvel, Vida, etc). Em seguida selecionamos Automóvel.
 async function abrirCotacaoAuto(page) {
-  const url = `${URL.replace(/\/$/, '')}/cotacoes/novo/auto`
-  log.info('Abrindo cotação auto', { url })
-  await page.goto(url, { waitUntil: 'domcontentloaded' })
+  log.info('Abrindo nova cotação de auto')
+
+  // 1) Garante que estamos na lista de cotações
+  if (!page.url().includes('/cotacoes')) {
+    await page.goto(`${URL.replace(/\/$/, '')}/cotacoes`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1500)
+  }
+
+  // 2) Clica em "Nova Cotação"
+  const btnNova = await primeiroSeletor(page, [
+    'button:has-text("Nova Cotação")',
+    'button:has-text("Nova cotação")',
+    'a:has-text("Nova Cotação")',
+    'button.wrapper-trigger',
+  ])
+  if (!btnNova) throw new Error('Botão "Nova Cotação" não encontrado')
+  await page.click(btnNova)
+  await page.waitForTimeout(1500)
+
+  // 3) Wizard abre — selecionar Automóvel
+  const opcaoAuto = await primeiroSeletor(page, [
+    'button:has-text("Automóvel")',
+    'button:has-text("Auto")',
+    'a:has-text("Automóvel")',
+    'div:has-text("Automóvel"):not(:has(div))',
+    '[role="menuitem"]:has-text("Automóvel")',
+  ])
+  if (opcaoAuto) {
+    await page.click(opcaoAuto)
+    await page.waitForTimeout(1500)
+  } else {
+    log.warn('Opção "Automóvel" não encontrada após Nova Cotação — pode já estar no formulário')
+  }
+
+  // Espera o formulário renderizar
   await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {})
+  await page.waitForTimeout(1500)
 }
 
 // ─── Helpers genéricos de preenchimento ──────────────────────────────

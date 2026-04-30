@@ -107,45 +107,40 @@ app.post('/debug-login', async (req, res) => {
   }
 })
 
-// DEBUG: faz login e abre a tela de cotação, devolve estrutura dos campos.
+// DEBUG: faz login e tenta abrir a tela de cotação, devolve estrutura.
 // Usado pra mapear seletores corretos quando o site mudar.
 app.post('/debug-cotacao', async (req, res) => {
   let session = null
+  const ag = require('./lib/aggilizador')
   try {
     session = await browser.newSession()
     const page = session.page
-    const ag   = require('./lib/aggilizador')
 
     await ag.login(page)
-    await ag.abrirCotacaoAuto(page)
-    await page.waitForTimeout(3000)  // dá tempo do Angular renderizar
 
-    const info = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll('input')).map(i => ({
-        type: i.type, name: i.name, id: i.id,
-        placeholder: i.placeholder,
-        formcontrolname: i.getAttribute('formcontrolname'),
-        class: (i.className || '').slice(0, 100),
-        visible: i.offsetParent !== null,
-      })).filter(i => i.visible)
-      const selects = Array.from(document.querySelectorAll('select, mat-select')).map(s => ({
-        tag: s.tagName.toLowerCase(),
-        name: s.name || s.getAttribute('formcontrolname'),
-        id: s.id, class: (s.className || '').slice(0, 100),
-      }))
-      const labels = Array.from(document.querySelectorAll('label, mat-label')).map(l => ({
-        text: (l.innerText || l.textContent || '').trim().slice(0, 60),
-        for:  l.htmlFor,
-      })).filter(l => l.text)
-      const buttons = Array.from(document.querySelectorAll('button')).map(b => ({
-        text: (b.innerText || b.textContent || '').trim().slice(0, 60),
-        type: b.type, id: b.id,
-        class: (b.className || '').slice(0, 100),
-      })).filter(b => b.text)
-      return { url: location.href, title: document.title, inputs, selects, labels, buttons: buttons.slice(0, 30) }
-    })
+    // Primeiro coleta a tela /cotacoes (lista). Útil pra achar o botão Nova Cotação.
+    await page.goto(`${process.env.AGGILIZADOR_URL || 'https://aggilizador.com.br'}/cotacoes`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2000)
+    const tela_lista = await capturarPagina(page)
 
-    res.json({ ok: true, ...info })
+    // Depois tenta ir pra cotação nova de auto
+    let tela_form = null
+    try {
+      await ag.abrirCotacaoAuto(page)
+      await page.waitForTimeout(2500)
+      tela_form = await capturarPagina(page)
+    } catch (err) {
+      tela_form = { erro: err.message }
+      try { tela_form.estado_atual = await capturarPagina(page) } catch {}
+    }
+
+    // Salva screenshot do estado final
+    const dir = process.env.LOG_DIR || './logs'
+    fs.mkdirSync(dir, { recursive: true })
+    const screenshotPath = path.join(dir, `debug-cotacao-${Date.now()}.png`)
+    await session.page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {})
+
+    res.json({ ok: true, screenshot_path: screenshotPath, tela_lista, tela_form })
   } catch (err) {
     log.error('Erro em /debug-cotacao', { erro: err.message })
     let screenshotPath = null
@@ -156,16 +151,7 @@ app.post('/debug-cotacao', async (req, res) => {
         fs.mkdirSync(dir, { recursive: true })
         screenshotPath = path.join(dir, `debug-cotacao-${Date.now()}.png`)
         await session.page.screenshot({ path: screenshotPath, fullPage: true })
-        // Captura estrutura da página atual (mesmo se não chegou em /cotacoes)
-        pageInfo = await session.page.evaluate(() => ({
-          url: location.href,
-          title: document.title,
-          texto_visivel: document.body.innerText.slice(0, 800),
-          inputs: Array.from(document.querySelectorAll('input')).slice(0, 15).map(i => ({
-            type: i.type, id: i.id, name: i.name,
-            visible: i.offsetParent !== null,
-          })),
-        })).catch(() => null)
+        pageInfo = await capturarPagina(session.page)
       } catch {}
     }
     res.status(500).json({
@@ -175,12 +161,46 @@ app.post('/debug-cotacao', async (req, res) => {
     })
   } finally {
     if (session) {
-      const ag = require('./lib/aggilizador')
       try { await ag.logout(session.page) } catch {}
       await session.close()
     }
   }
 })
+
+// Helper: captura uma "foto" estruturada da página atual.
+async function capturarPagina(page) {
+  return await page.evaluate(() => {
+    const inputs = Array.from(document.querySelectorAll('input')).map(i => ({
+      type: i.type, id: i.id, name: i.name,
+      placeholder: i.placeholder,
+      formcontrolname: i.getAttribute('formcontrolname'),
+      class: (i.className || '').slice(0, 80),
+      visible: i.offsetParent !== null,
+    })).filter(i => i.visible)
+    const selects = Array.from(document.querySelectorAll('select, mat-select')).map(s => ({
+      tag: s.tagName.toLowerCase(),
+      name: s.name || s.getAttribute('formcontrolname'),
+      id: s.id, class: (s.className || '').slice(0, 80),
+    }))
+    const labels = Array.from(document.querySelectorAll('label, mat-label')).map(l => ({
+      text: (l.innerText || l.textContent || '').trim().slice(0, 60),
+      for:  l.htmlFor,
+    })).filter(l => l.text)
+    const buttons = Array.from(document.querySelectorAll('button, a[role="button"], [role="menuitem"]')).map(b => ({
+      tag:  b.tagName.toLowerCase(),
+      text: (b.innerText || b.textContent || '').trim().slice(0, 60),
+      type: b.type, id: b.id,
+      class: (b.className || '').slice(0, 80),
+    })).filter(b => b.text)
+    return {
+      url: location.href,
+      title: document.title,
+      texto_visivel: document.body.innerText.slice(0, 1500),
+      inputs, selects, labels,
+      buttons: buttons.slice(0, 40),
+    }
+  })
+}
 
 // Consulta rápida por CPF (usado pelo CRM para auto-preencher cotação)
 app.post('/consultar-cpf', async (req, res) => {
