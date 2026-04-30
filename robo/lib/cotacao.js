@@ -134,6 +134,29 @@ async function cotacaoAuto(page, dados) {
   await ag.selecionar(page, ['vidros'],         dados.vidros)
   await ag.selecionar(page, ['carroReserva'],   dados.carro_reserva)
 
+  // ─── 6.5) Validar formulário antes do Calcular #1 ──────────
+  // Força blur em todos os campos pra Angular marcar os "touched"
+  // e depois escaneia mat-form-field-invalid / mat-error / required vazios.
+  await ag.forcarValidacao(page)
+  await page.waitForTimeout(400)
+  const validacao = await ag.verificarErrosFormulario(page)
+  if (!validacao.ok) {
+    log.warn('Formulário tem problemas antes do Calcular', { problemas: validacao.problemas })
+    // Aborta com mensagem amigável — o screenshot é capturado de qualquer forma
+    const lista = validacao.problemas.slice(0, 12)
+      .map(p => `• ${p.campo}: ${p.motivo}${p.valor?` (atual: "${p.valor}")`:''}`)
+      .join('\n')
+    const screenshot = (await page.screenshot({ type: 'png', fullPage: true })).toString('base64')
+    return {
+      ok: false,
+      erro: 'Formulário inválido — não cliquei em Calcular',
+      problemas: validacao.problemas,
+      detalhe: lista,
+      screenshot,
+    }
+  }
+  log.info('Formulário validado — sem erros aparentes')
+
   // ─── 7) Calcular ───────────────────────────────────────────
   // O aggilizador tem DOIS passos de Calcular:
   //   1º — fim do formulário → vai pra tela de seleção de seguradoras

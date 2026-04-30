@@ -464,6 +464,100 @@ async function clicarCalcular(page) {
   return false
 }
 
+// Verifica se o formulário tem erros de validação ou campos obrigatórios vazios.
+// Retorna { ok, problemas: [{ campo, motivo, valor }] }.
+// Heurística baseada em Angular Material (mat-form-field-invalid, mat-error,
+// ng-invalid, aria-invalid). Sempre devolve algo — se não encontrar, ok=true.
+async function verificarErrosFormulario(page) {
+  try {
+    return await page.evaluate(() => {
+      const problemas = []
+      const norm = (s) => (s || '').toString().trim().replace(/\s+/g, ' ')
+
+      // Função pra achar o "label" do campo: matFormField label, label[for],
+      // placeholder, ou label visível mais próximo
+      function rotuloDoCampo(el) {
+        // 1) Sobe até o mat-form-field e pega o mat-label
+        const mff = el.closest('mat-form-field, .mat-form-field, .mat-mdc-form-field')
+        if (mff) {
+          const lbl = mff.querySelector('mat-label, .mat-mdc-floating-label, .mat-form-field-label')
+          if (lbl && lbl.innerText) return norm(lbl.innerText)
+        }
+        // 2) label[for=id]
+        if (el.id) {
+          const lblFor = document.querySelector(`label[for="${el.id}"]`)
+          if (lblFor) return norm(lblFor.innerText)
+        }
+        // 3) placeholder ou aria-label
+        return norm(el.getAttribute('aria-label') || el.placeholder || el.name || el.id || el.tagName)
+      }
+
+      // 1) Campos com classes/atributos de inválido
+      const invalidos = Array.from(document.querySelectorAll(
+        '.mat-form-field-invalid input, .mat-form-field-invalid mat-select, ' +
+        '.ng-invalid.ng-touched:not(form):not([formgroup]), ' +
+        '[aria-invalid="true"]'
+      ))
+      const vistos = new Set()
+      for (const el of invalidos) {
+        const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
+        if (vistos.has(rotulo)) continue
+        vistos.add(rotulo)
+        const valor = (el.value || el.innerText || '').toString().slice(0, 40)
+        problemas.push({ campo: rotulo, motivo: 'inválido', valor })
+      }
+
+      // 2) Mensagens de erro renderizadas (mat-error, .error-message)
+      const erros = Array.from(document.querySelectorAll('mat-error, .mat-mdc-form-field-error, .mat-error, .error-message, .field-error'))
+      for (const el of erros) {
+        const txt = norm(el.innerText)
+        if (!txt) continue
+        const mff = el.closest('mat-form-field, .mat-form-field, .mat-mdc-form-field')
+        let rotulo = '(sem rótulo)'
+        if (mff) {
+          const lbl = mff.querySelector('mat-label, .mat-mdc-floating-label')
+          if (lbl) rotulo = norm(lbl.innerText)
+        }
+        if (vistos.has(rotulo + ':' + txt)) continue
+        vistos.add(rotulo + ':' + txt)
+        problemas.push({ campo: rotulo, motivo: txt, valor: '' })
+      }
+
+      // 3) Inputs obrigatórios visíveis sem valor
+      const obrigatorios = Array.from(document.querySelectorAll('input[required], select[required], mat-select[required]'))
+      for (const el of obrigatorios) {
+        const visivel = el.offsetParent !== null || (el.getBoundingClientRect && el.getBoundingClientRect().height > 0)
+        if (!visivel) continue
+        const v = (el.value || '').toString().trim()
+        if (v) continue
+        const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
+        if (vistos.has(rotulo + ':obrig')) continue
+        vistos.add(rotulo + ':obrig')
+        problemas.push({ campo: rotulo, motivo: 'obrigatório vazio', valor: '' })
+      }
+
+      return { ok: problemas.length === 0, problemas }
+    })
+  } catch (err) {
+    return { ok: true, problemas: [], aviso: 'falha ao escanear: ' + err.message }
+  }
+}
+
+// Tenta forçar o "blur" em todos os campos pra que o Angular marque os
+// inválidos antes de inspecionar (mat-form-field só fica invalid após touched).
+async function forcarValidacao(page) {
+  try {
+    await page.evaluate(() => {
+      const els = document.querySelectorAll('input, mat-select, select, textarea')
+      for (const el of els) {
+        try {
+          el.dispatchEvent(new Event('blur', { bubbles: true }))
+        } catch {}
+      }
+    })
+  } catch {}
+}
+
 // Tenta extrair preço/parcelas/seguradora da tela de resultado em formato JSON.
 // Heurística: pega blocos com "R$", "parcela", "seguradora". Sempre devolve algo,
 // mesmo que parcial — o screenshot é o backup oficial.
@@ -501,5 +595,6 @@ module.exports = {
   URL, login, logout, abrirCotacaoAuto,
   preencher, selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
   clicarProximo, clicarCalcular, extrairResultado,
+  verificarErrosFormulario, forcarValidacao,
   primeiroSeletor,
 }
