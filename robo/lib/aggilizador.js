@@ -355,8 +355,13 @@ async function selecionar(page, nomes, valor) {
   }
 
   try {
-    // Abre o dropdown
-    await page.click(selMat, { timeout: 5000 })
+    // Fecha qualquer dropdown anterior cujo backdrop ainda esteja na tela
+    // (o cdk-overlay-backdrop intercepta cliques nos próximos mat-selects).
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(150)
+    // Click com force: true ignora o backdrop, evitando o erro
+    // "subtree intercepts pointer events".
+    await page.click(selMat, { timeout: 8000, force: true })
     await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
     // Lista as opções e tenta achar match
     const opcoes = await page.$$('mat-option, .mat-mdc-option')

@@ -347,9 +347,14 @@ async function processarCotacaoAsync(cotacao_id, dados) {
       status: resultado.ok ? 'concluido' : 'erro',
       screenshot_url: screenshotUrl,
     }
-    // Se a tabela tiver coluna `valor` ou `resultado`, popular também
-    if (resultado.valor)     update.valor = resultado.valor
-    if (resultado.resultado) update.resultado = resultado.resultado
+    // Guarda os dados calculados (preços, coberturas) no campo JSON `dados`
+    // que já existe na tabela. Mescla com os dados de input pra preservar tudo.
+    const dadosFinal = { ...dados }
+    if (resultado.precos)     dadosFinal.precos = resultado.precos
+    if (resultado.valor)      dadosFinal.valor = resultado.valor
+    if (resultado.resultado)  dadosFinal.resultado = resultado.resultado
+    if (resultado.coberturas) dadosFinal.coberturas = resultado.coberturas
+    update.dados = dadosFinal
 
     const { error: updErr } = await sb.from('cotacoes').update(update).eq('id', cotacao_id)
     if (updErr) log.error('Falha ao atualizar cotação', { erro: updErr.message, cotacao_id })
