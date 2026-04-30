@@ -25,7 +25,7 @@ interface Sync {
 
 const RECURSOS: { key: string; label: string; emoji: string; descricao: string }[] = [
   { key: 'usuarios',   label: 'Usuários',   emoji: '👥', descricao: 'Vincula usuários do RD por e-mail aos corretores existentes' },
-  { key: 'funis',      label: 'Funis',      emoji: '📊', descricao: 'Cria funis "RD: <Nome>" com as etapas do RD Station' },
+  { key: 'funis',      label: 'Funis',      emoji: '📊', descricao: 'Replica os funis e etapas do RD Station (nomes idênticos)' },
   { key: 'contatos',   label: 'Contatos',   emoji: '👤', descricao: 'Importa contatos como clientes (PF/PJ por CPF/CNPJ)' },
   { key: 'negocios',   label: 'Negócios',   emoji: '💼', descricao: 'Importa deals nos funis correspondentes' },
   { key: 'atividades', label: 'Atividades', emoji: '✅', descricao: 'Importa tarefas, ligações, e-mails e notas' },

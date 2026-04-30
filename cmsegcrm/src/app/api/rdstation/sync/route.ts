@@ -117,7 +117,8 @@ async function importarFunis(token: string) {
   const pipelines = await listarTodos<RDPipeline>('/deal_pipelines', token, 'deal_pipelines')
   stats.qtd_lidos = pipelines.length
 
-  for (const p of pipelines) {
+  for (let idx = 0; idx < pipelines.length; idx++) {
+    const p = pipelines[idx]
     try {
       const id = rdId(p)
       if (!id) continue
@@ -125,13 +126,18 @@ async function importarFunis(token: string) {
       const etapas = stages.map(s => s.name || 'Etapa').filter(Boolean)
       if (etapas.length === 0) etapas.push('Novo', 'Em andamento', 'Ganho', 'Perdido')
 
-      const nome = `RD: ${p.name || 'Pipeline'}`
+      // Nome idêntico ao RD Station (sem prefixo)
+      const nome = (p.name || 'Pipeline').trim()
       const { data: existente } = await supabaseAdmin.from('funis').select('id').eq('rd_id', id).maybeSingle()
       if (existente) {
+        // Mantém emoji/cor/tipo customizados pelo admin; só atualiza nome e etapas
         await supabaseAdmin.from('funis').update({ nome, etapas }).eq('id', existente.id)
         stats.qtd_atualizados++
       } else {
-        await supabaseAdmin.from('funis').insert({ rd_id: id, nome, tipo: 'venda', emoji: '📊', cor: '#1cb5a0', etapas, ordem: 99 })
+        await supabaseAdmin.from('funis').insert({
+          rd_id: id, nome, tipo: 'venda', emoji: '📊', cor: '#1cb5a0',
+          etapas, ordem: idx + 1,
+        })
         stats.qtd_criados++
       }
     } catch (e: any) {
