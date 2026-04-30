@@ -16,22 +16,29 @@ async function login(page) {
   log.info('Login no aggilizador', { email: EMAIL })
   await page.goto(URL, { waitUntil: 'domcontentloaded' })
 
-  // Esperar campo de email aparecer (vários seletores possíveis)
-  const emailSel = await primeiroSeletor(page, [
-    'input[type="email"]',
-    'input[name="email"]',
-    'input[id="email"]',
-    'input[placeholder*="mail" i]',
-  ])
+  // Se a home não tem campo de login, tenta as rotas mais comuns
+  let emailSel = await primeiroSeletor(page, SELECTORES_EMAIL)
+  if (!emailSel) {
+    for (const path of ['/login', '/entrar', '/auth/login', '/sign-in']) {
+      log.debug('Tentando ' + path)
+      await page.goto(URL.replace(/\/$/, '') + path, { waitUntil: 'domcontentloaded' }).catch(() => {})
+      emailSel = await primeiroSeletor(page, SELECTORES_EMAIL)
+      if (emailSel) break
+    }
+  }
+  // Talvez o login esteja num modal — tentar abrir clicando em "Entrar"
+  if (!emailSel) {
+    for (const sel of ['button:has-text("Entrar")', 'a:has-text("Entrar")', 'button:has-text("Login")', 'a:has-text("Login")']) {
+      const btn = await page.$(sel).catch(() => null)
+      if (btn) { await btn.click().catch(() => {}); await page.waitForTimeout(800); break }
+    }
+    emailSel = await primeiroSeletor(page, SELECTORES_EMAIL)
+  }
+
   if (!emailSel) throw new Error('Campo de email não encontrado na tela de login')
   await page.fill(emailSel, EMAIL)
 
-  const senhaSel = await primeiroSeletor(page, [
-    'input[type="password"]',
-    'input[name="password"]',
-    'input[name="senha"]',
-    'input[id="password"]',
-  ])
+  const senhaSel = await primeiroSeletor(page, SELECTORES_SENHA)
   if (!senhaSel) throw new Error('Campo de senha não encontrado')
   await page.fill(senhaSel, SENHA)
 
@@ -40,24 +47,65 @@ async function login(page) {
     'button[type="submit"]',
     'button:has-text("Entrar")',
     'button:has-text("Login")',
+    'button:has-text("Acessar")',
     'input[type="submit"]',
   ])
   if (btn) await page.click(btn)
 
   // Espera redirecionamento ou erro
   await Promise.race([
-    page.waitForURL(u => !u.toString().includes('/login'), { timeout: 30000 }).catch(() => null),
+    page.waitForURL(u => !/\/(login|entrar|sign-in|auth)/i.test(u.toString()), { timeout: 30000 }).catch(() => null),
     page.waitForTimeout(8000),
   ])
 
   // Detecta erro de login: ainda na mesma URL ou mensagem visível
-  if (page.url().toLowerCase().includes('login')) {
-    const err = await page.locator('text=/inválid|incorret|erro/i').first().textContent().catch(() => '')
+  if (/\/(login|entrar|sign-in|auth)/i.test(page.url())) {
+    const err = await page.locator('text=/inválid|incorret|erro|senha/i').first().textContent().catch(() => '')
     throw new Error('Login falhou' + (err ? ': ' + err.trim() : ''))
   }
 
   log.info('Login OK', { url: page.url() })
 }
+
+// Lista expandida de seletores comuns para email/usuário em apps brasileiros
+const SELECTORES_EMAIL = [
+  'input[type="email"]',
+  'input[name="email"]',
+  'input[id="email"]',
+  '#email',
+  'input[autocomplete="username"]',
+  'input[autocomplete="email"]',
+  'input[name="usuario"]',
+  'input[name="user"]',
+  'input[name="login"]',
+  'input[id="usuario"]',
+  'input[id="login"]',
+  'input[id="username"]',
+  'input[name="username"]',
+  'input[placeholder*="mail" i]',
+  'input[placeholder*="usuário" i]',
+  'input[placeholder*="usuario" i]',
+  'input[placeholder*="login" i]',
+  'input[data-testid*="email" i]',
+  'input[data-testid*="login" i]',
+  'input[data-testid*="user" i]',
+]
+
+const SELECTORES_SENHA = [
+  'input[type="password"]',
+  'input[name="password"]',
+  'input[name="senha"]',
+  'input[id="password"]',
+  'input[id="senha"]',
+  '#password',
+  '#senha',
+  'input[autocomplete="current-password"]',
+  'input[autocomplete="password"]',
+  'input[placeholder*="senha" i]',
+  'input[placeholder*="password" i]',
+  'input[data-testid*="senha" i]',
+  'input[data-testid*="password" i]',
+]
 
 // ─── Navegação para cotação de auto ──────────────────────────────────
 async function abrirCotacaoAuto(page) {
