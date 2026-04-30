@@ -137,9 +137,11 @@ export default function CotacoesPage() {
   }
 
   // Indicadores de auto-preenchimento (mostra spinner ao consultar)
-  const [consultandoCpf, setConsultandoCpf] = useState(false)
-  const [consultandoCep, setConsultandoCep] = useState<'res'|'pernoite'|null>(null)
-  const [ultimoCpfConsultado, setUltimoCpfConsultado] = useState('')
+  const [consultandoCpf, setConsultandoCpf]     = useState(false)
+  const [consultandoPlaca, setConsultandoPlaca] = useState(false)
+  const [consultandoCep, setConsultandoCep]     = useState<'res'|'pernoite'|null>(null)
+  const [ultimoCpfConsultado, setUltimoCpfConsultado]     = useState('')
+  const [ultimaPlacaConsultada, setUltimaPlacaConsultada] = useState('')
 
   // Quando o CPF tem 11 dígitos completos, chama /api/cotacoes/consultar
   // que tenta achar na base local primeiro, depois no robô (se configurado).
@@ -177,6 +179,42 @@ export default function CotacoesPage() {
       }
     } catch {} finally {
       setConsultandoCpf(false)
+    }
+  }
+
+  // Quando a placa tem 7 caracteres válidos, chama /api/cotacoes/consultar-placa
+  // que delega ao robô — ele loga no aggilizador, digita a placa e captura
+  // modelo, ano, fipe, etc. preenchidos automaticamente.
+  async function consultarPlaca(placaFormatada: string) {
+    const placaLimpa = (placaFormatada || '').toUpperCase().replace(/\W/g, '')
+    if (placaLimpa.length < 7) return
+    if (placaLimpa === ultimaPlacaConsultada) return
+    setUltimaPlacaConsultada(placaLimpa)
+    setConsultandoPlaca(true)
+    try {
+      const res = await fetch('/api/cotacoes/consultar-placa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ placa: placaLimpa }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (json?.encontrado && json?.dados) {
+        const d = json.dados
+        setForm(f => ({
+          ...f,
+          modelo:      f.modelo      || d.modelo           || '',
+          ano_fab:     f.ano_fab     || d.ano_fab          || '',
+          ano_mod:     f.ano_mod     || d.ano_mod          || '',
+          combustivel: f.combustivel || d.combustivel      || '',
+        }))
+        setMsg('✅ Veículo encontrado pela placa')
+        setTimeout(() => setMsg(''), 3000)
+      } else if (json?.error) {
+        setMsg('⚠ ' + json.error)
+        setTimeout(() => setMsg(''), 4000)
+      }
+    } catch {} finally {
+      setConsultandoPlaca(false)
     }
   }
 
@@ -431,7 +469,15 @@ export default function CotacoesPage() {
 
               {aba==='veiculo' && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <Inp label="Placa *"                  value={form.placa}       onChange={setMasked('placa', maskPlaca)} placeholder="ABC-1D23" />
+                  <Campo label={`Placa *${consultandoPlaca ? ' 🔄 buscando dados...' : ''}`}>
+                    <input
+                      value={form.placa}
+                      onChange={e => setForm(f => ({ ...f, placa: maskPlaca(e.target.value) }))}
+                      onBlur={e => consultarPlaca(e.target.value)}
+                      placeholder="ABC-1D23"
+                      style={INP_STYLE}
+                    />
+                  </Campo>
                   <Inp label="Chassi"                   value={form.chassi}      onChange={set('chassi')}      placeholder="Opcional" />
                   <Inp label="Ano Fabricação *"         value={form.ano_fab}     onChange={set('ano_fab')}     placeholder="2020" />
                   <Inp label="Ano Modelo *"             value={form.ano_mod}     onChange={set('ano_mod')}     placeholder="2021" />
