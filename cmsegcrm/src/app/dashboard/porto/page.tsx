@@ -17,22 +17,31 @@ function UploadArquivoPorto({ onUpload, disabled }: { onUpload: (file: File, tip
   const [file, setFile] = useState<File | null>(null)
   const [tipo, setTipo] = useState<string>('AUTO')
   const inp: React.CSSProperties = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
+  const tamanhoMB = file ? (file.size / 1024 / 1024).toFixed(2) : '0'
+  const grande = file && file.size > 4 * 1024 * 1024
   return (
-    <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-      <input type="file" accept=".ret,.RET,.sap,.SAP,.cbs,.CBS,.app,.APP,.si2,.SI2,.com,.COM,.txt,.TXT"
-        onChange={e => setFile(e.target.files?.[0] || null)}
-        style={{...inp, flex:'1 1 280px', minWidth:200}} />
-      <select value={tipo} onChange={e=>setTipo(e.target.value)} style={{...inp, minWidth:170}}>
-        <option value="AUTO">Detectar automaticamente</option>
-        <option value="COBRANCA">Cobrança (.SAP/.RET/.CBS)</option>
-        <option value="APOLICES">Apólices (.APP/.IRE/etc)</option>
-        <option value="SINISTRO">Sinistro (.SI2)</option>
-        <option value="COMISSOES">Comissões (.COM)</option>
-      </select>
-      <button onClick={()=>{ if (file) onUpload(file, tipo === 'AUTO' ? '' : tipo) }} disabled={!file || disabled}
-        className="btn-primary" style={{padding:'7px 18px',fontSize:13, opacity: !file ? 0.5 : 1}}>
-        {disabled ? '⏳ Processando...' : '📤 Enviar e processar'}
-      </button>
+    <div>
+      <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+        <input type="file" accept=".ret,.RET,.sap,.SAP,.cbs,.CBS,.app,.APP,.si2,.SI2,.com,.COM,.txt,.TXT"
+          onChange={e => setFile(e.target.files?.[0] || null)}
+          style={{...inp, flex:'1 1 280px', minWidth:200}} />
+        <select value={tipo} onChange={e=>setTipo(e.target.value)} style={{...inp, minWidth:170}}>
+          <option value="AUTO">Detectar automaticamente</option>
+          <option value="COBRANCA">Cobrança (.SAP/.RET/.CBS)</option>
+          <option value="APOLICES">Apólices (.APP/.IRE/etc)</option>
+          <option value="SINISTRO">Sinistro (.SI2)</option>
+          <option value="COMISSOES">Comissões (.COM)</option>
+        </select>
+        <button onClick={()=>{ if (file) onUpload(file, tipo === 'AUTO' ? '' : tipo) }} disabled={!file || disabled || !!grande}
+          className="btn-primary" style={{padding:'7px 18px',fontSize:13, opacity: !file || grande ? 0.5 : 1}}>
+          {disabled ? '⏳ Processando...' : '📤 Enviar e processar'}
+        </button>
+      </div>
+      {file && (
+        <div style={{marginTop:10, fontSize:11, color: grande ? 'var(--red)' : 'var(--text-muted)'}}>
+          📄 {file.name} · {tamanhoMB} MB {grande && ' — ❌ Maior que 4 MB. Vercel limita o body. Comprima ou divida.'}
+        </div>
+      )}
     </div>
   )
 }
@@ -186,12 +195,19 @@ export default function PortoIntegracaoPage() {
   }
 
   async function processarUpload(file: File, tipoForcado: string) {
+    console.log('[upload] iniciando', { name: file.name, size: file.size, tipo: tipoForcado })
     setSincronizando(true); setResultado(null)
     try {
-      // Lê como texto (Latin-1 para arquivos da Porto)
+      const tamanhoMB = file.size / 1024 / 1024
+      if (tamanhoMB > 4) {
+        setResultado({ erro: `Arquivo muito grande (${tamanhoMB.toFixed(1)} MB). Limite é 4 MB. Comprime ou divide o arquivo.` })
+        return
+      }
+
       const buf = await file.arrayBuffer()
       const decoder = new TextDecoder('latin1')
       const conteudo = decoder.decode(buf)
+      console.log('[upload] arquivo lido, chars:', conteudo.length)
 
       const r = await fetch('/api/porto/sync', {
         method: 'POST',
@@ -203,15 +219,21 @@ export default function PortoIntegracaoPage() {
           tipo_forcado: tipoForcado,
         }),
       })
-      const d = await r.json()
-      if (d.error) {
-        setResultado({ erro: d.error })
+      console.log('[upload] resposta HTTP', r.status)
+
+      let d: any = null
+      try { d = await r.json() } catch { d = { error: `HTTP ${r.status} sem JSON na resposta` } }
+      console.log('[upload] resposta body:', d)
+
+      if (!r.ok || d.error) {
+        setResultado({ erro: d?.error || `HTTP ${r.status}` })
       } else {
         setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
       }
       await carregarHistorico(); await carregarStats()
     } catch (err: any) {
-      setResultado({ erro: err.message || 'Erro ao ler arquivo' })
+      console.error('[upload] erro:', err)
+      setResultado({ erro: `${err?.name || 'Erro'}: ${err?.message || 'falha desconhecida'}` })
     } finally {
       setSincronizando(false)
     }
