@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getAccessTokenValido } from '@/lib/rdstation-oauth'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,10 +51,18 @@ export async function POST(request: NextRequest) {
   const auth = await checarAdmin(request)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
-  const rdToken = request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN
   const secret = process.env.RDSTATION_WEBHOOK_SECRET
-  if (!rdToken) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
   if (!secret) return NextResponse.json({ error: 'RDSTATION_WEBHOOK_SECRET não configurado' }, { status: 400 })
+
+  // Prioriza OAuth (v2). Se não tiver, cai para o token v1 do header/env (provavelmente vai dar 401 na v2).
+  let rdToken: string
+  try {
+    rdToken = await getAccessTokenValido()
+  } catch (e: any) {
+    const fallback = request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN
+    if (!fallback) return NextResponse.json({ error: e?.message || 'OAuth não conectado' }, { status: 400 })
+    rdToken = fallback
+  }
 
   const origin = request.nextUrl.origin
   const webhookUrl = `${origin}/api/rdstation/webhook`
