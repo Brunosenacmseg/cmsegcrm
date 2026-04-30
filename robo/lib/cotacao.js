@@ -70,7 +70,8 @@ async function cotacaoAuto(page, dados) {
   await ag.selecionar(page, ['alienado'],       dados.alienado)
 
   // ─── 3) Condutor ───────────────────────────────────────────
-  if (dados.condutor_principal) await ag.selecionar(page, ['relacaoSegurado'], dados.condutor_principal)
+  // perfilRelacaoSegurado é o nome real do select no aggilizador
+  if (dados.condutor_principal) await ag.selecionar(page, ['perfilRelacaoSegurado','relacaoSegurado'], dados.condutor_principal)
   await ag.preencher(page, ['cpfCnpj', 'perfilCpfCnpj'], dados.cpf_condutor)
   await ag.preencher(page, ['nome', 'perfilNomeCondutor'], dados.nome_condutor)
   await ag.preencher(page, ['dataNasc', 'perfilDataNascimento'], dados.nascimento_condutor)
@@ -117,8 +118,17 @@ async function cotacaoAuto(page, dados) {
   }
 
   // ─── 6) Coberturas ─────────────────────────────────────────
-  await ag.selecionar(page, ['tipoCobertura'], dados.tipo_cobertura)
-  await ag.selecionar(page, ['tipoFranquia'],  dados.tipo_franquia)
+  // Atenção aos nomes reais dos selects no aggilizador:
+  //   tipoCobertura  → pacote (Prata/Ouro/Diamante/Personalizada)
+  //   tpCobertura    → Tipo de Cobertura (Compreensiva/RCF/Roubo/Furto)
+  //   descricaoFranquia → Tipo de Franquia (Reduzida/Normal/Majorada)
+  //   pctAjuste      → Fipe (%) — opções com espaço, ex: "100 %"
+  // Selecionando "Personalizada" no pacote os campos individuais ficam
+  // habilitados pra edição.
+  await ag.selecionar(page, ['tipoCobertura'], dados.pacote_cobertura || 'Personalizada')
+  await page.waitForTimeout(400)
+  await ag.selecionar(page, ['tpCobertura'],   dados.tipo_cobertura)
+  await ag.selecionar(page, ['descricaoFranquia'], dados.tipo_franquia)
   await ag.selecionar(page, ['pctAjuste'],     dados.fipe_pct)
 
   // Coberturas em valor R$ — convertem strings tipo "10.000" pro input.
