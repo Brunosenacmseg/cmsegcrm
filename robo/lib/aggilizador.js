@@ -141,38 +141,94 @@ async function abrirCotacaoAuto(page) {
   // 1) Garante que estamos na lista de cotações
   if (!page.url().includes('/cotacoes')) {
     await page.goto(`${URL.replace(/\/$/, '')}/cotacoes`, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1500)
   }
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(2000)
 
-  // 2) Clica em "Nova Cotação"
+  // Aggilizador mostra popups ("Conheça o novo ramo saúde", "Comunicados",
+  // banner de extensão). Eles ficam num cdk-overlay-backdrop que intercepta
+  // cliques. Precisa fechar antes de tentar interagir.
+  await dismissarOverlays(page)
+
+  // 2) Clica em "Nova Cotação" usando o data-testid estável
   const btnNova = await primeiroSeletor(page, [
+    '[data-testid="btn_nova-cotacao"]',
+    'button[touranchor="nova-cotacao-btn"]',
     'button:has-text("Nova Cotação")',
-    'button:has-text("Nova cotação")',
-    'a:has-text("Nova Cotação")',
     'button.wrapper-trigger',
   ])
   if (!btnNova) throw new Error('Botão "Nova Cotação" não encontrado')
-  await page.click(btnNova)
-  await page.waitForTimeout(1500)
+
+  try {
+    await page.click(btnNova, { timeout: 5000 })
+  } catch (err) {
+    // Provavelmente um overlay surgiu. Tenta fechar e clicar com force.
+    log.warn('Click bloqueado, tentando fechar overlays e forçar', { erro: err.message })
+    await dismissarOverlays(page)
+    await page.click(btnNova, { force: true, timeout: 10000 })
+  }
+  await page.waitForTimeout(2000)
 
   // 3) Wizard abre — selecionar Automóvel
   const opcaoAuto = await primeiroSeletor(page, [
+    '[data-testid*="auto" i]',
     'button:has-text("Automóvel")',
-    'button:has-text("Auto")',
     'a:has-text("Automóvel")',
-    'div:has-text("Automóvel"):not(:has(div))',
-    '[role="menuitem"]:has-text("Automóvel")',
+    'div[role="menuitem"]:has-text("Automóvel")',
+    '.menu-item:has-text("Automóvel")',
+    'mat-list-item:has-text("Automóvel")',
   ])
   if (opcaoAuto) {
-    await page.click(opcaoAuto)
-    await page.waitForTimeout(1500)
+    await page.click(opcaoAuto, { force: true }).catch(() => {})
+    await page.waitForTimeout(2000)
   } else {
-    log.warn('Opção "Automóvel" não encontrada após Nova Cotação — pode já estar no formulário')
+    log.warn('Opção "Automóvel" não encontrada após Nova Cotação')
   }
 
-  // Espera o formulário renderizar
   await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {})
   await page.waitForTimeout(1500)
+}
+
+// Fecha qualquer popup/modal/overlay que possa estar bloqueando interações.
+// Estratégia: ESC + clicar em botões de fechar + clicar no backdrop.
+async function dismissarOverlays(page) {
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    let agiu = false
+
+    // ESC fecha modais Material por padrão
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(200)
+
+    // Botões com texto "close" ou X visíveis dentro de overlays
+    const closes = await page.$$('.cdk-overlay-container button, .cdk-overlay-container [role="button"]').catch(() => [])
+    for (const el of closes) {
+      const txt = await el.textContent().catch(() => '')
+      const aria = await el.getAttribute('aria-label').catch(() => '')
+      if (/close|fechar|x/i.test((txt || '') + (aria || ''))) {
+        await el.click({ force: true }).catch(() => {})
+        agiu = true
+        await page.waitForTimeout(200)
+      }
+    }
+
+    // Banner "Comunicados" tem botão "Marcar como visto"
+    const ok = await page.$('button:has-text("Marcar como visto"), button:has-text("Entendi")').catch(() => null)
+    if (ok) {
+      await ok.click({ force: true }).catch(() => {})
+      agiu = true
+      await page.waitForTimeout(200)
+    }
+
+    // Clica no backdrop pra fechar (último recurso)
+    const backdrop = await page.$('.cdk-overlay-backdrop-showing').catch(() => null)
+    if (backdrop) {
+      await backdrop.click({ force: true, position: { x: 5, y: 5 } }).catch(() => {})
+      agiu = true
+      await page.waitForTimeout(200)
+    }
+
+    if (!agiu) break
+  }
 }
 
 // ─── Helpers genéricos de preenchimento ──────────────────────────────
