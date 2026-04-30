@@ -107,6 +107,57 @@ app.post('/debug-login', async (req, res) => {
   }
 })
 
+// DEBUG: faz login e abre a tela de cotação, devolve estrutura dos campos.
+// Usado pra mapear seletores corretos quando o site mudar.
+app.post('/debug-cotacao', async (req, res) => {
+  let session = null
+  try {
+    session = await browser.newSession()
+    const page = session.page
+    const ag   = require('./lib/aggilizador')
+
+    await ag.login(page)
+    await ag.abrirCotacaoAuto(page)
+    await page.waitForTimeout(3000)  // dá tempo do Angular renderizar
+
+    const info = await page.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('input')).map(i => ({
+        type: i.type, name: i.name, id: i.id,
+        placeholder: i.placeholder,
+        formcontrolname: i.getAttribute('formcontrolname'),
+        class: (i.className || '').slice(0, 100),
+        visible: i.offsetParent !== null,
+      })).filter(i => i.visible)
+      const selects = Array.from(document.querySelectorAll('select, mat-select')).map(s => ({
+        tag: s.tagName.toLowerCase(),
+        name: s.name || s.getAttribute('formcontrolname'),
+        id: s.id, class: (s.className || '').slice(0, 100),
+      }))
+      const labels = Array.from(document.querySelectorAll('label, mat-label')).map(l => ({
+        text: (l.innerText || l.textContent || '').trim().slice(0, 60),
+        for:  l.htmlFor,
+      })).filter(l => l.text)
+      const buttons = Array.from(document.querySelectorAll('button')).map(b => ({
+        text: (b.innerText || b.textContent || '').trim().slice(0, 60),
+        type: b.type, id: b.id,
+        class: (b.className || '').slice(0, 100),
+      })).filter(b => b.text)
+      return { url: location.href, title: document.title, inputs, selects, labels, buttons: buttons.slice(0, 30) }
+    })
+
+    res.json({ ok: true, ...info })
+  } catch (err) {
+    log.error('Erro em /debug-cotacao', { erro: err.message })
+    let screenshot = null
+    if (session) {
+      try { screenshot = (await session.page.screenshot({ fullPage: true })).toString('base64') } catch {}
+    }
+    res.status(500).json({ ok: false, erro: err.message, screenshot_base64_size: screenshot?.length || 0 })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
 // Consulta rápida por CPF (usado pelo CRM para auto-preencher cotação)
 app.post('/consultar-cpf', async (req, res) => {
   const { cpf } = req.body || {}
