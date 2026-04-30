@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
-export const maxDuration = 120  // robô às vezes leva 30-90s
+export const maxDuration = 300  // robô leva 100-250s pra cotação completa
 
 const ROBO_URL   = process.env.COTACAO_ROBO_URL || 'http://177.7.38.7:3001'
 const ROBO_TOKEN = process.env.COTACAO_ROBO_TOKEN || ''
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(110000),
+      signal: AbortSignal.timeout(280000),
     })
 
     if (!res.ok) {
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(json)
   } catch (err: any) {
     const msg = err?.name === 'TimeoutError'
-      ? 'Tempo limite excedido (110s) - o robô não respondeu'
+      ? 'Tempo limite excedido (280s) - o robô não respondeu'
       : err?.cause?.code === 'ECONNREFUSED'
         ? `Robô offline (${ROBO_URL} recusou a conexão)`
         : err?.cause?.code === 'ETIMEDOUT' || err?.cause?.code === 'EHOSTUNREACH'
