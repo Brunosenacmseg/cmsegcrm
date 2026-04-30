@@ -58,6 +58,55 @@ app.get('/health', (req, res) => {
   })
 })
 
+// DEBUG: abre a página inicial do aggilizador e devolve a estrutura dos
+// campos de input/button pra ajudar a ajustar seletores quando o site mudar.
+app.post('/debug-login', async (req, res) => {
+  let session = null
+  try {
+    session = await browser.newSession()
+    const page = session.page
+    const URL = process.env.AGGILIZADOR_URL || 'https://aggilizador.com.br'
+
+    const visitas = [URL, URL + '/login', URL + '/entrar', URL + '/auth/login']
+    const resultados = []
+
+    for (const u of visitas) {
+      try {
+        await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 20000 })
+        await page.waitForTimeout(1500)
+        const info = await page.evaluate(() => {
+          const inputs = Array.from(document.querySelectorAll('input')).map(i => ({
+            type: i.type, name: i.name, id: i.id,
+            placeholder: i.placeholder, autocomplete: i.autocomplete,
+            class: (i.className || '').slice(0, 80),
+            visible: i.offsetParent !== null,
+          }))
+          const buttons = Array.from(document.querySelectorAll('button, a[role="button"]')).map(b => ({
+            type: b.type || 'button',
+            text: (b.innerText || b.textContent || '').trim().slice(0, 60),
+            id: b.id, class: (b.className || '').slice(0, 80),
+            visible: b.offsetParent !== null,
+          })).filter(b => b.text || b.id)
+          const forms = Array.from(document.querySelectorAll('form')).map(f => ({
+            action: f.action, method: f.method, id: f.id,
+          }))
+          return { url: location.href, title: document.title, inputs, buttons: buttons.slice(0, 20), forms }
+        })
+        resultados.push({ tentou: u, ...info })
+      } catch (err) {
+        resultados.push({ tentou: u, erro: err.message })
+      }
+    }
+
+    res.json({ ok: true, resultados })
+  } catch (err) {
+    log.error('Erro em /debug-login', { erro: err.message })
+    res.status(500).json({ ok: false, erro: err.message })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
 // Consulta rápida por CPF (usado pelo CRM para auto-preencher cotação)
 app.post('/consultar-cpf', async (req, res) => {
   const { cpf } = req.body || {}
