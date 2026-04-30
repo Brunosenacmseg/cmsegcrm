@@ -12,10 +12,14 @@ const PORTO_SUSEP = process.env.PORTO_SUSEP || 'J8FXUJ'
 const PORTO_LOGIN = process.env.PORTO_LOGIN || ''
 const PORTO_SENHA = process.env.PORTO_SENHA || ''
 
-const FUNIL_COBRANCA_ID    = '53b153bf-6965-4a59-882a-d6c369307f0d'
 const FUNIL_COBRANCA_ETAPA = 'Em Atraso'
-const FUNIL_SINISTRO_ID    = 'a241e4ab-7088-4c4a-a26c-b6f22a94fd21'
 const FUNIL_SINISTRO_ETAPA = 'Novo Sinistro'
+
+// Funis são buscados dinamicamente pelo `tipo` para evitar UUIDs hardcoded
+async function buscarFunilId(tipo: 'cobranca' | 'posVenda'): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('funis').select('id').eq('tipo', tipo).limit(1).maybeSingle()
+  return data?.id || null
+}
 
 function subDias(dateStr: string, dias: number): string {
   const d = new Date(dateStr + 'T12:00:00')
@@ -40,7 +44,19 @@ function extrairZip(bytes: Buffer): string {
   offset += fileNameLen + extraLen
   const compressed = bytes.slice(offset, offset + compressedSize)
   const data = compressionMethod === 0 ? compressed : inflateRawSync(compressed)
-  return data.toString('utf8')
+  return decodificarBytes(data)
+}
+
+// Porto Seguro envia arquivos em ISO-8859-1 (Latin-1).
+// Decodificar como UTF-8 corrompe acentos: cedilhas e til viram caracteres estranhos.
+function decodificarBytes(bytes: Buffer): string {
+  const utf8 = bytes.toString('utf8')
+  const latin1 = bytes.toString('latin1')
+  // Mojibake tipico: pares 0xC3 0xA9 / 0xC3 0xA3 / 0xC3 0xA7 indicam UTF-8 lendo Latin-1.
+  const utf8Mojibake = (utf8.match(/\u00C3[\u00A9\u00A3\u00A7\u00A1\u00BA\u00AA\u00A8]/g) || []).length
+  const utf8Replacement = (utf8.match(/\uFFFD/g) || []).length
+  if (utf8Replacement > 0 || utf8Mojibake > 3) return latin1
+  return utf8
 }
 
 function decodificarConteudo(conteudoB64: string): string {
@@ -48,13 +64,9 @@ function decodificarConteudo(conteudoB64: string): string {
   const bytes = Buffer.from(conteudoB64, 'base64')
   if (bytes[0] === 0x50 && bytes[1] === 0x4b) return extrairZip(bytes)
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-    try { return gunzipSync(bytes).toString('utf8') } catch {}
+    try { return decodificarBytes(gunzipSync(bytes)) } catch {}
   }
-  const u8 = bytes.toString('utf8')
-  if (!u8.includes('\uFFFD')) return u8
-  let t = ''
-  for (let i = 0; i < bytes.length; i++) t += String.fromCodePoint(bytes[i])
-  return t
+  return decodificarBytes(bytes)
 }
 
 interface RegistroCobranca {
@@ -201,6 +213,8 @@ async function processarSAP(arquivo: any, texto: string) {
   let importados = 0, erros = 0
   const msgs: string[] = []
   const apolicesVistas = new Set<string>()
+  const FUNIL_COBRANCA_ID = await buscarFunilId('cobranca')
+  if (!FUNIL_COBRANCA_ID) return { importados: 0, erros: registros.length, msgs: ['Funil de Cobrança não encontrado. Crie um funil tipo=cobranca.'] }
 
   for (const reg of registros) {
     try {
@@ -261,7 +275,7 @@ async function processarSAP(arquivo: any, texto: string) {
           await supabaseAdmin.from('tarefas').insert({
             titulo: `📞 Parcela vencida: Apólice ${reg.numero_apolice}`,
             descricao: `Parcela ${reg.parcela}/${reg.total_parcelas} | R$ ${reg.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} | Venc: ${reg.vencimento} | ${reg.dias_atraso} dias`,
-            tipo: 'ligação', status: 'pendente',
+            tipo: 'ligacao', status: 'pendente',
             cliente_id: clienteFinal, negocio_id: negId,
             responsavel_id: apolice.vendedor_id, criado_por: apolice.vendedor_id,
           })
@@ -279,15 +293,42 @@ async function processarSAP(arquivo: any, texto: string) {
 async function processarAPP(arquivo: any, texto: string) {
   let importados = 0, erros = 0
   const msgs: string[] = []
+  const produto = arquivo.produto || 'AUTOMOVEL'
+
   for (const linha of texto.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('9'))) {
     try {
       const c0 = linha.trim().split(/\s{2,}/)[0]?.trim() || ''
       if (c0.length < 10) continue
       const num = c0.slice(3, 13).replace(/^0+/, '')
       if (!num || num.length < 3) continue
-      await supabaseAdmin.from('apolices').upsert({
-        numero: num, seguradora: 'Porto Seguro', produto: arquivo.produto || 'AUTOMOVEL', status: 'ativo',
-      }, { onConflict: 'numero', ignoreDuplicates: false })
+
+      // 1) Upsert na tabela apolices
+      const { data: apolice } = await supabaseAdmin.from('apolices').upsert({
+        numero: num, seguradora: 'Porto Seguro', produto, status: 'ativo',
+      }, { onConflict: 'numero', ignoreDuplicates: false }).select('id, cliente_id, vendedor_id, premio, comissao_pct').single()
+
+      // 2) Espelhar em negocios para aparecer no módulo /dashboard/apolices
+      // O módulo Apólices lista negocios com premio > 0; usamos premio simbólico = 1
+      // até que dados de prêmio cheguem via .COM (comissões) ou inserção manual.
+      if (apolice) {
+        const { data: existing } = await supabaseAdmin.from('negocios').select('id')
+          .eq('produto', produto).eq('seguradora', 'Porto Seguro')
+          .or(`titulo.ilike.%${num}%,obs.ilike.%${num}%`).maybeSingle()
+
+        if (!existing) {
+          await supabaseAdmin.from('negocios').insert({
+            titulo:       `Apólice ${num}`,
+            cliente_id:   apolice.cliente_id || null,
+            vendedor_id:  apolice.vendedor_id || null,
+            etapa:        'Ativo',
+            produto,
+            seguradora:   'Porto Seguro',
+            premio:       apolice.premio || 1,
+            comissao_pct: apolice.comissao_pct || 0,
+            obs:          `Apólice Porto ${num} (importada via integração)`,
+          })
+        }
+      }
       importados++
     } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
   }
@@ -315,6 +356,9 @@ async function processarCOM(arquivo: any, texto: string) {
 async function processarSI2(arquivo: any, texto: string) {
   let importados = 0, erros = 0
   const msgs: string[] = []
+  const FUNIL_SINISTRO_ID = await buscarFunilId('posVenda')
+  if (!FUNIL_SINISTRO_ID) return { importados: 0, erros: 1, msgs: ['Funil de Sinistros (posVenda) não encontrado.'] }
+
   for (const linha of texto.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('9'))) {
     try {
       const t  = linha.trim()
