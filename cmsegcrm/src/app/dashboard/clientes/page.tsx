@@ -8,6 +8,66 @@ const SEXOS         = ['Masculino','Feminino','Outro']
 const ESTADOS_CIVIS = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)','União Estável']
 const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
 
+// IMPORTANTE: estes componentes ficam FORA do componente principal.
+// Se forem declarados dentro, são recriados a cada render → React desmonta e
+// remonta os <input>, fazendo o foco saltar e/ou ser perdido a cada tecla.
+function Campo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ fontSize:11, color:'var(--text-muted)', display:'block', marginBottom:4, fontWeight:500 }}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+function EnderecoBloco({
+  prefix, titulo, form, setForm, buscarCep, inp, sel,
+}: {
+  prefix: ''|'2'|'3';
+  titulo: string;
+  form: any;
+  setForm: React.Dispatch<React.SetStateAction<any>>;
+  buscarCep: (cep: string, prefix: ''|'2'|'3') => void;
+  inp: React.CSSProperties;
+  sel: React.CSSProperties;
+}) {
+  const p = prefix
+  return (
+    <div style={{ marginBottom:20 }}>
+      <div style={{ fontSize:13, fontWeight:600, color:'var(--gold)', marginBottom:12, paddingBottom:6, borderBottom:'1px solid var(--border)' }}>{titulo}</div>
+      <div style={{ display:'grid', gridTemplateColumns:'140px 1fr 80px', gap:10, marginBottom:10 }}>
+        <Campo label="CEP">
+          <input value={form[`cep${p}`]} onChange={e=>setForm((f:any)=>({...f,[`cep${p}`]:maskCEP(e.target.value)}))}
+            onBlur={e=>buscarCep(e.target.value, p)} placeholder="00000-000" style={inp} />
+        </Campo>
+        <Campo label="Endereço">
+          <input value={form[`endereco${p}`]} onChange={e=>setForm((f:any)=>({...f,[`endereco${p}`]:e.target.value}))} placeholder="Rua, Av..." style={inp} />
+        </Campo>
+        <Campo label="Número">
+          <input value={form[`numero${p}`]} onChange={e=>setForm((f:any)=>({...f,[`numero${p}`]:e.target.value}))} placeholder="123" style={inp} />
+        </Campo>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 80px', gap:10 }}>
+        <Campo label="Complemento">
+          <input value={form[`complemento${p}`]} onChange={e=>setForm((f:any)=>({...f,[`complemento${p}`]:e.target.value}))} placeholder="Apto, Sala..." style={inp} />
+        </Campo>
+        <Campo label="Bairro">
+          <input value={form[`bairro${p}`]} onChange={e=>setForm((f:any)=>({...f,[`bairro${p}`]:e.target.value}))} style={inp} />
+        </Campo>
+        <Campo label="Cidade">
+          <input value={form[`cidade${p}`]} onChange={e=>setForm((f:any)=>({...f,[`cidade${p}`]:e.target.value}))} style={inp} />
+        </Campo>
+        <Campo label="UF">
+          <select value={form[`estado${p}`]} onChange={e=>setForm((f:any)=>({...f,[`estado${p}`]:e.target.value}))} style={sel}>
+            <option value="">—</option>
+            {UFS.map(u=><option key={u}>{u}</option>)}
+          </select>
+        </Campo>
+      </div>
+    </div>
+  )
+}
+
 export default function ClientesPage() {
   const supabase = createClient()
   const router   = useRouter()
@@ -145,53 +205,6 @@ export default function ClientesPage() {
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
   const sel: React.CSSProperties = { ...inp, cursor:'pointer', appearance:'none' as const }
 
-  function Campo({ label, children }: { label: string, children: React.ReactNode }) {
-    return (
-      <div>
-        <label style={{ fontSize:11, color:'var(--text-muted)', display:'block', marginBottom:4, fontWeight:500 }}>{label}</label>
-        {children}
-      </div>
-    )
-  }
-
-  function EnderecoBloco({ prefix, titulo }: { prefix: ''|'2'|'3', titulo: string }) {
-    const p = prefix
-    return (
-      <div style={{ marginBottom:20 }}>
-        <div style={{ fontSize:13, fontWeight:600, color:'var(--gold)', marginBottom:12, paddingBottom:6, borderBottom:'1px solid var(--border)' }}>{titulo}</div>
-        <div style={{ display:'grid', gridTemplateColumns:'140px 1fr 80px', gap:10, marginBottom:10 }}>
-          <Campo label="CEP">
-            <input value={(form as any)[`cep${p}`]} onChange={e=>setForm(f=>({...f,[`cep${p}`]:maskCEP(e.target.value)}))}
-              onBlur={e=>buscarCep(e.target.value, p)} placeholder="00000-000" style={inp} />
-          </Campo>
-          <Campo label="Endereço">
-            <input value={(form as any)[`endereco${p}`]} onChange={e=>setForm(f=>({...f,[`endereco${p}`]:e.target.value}))} placeholder="Rua, Av..." style={inp} />
-          </Campo>
-          <Campo label="Número">
-            <input value={(form as any)[`numero${p}`]} onChange={e=>setForm(f=>({...f,[`numero${p}`]:e.target.value}))} placeholder="123" style={inp} />
-          </Campo>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 80px', gap:10 }}>
-          <Campo label="Complemento">
-            <input value={(form as any)[`complemento${p}`]} onChange={e=>setForm(f=>({...f,[`complemento${p}`]:e.target.value}))} placeholder="Apto, Sala..." style={inp} />
-          </Campo>
-          <Campo label="Bairro">
-            <input value={(form as any)[`bairro${p}`]} onChange={e=>setForm(f=>({...f,[`bairro${p}`]:e.target.value}))} style={inp} />
-          </Campo>
-          <Campo label="Cidade">
-            <input value={(form as any)[`cidade${p}`]} onChange={e=>setForm(f=>({...f,[`cidade${p}`]:e.target.value}))} style={inp} />
-          </Campo>
-          <Campo label="UF">
-            <select value={(form as any)[`estado${p}`]} onChange={e=>setForm(f=>({...f,[`estado${p}`]:e.target.value}))} style={sel}>
-              <option value="">—</option>
-              {UFS.map(u=><option key={u}>{u}</option>)}
-            </select>
-          </Campo>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
@@ -285,7 +298,7 @@ export default function ClientesPage() {
                     </Campo>
                   </div>
                   <Campo label="Nome Completo">
-                    <input value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} placeholder="Nome completo" style={inp} autoFocus />
+                    <input value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} placeholder="Nome completo" style={inp} />
                   </Campo>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
                     <Campo label="Data de Nascimento">
@@ -329,9 +342,9 @@ export default function ClientesPage() {
 
               {abaModal==='enderecos' && (
                 <div>
-                  <EnderecoBloco prefix="" titulo="📍 Endereço Principal" />
-                  <EnderecoBloco prefix="2" titulo="📍 Endereço 2" />
-                  <EnderecoBloco prefix="3" titulo="📍 Endereço 3" />
+                  <EnderecoBloco prefix=""  titulo="📍 Endereço Principal" form={form} setForm={setForm} buscarCep={buscarCep} inp={inp} sel={sel} />
+                  <EnderecoBloco prefix="2" titulo="📍 Endereço 2"          form={form} setForm={setForm} buscarCep={buscarCep} inp={inp} sel={sel} />
+                  <EnderecoBloco prefix="3" titulo="📍 Endereço 3"          form={form} setForm={setForm} buscarCep={buscarCep} inp={inp} sel={sel} />
                 </div>
               )}
 
