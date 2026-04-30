@@ -145,31 +145,68 @@ async function cotacaoAuto(page, dados) {
   const btnCalcular = await page.$('button:has-text("Calcular"):not(:has-text("Configurar"))')
                     || await page.$('button.my-btn--filled')
   if (!btnCalcular) throw new Error('Botão Calcular não foi encontrado')
+  await btnCalcular.scrollIntoViewIfNeeded().catch(() => {})
   await btnCalcular.click({ force: true })
   log.info('Clicou em Calcular #1 (formulário → seguradoras)')
-  await page.waitForTimeout(4000)
+  await page.waitForTimeout(4500)
 
-  // Tenta clicar em "Calcular" de novo (até 3 vezes ou até aparecer R$).
-  // Pode haver: tela de seguradoras → tela de resultados.
-  for (let i = 0; i < 3; i++) {
+  // Helper robusto pra clicar no Calcular da tela de seguradoras
+  async function tentarCalcularSeguradoras(label) {
+    // Localiza o botão preferindo o azul/filled e excluindo "Configurar"
+    const candidatos = [
+      'button.my-btn--filled:has-text("Calcular")',
+      'button:has-text("Calcular"):not(:has-text("Configurar"))',
+      'button.btn-primary:has-text("Calcular")',
+      'button[type="submit"]:has-text("Calcular")',
+    ]
+    for (const sel of candidatos) {
+      const loc = page.locator(sel).first()
+      const visivel = await loc.isVisible().catch(() => false)
+      if (!visivel) continue
+
+      // Espera ficar habilitado (até 8s)
+      try { await loc.waitFor({ state: 'visible', timeout: 3000 }) } catch {}
+      const desabilitado = await loc.evaluate((el) => (el).hasAttribute('disabled') || (el).getAttribute('aria-disabled') === 'true').catch(() => false)
+      if (desabilitado) {
+        // Tenta esperar habilitar
+        for (let w = 0; w < 8; w++) {
+          await page.waitForTimeout(1000)
+          const ainda = await loc.evaluate((el) => (el).hasAttribute('disabled')).catch(() => true)
+          if (!ainda) break
+        }
+      }
+
+      await loc.scrollIntoViewIfNeeded().catch(() => {})
+      try {
+        await loc.click({ force: true, timeout: 5000 })
+        log.info(`${label} via ${sel}`)
+        return true
+      } catch (e) {
+        // Fallback: dispatchEvent('click')
+        try {
+          await loc.evaluate((el) => (el).click())
+          log.info(`${label} via dispatchEvent (${sel})`)
+          return true
+        } catch {}
+      }
+    }
+    return false
+  }
+
+  // Tenta clicar em "Calcular" de novo (até 4 vezes ou até aparecer R$).
+  for (let i = 0; i < 4; i++) {
     const temPreco = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 0).catch(() => false)
     if (temPreco) {
       log.info(`Preços apareceram após ${i+1} tentativa(s) de Calcular`)
       break
     }
 
-    const btnNext = page.locator('button.my-btn--filled, button:has-text("Calcular")')
-                        .filter({ hasNotText: 'Configurar' })
-                        .first()
-    const visivel = await btnNext.isVisible().catch(() => false)
-    if (!visivel) {
-      log.info('Botão Calcular não está mais visível — aguardando resultado')
+    const ok = await tentarCalcularSeguradoras(`Calcular #${i+2}`)
+    if (!ok) {
+      log.info('Botão Calcular não está mais visível/clicável — aguardando resultado')
       break
     }
-
-    await btnNext.click({ force: true }).catch(() => {})
-    log.info(`Clicou em Calcular #${i+2}`)
-    await page.waitForTimeout(3500)
+    await page.waitForTimeout(4000)
   }
 
   // Espera o resultado final (heurística: aparece "R$" várias vezes ou passa 90s)
