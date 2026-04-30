@@ -227,17 +227,15 @@ export default function RDStationPage() {
         if (sucessos === total) {
           setErro(`✅ ${sucessos}/${total} webhooks criados! URL: ${j?.webhookUrl || '?'}`)
         } else {
-          const partes: string[] = []
-          for (const x of lista) {
-            if (x?.ok) continue
-            const ev = String(x?.evento || '?')
-            const v1 = x?.v1_status ? `v1[${x.v1_status}]:${String(x?.v1_resposta || '').substring(0, 100)}` : ''
-            const v2 = x?.v2_status ? `v2[${x.v2_status}]:${String(x?.v2_resposta || '').substring(0, 100)}` : ''
-            const det = [v1, v2].filter(Boolean).join(' / ') || JSON.stringify(x).substring(0, 200)
-            partes.push(`${ev} → ${det}`)
+          // Pega só o primeiro erro completo (todos costumam ser iguais quando schema está errado)
+          const primeiroErro = lista.find((x: any) => !x?.ok)
+          if (primeiroErro) {
+            const v1 = primeiroErro.v1_status ? `v1 HTTP ${primeiroErro.v1_status}: ${typeof primeiroErro.v1_resposta === 'string' ? primeiroErro.v1_resposta : JSON.stringify(primeiroErro.v1_resposta)}` : ''
+            const v2 = primeiroErro.v2_status ? `v2 HTTP ${primeiroErro.v2_status}: ${typeof primeiroErro.v2_resposta === 'string' ? primeiroErro.v2_resposta : JSON.stringify(primeiroErro.v2_resposta)}` : ''
+            const det = [v1, v2].filter(Boolean).join('\n\n') || JSON.stringify(primeiroErro)
+            const prefixo = sucessos > 0 ? `⚠️ ${sucessos}/${total} criados.` : `❌ Nenhum criado.`
+            setErro(`${prefixo}\nErro completo (todos foram iguais):\n${det}`)
           }
-          const prefixo = sucessos > 0 ? `⚠️ ${sucessos}/${total} criados.` : `❌ Nenhum criado.`
-          setErro(`${prefixo} ${partes.join(' || ')}`)
         }
       } catch (parseErr: any) {
         setErro(`Resposta recebida mas erro ao formatar: ${parseErr?.message}. Resposta: ${JSON.stringify(j).substring(0, 400)}`)

@@ -108,7 +108,8 @@ async function criarV1(rdToken: string, eventoDotted: string, url: string, secre
     },
   ]
 
-  let ultimaResp: any = null
+  // Tenta todos os formatos e coleta TODOS os erros pra debug
+  const todasTentativas: any[] = []
   for (const { tentativa, body } of corpos) {
     const r = await fetchJson(baseUrl, {
       method: 'POST',
@@ -116,10 +117,10 @@ async function criarV1(rdToken: string, eventoDotted: string, url: string, secre
       body: JSON.stringify(body),
     })
     if (r.ok) return { ...r, tentativa }
-    ultimaResp = { ...r, tentativa }
+    todasTentativas.push({ tentativa, status: r.status, data: r.data, body_enviado: body })
     if (r.status === 401 || r.status === 403) break
   }
-  return ultimaResp || { ok: false, status: 0, data: null, tentativa: 'nenhuma' }
+  return { ok: false, status: todasTentativas[0]?.status || 0, data: { todas_tentativas: todasTentativas }, tentativa: 'todas_falharam' }
 }
 
 // Tenta criar webhook na API v2 (OAuth Bearer)
@@ -189,9 +190,10 @@ export async function POST(request: NextRequest) {
       api: 'falhou',
       ok: false,
       v1_status: respV1?.status,
-      v1_resposta: typeof respV1?.data === 'string' ? respV1.data.slice(0, 200) : JSON.stringify(respV1?.data).slice(0, 300),
+      v1_resposta: respV1?.data,
+      v1_tentativa: respV1?.tentativa,
       v2_status: respV2?.status,
-      v2_resposta: respV2 ? (typeof respV2.data === 'string' ? respV2.data.slice(0, 200) : JSON.stringify(respV2.data).slice(0, 300)) : 'OAuth não conectado',
+      v2_resposta: respV2 ? respV2.data : 'OAuth não conectado',
     })
   }
 
