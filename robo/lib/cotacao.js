@@ -143,6 +143,31 @@ async function cotacaoAuto(page, dados) {
   // Não basta procurar por my-btn--filled — pega o Salvar disabled. Tem
   // que filtrar especificamente pelo texto "Calcular" e usar last() pra
   // pegar o azul à direita, ignorando botões disabled.
+  //
+  // Após o Calcular, pode aparecer um modal "Item calculado recentemente"
+  // com botão "Entendi, continuar" — dismissarPopupConfirmacao() trata isso.
+
+  async function dismissarPopupConfirmacao() {
+    const seletores = [
+      'button:has-text("Entendi, continuar")',
+      'button:has-text("Entendi")',
+      'button:has-text("Continuar")',
+      'button:has-text("OK")',
+      'button:has-text("Confirmar")',
+    ]
+    for (const sel of seletores) {
+      try {
+        const btn = page.locator(sel).first()
+        if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+          await btn.click({ force: true })
+          log.info('Dismissou popup de confirmação', { botao: sel })
+          await page.waitForTimeout(800)
+          return true
+        }
+      } catch {}
+    }
+    return false
+  }
 
   const btnCalcular = await page.$('button:has-text("Calcular"):not(:has-text("Configurar"))')
   if (!btnCalcular) throw new Error('Botão Calcular não foi encontrado')
@@ -150,6 +175,8 @@ async function cotacaoAuto(page, dados) {
   await btnCalcular.click({ force: true })
   log.info('Clicou em Calcular #1 (formulário → seguradoras)')
   await page.waitForTimeout(6000)
+  // Pode aparecer popup "Item calculado recentemente" — dismissa
+  await dismissarPopupConfirmacao()
   log.info('Estado após Calcular #1', { url_antes: urlAntes, url_agora: page.url() })
 
   // Loop: até clicar no Calcular da tela de seguradoras (até 2 cliques extras).
@@ -172,8 +199,11 @@ async function cotacaoAuto(page, dados) {
 
     await btnNext.click({ force: true }).catch(() => {})
     log.info(`Clicou em Calcular #${i+2} (seguradoras → resultados)`)
-    // Cálculo real pode demorar — aguarda 15s antes do próximo check
-    await page.waitForTimeout(15000)
+    // Pode aparecer popup "Item calculado recentemente" também aqui
+    await page.waitForTimeout(2000)
+    await dismissarPopupConfirmacao()
+    // Cálculo real pode demorar — aguarda 13s antes do próximo check
+    await page.waitForTimeout(13000)
   }
 
   // Espera o resultado final (até 90s)
