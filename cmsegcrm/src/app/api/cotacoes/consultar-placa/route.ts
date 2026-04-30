@@ -40,12 +40,19 @@ export async function POST(request: NextRequest) {
       if (!json) return NextResponse.json({ ok: false, error: 'Resposta do robô não é JSON' }, { status: 502 })
       return NextResponse.json(json)
     } catch (err: any) {
+      const code = err?.cause?.code || err?.code
       const msg = err?.name === 'TimeoutError'
-        ? 'Tempo limite excedido (75s)'
-        : err?.cause?.code === 'ECONNREFUSED'
-          ? `Robô offline (${ROBO_URL})`
-          : err?.message || 'Erro inesperado ao chamar o robô'
-      return NextResponse.json({ ok: false, error: msg }, { status: 502 })
+        ? `Tempo limite excedido (75s) chamando ${ROBO_URL}`
+        : code === 'ECONNREFUSED'
+          ? `Robô offline em ${ROBO_URL}`
+          : code === 'ENOTFOUND'
+            ? `DNS não resolveu para ${ROBO_URL}`
+            : code === 'ETIMEDOUT'
+              ? `Timeout TCP conectando em ${ROBO_URL}`
+              : code
+                ? `${err.message} (${code}) — URL: ${ROBO_URL}`
+                : `${err?.message || 'erro desconhecido'} — URL: ${ROBO_URL}`
+      return NextResponse.json({ ok: false, error: msg, code, url: ROBO_URL }, { status: 502 })
     }
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message || 'Erro inesperado' }, { status: 500 })
