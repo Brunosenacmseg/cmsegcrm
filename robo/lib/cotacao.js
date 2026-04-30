@@ -1,29 +1,52 @@
 // Fluxo de cotação completa de automóvel no aggilizador.
-// Mapeamento descoberto via /debug-cotacao em /cotacao/auto/formulario:
+// Mapeamento confirmado via /listar-opcoes em /cotacao/auto/formulario:
 //
 // SEGURADO: cpfCnpj, nomeSegurado, dataNascimento, cepImovel, fone, emailSegurado
-//   selects: sexo (idx 0), estadoCivil (idx 0)
+//   selects: sexo, estadoCivil
 //
 // VEÍCULO:  placa, chassi, anoFab, fipe, modelo, valReferenciado, perfilCepPernoite, gasInstalValor
-//   selects: anoMod, zeroKm, combustivel, rastreador, dispAntiFurto, blindado, kitGas, alienado
+//   selects: anoMod (disabled→habilitado após placa), zeroKm, combustivel,
+//            rastreador, dispAntiFurto, blindado, kitGas, alienado
 //
 // CONDUTOR: perfilCpfCnpj, perfilNomeCondutor, perfilDataNascimento
-//   selects: relacaoSegurado, sexo (idx 1), estadoCivil (idx 1), tempoHabilitacao
+//   selects: perfilRelacaoSegurado, perfilSexo, perfilEstadoCivil,
+//            perfilTempoHabilitacao (disabled→habilitado após dataNasc)
 //
-// QUESTIONÁRIO: garagemResidencia, garagemTrabalho, garagemEstudo, tpUso,
-//   jovemCondutor, idadeJovem, jovemSexo, tipoResidencia, kmMensal, isPCD, isencaoFiscal
+// QUESTIONÁRIO: garagemResidencia, garagemTrabalho, garagemEstudo,
+//   perfilTpUso, perfilJovemCondutor, perfilIdadeJovem (disabled),
+//   perfilJovemSexo (disabled), perfilTipoResidencia, perfilKmMensal,
+//   isPCD, isencaoFiscal (disabled)
 //
-// SEGURO: vigenciaIni, vigenciaFim
+// SEGURO: vigenciaIni, vigenciaFim (DD/MM/YYYY)
 // RENOVAÇÃO: vigFimAnterior, numeroRenovacao, CI
 //   selects: seguradoraAnteriorId, sinistrosAnterior, bonusAnterior
 //   checkbox: name="renovacao"
 //
-// COBERTURAS: tipoCobertura, tipoFranquia, pctAjuste (% Franquia / Fipe)
-//   inputs: isDanosMateriais, isDanosCorporais, isDanosMorais, isAppMorte, isBlindagemValor
-//   selects: assist24hs, vidros, carroReserva, carroReservaAr
+// COBERTURAS:
+//   tipoCobertura     → pacote (Prata/Ouro/Diamante/Personalizada)
+//   tpCobertura       → Tipo (Compreensiva/RCF/Roubo/Furto)
+//   descricaoFranquia → Tipo de Franquia (Reduzida/Normal/Majorada)
+//   pctAjuste         → Fipe (%) com espaço (ex: "100 %")
+//   inputs valor:     isDanosMateriais, isDanosCorporais, isDanosMorais,
+//                     isAppMorte, isBlindagemValor
+//   selects:          assist24hs, vidros, carroReserva, carroReservaAr
 
 const log = require('./log')
 const ag  = require('./aggilizador')
+
+// Converte YYYY-MM-DD → DD/MM/YYYY. Aceita DD/MM/YYYY pronto e devolve igual.
+// Aggilizador usa máscaras BR; mandar formato HTML (YYYY-MM-DD) gera campo
+// inválido sem mensagem clara.
+function formatarDataBr(d) {
+  if (!d) return ''
+  const s = String(d).trim()
+  // já em DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s
+  // YYYY-MM-DD (HTML date input)
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`
+  return s
+}
 
 async function cotacaoAuto(page, dados) {
   log.info('Iniciando cotação auto', { cpf: (dados.cpf || '').slice(0,3) + '***', placa: dados.placa })
@@ -35,14 +58,17 @@ async function cotacaoAuto(page, dados) {
   await page.waitForSelector('input[formcontrolname="cpfCnpj"]', { state: 'visible', timeout: 15000 })
 
   // ─── 1) Segurado ───────────────────────────────────────────
+  // Order dos arrays: NAME específico primeiro, formcontrolname depois.
+  // Segurado e condutor compartilham formcontrolname (cpfCnpj/nome/dataNasc),
+  // então o name é a única forma confiável de não cruzar.
   await ag.preencher(page, ['cpfCnpj'], dados.cpf)
   // Aggilizador auto-preenche nome+nascimento+sexo a partir do CPF — espera
   await page.waitForTimeout(2500)
 
-  await ag.preencher(page, ['nome', 'nomeSegurado'], dados.nome)
-  await ag.preencher(page, ['dataNasc', 'dataNascimento'], dados.nascimento)
-  await ag.preencher(page, ['cep', 'cepImovel'], dados.cep)
-  await ag.preencher(page, ['email', 'emailSegurado'], dados.email)
+  await ag.preencher(page, ['nomeSegurado', 'nome'],            dados.nome)
+  await ag.preencher(page, ['dataNascimento', 'dataNasc'],      formatarDataBr(dados.nascimento))
+  await ag.preencher(page, ['cepImovel', 'cep'],                dados.cep)
+  await ag.preencher(page, ['emailSegurado', 'email'],          dados.email)
   await ag.preencher(page, ['fone'], dados.telefone)
   // Sexo e Estado Civil do segurado: primeiro mat-select com cada nome
   if (dados.sexo_segurado)         await ag.selecionarPorIndex(page, 'sexo', 0, dados.sexo_segurado)
@@ -56,7 +82,7 @@ async function cotacaoAuto(page, dados) {
   await ag.preencher(page, ['chassi'], dados.chassi)
   await ag.preencher(page, ['anoFab'], dados.ano_fab)
   await ag.preencher(page, ['modelo'], dados.modelo)
-  await ag.preencher(page, ['cepPernoite', 'perfilCepPernoite'], dados.cep_pernoite)
+  await ag.preencher(page, ['perfilCepPernoite', 'cepPernoite'], dados.cep_pernoite)
   await ag.selecionar(page, ['anoMod'],         dados.ano_mod)
   await ag.selecionar(page, ['zeroKm'],         dados.zero_km)
   await ag.selecionar(page, ['combustivel'],    dados.combustivel)
@@ -65,6 +91,9 @@ async function cotacaoAuto(page, dados) {
   await ag.selecionar(page, ['blindado'],       dados.blindado)
   await ag.selecionar(page, ['kitGas'],         dados.kit_gas)
   if (dados.kit_gas === 'Sim' && dados.valor_kit_gas) {
+    // O input gasInstalValor aparece apenas depois que o Angular reage
+    // ao kitGas=Sim — espera pequena.
+    await page.waitForTimeout(500)
     await ag.preencher(page, ['gasInstalValor'], dados.valor_kit_gas)
   }
   await ag.selecionar(page, ['alienado'],       dados.alienado)
@@ -76,14 +105,28 @@ async function cotacaoAuto(page, dados) {
   // nome/dataNasc), então se passar o genérico antes, sobrescreveremos o
   // segurado por engano.
   if (dados.condutor_principal) await ag.selecionar(page, ['perfilRelacaoSegurado','relacaoSegurado'], dados.condutor_principal)
-  await ag.preencher(page, ['perfilCpfCnpj'],          dados.cpf_condutor)
+  // Se relação é Próprio, condutor=segurado e não precisa preencher.
+  // Para outros casos, preencher e esperar auto-busca (igual segurado).
+  if (dados.cpf_condutor) {
+    await ag.preencher(page, ['perfilCpfCnpj'], dados.cpf_condutor)
+    await page.waitForTimeout(2000) // aggilizador busca dados pelo CPF
+  }
   await ag.preencher(page, ['perfilNomeCondutor'],     dados.nome_condutor)
-  await ag.preencher(page, ['perfilDataNascimento'],   dados.nascimento_condutor)
-  // Sexo e Estado Civil do CONDUTOR: segundo mat-select com cada nome
-  if (dados.sexo_condutor)         await ag.selecionarPorIndex(page, 'sexo', 1, dados.sexo_condutor)
-  if (dados.estado_civil_condutor) await ag.selecionarPorIndex(page, 'estadoCivil', 1, dados.estado_civil_condutor)
-  // tempoHabilitacao depende do estadoCivil/dataNasc estarem preenchidos
-  await page.waitForTimeout(500)
+  await ag.preencher(page, ['perfilDataNascimento'],   formatarDataBr(dados.nascimento_condutor))
+  // Sexo e Estado Civil do CONDUTOR têm names específicos (perfilSexo,
+  // perfilEstadoCivil). Versões antigas usavam o mesmo "sexo"/"estadoCivil"
+  // como segundo índice — manter como fallback.
+  if (dados.sexo_condutor) {
+    const okSexo = await ag.selecionar(page, ['perfilSexo'], dados.sexo_condutor)
+    if (!okSexo) await ag.selecionarPorIndex(page, 'sexo', 1, dados.sexo_condutor)
+  }
+  if (dados.estado_civil_condutor) {
+    const okEC = await ag.selecionar(page, ['perfilEstadoCivil'], dados.estado_civil_condutor)
+    if (!okEC) await ag.selecionarPorIndex(page, 'estadoCivil', 1, dados.estado_civil_condutor)
+  }
+  // tempoHabilitacao só fica habilitado depois que dataNasc do condutor
+  // for processada e validada (idade calculada).
+  await page.waitForTimeout(800)
   if (dados.tempo_habilitacao)     await ag.selecionar(page, ['perfilTempoHabilitacao','tempoHabilitacao'], dados.tempo_habilitacao)
 
   // ─── 4) Questionário ───────────────────────────────────────
@@ -113,8 +156,8 @@ async function cotacaoAuto(page, dados) {
   }
 
   // ─── 5) Vigência e Renovação ───────────────────────────────
-  await ag.preencher(page, ['vigenciaIni'], dados.inicio_vigencia)
-  await ag.preencher(page, ['vigenciaFim'], dados.final_vigencia)
+  await ag.preencher(page, ['vigenciaIni'], formatarDataBr(dados.inicio_vigencia))
+  await ag.preencher(page, ['vigenciaFim'], formatarDataBr(dados.final_vigencia))
 
   if (dados.renovacao === 'Sim') {
     // Marca o checkbox de renovação se não estiver marcado
@@ -123,7 +166,7 @@ async function cotacaoAuto(page, dados) {
       await page.click('label[for="mat-mdc-checkbox-1-input"]', { force: true }).catch(() => {})
       await page.waitForTimeout(400)
     }
-    await ag.preencher(page, ['vigFimAnterior'], dados.final_vigencia_anterior)
+    await ag.preencher(page, ['vigFimAnterior'], formatarDataBr(dados.final_vigencia_anterior))
     await ag.preencher(page, ['numeroRenovacao'], dados.numero_apolice_anterior)
     await ag.preencher(page, ['CI'], dados.codigo_interno)
     await ag.selecionar(page, ['seguradoraAnteriorId'], dados.seguradora_anterior)
@@ -157,6 +200,10 @@ async function cotacaoAuto(page, dados) {
   await ag.selecionar(page, ['assist24hs'],     dados.assistencia)
   await ag.selecionar(page, ['vidros'],         dados.vidros)
   await ag.selecionar(page, ['carroReserva'],   dados.carro_reserva)
+  // carroReservaAr só é relevante quando há carro reserva
+  if (dados.carro_reserva_ar && dados.carro_reserva && dados.carro_reserva !== 'Não contratar') {
+    await ag.selecionar(page, ['carroReservaAr'], dados.carro_reserva_ar)
+  }
 
   // ─── 6.5) Validar formulário antes do Calcular #1 ──────────
   // Força blur em todos os campos pra Angular marcar os "touched"
@@ -195,7 +242,14 @@ async function cotacaoAuto(page, dados) {
     // Limpa qualquer overlay residual primeiro
     document.querySelectorAll('.cdk-overlay-backdrop').forEach(b => { try { b.click() } catch (e) {} })
     const btns = Array.from(document.querySelectorAll('button'))
-    const alvo = btns.find(b => /calcular/i.test(b.textContent || '') && !/configurar/i.test(b.textContent || '') && !b.disabled)
+    const isDisabled = (b) => b.disabled
+      || b.getAttribute('disabled') !== null
+      || b.getAttribute('aria-disabled') === 'true'
+      || b.classList.contains('mat-mdc-button-disabled')
+      || b.classList.contains('my-btn--disabled')
+    const alvo = btns.find(b => /calcular/i.test(b.textContent || '')
+                          && !/configurar/i.test(b.textContent || '')
+                          && !isDisabled(b))
     if (!alvo) return false
     alvo.scrollIntoView({ block: 'center' })
     const o = { bubbles: true, cancelable: true, view: window, button: 0 }
@@ -206,7 +260,22 @@ async function cotacaoAuto(page, dados) {
   })
   if (!clicou1) throw new Error('Botão Calcular #1 não foi encontrado/habilitado')
   log.info('Clicou em Calcular #1 (formulário → seguradoras)')
-  await page.waitForTimeout(4500)
+
+  // Aguarda a tela de seguradoras aparecer — é caracterizada por múltiplos
+  // checkboxes de seguradoras (Bradesco, Itaú, Porto, etc) E o botão
+  // Calcular reaparecer. Se não aparecer em 12s, segue com timeout antigo.
+  try {
+    await page.waitForFunction(() => {
+      const txt = document.body.innerText || ''
+      const temCheckboxes = document.querySelectorAll('mat-checkbox, input[type="checkbox"]').length >= 3
+      const temSeguradoras = /Bradesco|Porto|Allianz|HDI|Itaú|Mapfre|Tokio|Sompo|Liberty|Azul/i.test(txt)
+      return temCheckboxes && temSeguradoras
+    }, { timeout: 12000 })
+    log.info('Tela de seguradoras carregou')
+  } catch {
+    log.warn('Tela de seguradoras não confirmada em 12s — seguindo')
+  }
+  await page.waitForTimeout(800)
 
   // Helper robusto pra clicar no Calcular da tela de seguradoras
   async function tentarCalcularSeguradoras(label) {
@@ -253,7 +322,7 @@ async function cotacaoAuto(page, dados) {
 
   // Tenta clicar em "Calcular" de novo (até 4 vezes ou até aparecer R$).
   for (let i = 0; i < 4; i++) {
-    const temPreco = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 0).catch(() => false)
+    const temPreco = await page.locator('text=/R\\$\\s*\\d+/').count().then(c => c > 0).catch(() => false)
     if (temPreco) {
       log.info(`Preços apareceram após ${i+1} tentativa(s) de Calcular`)
       break
@@ -270,7 +339,7 @@ async function cotacaoAuto(page, dados) {
   // Espera o resultado final (heurística: aparece "R$" várias vezes ou passa 90s)
   const inicio = Date.now()
   while (Date.now() - inicio < 90000) {
-    const tem = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 1).catch(() => false)
+    const tem = await page.locator('text=/R\\$\\s*\\d+/').count().then(c => c > 1).catch(() => false)
     if (tem) break
     await page.waitForTimeout(1500)
   }

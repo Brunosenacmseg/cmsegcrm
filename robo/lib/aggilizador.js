@@ -286,8 +286,15 @@ async function preencher(page, nomes, valor) {
   try {
     await page.fill(sel, '')
     await page.fill(sel, String(valor))
-    // Disparar blur pra Angular reagir e validar
-    await page.locator(sel).first().blur().catch(() => {})
+    // Dispara blur via evento pra Angular marcar como touched e validar
+    // (Playwright Locator não tem .blur() — usar evaluate dispatchEvent)
+    await page.evaluate((s) => {
+      const el = document.querySelector(s)
+      if (!el) return
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      el.dispatchEvent(new Event('blur', { bubbles: true }))
+    }, sel).catch(() => {})
     return true
   } catch (err) {
     log.warn('Falha ao preencher', { sel, erro: err.message })
@@ -296,12 +303,15 @@ async function preencher(page, nomes, valor) {
 }
 
 // Lê o valor atual de um input (depois que o aggilizador auto-preencheu).
+// Mesma prioridade do `preencher`: name/id antes de formcontrolname.
 async function lerCampo(page, nomes) {
   const candidatos = []
   for (const n of nomes) {
-    candidatos.push(`input[formcontrolname="${n}"]`)
     candidatos.push(`input[name="${n}"]`)
     candidatos.push(`input[id="${n}"]`)
+  }
+  for (const n of nomes) {
+    candidatos.push(`input[formcontrolname="${n}"]`)
   }
   const sel = await primeiroSeletor(page, candidatos)
   if (!sel) return null
@@ -346,13 +356,16 @@ async function selecionar(page, nomes, valor) {
     try { await page.selectOption(selNativo, { value: v }); return true } catch {}
   }
 
-  // 2) Tenta como mat-select (Angular Material)
+  // 2) Tenta como mat-select (Angular Material).
+  // Prioriza name/id sobre formcontrolname, pelos mesmos motivos do preencher
+  // (segurado e condutor têm formcontrolname iguais em alguns campos).
   const candidatosMat = []
   for (const n of nomes) {
     candidatosMat.push(`mat-select[name="${n}"]`)
     candidatosMat.push(`mat-select[id="${n}"]`)
+  }
+  for (const n of nomes) {
     candidatosMat.push(`mat-select[formcontrolname="${n}"]`)
-    candidatosMat.push(`[formcontrolname="${n}"] mat-select`)
   }
   const selMat = await primeiroSeletor(page, candidatosMat)
   if (!selMat) {
@@ -616,12 +629,37 @@ async function verificarErrosFormulario(page) {
       }
 
       // 3) Inputs obrigatórios visíveis sem valor
-      const obrigatorios = Array.from(document.querySelectorAll('input[required], select[required], mat-select[required]'))
-      for (const el of obrigatorios) {
+      const inputsObrig = Array.from(document.querySelectorAll('input[required], select[required], textarea[required]'))
+      for (const el of inputsObrig) {
+        if (el.disabled) continue
         const visivel = el.offsetParent !== null || (el.getBoundingClientRect && el.getBoundingClientRect().height > 0)
         if (!visivel) continue
         const v = (el.value || '').toString().trim()
         if (v) continue
+        const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
+        if (vistos.has(rotulo + ':obrig')) continue
+        vistos.add(rotulo + ':obrig')
+        problemas.push({ campo: rotulo, motivo: 'obrigatório vazio', valor: '' })
+      }
+
+      // 4) mat-select obrigatórios visíveis sem valor (Angular Material usa
+      //    .mat-mdc-select-required em vez de attr [required], e o valor real
+      //    fica em .mat-mdc-select-value-text dentro do componente)
+      const matSelObrig = Array.from(document.querySelectorAll(
+        'mat-select.mat-mdc-select-required, mat-select[aria-required="true"]'
+      ))
+      for (const el of matSelObrig) {
+        // Pula desabilitados — esperado ficarem vazios
+        if (el.classList.contains('mat-mdc-select-disabled')
+            || el.getAttribute('aria-disabled') === 'true') continue
+        const visivel = el.offsetParent !== null || (el.getBoundingClientRect && el.getBoundingClientRect().height > 0)
+        if (!visivel) continue
+        // Lê valor exibido
+        const valEl = el.querySelector('.mat-mdc-select-value-text, .mat-select-value-text')
+        const v = (valEl ? valEl.innerText : '').trim()
+        // mat-select-empty é sinal explícito que não tem valor
+        const ehVazio = !v || el.classList.contains('mat-mdc-select-empty')
+        if (!ehVazio) continue
         const rotulo = rotuloDoCampo(el) || '(sem rótulo)'
         if (vistos.has(rotulo + ':obrig')) continue
         vistos.add(rotulo + ':obrig')
@@ -664,8 +702,14 @@ async function extrairResultado(page) {
       let m
       while ((m = REGEX_VALOR.exec(txt)) !== null) precos.push(m[1])
 
-      // Detectar seguradoras conhecidas no texto
-      const NOMES = ['Porto Seguro','Bradesco','Allianz','HDI','Tokio','Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali','Yelum']
+      // Detectar seguradoras conhecidas no texto (lista expandida com base
+      // no painel do aggilizador do cliente)
+      const NOMES = [
+        'Porto Seguro','Bradesco','Allianz','HDI','Tokio Marine','Tokio',
+        'Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali',
+        'Yelum','Pier','Sancor','Suhai','Mitsui','Justos','Darwin','Ezze',
+        'Novo Seguros','Novo','Usebens','Youse','Zurich'
+      ]
       for (const n of NOMES) if (txt.includes(n) && !seguradoras.includes(n)) seguradoras.push(n)
 
       const parcelaMatch = txt.match(/(\d+)\s*x\s*de\s*R\$\s*([\d.]+,\d{2})/i)
