@@ -21,6 +21,7 @@ const NAV = [
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações' },
+  { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM' },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },

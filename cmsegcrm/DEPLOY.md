@@ -44,6 +44,8 @@ git push -u origin main
 |------|-------|
 | `NEXT_PUBLIC_SUPABASE_URL` | (cole a URL do Supabase) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | (cole a anon key) |
+| `SUPABASE_SERVICE_ROLE_KEY` | (cole a service_role key — necessária para integrações) |
+| `RDSTATION_CRM_TOKEN` | (token do RD Station CRM — opcional, ver abaixo) |
 
 5. Clique em **Deploy** e aguarde ~2 minutos
 6. A Vercel vai gerar um link como `cmsegcrm.vercel.app` — esse é o seu sistema online!
@@ -74,6 +76,20 @@ Se quiser um domínio como `crm.suacorretora.com.br`:
 | Supabase | 500MB banco, 50k usuários |
 | Vercel | Deploys ilimitados, SSL grátis |
 | **Total** | **R$ 0/mês** para começar |
+
+---
+
+## Integração RD Station CRM (opcional)
+
+Para importar contatos, funis, negócios e atividades do RD Station CRM:
+
+1. **Aplicar migration**: rode no SQL Editor do Supabase o arquivo `supabase/migrations/003_rd_station.sql`
+2. **Obter o token**: no RD Station CRM → **Configurações → Integrações → Token de API**
+3. **Configurar a variável** `RDSTATION_CRM_TOKEN` na Vercel (Settings → Environment Variables) com o valor do token
+4. Faça redeploy para aplicar a env var
+5. No CRM, acesse **Integrações → RD Station CRM** (apenas admin) e clique em **Importar tudo**
+
+A importação é idempotente — pode ser executada quantas vezes precisar; registros existentes (mesmo `rd_id`) são atualizados em vez de duplicados. Ordem recomendada: usuários → funis → contatos → negócios → atividades (o botão "Importar tudo" já segue essa ordem).
 
 ---
 
