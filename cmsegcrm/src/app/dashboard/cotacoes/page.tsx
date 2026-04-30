@@ -361,6 +361,38 @@ export default function CotacoesPage() {
 
   const abas = [['segurado','👤 Segurado'],['veiculo','🚗 Veículo'],['condutor','👨 Condutor'],['questionario','📋 Questionário'],['seguro','🛡 Seguro']] as const
 
+  // Abre o modal pré-preenchido com os dados de uma cotação existente.
+  // Usado quando o usuário clica numa linha pra refazer/editar/recalcular.
+  function abrirCotacaoExistente(c: any) {
+    const d = c.dados || {}
+    // Mescla formVazio com os dados salvos — campos faltantes ficam com default
+    const formPreenchido = { ...formVazio, ...d }
+    // Garante que campos legacy/computados não polluam (cpf, nome, etc.)
+    delete (formPreenchido as any).cpf
+    delete (formPreenchido as any).nome
+    delete (formPreenchido as any).nascimento
+    delete (formPreenchido as any).cep
+    delete (formPreenchido as any).precos
+    delete (formPreenchido as any).valor
+    delete (formPreenchido as any).resultado
+    delete (formPreenchido as any).coberturas
+    delete (formPreenchido as any).erro
+    setForm(formPreenchido as typeof formVazio)
+    if (c.cliente_id || c.clientes) {
+      setClienteSel({
+        id: c.cliente_id,
+        nome: c.clientes?.nome || c.nome_segurado,
+        cpf_cnpj: c.cpf_cnpj,
+      })
+    } else {
+      setClienteSel(null)
+    }
+    setClienteBusca(c.clientes?.nome || c.nome_segurado || '')
+    setAba('segurado')
+    setMsg('')
+    setModal(true)
+  }
+
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
@@ -377,7 +409,12 @@ export default function CotacoesPage() {
               <thead><tr>{['Cliente','Placa / Modelo','Usuário','Status','Data',''].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
               <tbody>
                 {cotacoes.map(c=>(
-                  <tr key={c.id} onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.03)')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                  <tr key={c.id}
+                      onClick={()=>abrirCotacaoExistente(c)}
+                      onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.06)')}
+                      onMouseLeave={e=>(e.currentTarget.style.background='')}
+                      style={{cursor:'pointer'}}
+                      title="Clique para editar / refazer">
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:13}}>{c.clientes?.nome||c.nome_segurado||'—'}</td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{c.placa||'—'}{c.modelo?` · ${c.modelo}`:''}</td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--gold)'}}>{c.users?.nome?.split(' ')[0]||'—'}</td>
@@ -387,7 +424,18 @@ export default function CotacoesPage() {
                       </span>
                     </td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11,color:'var(--text-muted)'}}>{new Date(c.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>{c.screenshot_url&&<a href={c.screenshot_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',textDecoration:'none'}}>Ver resultado</a>}</td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',whiteSpace:'nowrap'}} onClick={e=>e.stopPropagation()}>
+                      {c.screenshot_url && (
+                        <a href={c.screenshot_url} target="_blank" rel="noopener noreferrer"
+                           style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',textDecoration:'none',marginRight:6}}>
+                          Ver resultado
+                        </a>
+                      )}
+                      <button onClick={()=>abrirCotacaoExistente(c)}
+                              style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',cursor:'pointer'}}>
+                        ✏ Editar / Refazer
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {cotacoes.length===0&&<tr><td colSpan={6} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>Nenhuma cotação realizada</td></tr>}
