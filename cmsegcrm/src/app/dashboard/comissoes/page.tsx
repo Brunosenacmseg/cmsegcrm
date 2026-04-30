@@ -48,13 +48,17 @@ export default function ComissoesPage(){
   const supabase=createClient(); const router=useRouter()
   const anoAtual=new Date().getFullYear(); const mesAtual=new Date().getMonth()
   const inputRef=useRef<HTMLInputElement>(null)
+  const [profile,setProfile]         =useState<any>(null)
+  const [usuarios,setUsuarios]       =useState<any[]>([])
   const [negocios,setNegocios]       =useState<any[]>([])
+  const [recebidas,setRecebidas]     =useState<any[]>([])
   const [importacoes,setImportacoes] =useState<any[]>([])
   const [loading,setLoading]         =useState(true)
   const [mesSel,setMesSel]           =useState(mesAtual)
   const [anoSel,setAnoSel]           =useState(anoAtual)
   const [vistaAno,setVistaAno]       =useState(false)
-  const [abaAtiva,setAbaAtiva]       =useState<'extrato'|'importar'>('extrato')
+  const [abaAtiva,setAbaAtiva]       =useState<'recebidas'|'extrato'|'importar'>('recebidas')
+  const [filtroVendedor,setFiltroVendedor]=useState<string>('todos')
   const [importStep,setImportStep]   =useState<'upload'|'mapear'|'preview'|'sucesso'>('upload')
   const [excelData,setExcelData]     =useState<{headers:string[];rows:Record<string,any>[]}>(({headers:[],rows:[]}))
   const [mapeamento,setMapeamento]   =useState<any[]>([])
@@ -69,6 +73,7 @@ export default function ComissoesPage(){
     setLoading(true)
     const {data:{user}}=await supabase.auth.getUser()
     const {data:prof}=await supabase.from('users').select('*').eq('id',user?.id||'').single()
+    setProfile(prof)
 
     // Filtrar por hierarquia
     let visibleIds: string[]|null = null
@@ -85,20 +90,43 @@ export default function ComissoesPage(){
     let negQuery=supabase.from('negocios').select('*,clientes(id,nome,tipo),funis(tipo,nome,emoji),users!negocios_vendedor_id_fkey(nome)').gt('premio',0).gt('comissao_pct',0).order('created_at',{ascending:false})
     if(visibleIds) negQuery=(negQuery as any).in('vendedor_id',visibleIds)
 
-    const [{data:negs},{data:imps}]=await Promise.all([
+    let recQuery=supabase.from('comissoes_recebidas').select('*,clientes(id,nome,tipo),users!comissoes_recebidas_vendedor_id_fkey(id,nome)').order('data_recebimento',{ascending:false})
+    if(visibleIds) recQuery=(recQuery as any).in('vendedor_id',visibleIds)
+
+    const [{data:negs},{data:recs},{data:imps},{data:usrs}]=await Promise.all([
       negQuery,
+      recQuery,
       supabase.from('importacoes_comissao').select('*').order('created_at',{ascending:false}).limit(10),
+      prof?.role==='admin'||prof?.role==='lider' ? supabase.from('users').select('id,nome').order('nome') : Promise.resolve({data:[]}),
     ])
-    setNegocios(negs||[]); setImportacoes(imps||[]); setLoading(false)
+    setNegocios(negs||[]); setRecebidas(recs||[]); setImportacoes(imps||[]); setUsuarios(usrs||[])
+    setLoading(false)
   }
 
-  const doMes=negocios.filter((n:any)=>{const d=new Date(n.created_at);return d.getFullYear()===anoSel&&d.getMonth()===mesSel})
-  const doAno=negocios.filter((n:any)=>new Date(n.created_at).getFullYear()===anoSel)
+  const isAdminOrLider = profile?.role==='admin' || profile?.role==='lider'
+  const aplicarFiltro = (arr:any[], campo:string='vendedor_id') => filtroVendedor==='todos' ? arr : arr.filter((x:any)=> (x[campo]||x.users?.id) === filtroVendedor)
+  const negociosFiltrados = aplicarFiltro(negocios)
+  const recebidasFiltradas = aplicarFiltro(recebidas)
+
+  const doMes=negociosFiltrados.filter((n:any)=>{const d=new Date(n.created_at);return d.getFullYear()===anoSel&&d.getMonth()===mesSel})
+  const doAno=negociosFiltrados.filter((n:any)=>new Date(n.created_at).getFullYear()===anoSel)
   const lista=vistaAno?doAno:doMes
+
+  // Comissões efetivamente recebidas — período
+  const recRefData = (r:any) => r.data_recebimento ? new Date(r.data_recebimento) : new Date(r.created_at)
+  const recDoMes = recebidasFiltradas.filter((r:any)=>{const d=recRefData(r);return d.getFullYear()===anoSel&&d.getMonth()===mesSel})
+  const recDoAno = recebidasFiltradas.filter((r:any)=>recRefData(r).getFullYear()===anoSel)
+  const recLista = vistaAno?recDoAno:recDoMes
+  const recTotal = recLista.reduce((s:number,r:any)=>s+Number(r.valor||0), 0)
+  const recPorMes = Array(12).fill(0).map((_,i)=>({mes:i, total:recebidasFiltradas.filter((r:any)=>{const d=recRefData(r);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,r:any)=>s+Number(r.valor||0),0)}))
+  const recMaxMes = Math.max(...recPorMes.map(m=>m.total),1)
+  const recPorVendedor: Record<string,{nome:string;total:number;qtd:number}> = {}
+  recLista.forEach((r:any)=>{const k=r.vendedor_id||'sem'; const nome=r.users?.nome||'(sem vendedor)'; if(!recPorVendedor[k]) recPorVendedor[k]={nome,total:0,qtd:0}; recPorVendedor[k].total+=Number(r.valor||0); recPorVendedor[k].qtd++})
+  const recRankVendedores = Object.values(recPorVendedor).sort((a,b)=>b.total-a.total)
   const premioLista  =lista.reduce((s:number,n:any)=>s+(n.premio||0),0)
   const comissaoLista=lista.reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)
   const mediaComissao=lista.length?lista.reduce((s:number,n:any)=>s+n.comissao_pct,0)/lista.length:0
-  const porMes=Array(12).fill(0).map((_,i)=>({mes:i,com:negocios.filter((n:any)=>{const d=new Date(n.created_at);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)}))
+  const porMes=Array(12).fill(0).map((_,i)=>({mes:i,com:negociosFiltrados.filter((n:any)=>{const d=new Date(n.created_at);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)}))
   const maxComMes=Math.max(...porMes.map(m=>m.com),1)
   const porSeg:Record<string,{com:number;qtd:number}>= {}
   lista.forEach((n:any)=>{const s=n.seguradora||'Outros';if(!porSeg[s])porSeg[s]={com:0,qtd:0};porSeg[s].com+=n.premio*n.comissao_pct/100;porSeg[s].qtd++})
@@ -147,9 +175,26 @@ export default function ComissoesPage(){
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
-        <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Comissões</div>
+        <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>
+          Comissões
+          {profile && profile.role!=='admin' && (
+            <span style={{marginLeft:10,fontSize:11,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',fontWeight:400}}>
+              · {profile.role==='lider'?'minha equipe':'minhas comissões'}
+            </span>
+          )}
+        </div>
+
+        {isAdminOrLider && (
+          <select value={filtroVendedor} onChange={e=>setFiltroVendedor(e.target.value)}
+            title={profile?.role==='admin'?'Filtrar por vendedor':'Filtrar por membro da equipe'}
+            style={{...sel,width:'auto',padding:'7px 12px'}}>
+            <option value="todos">{profile?.role==='admin'?'👥 Todos os vendedores':'👥 Toda a equipe'}</option>
+            {usuarios.map((u:any)=><option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        )}
+
         <div style={{display:'flex',gap:4}}>
-          {([['extrato','📊 Extrato'],['importar','📥 Importar Excel']] as [string,string][]).map(([k,l])=>(
+          {([['recebidas','💵 Recebidas'],['extrato','📊 Previstas'],['importar','📥 Importar Excel']] as [string,string][]).map(([k,l])=>(
             <button key={k} onClick={()=>setAbaAtiva(k as any)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:abaAtiva===k?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:abaAtiva===k?'var(--gold)':'var(--text-muted)',borderColor:abaAtiva===k?'var(--gold)':'var(--border)'}}>{l}</button>
           ))}
         </div>
@@ -157,7 +202,99 @@ export default function ComissoesPage(){
 
       <div style={{flex:1,overflow:'auto',padding:'28px 28px 40px'}}>
 
-        {/* ═══ EXTRATO ═══ */}
+        {/* ═══ RECEBIDAS (real) ═══ */}
+        {abaAtiva==='recebidas'&&<>
+          <div style={{display:'flex',gap:10,marginBottom:24,alignItems:'center',flexWrap:'wrap'}}>
+            <select style={{...sel,width:'auto'}} value={anoSel} onChange={e=>setAnoSel(Number(e.target.value))}>{[anoAtual-1,anoAtual,anoAtual+1].map(a=><option key={a}>{a}</option>)}</select>
+            {!vistaAno&&<select style={{...sel,width:'auto'}} value={mesSel} onChange={e=>setMesSel(Number(e.target.value))}>{MESES.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>}
+            <button onClick={()=>setVistaAno(!vistaAno)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:vistaAno?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:vistaAno?'var(--gold)':'var(--text-muted)',borderColor:vistaAno?'var(--gold)':'var(--border)'}}>{vistaAno?'📅 Ver por mês':'📆 Ver ano'}</button>
+            <span style={{marginLeft:'auto',fontSize:12,color:'var(--text-muted)'}}>{recLista.length} lançamento{recLista.length!==1?'s':''}</span>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>
+            {[
+              {label:'Total Recebido '+(vistaAno?anoSel:MESES[mesSel]), val:'R$ '+fmtFull(recTotal), cor:'linear-gradient(90deg,var(--teal),#4dd9c7)'},
+              {label:'Lançamentos', val:recLista.length, cor:'linear-gradient(90deg,var(--gold),var(--gold-light))'},
+              {label:'Vendedores ativos', val:recRankVendedores.length, cor:'linear-gradient(90deg,#4a80f0,#7aa3f8)'},
+            ].map(({label,val,cor})=>(
+              <div key={label} className="card" style={{position:'relative',overflow:'hidden'}}>
+                <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:cor,borderRadius:'14px 14px 0 0'}}/>
+                <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>{label}</div>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:26,lineHeight:1}}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:16,marginBottom:16}}>
+            <div className="card">
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:20}}>Recebimentos por mês — {anoSel}</div>
+              <div style={{display:'flex',alignItems:'flex-end',gap:5,height:100}}>
+                {recPorMes.map(({mes,total})=>(
+                  <div key={mes} onClick={()=>{setVistaAno(false);setMesSel(mes)}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer'}}>
+                    <div style={{fontSize:9,color:total>0?'var(--teal)':'transparent',fontWeight:600}}>{total>0?'R$'+Math.round(total/1000)+'k':''}</div>
+                    <div style={{width:'100%',borderRadius:'4px 4px 0 0',transition:'height 0.6s ease',background:mes===mesSel&&!vistaAno?'var(--teal)':'rgba(28,181,160,0.3)',height:total>0?Math.max(6,total/recMaxMes*80)+'px':'4px'}}/>
+                    <div style={{fontSize:9,color:mes===mesSel&&!vistaAno?'var(--teal)':'var(--text-muted)',fontWeight:mes===mesSel?600:400}}>{'JFMAMJJASOND'[mes]}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="card">
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:14}}>{profile?.role==='admin'?'Por vendedor':'Equipe'}</div>
+              {recRankVendedores.length===0 && <div style={{color:'var(--text-muted)',fontSize:13}}>Sem dados</div>}
+              {recRankVendedores.slice(0,8).map(v=>(
+                <div key={v.nome} style={{marginBottom:10}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                    <span style={{fontSize:12,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'60%'}}>{v.nome} <span style={{color:'var(--text-muted)',fontSize:10}}>· {v.qtd}</span></span>
+                    <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {Math.round(v.total).toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div style={{background:'rgba(255,255,255,0.05)',borderRadius:4,height:6,overflow:'hidden'}}>
+                    <div style={{height:'100%',borderRadius:4,background:'var(--teal)',width:(v.total/recRankVendedores[0].total*100)+'%'}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>Detalhamento — {vistaAno?anoSel:`${MESES[mesSel]} ${anoSel}`}</div>
+              {profile?.role==='admin' && <span style={{fontSize:11,color:'var(--text-muted)'}}>Lançamentos vinculados a apólices/negócios</span>}
+            </div>
+            {loading?<div style={{color:'var(--text-muted)'}}>Carregando...</div>:(
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Cliente','Vendedor','Produto','Seguradora','Competência','Recebido em','Parcela','Valor'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {recLista.map((r:any)=>(
+                  <tr key={r.id} onClick={()=>r.cliente_id && router.push(`/dashboard/clientes/${r.cliente_id}`)} style={{cursor:r.cliente_id?'pointer':'default'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(201,168,76,0.03)'} onMouseLeave={e=>e.currentTarget.style.background=''}>
+                    <td style={td0}>
+                      <div style={{fontWeight:500}}>{r.clientes?.nome||'—'}</div>
+                      {r.obs && <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:240}}>{r.obs}</div>}
+                    </td>
+                    <td style={{...td0,fontSize:12}}>{r.users?.nome||'—'}</td>
+                    <td style={{...td0,fontSize:12}}>{r.produto||'—'}</td>
+                    <td style={{...td0,fontSize:12,color:'var(--text-muted)'}}>{r.seguradora||'—'}</td>
+                    <td style={{...td0,fontSize:12}}>{r.competencia||'—'}</td>
+                    <td style={{...td0,fontSize:12,color:'var(--text-muted)'}}>{r.data_recebimento?new Date(r.data_recebimento).toLocaleDateString('pt-BR'):'—'}</td>
+                    <td style={{...td0,fontSize:12,textAlign:'center'}}>{r.parcela||1}/{r.total_parcelas||1}</td>
+                    <td style={td0}><div style={{color:'var(--teal)',fontWeight:700,fontSize:14}}>R$ {Number(r.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></td>
+                  </tr>
+                ))}
+              </tbody>
+              {recLista.length>0 && <tfoot><tr style={{background:'rgba(255,255,255,0.03)'}}>
+                <td colSpan={7} style={{padding:'12px 0',fontWeight:700,fontSize:13}}>TOTAL</td>
+                <td style={{padding:'12px 0',color:'var(--teal)',fontWeight:700,fontSize:15,fontFamily:'DM Serif Display,serif'}}>R$ {fmtFull(recTotal)}</td>
+              </tr></tfoot>}
+            </table>)}
+            {recLista.length===0&&!loading&&(
+              <div style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>
+                Nenhuma comissão recebida neste período.
+                {profile?.role==='admin' && <div style={{marginTop:8,fontSize:12}}>Lance pela tela de <b>Apólices</b> → botão <b>💵 Comissão</b>.</div>}
+              </div>
+            )}
+          </div>
+        </>}
+
+        {/* ═══ EXTRATO (previsto) ═══ */}
         {abaAtiva==='extrato'&&<>
           <div style={{display:'flex',gap:10,marginBottom:24,alignItems:'center',flexWrap:'wrap'}}>
             <select style={{...sel,width:'auto'}} value={anoSel} onChange={e=>setAnoSel(Number(e.target.value))}>{[anoAtual-1,anoAtual,anoAtual+1].map(a=><option key={a}>{a}</option>)}</select>
