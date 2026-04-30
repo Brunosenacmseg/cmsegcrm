@@ -1,0 +1,60 @@
+name: Deploy Robô para VPS
+
+# Roda automaticamente quando algo na pasta robo/ mudar na branch main.
+# Também pode ser disparado manualmente em Actions → Deploy Robô → Run workflow.
+on:
+  push:
+    branches: [main]
+    paths: ['robo/**']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH e atualiza /opt/cotacao
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key:      ${{ secrets.SSH_PRIVATE_KEY }}
+          port:     ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            echo "📥 Atualizando código..."
+            if [ ! -d /opt/cotacao/.git ]; then
+              # Primeira execução: clona o repo
+              sudo mkdir -p /opt/cotacao
+              sudo chown -R $USER:$USER /opt/cotacao
+              git clone https://github.com/Brunosenacmseg/cmsegcrm.git /opt/cotacao
+            else
+              cd /opt/cotacao
+              git fetch --all
+              git reset --hard origin/main
+            fi
+
+            echo "📦 Verificando dependências..."
+            cd /opt/cotacao/robo
+
+            if [ ! -f .env ]; then
+              echo "⚠ ATENÇÃO: /opt/cotacao/robo/.env não existe."
+              echo "  Crie manualmente uma vez (cp .env.example .env && nano .env)"
+              echo "  e dispare o deploy de novo."
+              exit 1
+            fi
+
+            npm install --omit=dev --no-audit --no-fund
+
+            # Garante que o Chromium está instalado (se já tiver, é noop rápido)
+            npx playwright install chromium 2>&1 | tail -3 || true
+
+            echo "🚀 Reiniciando..."
+            pm2 restart robo-cotacao --update-env 2>/dev/null \
+              || pm2 start robo.js --name robo-cotacao --update-env --cwd /opt/cotacao/robo
+            pm2 save
+
+            sleep 2
+            curl -s http://localhost:3001/health | head -c 200
+            echo ""
+            echo "✅ Deploy concluído"
