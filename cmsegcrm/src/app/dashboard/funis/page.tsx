@@ -97,6 +97,22 @@ export default function FunisPage() {
     await carregarNegocios()
   }
 
+  async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string) {
+    const patch: any = { status }
+    if (status === 'em_andamento') {
+      patch.data_fechamento = null
+      patch.fechado_por     = null
+      patch.motivo_perda    = null
+    } else {
+      patch.data_fechamento = new Date().toISOString()
+      patch.fechado_por     = profile?.id || null
+      if (status === 'perdido') patch.motivo_perda = motivo || null
+    }
+    await supabase.from('negocios').update(patch).eq('id', negocioId)
+    setModalCard(false)
+    await carregarNegocios()
+  }
+
   async function vincularCliente(clienteId: string) {
     if (!negocioVincular) return
     setVinculando(true)
@@ -149,6 +165,13 @@ export default function FunisPage() {
             </button>
           ))}
         </div>
+        {profile?.role === 'admin' && (
+          <button onClick={()=>router.push('/dashboard/funis/configurar')}
+            style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+            title="Criar, renomear e organizar funis (admin)">
+            ⚙ Configurar funis
+          </button>
+        )}
         <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||''})}}>
           + Novo Card
         </button>
@@ -169,13 +192,24 @@ export default function FunisPage() {
                   </div>
 
                   {/* Cards */}
-                  {cards.map(neg => (
+                  {cards.map(neg => {
+                    const isGanho   = neg.status === 'ganho'
+                    const isPerdido = neg.status === 'perdido'
+                    const corBorda  = isGanho ? 'rgba(28,181,160,0.55)' : isPerdido ? 'rgba(224,82,82,0.55)' : 'var(--border)'
+                    const bgCard    = isGanho ? 'rgba(28,181,160,0.06)' : isPerdido ? 'rgba(224,82,82,0.06)'  : 'rgba(255,255,255,0.04)'
+                    return (
                     <div key={neg.id} onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
-                      style={{background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:12,padding:'12px',cursor:'pointer',transition:'all 0.15s'}}
+                      style={{background:bgCard,border:'1px solid '+corBorda,borderRadius:12,padding:'12px',cursor:'pointer',transition:'all 0.15s',position:'relative'}}
                       onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--gold)')}
-                      onMouseLeave={e=>(e.currentTarget.style.borderColor='var(--border)')}>
+                      onMouseLeave={e=>(e.currentTarget.style.borderColor=corBorda)}>
 
-                      <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3}}>{neg.titulo}</div>
+                      {(isGanho || isPerdido) && (
+                        <span style={{position:'absolute',top:8,right:8,fontSize:9,fontWeight:700,letterSpacing:'1px',padding:'2px 6px',borderRadius:5,textTransform:'uppercase',background:isGanho?'rgba(28,181,160,0.18)':'rgba(224,82,82,0.18)',color:isGanho?'var(--teal)':'var(--red)',border:'1px solid '+(isGanho?'rgba(28,181,160,0.4)':'rgba(224,82,82,0.4)')}}>
+                          {isGanho?'✓ Ganho':'✕ Perdido'}
+                        </span>
+                      )}
+
+                      <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3,paddingRight:isGanho||isPerdido?60:0,textDecoration:isPerdido?'line-through':'none',opacity:isPerdido?0.75:1}}>{neg.titulo}</div>
 
                       {/* Cliente ou botão vincular */}
                       {neg.clientes ? (
@@ -198,7 +232,8 @@ export default function FunisPage() {
                         {neg.produto && <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 6px',borderRadius:8}}>{neg.produto}</span>}
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
 
                   {cards.length === 0 && (
                     <div style={{padding:'20px 12px',textAlign:'center',color:'var(--text-muted)',fontSize:11,border:'1px dashed var(--border)',borderRadius:12}}>
@@ -419,6 +454,34 @@ export default function FunisPage() {
                 </div>
               </div>
             )}
+
+            {/* Ganho / Perdido */}
+            <div style={{marginBottom:16,padding:'12px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>
+                Status do negócio · {cardAtivo.status === 'ganho' ? '✓ Ganho' : cardAtivo.status === 'perdido' ? '✕ Perdido' : 'Em andamento'}
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                <button onClick={()=>marcarStatus(cardAtivo.id,'ganho')}
+                  disabled={cardAtivo.status==='ganho'}
+                  style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='ganho'?'default':'pointer',border:'1px solid rgba(28,181,160,0.4)',background:cardAtivo.status==='ganho'?'rgba(28,181,160,0.25)':'rgba(28,181,160,0.1)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='ganho'?0.7:1}}>
+                  ✓ Marcar Ganho
+                </button>
+                <button onClick={()=>{ const m = prompt('Motivo da perda (opcional):',''); if (m === null) return; marcarStatus(cardAtivo.id,'perdido', m||undefined) }}
+                  disabled={cardAtivo.status==='perdido'}
+                  style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='perdido'?'default':'pointer',border:'1px solid rgba(224,82,82,0.4)',background:cardAtivo.status==='perdido'?'rgba(224,82,82,0.25)':'rgba(224,82,82,0.1)',color:'var(--red)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='perdido'?0.7:1}}>
+                  ✕ Marcar Perdido
+                </button>
+                {cardAtivo.status && cardAtivo.status !== 'em_andamento' && (
+                  <button onClick={()=>marcarStatus(cardAtivo.id,'em_andamento')}
+                    style={{padding:'8px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                    ↺ Reabrir
+                  </button>
+                )}
+              </div>
+              {cardAtivo.status === 'perdido' && cardAtivo.motivo_perda && (
+                <div style={{marginTop:8,fontSize:11,color:'var(--text-muted)'}}>Motivo: {cardAtivo.motivo_perda}</div>
+              )}
+            </div>
 
             <div style={{display:'flex',justifyContent:'space-between'}}>
               <button onClick={()=>excluirNegocio(cardAtivo.id)} style={{fontSize:12,padding:'6px 14px',borderRadius:8,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>

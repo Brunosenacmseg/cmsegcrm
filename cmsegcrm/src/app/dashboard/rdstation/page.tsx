@@ -25,7 +25,7 @@ interface Sync {
 
 const RECURSOS: { key: string; label: string; emoji: string; descricao: string }[] = [
   { key: 'usuarios',   label: 'Usuários',   emoji: '👥', descricao: 'Vincula usuários do RD por e-mail aos corretores existentes' },
-  { key: 'funis',      label: 'Funis',      emoji: '📊', descricao: 'Cria funis "RD: <Nome>" com as etapas do RD Station' },
+  { key: 'funis',      label: 'Funis',      emoji: '📊', descricao: 'Replica os funis e etapas do RD Station (nomes idênticos)' },
   { key: 'contatos',   label: 'Contatos',   emoji: '👤', descricao: 'Importa contatos como clientes (PF/PJ por CPF/CNPJ)' },
   { key: 'negocios',   label: 'Negócios',   emoji: '💼', descricao: 'Importa deals nos funis correspondentes' },
   { key: 'atividades', label: 'Atividades', emoji: '✅', descricao: 'Importa tarefas, ligações, e-mails e notas' },
@@ -442,6 +442,35 @@ export default function RDStationPage() {
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Não feche esta aba. A importação continua em segundo plano para cada mês.</div>
               </div>
             )}
+          </div>
+
+          {/* Resetar negócios — destrutivo */}
+          <div className="card" style={{ marginBottom: 20, borderColor: 'rgba(224,82,82,0.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 16, marginBottom: 4, color: 'var(--red)' }}>🗑 Resetar negócios</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Apaga TODOS os negócios cadastrados (cards dos funis). Tarefas e histórico vinculados serão removidos por cascata. Apólices têm o vínculo desfeito (mas não são apagadas).
+                  Use antes de uma re-importação completa para evitar duplicidade ou estado inconsistente.
+                </div>
+              </div>
+              <button onClick={async () => {
+                  const txt = prompt('Tem certeza? Esta ação NÃO PODE ser desfeita.\n\nDigite "RESETAR NEGOCIOS" para confirmar:')
+                  if (txt !== 'RESETAR NEGOCIOS') return
+                  setRodando('purge'); setErro(null)
+                  try {
+                    const r = await fetch('/api/rdstation/purge', { method:'POST', headers: await authHeaders(), body: JSON.stringify({ confirm:'RESETAR NEGOCIOS' }) })
+                    const j = await r.json()
+                    if (!r.ok) { setErro(j.error || 'Erro ao resetar'); return }
+                    setErro(`✅ ${j.apagados} negócio(s) apagado(s). Agora rode "Importar negócios".`)
+                  } catch (e: any) { setErro(e?.message || 'Erro de rede') }
+                  finally { setRodando(null) }
+                }}
+                disabled={!!rodando}
+                style={{ padding: '10px 18px', fontSize: 13, whiteSpace: 'nowrap', borderRadius: 8, border: '1px solid rgba(224,82,82,0.5)', background: 'rgba(224,82,82,0.1)', color: 'var(--red)', cursor: rodando ? 'wait' : 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 600 }}>
+                {rodando === 'purge' ? '⏳ Apagando...' : '🗑 Resetar negócios'}
+              </button>
+            </div>
           </div>
 
           {/* Recursos individuais */}

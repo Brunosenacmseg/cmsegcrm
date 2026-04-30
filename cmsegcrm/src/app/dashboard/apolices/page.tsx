@@ -16,6 +16,12 @@ export default function ApolicesPage() {
   const [filtroVendedor, setFiltroVendedor] = useState('todos')
   const [editandoVendedor, setEditandoVendedor] = useState<string|null>(null)
 
+  // Lançamento de comissão recebida (admin)
+  const [comModal, setComModal] = useState<any|null>(null)
+  const hojeIso = new Date().toISOString().slice(0,10)
+  const [comForm, setComForm] = useState({ valor:'', competencia: hojeIso.slice(0,7), data_recebimento: hojeIso, parcela:'1', total_parcelas:'1', obs:'' })
+  const [comSalvando, setComSalvando] = useState(false)
+
   useEffect(() => { carregar() }, [])
 
   async function carregar() {
@@ -57,6 +63,48 @@ export default function ApolicesPage() {
     await supabase.from('negocios').update({ vendedor_id: vendedorId||null }).eq('id', negocioId)
     setEditandoVendedor(null)
     carregar()
+  }
+
+  function abrirComissao(neg: any) {
+    const valorBase = neg.premio && neg.comissao_pct ? (Number(neg.premio) * Number(neg.comissao_pct) / 100) : 0
+    setComForm({
+      valor: valorBase ? valorBase.toFixed(2) : '',
+      competencia: hojeIso.slice(0,7),
+      data_recebimento: hojeIso,
+      parcela: '1',
+      total_parcelas: '1',
+      obs: '',
+    })
+    setComModal(neg)
+  }
+
+  async function lancarComissao() {
+    if (!comModal) return
+    const valorNum = parseFloat(String(comForm.valor).replace(/\./g,'').replace(',','.')) || 0
+    if (valorNum <= 0) { alert('Informe um valor válido.'); return }
+    if (!comModal.vendedor_id) { alert('Esta apólice não tem vendedor atribuído. Atribua um vendedor antes de lançar a comissão.'); return }
+    setComSalvando(true)
+    const { data:{ user } } = await supabase.auth.getUser()
+    const { error } = await supabase.from('comissoes_recebidas').insert({
+      negocio_id:       comModal.id,
+      cliente_id:       comModal.clientes?.id || null,
+      vendedor_id:      comModal.vendedor_id,
+      valor:            valorNum,
+      competencia:      comForm.competencia || null,
+      data_recebimento: comForm.data_recebimento || null,
+      parcela:          parseInt(comForm.parcela)||1,
+      total_parcelas:   parseInt(comForm.total_parcelas)||1,
+      seguradora:       comModal.seguradora || null,
+      produto:          comModal.produto || null,
+      status:           'recebido',
+      origem:           'manual',
+      obs:              comForm.obs || null,
+      registrado_por:   user?.id || null,
+    })
+    setComSalvando(false)
+    if (error) { alert('Erro ao lançar: '+error.message); return }
+    setComModal(null)
+    alert('Comissão lançada com sucesso. Aparecerá no extrato de '+(comModal.users?.nome||'do vendedor')+'.')
   }
 
   const ramos       = [...new Set(negocios.map((n:any)=>(n.produto||'').split(' — ')[0]).filter(Boolean))]
@@ -135,7 +183,7 @@ export default function ApolicesPage() {
           {loading?<div style={{color:'var(--text-muted)',padding:20}}>Carregando...</div>:(
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead>
-              <tr>{['Segurado','Produto','Seguradora','Vendedor','Prêmio/ano','Comissão','Vencimento','Status'].map(h=>(
+              <tr>{['Segurado','Produto','Seguradora','Vendedor','Prêmio/ano','Comissão','Vencimento','Status', isAdmin?'Ações':''].filter(h=>h!=='').map(h=>(
                 <th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>
               ))}</tr>
             </thead>
@@ -185,17 +233,85 @@ export default function ApolicesPage() {
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}} onClick={()=>router.push(`/dashboard/clientes/${n.clientes?.id}`)}>
                       <span style={{fontSize:11,fontWeight:600,borderRadius:20,padding:'3px 10px',background:'rgba(0,0,0,0.2)',color:st.cor,border:`1px solid ${st.cor}33`}}>{st.label}</span>
                     </td>
+                    {isAdmin&&(
+                      <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                        <button onClick={()=>abrirComissao(n)}
+                          title={n.vendedor_id?'Lançar comissão recebida':'Atribua um vendedor antes'}
+                          disabled={!n.vendedor_id}
+                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.4)',background:n.vendedor_id?'rgba(28,181,160,0.10)':'rgba(255,255,255,0.04)',color:n.vendedor_id?'var(--teal)':'var(--text-muted)',cursor:n.vendedor_id?'pointer':'not-allowed',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                          💵 Comissão
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
               {filtrados.length===0&&!loading&&(
-                <tr><td colSpan={8} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>Nenhuma apólice encontrada.</td></tr>
+                <tr><td colSpan={isAdmin?9:8} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>Nenhuma apólice encontrada.</td></tr>
               )}
             </tbody>
           </table>
           )}
         </div>
       </div>
+
+      {/* Modal Lançar Comissão Recebida */}
+      {comModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setComModal(null)}>
+          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>💵 Lançar comissão recebida</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>
+              Apólice de <b style={{color:'var(--text)'}}>{comModal.clientes?.nome}</b> · {comModal.produto||'—'} · {comModal.seguradora||'—'}<br/>
+              Vendedor: <b style={{color:'var(--gold)'}}>{comModal.users?.nome||'(sem vendedor)'}</b>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Valor recebido (R$) *</label>
+                <input value={comForm.valor} onChange={e=>setComForm(f=>({...f,valor:e.target.value}))} placeholder="0,00"
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:14,fontWeight:600,outline:'none',boxSizing:'border-box'}} autoFocus />
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Competência</label>
+                <input type="month" value={comForm.competencia} onChange={e=>setComForm(f=>({...f,competencia:e.target.value}))}
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Data recebimento</label>
+                <input type="date" value={comForm.data_recebimento} onChange={e=>setComForm(f=>({...f,data_recebimento:e.target.value}))}
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Parcela</label>
+                <input type="number" min="1" value={comForm.parcela} onChange={e=>setComForm(f=>({...f,parcela:e.target.value}))}
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>de</label>
+                <input type="number" min="1" value={comForm.total_parcelas} onChange={e=>setComForm(f=>({...f,total_parcelas:e.target.value}))}
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Observações</label>
+              <textarea value={comForm.obs} onChange={e=>setComForm(f=>({...f,obs:e.target.value}))} rows={2} placeholder="Ex: 1ª parcela referente à apólice 12345..."
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box',resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+            </div>
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setComModal(null)} disabled={comSalvando}>Cancelar</button>
+              <button className="btn-primary" onClick={lancarComissao} disabled={comSalvando||!comForm.valor}>
+                {comSalvando?'Salvando...':'✓ Lançar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
