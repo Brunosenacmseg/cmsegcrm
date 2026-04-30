@@ -204,7 +204,7 @@ async function importarNegocios(token: string) {
   for (const f of funis || []) if (f.rd_id) funilPorRd[f.rd_id] = f
 
   // Funil fallback (caso pipeline do deal não exista)
-  let funilFallback = (funis || []).find((f: any) => f.tipo === 'venda')
+  let funilFallback: any = (funis || []).find((f: any) => f.tipo === 'venda')
   if (!funilFallback) {
     const { data } = await supabaseAdmin.from('funis').insert({
       nome: 'RD: Importados', tipo: 'venda', emoji: '📥', cor: '#c9a84c',
