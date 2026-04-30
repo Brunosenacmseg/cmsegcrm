@@ -45,47 +45,65 @@ async function fetchJson(url: string, init: RequestInit): Promise<{ ok: boolean;
   return { ok: res.ok, status: res.status, data }
 }
 
-// Tenta criar webhook na API v1 (token query string)
-async function criarV1(rdToken: string, evento: string, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any; tentativa: string }> {
+// Tenta criar webhook na API v1 (token query string).
+// O RD v1 exige o campo "event_type" (string) e provavelmente um "entity_type".
+async function criarV1(rdToken: string, eventoDotted: string, url: string, secret: string): Promise<{ ok: boolean; status: number; data: any; tentativa: string }> {
   const baseUrl = `${V1_BASE}/webhooks?token=${rdToken}`
+  // eventoDotted: "deal.created" → entity="deal", action="created"
+  const [entity, action] = eventoDotted.split('.')
+
   const corpos = [
-    // Tentativa 1 — formato wrapped em "webhook"
+    // Formato 1: event_type singular (mais provável dado o erro CANNOT_BE_NULL em event_type)
+    {
+      tentativa: 'event_type',
+      body: {
+        name: `CMSEGCRM - ${eventoDotted}`,
+        url,
+        http_method: 'POST',
+        event_type: eventoDotted,
+        entity_type: entity,
+        auth_header: 'X-Auth-Key',
+        auth_key: secret,
+      },
+    },
+    // Formato 2: separa entity_type e action
+    {
+      tentativa: 'entity_action',
+      body: {
+        name: `CMSEGCRM - ${eventoDotted}`,
+        url,
+        http_method: 'POST',
+        entity_type: entity,
+        event_type: action,
+        auth_header: 'X-Auth-Key',
+        auth_key: secret,
+      },
+    },
+    // Formato 3: event_type com underscore
+    {
+      tentativa: 'underscore',
+      body: {
+        name: `CMSEGCRM - ${eventoDotted}`,
+        url,
+        http_method: 'POST',
+        event_type: `${entity}_${action}`,
+        auth_header: 'X-Auth-Key',
+        auth_key: secret,
+      },
+    },
+    // Formato 4: wrapped em "webhook"
     {
       tentativa: 'wrapped',
       body: {
         webhook: {
-          name: `CMSEGCRM - ${evento}`,
+          name: `CMSEGCRM - ${eventoDotted}`,
           url,
           http_method: 'POST',
-          event_identifiers: [evento],
-          include_relations: [],
+          event_type: eventoDotted,
+          entity_type: entity,
           auth_header: 'X-Auth-Key',
           auth_key: secret,
         },
-      },
-    },
-    // Tentativa 2 — flat sem wrapper
-    {
-      tentativa: 'flat',
-      body: {
-        name: `CMSEGCRM - ${evento}`,
-        url,
-        http_method: 'POST',
-        event_identifiers: [evento],
-        auth_header: 'X-Auth-Key',
-        auth_key: secret,
-      },
-    },
-    // Tentativa 3 — singular event_identifier
-    {
-      tentativa: 'singular',
-      body: {
-        name: `CMSEGCRM - ${evento}`,
-        url,
-        http_method: 'POST',
-        event_identifier: evento,
-        auth_header: 'X-Auth-Key',
-        auth_key: secret,
       },
     },
   ]
@@ -99,7 +117,6 @@ async function criarV1(rdToken: string, evento: string, url: string, secret: str
     })
     if (r.ok) return { ...r, tentativa }
     ultimaResp = { ...r, tentativa }
-    // Se status é 401/403, não adianta tentar outros formatos
     if (r.status === 401 || r.status === 403) break
   }
   return ultimaResp || { ok: false, status: 0, data: null, tentativa: 'nenhuma' }
