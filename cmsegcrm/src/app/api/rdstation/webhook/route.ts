@@ -38,12 +38,15 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
   let etapa = d.deal_stage?.name || (funil.etapas?.[0] || 'Novo')
   if (!(funil.etapas as string[]).includes(etapa)) etapa = funil.etapas?.[0] || 'Novo'
 
-  // Override por win/lost
-  if (eventType === 'deal_won' || d.win === true) {
+  // Override por status/win/lost (v1: win bool, v2: status enum)
+  const status = (d as any).status as string | undefined
+  const ganhou = eventType.includes('won') || d.win === true || status === 'won'
+  const perdeu = eventType.includes('lost') || d.win === false || status === 'lost'
+  if (ganhou) {
     const ganhos = ['Fechado Ganho', 'Ganho', 'Renovado', 'Pago', 'Concluído']
     const m = (funil.etapas as string[]).find(e => ganhos.includes(e))
     if (m) etapa = m
-  } else if (eventType === 'deal_lost' || d.win === false) {
+  } else if (perdeu) {
     const perdidos = ['Fechado Perdido', 'Perdido', 'Não Renovado', 'Negado']
     const m = (funil.etapas as string[]).find(e => perdidos.includes(e))
     if (m) etapa = m
@@ -68,7 +71,10 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     d.user?.name && `Responsável RD: ${d.user.name}`,
   ].filter(Boolean).join(' | ')
 
-  const premio = Number(d.amount_total ?? d.amount_montly ?? d.amount_unique ?? 0) || 0
+  // v2 corrige o typo: amount_monthly. v1 tinha amount_montly.
+  const premio = Number(
+    d.amount_total ?? (d as any).amount_monthly ?? d.amount_montly ?? d.amount_unique ?? 0
+  ) || 0
   const venc = d.prediction_date ? d.prediction_date.slice(0, 10) : null
 
   const payload: any = {
@@ -138,29 +144,47 @@ async function aplicarContact(c: RDContact) {
 }
 
 // ─── Detectar tipo de evento e payload ─────────────────────
+// v2: { event_name: "crm_deal_updated", document: {...} }
+// v1: { event_identifier: "deal_updated", deal: {...} }
+function extrairDocumento(body: any): any {
+  return body?.document || body
+}
+
 function extrairDeal(body: any): RDDeal | null {
+  const doc = extrairDocumento(body)
   if (body?.deal && typeof body.deal === 'object') return body.deal
-  if (body?._id || body?.id) {
-    if (body?.deal_stage || body?.deal_pipeline || body?.contacts) return body as RDDeal
+  if (doc?._id || doc?.id) {
+    if (doc?.deal_stage || doc?.deal_pipeline || doc?.contacts || doc?.amount_total !== undefined || doc?.amount_monthly !== undefined) {
+      return doc as RDDeal
+    }
   }
   return null
 }
 
 function extrairContact(body: any): RDContact | null {
+  const doc = extrairDocumento(body)
   if (body?.contact && typeof body.contact === 'object') return body.contact
-  if ((body?._id || body?.id) && (body?.emails || body?.phones || body?.cpf || body?.cnpj)) return body as RDContact
+  if ((doc?._id || doc?.id) && (doc?.emails || doc?.phones || doc?.cpf || doc?.cnpj || doc?.job_title || doc?.organization_id !== undefined)) return doc as RDContact
   return null
 }
 
 function detectarEvento(body: any): string {
-  return body?.event_identifier || body?.event || body?.action || 'unknown'
+  // v2 usa "crm_deal_updated"; v1 "deal_updated"; também testa event/action
+  const raw = body?.event_name || body?.event_identifier || body?.event || body?.action || 'unknown'
+  return String(raw).replace(/^crm_/, '') // normaliza pra deal_updated etc
 }
 
 // ─── Handler principal ─────────────────────────────────────
 export async function POST(request: NextRequest) {
-  // Validar secret
+  // Validar secret — aceita ?secret=X (v1), x-webhook-secret, Authorization Bearer X, ou header customizado
   const expected = process.env.RDSTATION_WEBHOOK_SECRET
-  const provided = request.nextUrl.searchParams.get('secret') || request.headers.get('x-webhook-secret') || ''
+  const auth = request.headers.get('authorization') || ''
+  const bearer = auth.replace(/^Bearer\s+/i, '').trim()
+  const provided = request.nextUrl.searchParams.get('secret')
+    || request.headers.get('x-webhook-secret')
+    || request.headers.get('x-auth-key')
+    || bearer
+    || ''
   if (expected && provided !== expected) {
     return NextResponse.json({ error: 'Secret inválido' }, { status: 401 })
   }
@@ -184,11 +208,22 @@ export async function POST(request: NextRequest) {
       let resultado: any = null
 
       if (evento === 'deal_deleted') {
-        const id = body?.deal?._id || body?.deal?.id || body?._id || body?.id
+        const doc = extrairDocumento(body)
+        const id = doc?._id || doc?.id || body?.deal?._id || body?.deal?.id
         if (id) {
           const { data: existe } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', id).maybeSingle()
           if (existe) {
             await supabaseAdmin.from('negocios').delete().eq('id', existe.id)
+            resultado = { ok: true, action: 'deleted', id: existe.id }
+          }
+        }
+      } else if (evento === 'contact_deleted') {
+        const doc = extrairDocumento(body)
+        const id = doc?._id || doc?.id
+        if (id) {
+          const { data: existe } = await supabaseAdmin.from('clientes').select('id').eq('rd_id', id).maybeSingle()
+          if (existe) {
+            await supabaseAdmin.from('clientes').delete().eq('id', existe.id)
             resultado = { ok: true, action: 'deleted', id: existe.id }
           }
         }
