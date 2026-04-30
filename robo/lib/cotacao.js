@@ -1,4 +1,26 @@
-// Fluxo de cotação completa de automóvel. Reaproveita os helpers do aggilizador.
+// Fluxo de cotação completa de automóvel no aggilizador.
+// Mapeamento descoberto via /debug-cotacao em /cotacao/auto/formulario:
+//
+// SEGURADO: cpfCnpj, nomeSegurado, dataNascimento, cepImovel, fone, emailSegurado
+//   selects: sexo (idx 0), estadoCivil (idx 0)
+//
+// VEÍCULO:  placa, chassi, anoFab, fipe, modelo, valReferenciado, perfilCepPernoite, gasInstalValor
+//   selects: anoMod, zeroKm, combustivel, rastreador, dispAntiFurto, blindado, kitGas, alienado
+//
+// CONDUTOR: perfilCpfCnpj, perfilNomeCondutor, perfilDataNascimento
+//   selects: relacaoSegurado, sexo (idx 1), estadoCivil (idx 1), tempoHabilitacao
+//
+// QUESTIONÁRIO: garagemResidencia, garagemTrabalho, garagemEstudo, tpUso,
+//   jovemCondutor, idadeJovem, jovemSexo, tipoResidencia, kmMensal, isPCD, isencaoFiscal
+//
+// SEGURO: vigenciaIni, vigenciaFim
+// RENOVAÇÃO: vigFimAnterior, numeroRenovacao, CI
+//   selects: seguradoraAnteriorId, sinistrosAnterior, bonusAnterior
+//   checkbox: name="renovacao"
+//
+// COBERTURAS: tipoCobertura, tipoFranquia, pctAjuste (% Franquia / Fipe)
+//   inputs: isDanosMateriais, isDanosCorporais, isDanosMorais, isAppMorte, isBlindagemValor
+//   selects: assist24hs, vidros, carroReserva, carroReservaAr
 
 const log = require('./log')
 const ag  = require('./aggilizador')
@@ -9,112 +31,125 @@ async function cotacaoAuto(page, dados) {
   await ag.login(page)
   await ag.abrirCotacaoAuto(page)
 
+  // Esperar formulário aparecer
+  await page.waitForSelector('input[formcontrolname="cpfCnpj"]', { state: 'visible', timeout: 15000 })
+
   // ─── 1) Segurado ───────────────────────────────────────────
-  await ag.preencher(page, ['cpf','cpf_cnpj','documento'], dados.cpf)
-  // Aggilizador auto-preenche nome+nascimento+sexo a partir do CPF
-  await page.waitForTimeout(2000)
+  await ag.preencher(page, ['cpfCnpj'], dados.cpf)
+  // Aggilizador auto-preenche nome+nascimento+sexo a partir do CPF — espera
+  await page.waitForTimeout(2500)
 
-  await ag.preencher(page, ['nome','nome_segurado','nome_completo'], dados.nome)
-  await ag.preencher(page, ['nascimento','data_nascimento','dt_nascimento'], dados.nascimento)
-  await ag.preencher(page, ['cep','cep_residencial'], dados.cep)
-  await ag.preencher(page, ['email'], dados.email)
-  await ag.preencher(page, ['telefone','celular','fone'], dados.telefone)
-  await ag.selecionar(page, ['sexo'], dados.sexo_segurado)
-  await ag.selecionar(page, ['estado_civil','estadoCivil'], dados.estado_civil_segurado)
-
-  await ag.clicarProximo(page)
-  await page.waitForTimeout(1500)
+  await ag.preencher(page, ['nome', 'nomeSegurado'], dados.nome)
+  await ag.preencher(page, ['dataNasc', 'dataNascimento'], dados.nascimento)
+  await ag.preencher(page, ['cep', 'cepImovel'], dados.cep)
+  await ag.preencher(page, ['email', 'emailSegurado'], dados.email)
+  await ag.preencher(page, ['fone'], dados.telefone)
+  // Sexo e Estado Civil do segurado: primeiro mat-select com cada nome
+  if (dados.sexo_segurado)         await ag.selecionarPorIndex(page, 'sexo', 0, dados.sexo_segurado)
+  if (dados.estado_civil_segurado) await ag.selecionarPorIndex(page, 'estadoCivil', 0, dados.estado_civil_segurado)
 
   // ─── 2) Veículo ────────────────────────────────────────────
   await ag.preencher(page, ['placa'], dados.placa)
-  // Aggilizador busca dados do veículo pela placa
+  // Aggilizador busca dados do veículo pela placa — espera
   await page.waitForTimeout(2500)
 
-  if (dados.zero_km === 'Sim') {
-    const el = await page.$('[name="zero_km"], [data-field="zero_km"]')
-    if (el) await el.click()
+  await ag.preencher(page, ['chassi'], dados.chassi)
+  await ag.preencher(page, ['anoFab'], dados.ano_fab)
+  await ag.preencher(page, ['modelo'], dados.modelo)
+  await ag.preencher(page, ['cepPernoite', 'perfilCepPernoite'], dados.cep_pernoite)
+  await ag.selecionar(page, ['anoMod'],         dados.ano_mod)
+  await ag.selecionar(page, ['zeroKm'],         dados.zero_km)
+  await ag.selecionar(page, ['combustivel'],    dados.combustivel)
+  await ag.selecionar(page, ['rastreador'],     dados.rastreador)
+  await ag.selecionar(page, ['dispAntiFurto'],  dados.antifurto)
+  await ag.selecionar(page, ['blindado'],       dados.blindado)
+  await ag.selecionar(page, ['kitGas'],         dados.kit_gas)
+  if (dados.kit_gas === 'Sim' && dados.valor_kit_gas) {
+    await ag.preencher(page, ['gasInstalValor'], dados.valor_kit_gas)
   }
-  await ag.preencher(page, ['ano_fabricacao','ano_fab','anoFabricacao'], dados.ano_fab)
-  await ag.preencher(page, ['ano_modelo','ano_mod','anoModelo'], dados.ano_mod)
-  await ag.preencher(page, ['modelo','veiculo','descricao_veiculo'], dados.modelo)
-  await ag.preencher(page, ['cep_pernoite','cepPernoite'], dados.cep_pernoite)
-  await ag.selecionar(page, ['combustivel'], dados.combustivel)
-  await ag.selecionar(page, ['rastreador'], dados.rastreador)
-  await ag.selecionar(page, ['antifurto','dispositivo_antifurto'], dados.antifurto)
-  await ag.selecionar(page, ['blindado'], dados.blindado)
-  await ag.selecionar(page, ['kit_gas','kitGas'], dados.kit_gas)
-  await ag.selecionar(page, ['alienado'], dados.alienado)
-
-  await ag.clicarProximo(page)
-  await page.waitForTimeout(1500)
+  await ag.selecionar(page, ['alienado'],       dados.alienado)
 
   // ─── 3) Condutor ───────────────────────────────────────────
-  await ag.preencher(page, ['cpf_condutor','cpfCondutor'], dados.cpf_condutor)
-  await ag.preencher(page, ['nome_condutor','nomeCondutor'], dados.nome_condutor)
-  await ag.preencher(page, ['nascimento_condutor','dtNascimentoCondutor'], dados.nascimento_condutor)
-  await ag.selecionar(page, ['sexo_condutor','sexoCondutor'], dados.sexo_condutor)
-  await ag.selecionar(page, ['estado_civil_condutor'], dados.estado_civil_condutor)
-  await ag.selecionar(page, ['tempo_habilitacao','tempoHabilitacao'], dados.tempo_habilitacao)
-
-  await ag.clicarProximo(page)
-  await page.waitForTimeout(1500)
+  if (dados.condutor_principal) await ag.selecionar(page, ['relacaoSegurado'], dados.condutor_principal)
+  await ag.preencher(page, ['cpfCnpj', 'perfilCpfCnpj'], dados.cpf_condutor)
+  await ag.preencher(page, ['nome', 'perfilNomeCondutor'], dados.nome_condutor)
+  await ag.preencher(page, ['dataNasc', 'perfilDataNascimento'], dados.nascimento_condutor)
+  // Sexo e Estado Civil do CONDUTOR: segundo mat-select com cada nome
+  if (dados.sexo_condutor)         await ag.selecionarPorIndex(page, 'sexo', 1, dados.sexo_condutor)
+  if (dados.estado_civil_condutor) await ag.selecionarPorIndex(page, 'estadoCivil', 1, dados.estado_civil_condutor)
+  if (dados.tempo_habilitacao)     await ag.selecionar(page, ['tempoHabilitacao'], dados.tempo_habilitacao)
 
   // ─── 4) Questionário ───────────────────────────────────────
-  await ag.selecionar(page, ['garagem_residencia','garagemResidencia'], dados.garagem_residencia)
-  await ag.selecionar(page, ['garagem_trabalho','garagemTrabalho'], dados.garagem_trabalho)
-  await ag.selecionar(page, ['garagem_estudo','garagemEstudo'], dados.garagem_estudo)
-  await ag.selecionar(page, ['tipo_uso','tipoUso'], dados.tipo_uso)
-  await ag.selecionar(page, ['tipo_residencia','tipoResidencia'], dados.tipo_residencia)
-  await ag.selecionar(page, ['quilometragem'], dados.quilometragem)
+  await ag.selecionar(page, ['garagemResidencia'], dados.garagem_residencia)
+  await ag.selecionar(page, ['garagemTrabalho'],   dados.garagem_trabalho)
+  await ag.selecionar(page, ['garagemEstudo'],     dados.garagem_estudo)
+  await ag.selecionar(page, ['tpUso'],             dados.tipo_uso)
+  await ag.selecionar(page, ['tipoResidencia'],    dados.tipo_residencia)
+  await ag.selecionar(page, ['kmMensal'],          dados.quilometragem)
 
   if (dados.jovem_condutor === 'Sim') {
-    await ag.selecionar(page, ['jovem_condutor','jovemCondutor'], 'Sim')
-    await ag.preencher(page, ['idade_mais_novo','idadeMaisNovo'], dados.idade_mais_novo)
-    await ag.selecionar(page, ['sexo_jovens','sexoJovens'], dados.sexo_jovens)
+    await ag.selecionar(page, ['jovemCondutor'], 'Sim')
+    if (dados.idade_mais_novo) await ag.selecionar(page, ['idadeJovem'], dados.idade_mais_novo)
+    if (dados.sexo_jovens)     await ag.selecionar(page, ['jovemSexo'],  dados.sexo_jovens)
+  } else {
+    await ag.selecionar(page, ['jovemCondutor'], 'Não')
   }
-  if (dados.pcd === 'Sim')            await ag.selecionar(page, ['pcd'], 'Sim')
-  if (dados.isencao_fiscal === 'Sim') await ag.selecionar(page, ['isencao_fiscal','isencaoFiscal'], 'Sim')
+  await ag.selecionar(page, ['isPCD'],         dados.pcd)
+  await ag.selecionar(page, ['isencaoFiscal'], dados.isencao_fiscal)
 
-  await ag.clicarProximo(page)
-  await page.waitForTimeout(1500)
-
-  // ─── 5) Seguro / Coberturas ────────────────────────────────
-  await ag.preencher(page, ['inicio_vigencia','inicioVigencia','dt_inicio'], dados.inicio_vigencia)
-  await ag.preencher(page, ['final_vigencia','fimVigencia','dt_fim'], dados.final_vigencia)
+  // ─── 5) Vigência e Renovação ───────────────────────────────
+  await ag.preencher(page, ['vigenciaIni'], dados.inicio_vigencia)
+  await ag.preencher(page, ['vigenciaFim'], dados.final_vigencia)
 
   if (dados.renovacao === 'Sim') {
-    await ag.selecionar(page, ['renovacao'], 'Sim')
-    await ag.selecionar(page, ['seguradora_anterior'], dados.seguradora_anterior)
-    await ag.preencher(page, ['numero_apolice_anterior','apoliceAnterior'], dados.numero_apolice_anterior)
-    await ag.selecionar(page, ['novo_bonus','novoBonus'], dados.novo_bonus)
-    await ag.preencher(page, ['qtd_sinistros','qtdSinistros'], dados.qtd_sinistros)
+    // Marca o checkbox de renovação se não estiver marcado
+    const checked = await page.$eval('input[id="mat-mdc-checkbox-1-input"]', el => el.checked).catch(() => false)
+    if (!checked) {
+      await page.click('label[for="mat-mdc-checkbox-1-input"]', { force: true }).catch(() => {})
+      await page.waitForTimeout(400)
+    }
+    await ag.preencher(page, ['vigFimAnterior'], dados.final_vigencia_anterior)
+    await ag.preencher(page, ['numeroRenovacao'], dados.numero_apolice_anterior)
+    await ag.preencher(page, ['CI'], dados.codigo_interno)
+    await ag.selecionar(page, ['seguradoraAnteriorId'], dados.seguradora_anterior)
+    await ag.selecionar(page, ['sinistrosAnterior'],    dados.qtd_sinistros)
+    await ag.selecionar(page, ['bonusAnterior'],        dados.novo_bonus)
   }
 
-  await ag.selecionar(page, ['tipo_cobertura','tipoCobertura'], dados.tipo_cobertura)
-  await ag.selecionar(page, ['tipo_franquia','tipoFranquia'], dados.tipo_franquia)
-  await ag.selecionar(page, ['fipe','fipe_pct','percentualFipe'], dados.fipe_pct)
-  await ag.selecionar(page, ['danos_materiais','danosMateriais'], dados.danos_materiais)
-  await ag.selecionar(page, ['danos_corporais','danosCorporais'], dados.danos_corporais)
-  await ag.selecionar(page, ['danos_morais','danosMorais'], dados.danos_morais)
-  await ag.selecionar(page, ['morte_invalidez','morteInvalidez'], dados.morte_invalidez)
-  await ag.selecionar(page, ['assistencia'], dados.assistencia)
-  await ag.selecionar(page, ['vidros'], dados.vidros)
-  await ag.selecionar(page, ['carro_reserva','carroReserva'], dados.carro_reserva)
-  await ag.preencher(page, ['comissao','comissao_pct','percentualComissao'], dados.comissao_pct)
+  // ─── 6) Coberturas ─────────────────────────────────────────
+  await ag.selecionar(page, ['tipoCobertura'], dados.tipo_cobertura)
+  await ag.selecionar(page, ['tipoFranquia'],  dados.tipo_franquia)
+  await ag.selecionar(page, ['pctAjuste'],     dados.fipe_pct)
 
-  // ─── 6) Calcular ───────────────────────────────────────────
-  const clicou = await ag.clicarCalcular(page)
-  if (!clicou) throw new Error('Botão Calcular não foi encontrado')
+  // Coberturas em valor R$ — convertem strings tipo "10.000" pro input.
+  // Se vier "Não", deixa em branco.
+  const limparValor = v => (v && v !== 'Não' && v !== 'Ilimitado') ? String(v).replace(/\D/g, '') : ''
+  await ag.preencher(page, ['isDanosMateriais'],   limparValor(dados.danos_materiais))
+  await ag.preencher(page, ['isDanosCorporais'],   limparValor(dados.danos_corporais))
+  await ag.preencher(page, ['isDanosMorais'],      limparValor(dados.danos_morais))
+  await ag.preencher(page, ['isAppMorte'],         limparValor(dados.morte_invalidez))
+  await ag.preencher(page, ['isBlindagemValor'],   limparValor(dados.blindagem))
 
-  // Espera o resultado (heurística: aparece "R$" no DOM ou passa 30s)
+  await ag.selecionar(page, ['assist24hs'],     dados.assistencia)
+  await ag.selecionar(page, ['vidros'],         dados.vidros)
+  await ag.selecionar(page, ['carroReserva'],   dados.carro_reserva)
+
+  // ─── 7) Calcular ───────────────────────────────────────────
+  // Botão "Calcular" tem class my-btn--filled
+  const btnCalcular = await page.$('button:has-text("Calcular"):not(:has-text("Configurar"))')
+                      || await page.$('button.my-btn--filled')
+  if (!btnCalcular) throw new Error('Botão Calcular não foi encontrado')
+  await btnCalcular.click({ force: true })
+
+  // Espera o resultado (heurística: aparece "R$" no DOM ou passa 60s)
   const inicio = Date.now()
-  while (Date.now() - inicio < 30000) {
-    const tem = await page.locator('text=/R\\$\\s*\\d/').first().isVisible().catch(() => false)
+  while (Date.now() - inicio < 60000) {
+    const tem = await page.locator('text=/R\\$\\s*\\d/').count().then(c => c > 1).catch(() => false)
     if (tem) break
-    await page.waitForTimeout(800)
+    await page.waitForTimeout(1000)
   }
 
-  // ─── 7) Capturar resultado ─────────────────────────────────
+  // ─── 8) Capturar resultado ─────────────────────────────────
   const resultado = await ag.extrairResultado(page)
   const screenshot = (await page.screenshot({ type: 'png', fullPage: true })).toString('base64')
 

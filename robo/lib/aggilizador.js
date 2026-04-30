@@ -263,14 +263,14 @@ async function primeiroSeletor(page, seletores) {
 }
 
 // Preenche pelo primeiro nome encontrado. Devolve true se conseguiu preencher.
+// Aggilizador usa Angular Material com `formcontrolname` ou `name` no input.
 async function preencher(page, nomes, valor) {
   if (valor === undefined || valor === null || valor === '') return false
   const candidatos = []
   for (const n of nomes) {
+    candidatos.push(`input[formcontrolname="${n}"]`)
     candidatos.push(`input[name="${n}"]`)
     candidatos.push(`input[id="${n}"]`)
-    candidatos.push(`input[data-field="${n}"]`)
-    candidatos.push(`input[name*="${n}" i]`)
   }
   const sel = await primeiroSeletor(page, candidatos)
   if (!sel) {
@@ -280,6 +280,8 @@ async function preencher(page, nomes, valor) {
   try {
     await page.fill(sel, '')
     await page.fill(sel, String(valor))
+    // Disparar blur pra Angular reagir e validar
+    await page.locator(sel).first().blur().catch(() => {})
     return true
   } catch (err) {
     log.warn('Falha ao preencher', { sel, erro: err.message })
@@ -287,15 +289,13 @@ async function preencher(page, nomes, valor) {
   }
 }
 
-// Lê o valor atual de um input (depois que o aggilizador auto-preencheu)
+// Lê o valor atual de um input (depois que o aggilizador auto-preencheu).
 async function lerCampo(page, nomes) {
   const candidatos = []
   for (const n of nomes) {
+    candidatos.push(`input[formcontrolname="${n}"]`)
     candidatos.push(`input[name="${n}"]`)
     candidatos.push(`input[id="${n}"]`)
-    candidatos.push(`input[name*="${n}" i]`)
-    candidatos.push(`select[name="${n}"]`)
-    candidatos.push(`select[id="${n}"]`)
   }
   const sel = await primeiroSeletor(page, candidatos)
   if (!sel) return null
@@ -304,31 +304,110 @@ async function lerCampo(page, nomes) {
   } catch { return null }
 }
 
-// Seleciona opção de um <select>. Tenta por label, depois por value, depois
-// por correspondência parcial (texto contém).
+// Selecionar opção em <select> nativo OU em mat-select (Angular Material).
+// O aggilizador usa só mat-select, mas mantemos suporte ao <select> pra
+// compatibilidade com outros sites.
 async function selecionar(page, nomes, valor) {
   if (valor === undefined || valor === null || valor === '') return false
-  const candidatos = []
+  const v = String(valor).trim()
+  const vLower = v.toLowerCase()
+
+  // 1) Tenta como <select> nativo
+  const candidatosNativo = []
   for (const n of nomes) {
-    candidatos.push(`select[name="${n}"]`)
-    candidatos.push(`select[id="${n}"]`)
-    candidatos.push(`select[name*="${n}" i]`)
+    candidatosNativo.push(`select[name="${n}"]`)
+    candidatosNativo.push(`select[id="${n}"]`)
   }
-  const sel = await primeiroSeletor(page, candidatos)
-  if (!sel) return false
-  const v = String(valor)
-  try { await page.selectOption(sel, { label: v }); return true } catch {}
-  try { await page.selectOption(sel, { value: v }); return true } catch {}
-  // Fallback: procura option com texto contendo o valor
+  const selNativo = await primeiroSeletor(page, candidatosNativo)
+  if (selNativo) {
+    try { await page.selectOption(selNativo, { label: v }); return true } catch {}
+    try { await page.selectOption(selNativo, { value: v }); return true } catch {}
+  }
+
+  // 2) Tenta como mat-select (Angular Material)
+  const candidatosMat = []
+  for (const n of nomes) {
+    candidatosMat.push(`mat-select[name="${n}"]`)
+    candidatosMat.push(`mat-select[id="${n}"]`)
+    candidatosMat.push(`mat-select[formcontrolname="${n}"]`)
+    candidatosMat.push(`[formcontrolname="${n}"] mat-select`)
+  }
+  const selMat = await primeiroSeletor(page, candidatosMat)
+  if (!selMat) {
+    log.debug('Select não encontrado', { nomes, valor: v })
+    return false
+  }
+
   try {
-    const handle = await page.$(sel)
-    if (handle) {
-      const opts = await handle.evaluate(s => Array.from(s.options).map(o => ({ value: o.value, text: o.text })))
-      const match = opts.find(o => o.text.toLowerCase().includes(v.toLowerCase()))
-      if (match) { await page.selectOption(sel, { value: match.value }); return true }
+    // Abre o dropdown
+    await page.click(selMat, { timeout: 5000 })
+    await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
+    // Lista as opções e tenta achar match
+    const opcoes = await page.$$('mat-option, .mat-mdc-option')
+    let clicou = false
+    for (const opt of opcoes) {
+      const txt = (await opt.textContent().catch(() => '') || '').trim()
+      const txtLower = txt.toLowerCase()
+      if (txtLower === vLower) {
+        await opt.click({ force: true }).catch(() => {})
+        clicou = true; break
+      }
     }
-  } catch {}
-  log.warn('Não consegui selecionar opção', { sel, valor: v })
+    // Se não achou exato, tenta contém
+    if (!clicou) {
+      for (const opt of opcoes) {
+        const txt = (await opt.textContent().catch(() => '') || '').trim()
+        const txtLower = txt.toLowerCase()
+        if (txtLower.includes(vLower) || vLower.includes(txtLower)) {
+          await opt.click({ force: true }).catch(() => {})
+          clicou = true; break
+        }
+      }
+    }
+    if (!clicou) {
+      // Fecha o dropdown
+      await page.keyboard.press('Escape').catch(() => {})
+      log.warn('Opção não encontrada no mat-select', { nomes, valor: v })
+      return false
+    }
+    await page.waitForTimeout(300)
+    return true
+  } catch (err) {
+    log.warn('Erro ao selecionar mat-select', { nomes, erro: err.message })
+    await page.keyboard.press('Escape').catch(() => {})
+    return false
+  }
+}
+
+// Seleciona o n-ésimo mat-select que match um nome (útil quando há
+// vários mat-select com o mesmo `name`, ex: sexo do segurado e do condutor).
+async function selecionarPorIndex(page, name, index, valor) {
+  if (valor === undefined || valor === null || valor === '') return false
+  const v = String(valor).trim()
+  const vLower = v.toLowerCase()
+
+  const matches = await page.$$(`mat-select[name="${name}"]`)
+  if (matches.length <= index) {
+    log.debug('mat-select index fora do range', { name, index, total: matches.length })
+    return false
+  }
+  try {
+    await matches[index].click({ timeout: 5000 })
+    await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
+    const opcoes = await page.$$('mat-option, .mat-mdc-option')
+    for (const opt of opcoes) {
+      const txt = (await opt.textContent().catch(() => '') || '').trim().toLowerCase()
+      if (txt === vLower || txt.includes(vLower) || vLower.includes(txt)) {
+        await opt.click({ force: true }).catch(() => {})
+        await page.waitForTimeout(300)
+        return true
+      }
+    }
+    await page.keyboard.press('Escape').catch(() => {})
+  } catch (err) {
+    log.warn('Erro selecionarPorIndex', { name, erro: err.message })
+    await page.keyboard.press('Escape').catch(() => {})
+  }
   return false
 }
 
@@ -399,7 +478,7 @@ async function extrairResultado(page) {
 
 module.exports = {
   URL, login, logout, abrirCotacaoAuto,
-  preencher, selecionar, lerCampo,
+  preencher, selecionar, selecionarPorIndex, lerCampo,
   clicarProximo, clicarCalcular, extrairResultado,
   primeiroSeletor,
 }

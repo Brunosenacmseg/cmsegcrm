@@ -1,5 +1,7 @@
 // Consulta rápida: digita CPF no aggilizador e captura o que ele auto-preenche.
 // Não calcula nada, só pega os dados básicos (nome, nascimento, sexo, etc.)
+// Mapeamento dos campos descobertos via /debug-cotacao no formulário
+// /cotacao/auto/formulario do aggilizador.
 
 const log = require('./log')
 const ag  = require('./aggilizador')
@@ -10,38 +12,43 @@ async function consultarCpf(page, cpf) {
   await ag.login(page)
   await ag.abrirCotacaoAuto(page)
 
-  const ok = await ag.preencher(page, ['cpf', 'cpf_cnpj', 'documento'], cpf)
-  if (!ok) throw new Error('Não encontrei o campo CPF no aggilizador')
-
-  // Disparar evento de blur pra forçar a busca automática que o aggilizador faz
+  // Esperar formulário aparecer (cpfCnpj é o primeiro input)
   try {
-    await page.locator('input[name="cpf"], input[id="cpf"], input[name="cpf_cnpj"]').first().blur()
-  } catch {}
+    await page.waitForSelector('input[formcontrolname="cpfCnpj"]', { state: 'visible', timeout: 15000 })
+  } catch {
+    throw new Error('Formulário de cotação não carregou (campo CPF não apareceu)')
+  }
 
-  // Espera o aggilizador preencher os outros campos (até 8s)
-  // Detecção: nome aparece preenchido OU passa o tempo limite.
+  const ok = await ag.preencher(page, ['cpfCnpj'], cpf)
+  if (!ok) throw new Error('Não consegui preencher o campo CPF')
+
+  // O Angular do aggilizador busca os dados após preenchimento + blur.
+  // O blur já é disparado pelo helper preencher().
+  // Esperar o nome aparecer (até 10s).
   const inicio = Date.now()
   let nome = ''
-  while (Date.now() - inicio < 8000) {
-    nome = await ag.lerCampo(page, ['nome', 'nome_segurado', 'nome_completo']) || ''
-    if (nome.length > 3) break
-    await page.waitForTimeout(400)
+  while (Date.now() - inicio < 10000) {
+    nome = await ag.lerCampo(page, ['nome', 'nomeSegurado']) || ''
+    if (nome && nome.length > 3) break
+    await page.waitForTimeout(500)
   }
 
+  // Lê todos os campos preenchidos automaticamente
   const dados = {
-    nome:         nome,
-    nascimento:   await ag.lerCampo(page, ['nascimento','data_nascimento','dt_nascimento']),
-    sexo:         await ag.lerCampo(page, ['sexo']),
-    estado_civil: await ag.lerCampo(page, ['estado_civil','estadoCivil']),
-    cep:          await ag.lerCampo(page, ['cep','cep_residencial']),
-    telefone:     await ag.lerCampo(page, ['telefone','celular','fone']),
-    email:        await ag.lerCampo(page, ['email']),
+    nome:         await ag.lerCampo(page, ['nome', 'nomeSegurado']),
+    nascimento:   await ag.lerCampo(page, ['dataNasc', 'dataNascimento']),
+    cep:          await ag.lerCampo(page, ['cep', 'cepImovel']),
+    telefone:     await ag.lerCampo(page, ['fone']),
+    email:        await ag.lerCampo(page, ['email', 'emailSegurado']),
   }
+
+  // Os selects (sexo, estado_civil) precisariam ser lidos diferente em mat-select.
+  // Por enquanto pulamos — o usuário pode preencher manualmente.
 
   // Limpar nulls/vazios
   for (const k of Object.keys(dados)) if (!dados[k]) delete dados[k]
 
-  log.info('Consulta concluída', { campos: Object.keys(dados) })
+  log.info('Consulta concluída', { campos: Object.keys(dados), achouNome: !!nome })
   return { encontrado: Object.keys(dados).length > 0, dados }
 }
 
