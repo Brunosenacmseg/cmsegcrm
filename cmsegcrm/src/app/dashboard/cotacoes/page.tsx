@@ -299,54 +299,64 @@ export default function CotacoesPage() {
     }).select().single()
 
     try {
+      // Modo assíncrono: o robô recebe o cotacao_id, retorna 202 imediato e
+      // processa em background, escrevendo o resultado direto no Supabase.
+      // O CRM faz polling pra detectar o status final.
       const res = await fetch(ROBO_PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ produto: 'carro', dados }),
+        body: JSON.stringify({ cotacao_id: cot?.id, produto: 'carro', dados }),
       })
-      const resultado = await res.json().catch(() => ({}))
+      const ack = await res.json().catch(() => ({}))
 
-      // Erro retornado pelo proxy (robô offline, timeout, etc.)
-      if (!res.ok || resultado.ok === false) {
-        const erroMsg = resultado.error || `HTTP ${res.status}`
+      if (!res.ok || ack.ok === false) {
+        const erroMsg = ack.error || `HTTP ${res.status}`
         if (cot?.id) await supabase.from('cotacoes').update({ status: 'erro', dados: { ...dados, erro: erroMsg } }).eq('id', cot.id)
         setMsg('❌ ' + erroMsg)
         await carregarCotacoes()
         return
       }
 
-      // Salvar screenshot se vier
-      let screenshotUrl: string | null = null
-      if (resultado.screenshot && cot?.id) {
-        try {
-          const bs = atob(resultado.screenshot)
-          const ab = new ArrayBuffer(bs.length)
-          const ia = new Uint8Array(ab)
-          for (let i = 0; i < bs.length; i++) ia[i] = bs.charCodeAt(i)
-          const blob = new Blob([ab], { type: 'image/png' })
-          const fn = `cotacoes/${cot.id}.png`
-          const { data: up } = await supabase.storage.from('cmsegcrm').upload(fn, blob, { contentType: 'image/png', upsert: true })
-          if (up) {
-            const { data: url } = supabase.storage.from('cmsegcrm').getPublicUrl(fn)
-            screenshotUrl = url.publicUrl
-          }
-        } catch {}
-      }
-
-      if (cot?.id) await supabase.from('cotacoes').update({
-        status: resultado.ok ? 'concluido' : 'erro',
-        screenshot_url: screenshotUrl,
-      }).eq('id', cot.id)
-
-      setMsg(resultado.ok ? '✅ Cotação concluída!' : '⚠ Robô retornou erro')
-      if (resultado.ok) setModal(false)
+      // Robô aceitou e está processando. Fecha o modal e mostra na lista.
+      setMsg('⏳ Cotação iniciada. Aguardando o robô (~2-3 min)...')
+      setModal(false)
       await carregarCotacoes()
+
+      // Polling: a cada 5s checa o status no Supabase. Para após 6 minutos.
+      if (cot?.id) iniciarPollingCotacao(cot.id)
     } catch (err: any) {
       if (cot?.id) await supabase.from('cotacoes').update({ status: 'erro' }).eq('id', cot.id)
       setMsg('❌ Erro inesperado: ' + (err?.message || 'falha na rede'))
     } finally {
       setCalculando(false)
     }
+  }
+
+  // Acompanha uma cotação em processamento até status='concluido' ou 'erro'.
+  function iniciarPollingCotacao(cotId: string) {
+    let tries = 0
+    const MAX_TRIES = 80  // 80 * 5s = 400s (mais que suficiente pros 250s do robô)
+    const interval = setInterval(async () => {
+      tries++
+      const { data } = await supabase
+        .from('cotacoes')
+        .select('id, status, screenshot_url')
+        .eq('id', cotId)
+        .single()
+      if (!data) return
+      if (data.status === 'concluido' || data.status === 'erro') {
+        clearInterval(interval)
+        setMsg(data.status === 'concluido' ? '✅ Cotação concluída!' : '❌ Cotação falhou — veja a lista')
+        await carregarCotacoes()
+        setTimeout(() => setMsg(''), 6000)
+        return
+      }
+      if (tries >= MAX_TRIES) {
+        clearInterval(interval)
+        setMsg('⚠ Timeout aguardando o robô — veja a lista')
+        await carregarCotacoes()
+      }
+    }, 5000)
   }
 
   const abas = [['segurado','👤 Segurado'],['veiculo','🚗 Veículo'],['condutor','👨 Condutor'],['questionario','📋 Questionário'],['seguro','🛡 Seguro']] as const

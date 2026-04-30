@@ -15,6 +15,7 @@ const log      = require('./lib/log')
 const browser  = require('./lib/browser')
 const consulta = require('./lib/consulta')
 const cotacao  = require('./lib/cotacao')
+const supa     = require('./lib/supa')
 
 const app  = express()
 const PORT = parseInt(process.env.PORT || '3001')
@@ -288,6 +289,87 @@ app.post(['/','/cotacao'], async (req, res) => {
     }
   }
 })
+
+// Cotação ASSÍNCRONA — retorna 202 imediatamente e processa em background.
+// Quando termina, escreve o resultado direto no Supabase (cotacoes table).
+// Usado pelo CRM no Vercel Hobby (60s cap) — o cliente faz polling pra
+// detectar o status final.
+app.post('/cotacao-async', async (req, res) => {
+  const { cotacao_id, produto, dados } = req.body || {}
+  if (!cotacao_id) return res.status(400).json({ ok: false, erro: 'cotacao_id obrigatório' })
+  if (!dados)      return res.status(400).json({ ok: false, erro: 'dados obrigatórios' })
+  if (produto && produto !== 'carro' && produto !== 'auto') {
+    return res.status(400).json({ ok: false, erro: `Produto '${produto}' não suportado` })
+  }
+  if (!supa.configurado()) {
+    return res.status(500).json({ ok: false, erro: 'SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY não configurados no robô' })
+  }
+
+  // Responde imediatamente — o trabalho continua em background.
+  res.status(202).json({ ok: true, status: 'iniciado', cotacao_id })
+
+  // Processa em background sem bloquear a resposta.
+  setImmediate(() => processarCotacaoAsync(cotacao_id, dados).catch(err => {
+    log.error('Erro fatal em processarCotacaoAsync', { erro: err.message, cotacao_id })
+  }))
+})
+
+async function processarCotacaoAsync(cotacao_id, dados) {
+  const sb = supa.get()
+  const ag = require('./lib/aggilizador')
+  let session = null
+  log.info('Iniciando cotação async', { cotacao_id })
+  try {
+    session = await browser.newSession()
+    const resultado = await cotacao.cotacaoAuto(session.page, dados)
+
+    // Upload do screenshot pro storage do Supabase (se vier)
+    let screenshotUrl = null
+    if (resultado.screenshot) {
+      try {
+        const buf = Buffer.from(resultado.screenshot, 'base64')
+        const fn  = `cotacoes/${cotacao_id}.png`
+        const { error: upErr } = await sb.storage.from('cmsegcrm').upload(fn, buf, {
+          contentType: 'image/png', upsert: true,
+        })
+        if (!upErr) {
+          const { data } = sb.storage.from('cmsegcrm').getPublicUrl(fn)
+          screenshotUrl = data?.publicUrl || null
+        } else {
+          log.error('Falha ao subir screenshot', { erro: upErr.message })
+        }
+      } catch (e) {
+        log.error('Exceção ao subir screenshot', { erro: e.message })
+      }
+    }
+
+    const update = {
+      status: resultado.ok ? 'concluido' : 'erro',
+      screenshot_url: screenshotUrl,
+    }
+    // Se a tabela tiver coluna `valor` ou `resultado`, popular também
+    if (resultado.valor)     update.valor = resultado.valor
+    if (resultado.resultado) update.resultado = resultado.resultado
+
+    const { error: updErr } = await sb.from('cotacoes').update(update).eq('id', cotacao_id)
+    if (updErr) log.error('Falha ao atualizar cotação', { erro: updErr.message, cotacao_id })
+
+    log.info('Cotação async concluída', { cotacao_id, ok: resultado.ok })
+  } catch (err) {
+    log.error('Erro em cotação async', { erro: err.message, cotacao_id })
+    let screenshotErro = null
+    if (session) screenshotErro = await salvarErroScreenshot(session.page, 'cotacao-async')
+    await sb.from('cotacoes').update({
+      status: 'erro',
+      dados: { ...dados, erro: err.message, screenshot_erro: screenshotErro },
+    }).eq('id', cotacao_id).catch(() => {})
+  } finally {
+    if (session) {
+      try { await ag.logout(session.page) } catch {}
+      await session.close()
+    }
+  }
+}
 
 // ─── Inicialização ───────────────────────────────────────────────────
 
