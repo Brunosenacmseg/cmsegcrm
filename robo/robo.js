@@ -332,6 +332,45 @@ app.post('/listar-opcoes', async (req, res) => {
   }
 })
 
+// ─── Suhai (link público, sem login) ────────────────────────────────
+const suhai = require('./lib/suhai')
+
+// Debug: dumpa estrutura da landing pra calibrar seletores.
+app.post('/debug-suhai', async (req, res) => {
+  const { url } = req.body || {}
+  let session = null
+  try {
+    session = await browser.newSession()
+    const info = await suhai.debug(session.page, url)
+    res.json({ ok: true, ...info })
+  } catch (err) {
+    log.error('Erro em /debug-suhai', { erro: err.message })
+    if (session) await salvarErroScreenshot(session.page, 'debug-suhai')
+    res.status(500).json({ ok: false, erro: err.message })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
+// Cotação Suhai. Body: { url?, dados: { nome, cpf, email, telefone, cep, placa, nascimento } }
+app.post('/cotacao-suhai', async (req, res) => {
+  const { url, dados } = req.body || {}
+  if (!dados) return res.status(400).json({ ok: false, erro: 'Dados obrigatórios' })
+  let session = null
+  try {
+    session = await browser.newSession()
+    const r = await suhai.cotacao(session.page, dados, url)
+    res.json(r)
+  } catch (err) {
+    log.error('Erro em /cotacao-suhai', { erro: err.message })
+    let screenshotErro = null
+    if (session) screenshotErro = await salvarErroScreenshot(session.page, 'suhai')
+    res.status(500).json({ ok: false, erro: err.message, screenshot_erro: screenshotErro })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
 // Cotação completa de auto
 app.post(['/','/cotacao'], async (req, res) => {
   const { produto, dados } = req.body || {}
