@@ -397,9 +397,13 @@ async function selecionar(page, nomes, valor) {
     const abriu = await page.evaluate((sel) => {
       const el = document.querySelector(sel)
       if (!el) return 'nao-encontrado'
-      if (el.getAttribute('aria-disabled') === 'true' || el.classList.contains('mat-mdc-select-disabled')) {
-        return 'disabled'
-      }
+      // Detecta disabled em todas as formas que Angular Material usa
+      const desab = el.getAttribute('aria-disabled') === 'true'
+                 || el.classList.contains('mat-mdc-select-disabled')
+                 || el.classList.contains('mat-select-disabled')
+                 || el.hasAttribute('disabled')
+                 || el.getAttribute('tabindex') === '-1'
+      if (desab) return 'disabled'
       el.scrollIntoView({ block: 'center', behavior: 'instant' })
       const trigger = el.querySelector('.mat-mdc-select-trigger') || el
       const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
@@ -416,15 +420,22 @@ async function selecionar(page, nomes, valor) {
     }
     if (abriu !== 'ok') { log.warn('mat-select não encontrado', { nomes }); return false }
 
-    // Espera o NOVO painel aparecer (aria-expanded=true no select clicado)
-    await page.waitForFunction(
-      (s) => {
-        const el = document.querySelector(s)
-        return el && el.getAttribute('aria-expanded') === 'true'
-      },
-      selMat,
-      { timeout: 5000 }
-    )
+    // Espera o NOVO painel aparecer (aria-expanded=true no select clicado).
+    // Se em 2.5s não abriu, provavelmente o select estava disabled mas
+    // não declarou — não vale a pena perder mais tempo.
+    try {
+      await page.waitForFunction(
+        (s) => {
+          const el = document.querySelector(s)
+          return el && el.getAttribute('aria-expanded') === 'true'
+        },
+        selMat,
+        { timeout: 2500 }
+      )
+    } catch {
+      log.debug('mat-select não abriu (provavelmente disabled silencioso) — pulando', { nomes, valor: v })
+      return false
+    }
 
     // Pega as opções do painel CORRENTE — não usa $$('mat-option') geral
     // pois pode pegar opções de painéis ainda não removidos do DOM.

@@ -48,7 +48,129 @@ function formatarDataBr(d) {
   return s
 }
 
+// Traduz valores antigos do CRM pros valores reais do aggilizador atual.
+// Assim o robô aceita tanto frontend antigo (pré-merge) quanto novo.
+// Cada chave é um campo de `dados`; o map faz lookup case-insensitive.
+function sanitizarDados(dados) {
+  const d = { ...dados }
+  const lookup = (map, valor) => {
+    if (!valor) return valor
+    const k = String(valor).trim().toLowerCase()
+    for (const [from, to] of Object.entries(map)) {
+      if (from.toLowerCase() === k) return to
+    }
+    return valor
+  }
+
+  // Fipe %: '100%' (sem espaço) → '100 %' (com espaço)
+  if (d.fipe_pct && /^\d+\s*%$/.test(d.fipe_pct)) {
+    d.fipe_pct = d.fipe_pct.replace(/(\d+)\s*%/, '$1 %')
+  }
+
+  // Assistência: valores antigos Sim/Não → Básica/Não
+  d.assistencia = lookup({ 'Sim': 'Básica', 'Não': 'Não' }, d.assistencia)
+
+  // Vidros: nomenclatura antiga (franquia) → novas opções
+  d.vidros = lookup({
+    'Franquia Normal':   'Completo',
+    'Franquia Reduzida': 'Básico',
+    'Sem Franquia':      'Completo',
+    'Não':               'Não',
+  }, d.vidros)
+
+  // Condutor Principal: 'Sim'/'Não' → 'Próprio'/'Outros'
+  d.condutor_principal = lookup({ 'Sim': 'Próprio', 'Não': 'Outros' }, d.condutor_principal)
+
+  // Tipo de cobertura: o valor antigo do CRM era o pacote completo.
+  // Mapeamos pra Compreensiva (que vai em tpCobertura) e definimos pacote.
+  if (d.tipo_cobertura && /^compreensiv/i.test(d.tipo_cobertura)) {
+    d.tipo_cobertura = 'Compreensiva'
+  }
+  if (!d.pacote_cobertura) d.pacote_cobertura = 'Personalizada'
+
+  // Carro reserva: dias soltos → Básico N dias
+  d.carro_reserva = lookup({
+    '7 dias':  'Básico 7 dias',
+    '14 dias': 'Básico 15 dias',
+    '15 dias': 'Básico 15 dias',
+    '21 dias': 'Básico 30 dias',
+    '28 dias': 'Básico 30 dias',
+    '30 dias': 'Básico 30 dias',
+    'Não':     'Não contratar',
+  }, d.carro_reserva)
+
+  // Tipo de uso: valores antigos
+  d.tipo_uso = lookup({
+    'Trabalho': 'Particular',
+    'Escola/Faculdade': 'Particular',
+    'Lazer': 'Particular',
+  }, d.tipo_uso)
+
+  // Tipo de residência
+  d.tipo_residencia = lookup({
+    'Condomínio fechado': 'Condomínio',
+    'Outro': 'Outros',
+  }, d.tipo_residencia)
+
+  // Estado civil
+  const mapEC = {
+    'Casado(a)': 'Casado ou União Estável',
+    'União Estável': 'Casado ou União Estável',
+  }
+  d.estado_civil_segurado = lookup(mapEC, d.estado_civil_segurado)
+  d.estado_civil_condutor = lookup(mapEC, d.estado_civil_condutor)
+
+  // Combustível: caixa baixa → MAIÚSCULA (aggilizador usa caixa alta)
+  if (d.combustivel) {
+    const mapComb = {
+      'Flex': 'FLEX', 'Gasolina': 'GASOLINA', 'Álcool': 'ALCOOL',
+      'Alcool': 'ALCOOL', 'Diesel': 'DIESEL', 'Elétrico': 'ELÉTRICO',
+      'Eletrico': 'ELÉTRICO', 'Híbrido': 'HÍBRIDO', 'Hibrido': 'HÍBRIDO',
+      'GNV': 'TETRAFUEL',
+    }
+    d.combustivel = lookup(mapComb, d.combustivel)
+  }
+
+  // Antifurto: valores antigos
+  d.antifurto = lookup({
+    'Bloqueador': 'Bloqueador de Ignição',
+    'Rastreador': 'Outros',
+    'Alarme + Bloqueador': 'Alarme',
+    'Alarme + Rastreador': 'Alarme',
+    'Bloqueador + Rastreador': 'Bloqueador de Ignição',
+    'Todos': 'Outros',
+  }, d.antifurto)
+
+  // Garagem residência
+  d.garagem_residencia = lookup({
+    'Com portão automático': 'Com portão eletrônico',
+    'Sem portão':            'Não possui garagem',
+    'Não possui':            'Não possui garagem',
+  }, d.garagem_residencia)
+
+  // Garagem trabalho/estudo
+  const mapGarT = {
+    'Com portão automático': 'Sim',
+    'Com portão manual': 'Sim',
+    'Sem portão': 'Não',
+  }
+  d.garagem_trabalho = lookup(mapGarT, d.garagem_trabalho)
+  d.garagem_estudo   = lookup(mapGarT, d.garagem_estudo)
+
+  // Quilometragem: faixas antigas → novas
+  d.quilometragem = lookup({
+    'De 501 a 1.000 km':    'De 501 km até 800 km',
+    'De 1.001 a 2.000 km':  'De 801 km até 1.500 km',
+    'De 2.001 a 3.000 km':  'Mais de 1.500 km',
+    'Acima de 3.000 km':    'Mais de 1.500 km',
+  }, d.quilometragem)
+
+  return d
+}
+
 async function cotacaoAuto(page, dados) {
+  // Sanitiza valores antigos do CRM antes de qualquer coisa
+  dados = sanitizarDados(dados || {})
   log.info('Iniciando cotação auto', { cpf: (dados.cpf || '').slice(0,3) + '***', placa: dados.placa })
 
   await ag.login(page)
