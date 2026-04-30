@@ -174,7 +174,11 @@ app.post('/debug-cotacao', async (req, res) => {
       page_info: pageInfo,
     })
   } finally {
-    if (session) await session.close()
+    if (session) {
+      const ag = require('./lib/aggilizador')
+      try { await ag.logout(session.page) } catch {}
+      await session.close()
+    }
   }
 })
 
@@ -185,6 +189,7 @@ app.post('/consultar-cpf', async (req, res) => {
   if (cpfLimpo.length !== 11) return res.status(400).json({ ok: false, erro: 'CPF inválido' })
 
   let session = null
+  const ag = require('./lib/aggilizador')
   try {
     session = await browser.newSession()
     const r = await consulta.consultarCpf(session.page, cpfLimpo)
@@ -194,7 +199,10 @@ app.post('/consultar-cpf', async (req, res) => {
     if (session) await salvarErroScreenshot(session.page, 'consulta')
     res.status(500).json({ ok: false, erro: err.message })
   } finally {
-    if (session) await session.close()
+    if (session) {
+      try { await ag.logout(session.page) } catch {}
+      await session.close()
+    }
   }
 })
 
@@ -208,6 +216,7 @@ app.post(['/','/cotacao'], async (req, res) => {
   }
 
   let session = null
+  const ag = require('./lib/aggilizador')
   try {
     session = await browser.newSession()
     const r = await cotacao.cotacaoAuto(session.page, dados)
@@ -218,7 +227,10 @@ app.post(['/','/cotacao'], async (req, res) => {
     if (session) screenshotErro = await salvarErroScreenshot(session.page, 'cotacao')
     res.status(500).json({ ok: false, erro: err.message, screenshot_erro: screenshotErro })
   } finally {
-    if (session) await session.close()
+    if (session) {
+      try { await ag.logout(session.page) } catch {}
+      await session.close()
+    }
   }
 })
 

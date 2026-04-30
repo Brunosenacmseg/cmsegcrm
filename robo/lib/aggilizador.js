@@ -46,6 +46,19 @@ async function login(page) {
   if (!btnSel) throw new Error('Botão Entrar não encontrado')
   await page.click(btnSel)
 
+  // CASO ESPECIAL — sessão duplicada:
+  // Quando o aggilizador detecta uma sessão ativa do mesmo usuário, ele abre
+  // um modal "Já há uma sessão ativa... Cancelar / Prosseguir". Se isso
+  // aparecer, clicamos em "Prosseguir" pra encerrar a sessão antiga e seguir.
+  try {
+    const modalSel = 'button:has-text("Prosseguir"), button:has-text("prosseguir")'
+    await page.waitForSelector(modalSel, { state: 'visible', timeout: 5000 })
+    log.info('Modal de sessão duplicada detectado — clicando em Prosseguir')
+    await page.click(modalSel)
+  } catch {
+    // Sem modal — login direto, prosseguir normalmente
+  }
+
   // Espera sair da tela de login (o aggilizador redireciona pra /cotacoes)
   try {
     await page.waitForURL(u => !u.toString().includes('/login'), { timeout: 30000 })
@@ -56,6 +69,36 @@ async function login(page) {
   }
 
   log.info('Login OK', { url: page.url() })
+}
+
+// Logout: clica no menu do usuário e em Sair, pra encerrar a sessão antes de
+// fechar o browser. Evita o aviso "sessão duplicada" na próxima execução.
+// Se algo falhar, ignora silenciosamente — não é crítico.
+async function logout(page) {
+  try {
+    // Tenta achar botão/avatar do usuário ou direto Sair
+    const candidatos = [
+      'button:has-text("Sair")',
+      'a:has-text("Sair")',
+      'button:has-text("Logout")',
+      '[aria-label*="usuário" i]',
+      '[aria-label*="user" i]',
+      '.user-menu',
+      '.avatar',
+    ]
+    for (const sel of candidatos) {
+      const el = await page.$(sel).catch(() => null)
+      if (el) {
+        await el.click().catch(() => {})
+        await page.waitForTimeout(500)
+      }
+    }
+    // Após abrir o menu, tenta clicar Sair
+    const sair = await page.$('button:has-text("Sair"), a:has-text("Sair")').catch(() => null)
+    if (sair) await sair.click().catch(() => {})
+    await page.waitForTimeout(1500)
+    log.debug('Logout tentado')
+  } catch {}
 }
 
 // Seletores priorizando os do aggilizador (Angular Material) primeiro,
@@ -245,7 +288,7 @@ async function extrairResultado(page) {
 }
 
 module.exports = {
-  URL, login, abrirCotacaoAuto,
+  URL, login, logout, abrirCotacaoAuto,
   preencher, selecionar, lerCampo,
   clicarProximo, clicarCalcular, extrairResultado,
   primeiroSeletor,
