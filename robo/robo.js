@@ -262,6 +262,76 @@ app.post('/consultar-placa', async (req, res) => {
   }
 })
 
+// Lista as opções reais de cada mat-select da tela de cotação auto.
+// Útil pra calibrar os dropdowns do CRM com os textos exatos do aggilizador.
+// Resposta: { ok, selects: [ { name, label, opcoes: [...], desabilitado } ] }
+app.post('/listar-opcoes', async (req, res) => {
+  let session = null
+  const ag = require('./lib/aggilizador')
+  try {
+    session = await browser.newSession()
+    const page = session.page
+    await ag.login(page)
+    await ag.abrirCotacaoAuto(page)
+
+    // Espera o formulário carregar
+    await page.waitForSelector('mat-select', { timeout: 15000 })
+
+    const selects = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms))
+      function rotulo(el) {
+        const mff = el.closest('mat-form-field, .mat-form-field, .mat-mdc-form-field')
+        if (mff) {
+          const lbl = mff.querySelector('mat-label, .mat-mdc-floating-label, .mat-form-field-label')
+          if (lbl && lbl.innerText) return lbl.innerText.trim()
+        }
+        return el.getAttribute('name') || el.id || '(sem rótulo)'
+      }
+      const sels = Array.from(document.querySelectorAll('mat-select'))
+      const out = []
+      for (const sel of sels) {
+        const name = sel.getAttribute('name') || sel.getAttribute('formcontrolname') || sel.id || ''
+        const desabilitado = sel.getAttribute('aria-disabled') === 'true'
+                          || sel.classList.contains('mat-mdc-select-disabled')
+        const item = { name, label: rotulo(sel), desabilitado, opcoes: [] }
+        if (desabilitado) { out.push(item); continue }
+        // Abre o select via DOM
+        const trig = sel.querySelector('.mat-mdc-select-trigger') || sel
+        const o = { bubbles: true, cancelable: true, view: window, button: 0 }
+        try { trig.dispatchEvent(new PointerEvent('pointerdown', o)) } catch (e) {}
+        try { trig.dispatchEvent(new MouseEvent('mousedown', o)) } catch (e) {}
+        try { trig.click() } catch (e) {}
+        await sleep(400)
+        const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+          .filter(p => p.getBoundingClientRect().width > 0)
+        const painel = paineis[paineis.length - 1]
+        if (painel) {
+          item.opcoes = Array.from(painel.querySelectorAll('mat-option, .mat-mdc-option'))
+            .map(o => (o.textContent || '').trim())
+            .filter(Boolean)
+        }
+        // Fecha o painel
+        const back = document.querySelector('.cdk-overlay-backdrop')
+        if (back) { try { back.click() } catch (e) {} }
+        await sleep(200)
+        out.push(item)
+      }
+      return out
+    })
+
+    res.json({ ok: true, total: selects.length, selects })
+  } catch (err) {
+    log.error('Erro em /listar-opcoes', { erro: err.message })
+    if (session) await salvarErroScreenshot(session.page, 'listar-opcoes')
+    res.status(500).json({ ok: false, erro: err.message })
+  } finally {
+    if (session) {
+      try { await ag.logout(session.page) } catch {}
+      await session.close()
+    }
+  }
+})
+
 // Cotação completa de auto
 app.post(['/','/cotacao'], async (req, res) => {
   const { produto, dados } = req.body || {}

@@ -13,12 +13,14 @@ const SEXOS_JOVEM       = ['Masculino','Feminino','Ambos']
 const TIPO_RESIDENCIA   = ['Casa','Apartamento','Condomínio fechado','Outro']
 const QUILOMETRAGEM     = ['Até 500 km','De 501 a 1.000 km','De 1.001 a 2.000 km','De 2.001 a 3.000 km','Acima de 3.000 km']
 const TEMPO_HABILITACAO = ['Menos de 1 ano','1 a 2 anos','3 a 5 anos','6 a 10 anos','Mais de 10 anos']
-const TIPO_COBERTURA    = ['Compreensivo (Colisão + Incêndio + Roubo)','Incêndio e Roubo','Somente Roubo','Somente Incêndio','Apenas RCF']
+const TIPO_COBERTURA    = ['Compreensiva','Incêndio e Roubo','RCF','Apenas RCF']
 const TIPO_FRANQUIA     = ['Reduzida','Normal','Majorada','Franquia Zero']
 const SEGURADORAS       = ['Porto Seguro','Bradesco','Allianz','HDI','Tokio Marine','Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali']
 const COBERTURAS_VALOR  = ['Não','10.000','15.000','20.000','25.000','30.000','40.000','50.000','75.000','100.000','150.000','200.000','300.000','Ilimitado']
-const VIDROS_OPTS       = ['Não','Franquia Normal','Franquia Reduzida','Sem Franquia']
-const CARRO_RESERVA     = ['Não','7 dias','14 dias','21 dias','28 dias','30 dias']
+const VIDROS_OPTS       = ['Não','Básica','Completo']
+const ASSISTENCIA_OPTS  = ['Não','Básica','Completa']
+const CARRO_RESERVA     = ['Não','Básico 7 dias','7 dias','14 dias','21 dias','28 dias','30 dias']
+const RELACAO_SEGURADO  = ['Próprio','Cônjuge','Filho(a)','Pai/Mãe','Outro']
 const SEXOS             = ['Masculino','Feminino']
 const ESTADOS_CIVIS     = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)','União Estável']
 const BOOL_OPTS         = ['Sim','Não']
@@ -111,7 +113,7 @@ export default function CotacoesPage() {
     placa:'', chassi:'', ano_fab:'', ano_mod:'', zero_km:'Não', modelo:'', combustivel:'Flex',
     cep_pernoite:'', rastreador:'Não Possui', antifurto:'Não possui',
     blindado:'Não', kit_gas:'Não', valor_kit_gas:'', alienado:'Não',
-    condutor_principal:'Sim', cpf_condutor:'', nome_condutor:'', nascimento_condutor:'',
+    condutor_principal:'Próprio', cpf_condutor:'', nome_condutor:'', nascimento_condutor:'',
     sexo_condutor:'', estado_civil_condutor:'', tempo_habilitacao:'',
     garagem_residencia:'Com portão manual', garagem_trabalho:'Não utiliza para este fim',
     garagem_estudo:'Não utiliza para este fim', tipo_uso:'Particular',
@@ -121,9 +123,9 @@ export default function CotacoesPage() {
     renovacao:'Não', inicio_vigencia:hoje, final_vigencia:fimVig,
     final_vigencia_anterior:'', seguradora_anterior:'', numero_apolice_anterior:'',
     codigo_interno:'', qtd_sinistros:'0', novo_bonus:'0',
-    tipo_cobertura:'', tipo_franquia:'', fipe_pct:'100%',
+    tipo_cobertura:'Compreensiva', tipo_franquia:'Normal', fipe_pct:'100%',
     danos_materiais:'', danos_corporais:'', danos_morais:'', morte_invalidez:'',
-    assistencia:'Sim', vidros:'Franquia Normal', carro_reserva:'7 dias', comissao_pct:'',
+    assistencia:'Básica', vidros:'Completo', carro_reserva:'Básico 7 dias', comissao_pct:'',
   }
   const [form, setForm] = useState({ ...formVazio })
 
@@ -562,7 +564,7 @@ export default function CotacoesPage() {
 
               {aba==='condutor' && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <Sel label="Condutor Principal *"    value={form.condutor_principal}    onChange={set('condutor_principal')}    opts={BOOL_OPTS} />
+                  <Sel label="Condutor Principal *"    value={form.condutor_principal}    onChange={set('condutor_principal')}    opts={RELACAO_SEGURADO} />
                   <Inp label="CPF do Condutor *"       value={form.cpf_condutor}          onChange={set('cpf_condutor')}          placeholder="000.000.000-00" />
                   <div style={{gridColumn:'1/-1'}}><Inp label="Nome Completo *"           value={form.nome_condutor}             onChange={set('nome_condutor')}         placeholder="Nome completo do condutor" /></div>
                   <Inp label="Data de Nascimento *"    value={form.nascimento_condutor}   onChange={set('nascimento_condutor')}   type="date" />
@@ -612,7 +614,7 @@ export default function CotacoesPage() {
                   <Sel label="Danos Corporais *"       value={form.danos_corporais}  onChange={set('danos_corporais')}  opts={COBERTURAS_VALOR} />
                   <Sel label="Danos Morais *"          value={form.danos_morais}     onChange={set('danos_morais')}     opts={COBERTURAS_VALOR} />
                   <Sel label="Morte/Invalidez *"       value={form.morte_invalidez}  onChange={set('morte_invalidez')}  opts={COBERTURAS_VALOR} />
-                  <Sel label="Assistência *"           value={form.assistencia}      onChange={set('assistencia')}      opts={BOOL_OPTS} />
+                  <Sel label="Assistência *"           value={form.assistencia}      onChange={set('assistencia')}      opts={ASSISTENCIA_OPTS} />
                   <Sel label="Vidros *"                value={form.vidros}           onChange={set('vidros')}           opts={VIDROS_OPTS} />
                   <Sel label="Carro Reserva *"         value={form.carro_reserva}    onChange={set('carro_reserva')}    opts={CARRO_RESERVA} />
                   <Inp label="Comissão Padrão %"       value={form.comissao_pct}     onChange={set('comissao_pct')}     placeholder="Ex: 20" />

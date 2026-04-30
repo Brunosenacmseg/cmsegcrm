@@ -430,13 +430,35 @@ async function selecionar(page, nomes, valor) {
       return false
     }
 
-    // Match exato → contém
-    const matchExato = opcoes.items.find(o => o.txt.toLowerCase() === vLower)
-    const match = matchExato
-      || opcoes.items.find(o => o.txt.toLowerCase().includes(vLower) || vLower.includes(o.txt.toLowerCase()))
+    // Match exato → contém → primeira palavra (tolerante a "Compreensivo (...)" vs "Compreensiva")
+    function normLocal(s) {
+      return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+    }
+    function tokenMatch(a, b) {
+      const na = normLocal(a)
+      const nb = normLocal(b)
+      if (!na || !nb) return false
+      if (na === nb) return true
+      if (na.includes(nb) || nb.includes(na)) return true
+      // Primeira palavra (sem parênteses) — útil pra "Compreensivo (Colisão...)" → "Compreensiva"
+      const wa = na.replace(/\(.*?\)/g, '').trim().split(/\s+/)[0]
+      const wb = nb.replace(/\(.*?\)/g, '').trim().split(/\s+/)[0]
+      if (wa.length >= 5 && wb.length >= 5) {
+        const min = Math.min(wa.length, wb.length)
+        const overlap = wa.slice(0, min - 1) === wb.slice(0, min - 1) // tolera diferença na última letra
+        if (overlap) return true
+      }
+      return false
+    }
+
+    let match = opcoes.items.find(o => normLocal(o.txt) === vLower)
+    if (!match) match = opcoes.items.find(o => tokenMatch(o.txt, v))
     if (!match) {
       await page.keyboard.press('Escape').catch(() => {})
-      log.warn('Opção não encontrada no mat-select', { nomes, valor: v, disponiveis: opcoes.items.map(i=>i.txt).slice(0,8) })
+      log.warn('Opção não encontrada no mat-select', {
+        nomes, valor: v,
+        disponiveis: opcoes.items.map(i => i.txt).slice(0, 10)
+      })
       return false
     }
 
