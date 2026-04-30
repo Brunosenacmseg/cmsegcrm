@@ -25,7 +25,11 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const ROBO_CONSULTA_URL = process.env.COTACAO_CONSULTA_URL || ''
+// Mesma URL do robô; v2 expõe /consultar-cpf no mesmo serviço.
+// Mantém a possibilidade de override via COTACAO_CONSULTA_URL caso queira
+// usar um serviço de consulta diferente.
+const ROBO_URL   = process.env.COTACAO_CONSULTA_URL || process.env.COTACAO_ROBO_URL || ''
+const ROBO_TOKEN = process.env.COTACAO_ROBO_TOKEN || ''
 
 export async function POST(request: NextRequest) {
   try {
@@ -67,17 +71,19 @@ export async function POST(request: NextRequest) {
     }
 
     // 2) Se há robô configurado, tenta consultar
-    if (ROBO_CONSULTA_URL) {
+    if (ROBO_URL) {
       try {
-        const res = await fetch(`${ROBO_CONSULTA_URL.replace(/\/$/, '')}/consultar-cpf`, {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (ROBO_TOKEN) headers['x-robo-token'] = ROBO_TOKEN
+        const res = await fetch(`${ROBO_URL.replace(/\/$/, '')}/consultar-cpf`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ cpf: cpfLimpo }),
           signal: AbortSignal.timeout(45000),
         })
         if (res.ok) {
           const json = await res.json().catch(() => null)
-          if (json?.dados) {
+          if (json?.encontrado && json?.dados) {
             return NextResponse.json({ ok: true, encontrado: true, fonte: 'robo', dados: json.dados })
           }
         }

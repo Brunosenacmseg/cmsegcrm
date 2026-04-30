@@ -1,0 +1,16 @@
+{
+  "name": "robo-cotacao",
+  "version": "2.0.0",
+  "description": "Robô de cotação automática no Aggilizador (CM.segCRM)",
+  "main": "robo.js",
+  "scripts": {
+    "start": "node robo.js",
+    "dev": "NODE_ENV=development node robo.js",
+    "pm2": "pm2 start robo.js --name robo-cotacao --update-env"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "playwright": "^1.40.0"
+  }
+}
