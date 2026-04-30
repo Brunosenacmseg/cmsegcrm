@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 interface Stats {
   qtd_lidos: number
@@ -31,6 +32,7 @@ const RECURSOS: { key: string; label: string; emoji: string; descricao: string }
 ]
 
 export default function RDStationPage() {
+  const supabase = createClient()
   const [token, setToken]       = useState('')
   const [usaEnv, setUsaEnv]     = useState(true)
   const [rodando, setRodando]   = useState<string | null>(null)
@@ -38,9 +40,16 @@ export default function RDStationPage() {
   const [historico, setHistorico]   = useState<Sync[]>([])
   const [erro, setErro]         = useState<string | null>(null)
 
+  async function authHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession()
+    const h: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session?.access_token) h['Authorization'] = `Bearer ${session.access_token}`
+    return h
+  }
+
   async function carregarHistorico() {
     try {
-      const r = await fetch('/api/rdstation/sync')
+      const r = await fetch('/api/rdstation/sync', { headers: await authHeaders() })
       const j = await r.json()
       if (j.syncs) setHistorico(j.syncs)
     } catch {}
@@ -51,7 +60,7 @@ export default function RDStationPage() {
   async function executar(action: string) {
     setRodando(action); setErro(null)
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const headers = await authHeaders()
       if (!usaEnv && token.trim()) headers['x-rd-token'] = token.trim()
 
       const r = await fetch('/api/rdstation/sync', {

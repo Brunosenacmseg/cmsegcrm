@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { createClient as createServerSupabase } from '@/lib/supabase/server'
 import {
   listarTodos, ping, rdId,
   RDContact, RDDeal, RDPipeline, RDActivity, RDUser, RDStage,
@@ -18,13 +17,17 @@ function getToken(request: NextRequest): string | null {
   return request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN || null
 }
 
-async function checarAdmin(): Promise<{ ok: boolean; userId?: string; erro?: string }> {
-  const supabase = createServerSupabase()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return { ok: false, erro: 'Não autenticado' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', session.user.id).single()
+async function checarAdmin(request: NextRequest): Promise<{ ok: boolean; userId?: string; erro?: string }> {
+  const auth = request.headers.get('authorization') || ''
+  const token = auth.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return { ok: false, erro: 'Não autenticado' }
+
+  const { data: userData, error } = await supabaseAdmin.auth.getUser(token)
+  if (error || !userData?.user) return { ok: false, erro: 'Sessão inválida' }
+
+  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false, erro: 'Apenas admin pode sincronizar' }
-  return { ok: true, userId: session.user.id }
+  return { ok: true, userId: userData.user.id }
 }
 
 // ─── Helpers de mapeamento ─────────────────────────────────
@@ -380,7 +383,7 @@ async function importarAtividades(token: string) {
 
 // ─── HTTP Handler ──────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  const auth = await checarAdmin()
+  const auth = await checarAdmin(request)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
   const token = getToken(request)
@@ -422,8 +425,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
-  const auth = await checarAdmin()
+export async function GET(request: NextRequest) {
+  const auth = await checarAdmin(request)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
   const { data } = await supabaseAdmin.from('rdstation_syncs').select('*').order('iniciado_em', { ascending: false }).limit(50)
   return NextResponse.json({ syncs: data || [] })
