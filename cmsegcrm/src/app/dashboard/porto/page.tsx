@@ -13,6 +13,30 @@ const TIPOS_ARQUIVO = [
   { key:'IMOBILIARIA', label:'Imobiliária',   icon:'🏢', desc:'Seguros imobiliários' },
 ]
 
+function UploadArquivoPorto({ onUpload, disabled }: { onUpload: (file: File, tipo: string) => void; disabled: boolean }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [tipo, setTipo] = useState<string>('AUTO')
+  const inp: React.CSSProperties = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
+  return (
+    <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+      <input type="file" accept=".ret,.RET,.sap,.SAP,.cbs,.CBS,.app,.APP,.si2,.SI2,.com,.COM,.txt,.TXT"
+        onChange={e => setFile(e.target.files?.[0] || null)}
+        style={{...inp, flex:'1 1 280px', minWidth:200}} />
+      <select value={tipo} onChange={e=>setTipo(e.target.value)} style={{...inp, minWidth:170}}>
+        <option value="AUTO">Detectar automaticamente</option>
+        <option value="COBRANCA">Cobrança (.SAP/.RET/.CBS)</option>
+        <option value="APOLICES">Apólices (.APP/.IRE/etc)</option>
+        <option value="SINISTRO">Sinistro (.SI2)</option>
+        <option value="COMISSOES">Comissões (.COM)</option>
+      </select>
+      <button onClick={()=>{ if (file) onUpload(file, tipo === 'AUTO' ? '' : tipo) }} disabled={!file || disabled}
+        className="btn-primary" style={{padding:'7px 18px',fontSize:13, opacity: !file ? 0.5 : 1}}>
+        {disabled ? '⏳ Processando...' : '📤 Enviar e processar'}
+      </button>
+    </div>
+  )
+}
+
 export default function PortoIntegracaoPage() {
   const supabase = createClient()
 
@@ -161,6 +185,38 @@ export default function PortoIntegracaoPage() {
     setResultado({ ok: true, configCheck: d })
   }
 
+  async function processarUpload(file: File, tipoForcado: string) {
+    setSincronizando(true); setResultado(null)
+    try {
+      // Lê como texto (Latin-1 para arquivos da Porto)
+      const buf = await file.arrayBuffer()
+      const decoder = new TextDecoder('latin1')
+      const conteudo = decoder.decode(buf)
+
+      const r = await fetch('/api/porto/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'processar_upload',
+          conteudo,
+          nome_arquivo: file.name,
+          tipo_forcado: tipoForcado,
+        }),
+      })
+      const d = await r.json()
+      if (d.error) {
+        setResultado({ erro: d.error })
+      } else {
+        setResultado({ ok: true, total: 1, resultados: [{ arquivo: file.name, tipo: d.tipo, importados: d.importados, erros: d.erros, msgs: d.msgs }] })
+      }
+      await carregarHistorico(); await carregarStats()
+    } catch (err: any) {
+      setResultado({ erro: err.message || 'Erro ao ler arquivo' })
+    } finally {
+      setSincronizando(false)
+    }
+  }
+
   const isAdmin = profile?.role === 'admin' || profile?.role === 'lider'
   const inp: React.CSSProperties = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
 
@@ -277,6 +333,17 @@ export default function PortoIntegracaoPage() {
                 ))}
               </div>
             </div>
+
+            {/* Upload manual */}
+            {isAdmin && (
+              <div className="card" style={{marginBottom:20, padding:'18px 20px'}}>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:6}}>📤 Upload manual de arquivo</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14, lineHeight:1.6}}>
+                  Para processar um arquivo .RET, .SAP, .CBS, .APP, .SI2 ou .COM que está no seu computador (sem precisar buscar no portal da Porto).
+                </div>
+                <UploadArquivoPorto disabled={sincronizando} onUpload={processarUpload} />
+              </div>
+            )}
 
             {/* Info de credenciais */}
             <div className="card" style={{padding:'16px 20px'}}>
