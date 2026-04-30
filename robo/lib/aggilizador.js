@@ -208,7 +208,13 @@ async function abrirCotacaoAuto(page) {
 }
 
 // Fecha qualquer popup/modal/overlay que possa estar bloqueando interações.
-// Estratégia: ESC + clicar em botões de fechar + clicar no backdrop.
+// Inclui:
+//  - ESC pra modais Material
+//  - botões close/fechar/X
+//  - "Marcar como visto" / "Entendi" / "Prosseguir"
+//  - modais com botão "Selecionar"/"Confirmar" (escolhe o primeiro)
+//  - clique no backdrop como último recurso
+//  - força-fechamento via DOM (display:none) quando nada funciona
 async function dismissarOverlays(page) {
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     let agiu = false
@@ -217,36 +223,61 @@ async function dismissarOverlays(page) {
     await page.keyboard.press('Escape').catch(() => {})
     await page.waitForTimeout(200)
 
-    // Botões com texto "close" ou X visíveis dentro de overlays
-    const closes = await page.$$('.cdk-overlay-container button, .cdk-overlay-container [role="button"]').catch(() => [])
-    for (const el of closes) {
-      const txt = await el.textContent().catch(() => '')
-      const aria = await el.getAttribute('aria-label').catch(() => '')
-      if (/close|fechar|x/i.test((txt || '') + (aria || ''))) {
-        await el.click({ force: true }).catch(() => {})
-        agiu = true
-        await page.waitForTimeout(200)
+    // Roda tudo num único evaluate pra ser rápido e não dispender tempo
+    // em operações Playwright entre cada tentativa
+    const ret = await page.evaluate(() => {
+      let agiuJs = false
+      const norm = (s) => (s || '').toString().trim().toLowerCase()
+
+      // 1) Botões close/fechar/X dentro de overlays
+      const overlays = document.querySelectorAll('.cdk-overlay-container, mat-dialog-container, .modal, [role="dialog"]')
+      for (const ov of overlays) {
+        const btns = ov.querySelectorAll('button, [role="button"], a')
+        for (const b of btns) {
+          const t = norm(b.textContent || '') + ' ' + norm(b.getAttribute('aria-label') || '')
+          if (/^(close|fechar|x|cancelar|cancel|voltar|fechar modal)\b/.test(t.trim()) || t.includes(' close ')) {
+            try { b.click(); agiuJs = true; return { agiuJs, etapa: 'close-button' } } catch {}
+          }
+        }
       }
-    }
 
-    // Banner "Comunicados" tem botão "Marcar como visto"
-    const ok = await page.$('button:has-text("Marcar como visto"), button:has-text("Entendi")').catch(() => null)
-    if (ok) {
-      await ok.click({ force: true }).catch(() => {})
-      agiu = true
-      await page.waitForTimeout(200)
-    }
+      // 2) Modais de confirmação genéricos (Selecionar/Confirmar/OK)
+      for (const ov of overlays) {
+        const btns = ov.querySelectorAll('button, [role="button"]')
+        for (const b of btns) {
+          const t = norm(b.textContent || '')
+          if (/^(selecionar|confirmar|ok|prosseguir|continuar|aplicar)$/.test(t)) {
+            try { b.click(); agiuJs = true; return { agiuJs, etapa: 'confirm-button' } } catch {}
+          }
+        }
+      }
 
-    // Clica no backdrop pra fechar (último recurso)
-    const backdrop = await page.$('.cdk-overlay-backdrop-showing').catch(() => null)
-    if (backdrop) {
-      await backdrop.click({ force: true, position: { x: 5, y: 5 } }).catch(() => {})
-      agiu = true
-      await page.waitForTimeout(200)
-    }
+      // 3) Banner "Comunicados"
+      const aviso = Array.from(document.querySelectorAll('button')).find(b => /marcar como visto|entendi/i.test(b.textContent || ''))
+      if (aviso) { try { aviso.click(); agiuJs = true; return { agiuJs, etapa: 'aviso' } } catch {} }
+
+      // 4) Backdrop visível
+      const backdrop = document.querySelector('.cdk-overlay-backdrop-showing')
+      if (backdrop) { try { backdrop.click(); agiuJs = true; return { agiuJs, etapa: 'backdrop' } } catch {} }
+
+      return { agiuJs, etapa: null }
+    }).catch(() => ({ agiuJs: false }))
+
+    if (ret.agiuJs) { agiu = true; await page.waitForTimeout(300) }
 
     if (!agiu) break
   }
+
+  // Último recurso: se ainda há overlay ativo bloqueando, força-fecha
+  // removendo a classe "showing" do backdrop e ocultando o pane.
+  // Não removemos o nó pra não quebrar o ciclo de vida do Angular.
+  await page.evaluate(() => {
+    const back = document.querySelector('.cdk-overlay-backdrop-showing')
+    if (back) {
+      back.classList.remove('cdk-overlay-backdrop-showing')
+      back.style.pointerEvents = 'none'
+    }
+  }).catch(() => {})
 }
 
 // ─── Helpers genéricos de preenchimento ──────────────────────────────
@@ -777,5 +808,5 @@ module.exports = {
   selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
   clicarProximo, clicarCalcular, extrairResultado,
   verificarErrosFormulario, forcarValidacao,
-  primeiroSeletor,
+  primeiroSeletor, dismissarOverlays,
 }

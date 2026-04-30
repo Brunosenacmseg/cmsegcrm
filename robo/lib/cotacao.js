@@ -186,6 +186,8 @@ async function cotacaoAuto(page, dados) {
   await ag.preencher(page, ['cpfCnpj'], dados.cpf)
   // Aggilizador auto-preenche nome+nascimento+sexo a partir do CPF — espera
   await page.waitForTimeout(2500)
+  // Pode aparecer modal de "cliente já cadastrado" — dispensa
+  await ag.dismissarOverlays(page)
 
   await ag.preencher(page, ['nomeSegurado', 'nome'],            dados.nome)
   await ag.preencher(page, ['dataNascimento', 'dataNasc'],      formatarDataBr(dados.nascimento))
@@ -200,10 +202,17 @@ async function cotacaoAuto(page, dados) {
   await ag.preencher(page, ['placa'], dados.placa)
   // Aggilizador busca dados do veículo pela placa — espera
   await page.waitForTimeout(2500)
+  // Pode aparecer modal de seleção FIPE (múltiplos modelos pra mesma placa).
+  // Dispensa o overlay antes de continuar pra não bloquear próximos cliques.
+  await ag.dismissarOverlays(page)
+  await page.waitForTimeout(400)
 
   await ag.preencher(page, ['chassi'], dados.chassi)
   await ag.preencher(page, ['anoFab'], dados.ano_fab)
   await ag.preencher(page, ['modelo'], dados.modelo)
+  // Modelo também pode disparar modal FIPE
+  await ag.dismissarOverlays(page)
+  await page.waitForTimeout(300)
   await ag.preencher(page, ['perfilCepPernoite', 'cepPernoite'], dados.cep_pernoite)
   await ag.selecionar(page, ['anoMod'],         dados.ano_mod)
   await ag.selecionar(page, ['zeroKm'],         dados.zero_km)
