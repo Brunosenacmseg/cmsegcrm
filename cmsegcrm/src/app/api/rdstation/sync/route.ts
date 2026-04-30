@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
-  listarTodos, ping, rdId,
+  listarTodos, ping, rdId, norm, buscarDealDetalhe,
   RDContact, RDDeal, RDPipeline, RDActivity, RDUser, RDStage,
 } from '@/lib/rdstation'
 
@@ -117,6 +117,15 @@ async function importarFunis(token: string) {
   const pipelines = await listarTodos<RDPipeline>('/deal_pipelines', token, 'deal_pipelines')
   stats.qtd_lidos = pipelines.length
 
+  // Carrega funis existentes pra match por rd_id e por nome normalizado
+  const { data: locais } = await supabaseAdmin.from('funis').select('id, rd_id, nome')
+  const porRdId: Record<string, string> = {}
+  const porNome: Record<string, string> = {}
+  for (const f of locais || []) {
+    if (f.rd_id) porRdId[f.rd_id] = f.id
+    if (f.nome)  porNome[norm(f.nome)] = f.id
+  }
+
   for (let idx = 0; idx < pipelines.length; idx++) {
     const p = pipelines[idx]
     try {
@@ -126,12 +135,12 @@ async function importarFunis(token: string) {
       const etapas = stages.map(s => s.name || 'Etapa').filter(Boolean)
       if (etapas.length === 0) etapas.push('Novo', 'Em andamento', 'Ganho', 'Perdido')
 
-      // Nome idêntico ao RD Station (sem prefixo)
       const nome = (p.name || 'Pipeline').trim()
-      const { data: existente } = await supabaseAdmin.from('funis').select('id').eq('rd_id', id).maybeSingle()
-      if (existente) {
-        // Mantém emoji/cor/tipo customizados pelo admin; só atualiza nome e etapas
-        await supabaseAdmin.from('funis').update({ nome, etapas }).eq('id', existente.id)
+      const matchId = porRdId[id] || porNome[norm(nome)] || null
+
+      if (matchId) {
+        // Atualiza: garante rd_id (caso match veio por nome) + sincroniza etapas/nome do RD
+        await supabaseAdmin.from('funis').update({ rd_id: id, nome, etapas }).eq('id', matchId)
         stats.qtd_atualizados++
       } else {
         await supabaseAdmin.from('funis').insert({
@@ -209,8 +218,12 @@ async function importarNegocios(token: string) {
 
   // Mapas auxiliares
   const { data: funis } = await supabaseAdmin.from('funis').select('id, rd_id, etapas, nome, tipo')
-  const funilPorRd: Record<string, any> = {}
-  for (const f of funis || []) if (f.rd_id) funilPorRd[f.rd_id] = f
+  const funilPorRd:   Record<string, any> = {}
+  const funilPorNome: Record<string, any> = {}
+  for (const f of funis || []) {
+    if (f.rd_id) funilPorRd[f.rd_id] = f
+    if (f.nome)  funilPorNome[norm(f.nome)] = f
+  }
 
   // Funil fallback (caso pipeline do deal não exista)
   let funilFallback: any = (funis || []).find((f: any) => f.tipo === 'venda')
@@ -225,9 +238,21 @@ async function importarNegocios(token: string) {
   // Stages → pipeline (para deals que vêm com deal_stage mas não com deal_pipeline)
   const stages = await listarTodos<RDStage>('/deal_stages', token, 'deal_stages')
   const pipelinePorStage: Record<string, string> = {}
+  const stagePipelineNome: Record<string, string> = {}
   for (const s of stages) {
     const sid = rdId(s)
     if (sid && s.deal_pipeline_id) pipelinePorStage[sid] = s.deal_pipeline_id
+  }
+
+  // Mapa users RD → users locais (vendedor)
+  const { data: usersLocais } = await supabaseAdmin.from('users').select('id, rd_id, email, nome')
+  const userPorRd:    Record<string, string> = {}
+  const userPorEmail: Record<string, string> = {}
+  const userPorNome:  Record<string, string> = {}
+  for (const u of usersLocais || []) {
+    if (u.rd_id) userPorRd[u.rd_id] = u.id
+    if (u.email) userPorEmail[u.email.toLowerCase().trim()] = u.id
+    if (u.nome)  userPorNome[norm(u.nome)] = u.id
   }
 
   const deals = await listarTodos<RDDeal>('/deals', token, 'deals')
@@ -249,55 +274,108 @@ async function importarNegocios(token: string) {
       const id = rdId(d)
       if (!id) continue
 
-      // Resolver funil
-      const stageId = rdId(d.deal_stage)
-      const pipelineId = rdId(d.deal_pipeline) || (stageId ? pipelinePorStage[stageId] : null)
-      const funil = (pipelineId && funilPorRd[pipelineId]) || funilFallback
-      if (!funil) { stats.qtd_erros++; stats.erros.push(`deal ${d.name}: funil não encontrado`); continue }
+      // Detalhe completo (notes, custom_fields) — endpoint /deals/:id retorna mais
+      const detalhe = await buscarDealDetalhe(id, token)
+      const dx = detalhe || d
 
-      const etapaNome = d.deal_stage?.name || (funil.etapas?.[0] || 'Novo')
-      const etapa = (funil.etapas as string[])?.includes(etapaNome) ? etapaNome : (funil.etapas?.[0] || 'Novo')
+      // Resolver funil — por pipeline ID, depois por nome, senão fallback
+      const stageId = rdId(dx.deal_stage)
+      const pipelineId = rdId(dx.deal_pipeline) || (stageId ? pipelinePorStage[stageId] : null)
+      const pipeNome = dx.deal_pipeline?.name || ''
+      const funil = (pipelineId && funilPorRd[pipelineId])
+                  || (pipeNome && funilPorNome[norm(pipeNome)])
+                  || funilFallback
+      if (!funil) { stats.qtd_erros++; stats.erros.push(`deal ${dx.name}: funil não encontrado`); continue }
+
+      // Match etapa case-insensitive / sem acento
+      const etapaRaw = dx.deal_stage?.name || ''
+      const etapaMatch = (funil.etapas as string[]).find(e => norm(e) === norm(etapaRaw)) || (funil.etapas?.[0] || 'Novo')
 
       // Resolver cliente
       let clienteId: string | null = null
-      const primeiro = d.contacts?.[0]
+      const primeiro = dx.contacts?.[0]
       if (primeiro) {
         const cid = rdId(primeiro)
         if (cid && clientePorRd[cid]) clienteId = clientePorRd[cid]
       }
 
-      // Definir etapa final se win/hold
-      let etapaFinal = etapa
-      if (d.win === true) {
-        const ganhos = ['Fechado Ganho', 'Ganho', 'Renovado', 'Pago', 'Concluído']
-        const m = (funil.etapas as string[]).find(e => ganhos.includes(e))
-        if (m) etapaFinal = m
-      } else if (d.win === false) {
-        const perdidos = ['Fechado Perdido', 'Perdido', 'Não Renovado', 'Negado']
-        const m = (funil.etapas as string[]).find(e => perdidos.includes(e))
-        if (m) etapaFinal = m
+      // Resolver vendedor a partir do user RD do deal
+      let vendedorId: string | null = null
+      const userRdId = rdId(dx.user)
+      if (userRdId && userPorRd[userRdId]) vendedorId = userPorRd[userRdId]
+      if (!vendedorId && dx.user?.email && userPorEmail[dx.user.email.toLowerCase().trim()]) {
+        vendedorId = userPorEmail[dx.user.email.toLowerCase().trim()]
+      }
+      if (!vendedorId && dx.user?.name && userPorNome[norm(dx.user.name)]) {
+        vendedorId = userPorNome[norm(dx.user.name)]
       }
 
-      const obs = [
-        d.name && `Negócio: ${d.name}`,
-        d.deal_source?.name && `Origem: ${d.deal_source.name}`,
-        d.campaign?.name && `Campanha: ${d.campaign.name}`,
-        d.deal_lost_reason?.name && `Motivo perda: ${d.deal_lost_reason.name}`,
-        d.user?.name && `Responsável RD: ${d.user.name}`,
-      ].filter(Boolean).join(' | ')
+      // Status ganho/perdido a partir de win
+      let status: 'em_andamento'|'ganho'|'perdido' = 'em_andamento'
+      let dataFech: string | null = null
+      if (dx.win === true)  { status = 'ganho';   dataFech = dx.closed_at || null }
+      if (dx.win === false) { status = 'perdido'; dataFech = dx.closed_at || null }
+      const motivoPerda = status === 'perdido' ? (dx.deal_lost_reason?.name || null) : null
 
-      const premio = Number(d.amount_total ?? d.amount_montly ?? d.amount_unique ?? 0) || 0
-      const venc = d.prediction_date ? d.prediction_date.slice(0, 10) : null
+      // Custom fields → texto
+      const cfsRaw = (dx as any).deal_custom_fields || (dx as any).custom_fields || []
+      const cfsTxt = Array.isArray(cfsRaw)
+        ? cfsRaw.map((c: any) => {
+            const k = c?.custom_field?.label || c?.label || c?.name || ''
+            const v = c?.value ?? c?.values ?? c?.data ?? ''
+            const vTxt = Array.isArray(v) ? v.join(', ') : String(v)
+            return k && vTxt ? `${k}: ${vTxt}` : ''
+          }).filter(Boolean)
+        : []
+
+      // Notes (do detalhe)
+      const notesRaw = (dx as any).notes
+      const notesTxt: string[] = []
+      if (Array.isArray(notesRaw)) {
+        for (const n of notesRaw) {
+          const t = (n?.text || n?.body || n?.content || '').toString().trim()
+          if (t) notesTxt.push(`📝 ${t}`)
+        }
+      } else if (typeof notesRaw === 'string' && notesRaw.trim()) {
+        notesTxt.push(`📝 ${notesRaw.trim()}`)
+      }
+
+      // Tags
+      const tagsTxt = Array.isArray((dx as any).tags) ? (dx as any).tags.map((t: any) => t?.name).filter(Boolean) : []
+
+      // Observação consolidada
+      const obsLinhas = [
+        dx.name && `Negócio: ${dx.name}`,
+        dx.organization?.name && `Empresa: ${dx.organization.name}`,
+        dx.deal_source?.name && `Origem: ${dx.deal_source.name}`,
+        dx.campaign?.name && `Campanha: ${dx.campaign.name}`,
+        dx.deal_lost_reason?.name && `Motivo perda: ${dx.deal_lost_reason.name}`,
+        dx.hold && `Hold: ${dx.hold}`,
+        dx.user?.name && `Responsável RD: ${dx.user.name}`,
+        tagsTxt.length && `Tags: ${tagsTxt.join(', ')}`,
+        cfsTxt.length && `--- Campos adicionais ---\n${cfsTxt.join('\n')}`,
+        notesTxt.length && `--- Anotações ---\n${notesTxt.join('\n')}`,
+      ].filter(Boolean)
+      const obs = obsLinhas.join('\n')
+
+      const premio = Number(dx.amount_total ?? dx.amount_montly ?? dx.amount_unique ?? 0) || 0
+      const venc = dx.prediction_date ? dx.prediction_date.slice(0, 10) : null
+      const produto = dx.deal_products?.[0]?.product?.name || dx.deal_products?.[0]?.name || null
 
       const payload: any = {
-        rd_id: id,
-        funil_id: funil.id,
-        etapa: etapaFinal,
-        produto: d.deal_products?.[0]?.product?.name || d.deal_products?.[0]?.name || null,
+        rd_id:           id,
+        funil_id:        funil.id,
+        etapa:           etapaMatch,
+        titulo:          dx.name || 'Negócio RD',
+        produto,
         premio,
-        vencimento: venc,
-        obs: obs || null,
-        cliente_id: clienteId,
+        vencimento:      venc,
+        obs:             obs || null,
+        cliente_id:      clienteId,
+        vendedor_id:     vendedorId,
+        status,
+        motivo_perda:    motivoPerda,
+        data_fechamento: dataFech,
       }
 
       const { data: existente } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', id).maybeSingle()
@@ -309,8 +387,8 @@ async function importarNegocios(token: string) {
         // Se não há cliente_id, criamos um placeholder com o nome do deal.
         if (!payload.cliente_id) {
           const { data: ph } = await supabaseAdmin.from('clientes').insert({
-            nome: d.organization?.name || d.name || 'Sem cliente (RD)',
-            tipo: d.organization?.name ? 'PJ' : 'PF',
+            nome: dx.organization?.name || dx.name || 'Sem cliente (RD)',
+            tipo: dx.organization?.name ? 'PJ' : 'PF',
             fonte: 'RD Station CRM',
           }).select('id').single()
           payload.cliente_id = ph?.id

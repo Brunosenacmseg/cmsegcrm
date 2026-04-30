@@ -102,7 +102,7 @@ export interface RDDeal {
   win?: boolean | null
   hold?: string | null
   closed_at?: string
-  user?: { _id?: string; id?: string; name?: string } | null
+  user?: { _id?: string; id?: string; name?: string; email?: string } | null
   contacts?: RDContact[]
   organization?: { _id?: string; id?: string; name?: string } | null
   deal_stage?: { _id?: string; id?: string; name?: string; deal_pipeline_id?: string } | null
@@ -111,6 +111,10 @@ export interface RDDeal {
   deal_source?: { name?: string } | null
   campaign?: { name?: string } | null
   deal_products?: any[]
+  deal_custom_fields?: any[]
+  custom_fields?: any[]
+  tags?: { name?: string }[]
+  notes?: any
   created_at?: string
   updated_at?: string
 }
@@ -156,3 +160,18 @@ export interface RDUser {
 }
 
 export const rdId = (o: any): string | null => (o?._id || o?.id || null)
+
+// Busca detalhada de um único deal (inclui notes/custom_fields que o /deals
+// paginado costuma omitir). Tolera erro retornando null.
+export async function buscarDealDetalhe(id: string, token: string): Promise<RDDeal | null> {
+  try {
+    return await rdFetch<RDDeal>(`/deals/${id}`, token)
+  } catch {
+    return null
+  }
+}
+
+// Normaliza string para comparação (lowercase + sem acentos + trim)
+export function norm(s?: string | null): string {
+  return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+}
