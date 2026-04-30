@@ -356,14 +356,21 @@ async function selecionar(page, nomes, valor) {
 
   try {
     // Garante que nenhum dropdown anterior tem o backdrop aberto
-    // (se tiver, o cdk-overlay-backdrop intercepta os próximos cliques).
+    // (se tiver, o cdk-overlay-backdrop intercepta os próximos cliques
+    // E as opções antigas continuam no DOM, fazendo o robô clicar
+    // numa opção do select errado).
     await page.evaluate(() => {
-      // Click no backdrop dispensa qualquer overlay aberto
       const backs = document.querySelectorAll('.cdk-overlay-backdrop')
       backs.forEach(b => { try { b.click() } catch (e) {} })
     }).catch(() => {})
     await page.keyboard.press('Escape').catch(() => {})
-    await page.waitForTimeout(250)
+
+    // Espera o overlay/painel anterior sair do DOM antes de abrir o novo
+    await page.waitForFunction(
+      () => document.querySelectorAll('.mat-mdc-select-panel, .cdk-overlay-backdrop-showing').length === 0,
+      { timeout: 2000 }
+    ).catch(() => {})
+    await page.waitForTimeout(150)
 
     // Abre o mat-select disparando eventos no DOM —
     // assim o Playwright não bloqueia por causa do backdrop ainda visível.
@@ -390,35 +397,64 @@ async function selecionar(page, nomes, valor) {
     }
     if (abriu !== 'ok') { log.warn('mat-select não encontrado', { nomes }); return false }
 
-    await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
-    // Lista as opções e tenta achar match
-    const opcoes = await page.$$('mat-option, .mat-mdc-option')
-    let clicou = false
-    for (const opt of opcoes) {
-      const txt = (await opt.textContent().catch(() => '') || '').trim()
-      const txtLower = txt.toLowerCase()
-      if (txtLower === vLower) {
-        await opt.evaluate(el => el.click()).catch(() => {})
-        clicou = true; break
-      }
-    }
-    // Se não achou exato, tenta contém
-    if (!clicou) {
-      for (const opt of opcoes) {
-        const txt = (await opt.textContent().catch(() => '') || '').trim()
-        const txtLower = txt.toLowerCase()
-        if (txtLower.includes(vLower) || vLower.includes(txtLower)) {
-          await opt.evaluate(el => el.click()).catch(() => {})
-          clicou = true; break
-        }
-      }
-    }
-    if (!clicou) {
-      // Fecha o dropdown
+    // Espera o NOVO painel aparecer (aria-expanded=true no select clicado)
+    await page.waitForFunction(
+      (s) => {
+        const el = document.querySelector(s)
+        return el && el.getAttribute('aria-expanded') === 'true'
+      },
+      selMat,
+      { timeout: 5000 }
+    )
+
+    // Pega as opções do painel CORRENTE — não usa $$('mat-option') geral
+    // pois pode pegar opções de painéis ainda não removidos do DOM.
+    // Estratégia: pega o overlay-pane que NÃO tem display:none e está visível agora.
+    const opcoes = await page.evaluate((vLower) => {
+      // Acha o mat-mdc-select-panel visível (o último mounted normalmente)
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => {
+          const r = p.getBoundingClientRect()
+          return r.width > 0 && r.height > 0 && getComputedStyle(p).display !== 'none'
+        })
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return { painel: false, items: [] }
+      const items = Array.from(painel.querySelectorAll('mat-option, .mat-mdc-option'))
+        .map((o, idx) => ({ idx, txt: (o.textContent || '').trim() }))
+      return { painel: true, items }
+    }, vLower)
+
+    if (!opcoes.painel) {
+      log.warn('Painel de opções não apareceu', { nomes, valor: v })
       await page.keyboard.press('Escape').catch(() => {})
-      log.warn('Opção não encontrada no mat-select', { nomes, valor: v })
       return false
     }
+
+    // Match exato → contém
+    const matchExato = opcoes.items.find(o => o.txt.toLowerCase() === vLower)
+    const match = matchExato
+      || opcoes.items.find(o => o.txt.toLowerCase().includes(vLower) || vLower.includes(o.txt.toLowerCase()))
+    if (!match) {
+      await page.keyboard.press('Escape').catch(() => {})
+      log.warn('Opção não encontrada no mat-select', { nomes, valor: v, disponiveis: opcoes.items.map(i=>i.txt).slice(0,8) })
+      return false
+    }
+
+    // Clica na opção do painel CORRENTE pelo índice
+    await page.evaluate((idx) => {
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => p.getBoundingClientRect().width > 0)
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return
+      const items = painel.querySelectorAll('mat-option, .mat-mdc-option')
+      const opt = items[idx]
+      if (opt) {
+        const o = { bubbles: true, cancelable: true, view: window, button: 0 }
+        try { opt.dispatchEvent(new PointerEvent('pointerdown', o)) } catch (e) {}
+        try { opt.dispatchEvent(new MouseEvent('mousedown', o)) } catch (e) {}
+        try { opt.click() } catch (e) {}
+      }
+    }, match.idx)
     await page.waitForTimeout(350)
     return true
   } catch (err) {
