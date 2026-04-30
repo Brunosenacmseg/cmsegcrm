@@ -135,18 +135,49 @@ async function cotacaoAuto(page, dados) {
   await ag.selecionar(page, ['carroReserva'],   dados.carro_reserva)
 
   // ─── 7) Calcular ───────────────────────────────────────────
-  // Botão "Calcular" tem class my-btn--filled
+  // O aggilizador tem DOIS passos de Calcular:
+  //   1º — fim do formulário → vai pra tela de seleção de seguradoras
+  //   2º — na tela de seguradoras (Bradesco, Itaú, Porto, etc.) →
+  //        dispara o cálculo real, mostra preços
+  // Estratégia: clica, espera, e se ainda não apareceu "R$" no DOM
+  // e ainda há um botão Calcular visível, clica de novo.
+
   const btnCalcular = await page.$('button:has-text("Calcular"):not(:has-text("Configurar"))')
-                      || await page.$('button.my-btn--filled')
+                    || await page.$('button.my-btn--filled')
   if (!btnCalcular) throw new Error('Botão Calcular não foi encontrado')
   await btnCalcular.click({ force: true })
+  log.info('Clicou em Calcular #1 (formulário → seguradoras)')
+  await page.waitForTimeout(4000)
 
-  // Espera o resultado (heurística: aparece "R$" no DOM ou passa 60s)
+  // Tenta clicar em "Calcular" de novo (até 3 vezes ou até aparecer R$).
+  // Pode haver: tela de seguradoras → tela de resultados.
+  for (let i = 0; i < 3; i++) {
+    const temPreco = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 0).catch(() => false)
+    if (temPreco) {
+      log.info(`Preços apareceram após ${i+1} tentativa(s) de Calcular`)
+      break
+    }
+
+    const btnNext = page.locator('button.my-btn--filled, button:has-text("Calcular")')
+                        .filter({ hasNotText: 'Configurar' })
+                        .first()
+    const visivel = await btnNext.isVisible().catch(() => false)
+    if (!visivel) {
+      log.info('Botão Calcular não está mais visível — aguardando resultado')
+      break
+    }
+
+    await btnNext.click({ force: true }).catch(() => {})
+    log.info(`Clicou em Calcular #${i+2}`)
+    await page.waitForTimeout(3500)
+  }
+
+  // Espera o resultado final (heurística: aparece "R$" várias vezes ou passa 90s)
   const inicio = Date.now()
-  while (Date.now() - inicio < 60000) {
-    const tem = await page.locator('text=/R\\$\\s*\\d/').count().then(c => c > 1).catch(() => false)
+  while (Date.now() - inicio < 90000) {
+    const tem = await page.locator('text=/R\\$\\s*\\d{2,}/').count().then(c => c > 1).catch(() => false)
     if (tem) break
-    await page.waitForTimeout(1000)
+    await page.waitForTimeout(1500)
   }
 
   // ─── 8) Capturar resultado ─────────────────────────────────
