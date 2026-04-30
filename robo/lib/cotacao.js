@@ -189,8 +189,18 @@ async function cotacaoAuto(page, dados) {
   // Pode aparecer modal de "cliente já cadastrado" — dispensa
   await ag.dismissarOverlays(page)
 
-  await ag.preencher(page, ['nomeSegurado', 'nome'],            dados.nome)
-  await ag.preencher(page, ['dataNascimento', 'dataNasc'],      formatarDataBr(dados.nascimento))
+  // Lê o que o aggilizador auto-preencheu (a partir do CPF). Se dados.nome
+  // vier vazio, usa o valor auto-preenchido — assim a cotação não falha
+  // por payload incompleto. Se dados.nome veio, sobrescreve.
+  const nomeAuto       = await ag.lerCampo(page, ['nomeSegurado', 'nome'])
+  const nascimentoAuto = await ag.lerCampo(page, ['dataNascimento', 'dataNasc'])
+  const nomeFinal       = (dados.nome || '').trim() || (nomeAuto || '').trim()
+  const nascimentoFinal = (dados.nascimento || '').trim() || (nascimentoAuto || '').trim()
+  if (!nomeFinal)       log.warn('Nome do segurado vazio (CPF auto-fill falhou e payload sem nome)')
+  if (!nascimentoFinal) log.warn('Data de nascimento vazia (CPF auto-fill falhou e payload sem nascimento)')
+
+  await ag.preencher(page, ['nomeSegurado', 'nome'],            nomeFinal)
+  await ag.preencher(page, ['dataNascimento', 'dataNasc'],      formatarDataBr(nascimentoFinal))
   await ag.preencher(page, ['cepImovel', 'cep'],                dados.cep)
   await ag.preencher(page, ['emailSegurado', 'email'],          dados.email)
   await ag.preencher(page, ['fone'], dados.telefone)
@@ -271,6 +281,13 @@ async function cotacaoAuto(page, dados) {
   await ag.selecionar(page, ['perfilTpUso','tpUso'],     dados.tipo_uso)
   await ag.selecionar(page, ['perfilTipoResidencia','tipoResidencia'], dados.tipo_residencia)
   await ag.selecionar(page, ['perfilKmMensal','kmMensal'], dados.quilometragem)
+
+  // Campos extras que aparecem em alguns veículos (utilitário/caminhão)
+  // ou condicionalmente. Tentamos a primeira opção disponível pra cada,
+  // pois ficam required mas não têm valor padrão.
+  await ag.selecionarPrimeiraOpcaoDisponivel(page, ['perfilTpCarroceria','tpCarroceria'])
+  await ag.selecionarPrimeiraOpcaoDisponivel(page, ['perfilAreaCirculacao','areaCirculacao'])
+  await ag.selecionarPrimeiraOpcaoDisponivel(page, ['perfilPeriodoUso','periodoUso'])
 
   if (dados.jovem_condutor === 'Sim') {
     await ag.selecionar(page, ['perfilJovemCondutor','jovemCondutor'], 'Sim')

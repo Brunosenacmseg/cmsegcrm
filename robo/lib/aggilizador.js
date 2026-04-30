@@ -334,6 +334,20 @@ async function preencher(page, nomes, valor) {
     log.debug('Campo não encontrado', { nomes })
     return false
   }
+
+  // Pula campos disabled (relacaoSegurado=Próprio desabilita campos do
+  // condutor; placa errada desabilita anoMod, etc) — tentar preencher
+  // gera page.fill timeout 15s sem benefício.
+  const desabilitado = await page.evaluate((s) => {
+    const el = document.querySelector(s)
+    if (!el) return false
+    return el.disabled || el.getAttribute('aria-disabled') === 'true' || el.readOnly
+  }, sel).catch(() => false)
+  if (desabilitado) {
+    log.debug('Campo desabilitado — pulando', { sel })
+    return false
+  }
+
   try {
     await page.fill(sel, '')
     await page.fill(sel, String(valor))
@@ -709,6 +723,75 @@ async function selecionarPorIndex(page, name, index, valor) {
   }
 }
 
+// Seleciona a PRIMEIRA opção disponível em um mat-select.
+// Útil pra campos required que aparecem em alguns veículos (utilitário/
+// caminhão) sem valor default — só precisamos satisfazer a validação.
+async function selecionarPrimeiraOpcaoDisponivel(page, nomes) {
+  const candidatos = []
+  for (const n of nomes) {
+    candidatos.push(`mat-select[name="${n}"]`)
+    candidatos.push(`mat-select[id="${n}"]`)
+    candidatos.push(`mat-select[formcontrolname="${n}"]`)
+  }
+  const sel = await primeiroSeletor(page, candidatos)
+  if (!sel) return false
+
+  try {
+    await page.evaluate(() => {
+      document.querySelectorAll('.cdk-overlay-backdrop').forEach(b => { try { b.click() } catch (e) {} })
+    }).catch(() => {})
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(150)
+
+    const abriu = await page.evaluate((s) => {
+      const el = document.querySelector(s)
+      if (!el) return 'nao-encontrado'
+      const desab = el.getAttribute('aria-disabled') === 'true'
+                 || el.classList.contains('mat-mdc-select-disabled')
+                 || el.hasAttribute('disabled')
+      if (desab) return 'disabled'
+      el.scrollIntoView({ block: 'center', behavior: 'instant' })
+      const trigger = el.querySelector('.mat-mdc-select-trigger') || el
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { trigger.dispatchEvent(new PointerEvent('pointerdown', opts)) } catch (e) {}
+      try { trigger.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+      try { trigger.click() } catch (e) {}
+      return 'ok'
+    }, sel)
+
+    if (abriu !== 'ok') return false
+
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]').length > 0,
+        { timeout: 2500 }
+      )
+    } catch { return false }
+
+    const ok = await page.evaluate(() => {
+      const paineis = Array.from(document.querySelectorAll('.mat-mdc-select-panel, [role="listbox"]'))
+        .filter(p => p.getBoundingClientRect().width > 0)
+      const painel = paineis[paineis.length - 1]
+      if (!painel) return false
+      const items = painel.querySelectorAll('mat-option, .mat-mdc-option')
+      const primeira = items[0]
+      if (!primeira) return false
+      const ev = { bubbles: true, cancelable: true, view: window, button: 0 }
+      try { primeira.dispatchEvent(new PointerEvent('pointerdown', ev)) } catch (e) {}
+      try { primeira.dispatchEvent(new MouseEvent('mousedown', ev)) } catch (e) {}
+      try { primeira.click() } catch (e) {}
+      return true
+    })
+
+    await page.waitForTimeout(300)
+    return ok
+  } catch (err) {
+    log.debug('selecionarPrimeiraOpcaoDisponivel falhou', { nomes, erro: err.message })
+    await page.keyboard.press('Escape').catch(() => {})
+    return false
+  }
+}
+
 async function clicarProximo(page) {
   const btns = [
     'button:has-text("Próximo")',
@@ -902,7 +985,8 @@ async function extrairResultado(page) {
 module.exports = {
   URL, login, logout, abrirCotacaoAuto,
   preencher, preencherPorLabel,
-  selecionar, selecionarPorIndex, lerCampo, lerMatSelect,
+  selecionar, selecionarPorIndex, selecionarPrimeiraOpcaoDisponivel,
+  lerCampo, lerMatSelect,
   clicarProximo, clicarCalcular, extrairResultado,
   verificarErrosFormulario, forcarValidacao,
   primeiroSeletor, dismissarOverlays,
