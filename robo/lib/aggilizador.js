@@ -355,13 +355,28 @@ async function selecionar(page, nomes, valor) {
   }
 
   try {
-    // Fecha qualquer dropdown anterior cujo backdrop ainda esteja na tela
-    // (o cdk-overlay-backdrop intercepta cliques nos próximos mat-selects).
+    // Garante que nenhum dropdown anterior tem o backdrop aberto
+    // (se tiver, o cdk-overlay-backdrop intercepta os próximos cliques).
+    await page.evaluate(() => {
+      // Click no backdrop dispensa qualquer overlay aberto
+      const backs = document.querySelectorAll('.cdk-overlay-backdrop')
+      backs.forEach(b => { try { b.click() } catch (e) {} })
+    }).catch(() => {})
     await page.keyboard.press('Escape').catch(() => {})
-    await page.waitForTimeout(150)
-    // Click com force: true ignora o backdrop, evitando o erro
-    // "subtree intercepts pointer events".
-    await page.click(selMat, { timeout: 8000, force: true })
+    await page.waitForTimeout(250)
+
+    // Abre o mat-select disparando .click() direto no DOM —
+    // assim o Playwright não bloqueia por causa do backdrop ainda visível.
+    const abriu = await page.evaluate((sel) => {
+      const el = document.querySelector(sel)
+      if (!el) return false
+      // Scroll pra trazer pra perto do meio da tela
+      el.scrollIntoView({ block: 'center', behavior: 'instant' })
+      el.click()
+      return true
+    }, selMat)
+    if (!abriu) { log.warn('mat-select não abriu', { nomes }); return false }
+
     await page.waitForSelector('mat-option, .mat-mdc-option', { timeout: 5000 })
     // Lista as opções e tenta achar match
     const opcoes = await page.$$('mat-option, .mat-mdc-option')
@@ -370,7 +385,7 @@ async function selecionar(page, nomes, valor) {
       const txt = (await opt.textContent().catch(() => '') || '').trim()
       const txtLower = txt.toLowerCase()
       if (txtLower === vLower) {
-        await opt.click({ force: true }).catch(() => {})
+        await opt.evaluate(el => el.click()).catch(() => {})
         clicou = true; break
       }
     }
@@ -380,7 +395,7 @@ async function selecionar(page, nomes, valor) {
         const txt = (await opt.textContent().catch(() => '') || '').trim()
         const txtLower = txt.toLowerCase()
         if (txtLower.includes(vLower) || vLower.includes(txtLower)) {
-          await opt.click({ force: true }).catch(() => {})
+          await opt.evaluate(el => el.click()).catch(() => {})
           clicou = true; break
         }
       }
@@ -391,7 +406,7 @@ async function selecionar(page, nomes, valor) {
       log.warn('Opção não encontrada no mat-select', { nomes, valor: v })
       return false
     }
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(350)
     return true
   } catch (err) {
     log.warn('Erro ao selecionar mat-select', { nomes, erro: err.message })
