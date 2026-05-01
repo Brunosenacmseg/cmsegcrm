@@ -20,6 +20,17 @@
 -- META ADS (do 011)
 -- ═════════════════════════════════════════════════════════════
 
+-- Pré-requisito do 006 (que pode não ter sido aplicado): negocios.status
+-- A view meta_vendas_por_campanha usa n.status, então precisa existir.
+alter table public.negocios
+  add column if not exists status text not null default 'em_andamento'
+    check (status in ('em_andamento','ganho','perdido')),
+  add column if not exists motivo_perda    text,
+  add column if not exists data_fechamento timestamptz,
+  add column if not exists fechado_por     uuid references public.users(id);
+
+create index if not exists idx_negocios_status on public.negocios(status);
+
 create table if not exists public.meta_config (
   id              int primary key default 1 check (id = 1),
   access_token    text,
@@ -343,9 +354,187 @@ create policy "admin_escreve_importacoes_dados" on public.importacoes_dados for 
 );
 
 -- ═════════════════════════════════════════════════════════════
--- 013 FIX — view do faturamento por seguradora com GROUP BY correto
--- (O resto do 013 — tabelas, função, view DRE — já está OK; só essa view falhava)
+-- 013 FIX — Financeiro/DRE (tudo idempotente, inclui tabelas)
 -- ═════════════════════════════════════════════════════════════
+
+create table if not exists public.financeiro_seguradoras (
+  id          uuid primary key default uuid_generate_v4(),
+  codigo      text not null unique,
+  nome        text not null,
+  ativo       boolean default true,
+  ordem       int default 0,
+  criado_em   timestamptz default now()
+);
+
+insert into public.financeiro_seguradoras (codigo, nome, ordem) values
+  ('3.1.01','ALLIANZ',1), ('3.1.02','AMERICAN LIFE',2), ('3.1.03','AZOS',3),
+  ('3.1.04','BRADESCO',4), ('3.1.06','CRED PORTO',5), ('3.1.07','JUSTOS',6),
+  ('3.1.08','DARWIN',7), ('3.1.09','ESSOR',8), ('3.1.10','EXCELSIOR',9),
+  ('3.1.11','EZZE',10), ('3.1.12','HDI',11), ('3.1.13','ICATU',12),
+  ('3.1.14','KOVR',13), ('3.1.15','YELLUM',14), ('3.1.16','MAPFRE',15),
+  ('3.1.17','MET LIFE',16), ('3.1.18','NOVO',17), ('3.1.19','PIER',18),
+  ('3.1.20','PORTO',19), ('3.1.21','PORTO CAP (PORTO VIDA)',20),
+  ('3.1.22','PORTO CONSÓRCIO',21), ('3.1.23','PORTO SAÚDE',22),
+  ('3.1.24','RC SAÚDE',23), ('3.1.25','SUHAI',24), ('3.1.26','SULAMERICA',25),
+  ('3.1.27','TOKIO',26), ('3.1.28','YOUSE',27), ('3.1.29','ZURICH',28),
+  ('3.1.30','INTERCOR',29), ('3.1.31','PORTO VIDA',30), ('3.1.32','BP SEGURADORA',31),
+  ('3.2.03','RENDIMENTO APLICAÇÃO ITAU',32)
+on conflict (codigo) do nothing;
+
+create table if not exists public.financeiro_categorias (
+  id          uuid primary key default uuid_generate_v4(),
+  codigo      text not null unique,
+  nome        text not null,
+  tipo        text not null default 'despesa' check (tipo in ('despesa','receita','imposto')),
+  cor         text,
+  ordem       int default 0,
+  ativo       boolean default true,
+  criado_em   timestamptz default now()
+);
+
+insert into public.financeiro_categorias (codigo, nome, tipo, ordem) values
+  ('4.1.01','Folha de Pagamento','despesa',1),
+  ('4.1.02','Encargos / Impostos sobre folha','despesa',2),
+  ('4.2.01','Aluguel','despesa',3),
+  ('4.2.02','Energia/Água/Internet','despesa',4),
+  ('4.3.01','Marketing / Anúncios','despesa',5),
+  ('4.3.02','Software / SaaS','despesa',6),
+  ('4.4.01','Impostos (PIS/COFINS/ISS)','imposto',7),
+  ('4.4.02','IRPJ / CSLL','imposto',8),
+  ('4.5.01','Material de escritório','despesa',9),
+  ('4.5.02','Diversos','despesa',10)
+on conflict (codigo) do nothing;
+
+create table if not exists public.financeiro_despesas (
+  id            uuid primary key default uuid_generate_v4(),
+  categoria_id  uuid references public.financeiro_categorias(id),
+  descricao     text not null,
+  valor         numeric(12,2) not null check (valor >= 0),
+  data          date not null default current_date,
+  competencia   text,
+  forma_pagto   text,
+  fornecedor    text,
+  obs           text,
+  registrado_por uuid references public.users(id),
+  criado_em     timestamptz default now(),
+  updated_at    timestamptz default now()
+);
+
+create index if not exists idx_fin_desp_data        on public.financeiro_despesas(data);
+create index if not exists idx_fin_desp_competencia on public.financeiro_despesas(competencia);
+create index if not exists idx_fin_desp_categoria   on public.financeiro_despesas(categoria_id);
+
+create table if not exists public.financeiro_acessos (
+  user_id      uuid primary key references public.users(id) on delete cascade,
+  liberado_por uuid references public.users(id),
+  liberado_em  timestamptz default now()
+);
+
+-- Pré-requisito do 007 (que pode não ter sido aplicado):
+-- comissoes_recebidas precisa existir antes da view.
+create table if not exists public.comissoes_recebidas (
+  id                 uuid primary key default uuid_generate_v4(),
+  negocio_id         uuid references public.negocios(id) on delete set null,
+  apolice_id         uuid references public.apolices(id) on delete set null,
+  cliente_id         uuid references public.clientes(id) on delete set null,
+  vendedor_id        uuid not null references public.users(id),
+  valor              numeric(12,2) not null check (valor >= 0),
+  competencia        text,
+  data_recebimento   date,
+  parcela            int default 1,
+  total_parcelas     int default 1,
+  seguradora         text,
+  produto            text,
+  status             text not null default 'recebido'
+                     check (status in ('previsto','recebido','cancelado')),
+  origem             text not null default 'manual'
+                     check (origem in ('manual','importacao','api')),
+  importacao_id      uuid,
+  obs                text,
+  registrado_por     uuid references public.users(id),
+  created_at         timestamptz default now(),
+  updated_at         timestamptz default now()
+);
+
+alter table public.comissoes_recebidas
+  add column if not exists ir_retido        numeric(12,2) default 0,
+  add column if not exists outros_descontos numeric(12,2) default 0,
+  add column if not exists seguradora_codigo text;
+
+alter table public.financeiro_seguradoras enable row level security;
+alter table public.financeiro_categorias  enable row level security;
+alter table public.financeiro_despesas    enable row level security;
+alter table public.financeiro_acessos     enable row level security;
+
+create or replace function public.tem_acesso_financeiro()
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.users u where u.id = auth.uid() and u.role = 'admin'
+  ) or exists (
+    select 1 from public.financeiro_acessos a where a.user_id = auth.uid()
+  );
+$$;
+
+drop policy if exists "auth_le_seguradoras_dre" on public.financeiro_seguradoras;
+create policy "auth_le_seguradoras_dre" on public.financeiro_seguradoras for select using (auth.role() = 'authenticated');
+
+drop policy if exists "admin_escreve_seguradoras_dre" on public.financeiro_seguradoras;
+create policy "admin_escreve_seguradoras_dre" on public.financeiro_seguradoras for all using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+drop policy if exists "financeiro_le_categorias" on public.financeiro_categorias;
+create policy "financeiro_le_categorias" on public.financeiro_categorias for select using (public.tem_acesso_financeiro());
+
+drop policy if exists "admin_escreve_categorias" on public.financeiro_categorias;
+create policy "admin_escreve_categorias" on public.financeiro_categorias for all using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+drop policy if exists "financeiro_le_despesas" on public.financeiro_despesas;
+create policy "financeiro_le_despesas" on public.financeiro_despesas for select using (public.tem_acesso_financeiro());
+
+drop policy if exists "financeiro_escreve_despesas" on public.financeiro_despesas;
+create policy "financeiro_escreve_despesas" on public.financeiro_despesas for all using (public.tem_acesso_financeiro());
+
+drop policy if exists "admin_gerencia_acessos_fin" on public.financeiro_acessos;
+create policy "admin_gerencia_acessos_fin" on public.financeiro_acessos for all using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+drop policy if exists "self_le_acesso_fin" on public.financeiro_acessos;
+create policy "self_le_acesso_fin" on public.financeiro_acessos for select using (user_id = auth.uid());
+
+-- View DRE mensal
+create or replace view public.financeiro_dre_mensal as
+with receitas as (
+  select coalesce(competencia, to_char(data_recebimento, 'YYYY-MM')) as competencia,
+         sum(valor) as bruto,
+         sum(coalesce(ir_retido,0)) as ir,
+         sum(coalesce(outros_descontos,0)) as outros,
+         sum(valor - coalesce(ir_retido,0) - coalesce(outros_descontos,0)) as liquido
+  from public.comissoes_recebidas where status = 'recebido'
+  group by 1
+),
+despesas as (
+  select coalesce(competencia, to_char(data, 'YYYY-MM')) as competencia,
+         sum(valor) as total
+  from public.financeiro_despesas
+  group by 1
+)
+select
+  coalesce(r.competencia, d.competencia) as competencia,
+  coalesce(r.bruto, 0)    as receita_bruta,
+  coalesce(r.ir, 0)       as ir_retido,
+  coalesce(r.outros, 0)   as outros_descontos,
+  coalesce(r.liquido, 0)  as receita_liquida,
+  coalesce(d.total, 0)    as total_despesas,
+  coalesce(r.liquido, 0) - coalesce(d.total, 0) as resultado
+from receitas r
+full outer join despesas d on d.competencia = r.competencia
+order by competencia desc;
 
 drop view if exists public.financeiro_faturamento_seguradora;
 
