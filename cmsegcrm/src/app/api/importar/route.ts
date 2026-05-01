@@ -63,15 +63,55 @@ async function importarClientes(linhas: any[]) {
       if (cpf) ({ data: existente } = await supabaseAdmin.from('clientes').select('id').eq('cpf_cnpj', cpf).maybeSingle())
       if (!existente && email) ({ data: existente } = await supabaseAdmin.from('clientes').select('id').eq('email', email).maybeSingle())
 
+      // Booleans (aceita "sim", "true", "1", "ativo" → true)
+      const parseBool = (v: any, def = true): boolean => {
+        if (v === undefined || v === null || v === '') return def
+        const t = String(v).toLowerCase().trim()
+        if (/^(nao|não|no|false|0|inativo)$/.test(t)) return false
+        return true
+      }
+      const renda = r.renda_mensal || r.renda
+      const rendaNum = renda ? n(renda) : null
+
       const payload: any = {
         nome: nome || email || cpf,
         cpf_cnpj: cpf,
+        // Contatos múltiplos
         email,
-        telefone: s(r.telefone || r.fone || r.celular),
+        email2: s(r.email2 || r.email_2 || r['email 2'])?.toLowerCase() || null,
+        email3: s(r.email3 || r.email_3 || r['email 3'])?.toLowerCase() || null,
+        telefone:  s(r.telefone  || r.telefone1 || r['telefone 1'] || r.fone || r.celular),
+        telefone2: s(r.telefone2 || r.telefone_2 || r['telefone 2'] || r.fone2 || r.celular2),
+        telefone3: s(r.telefone3 || r.telefone_3 || r['telefone 3'] || r.fone3),
+        // Endereço
         cep: s(r.cep),
+        endereco: s(r.endereco || r.logradouro || r.rua),
+        numero: s(r.numero),
+        complemento: s(r.complemento),
+        bairro: s(r.bairro),
         cidade: s(r.cidade),
         estado: s(r.estado || r.uf),
-        tipo: cpf && cpf.replace(/\D/g,'').length > 11 ? 'PJ' : 'PF',
+        // Documentos / dados pessoais
+        rg: s(r.rg),
+        nascimento: dateBR(r.nascimento || r['data nascimento']),
+        aniversario: s(r.aniversario),
+        sexo: s(r.sexo || r.genero),
+        estado_civil: s(r.estado_civil || r['estado civil']),
+        // Profissional
+        profissao: s(r.profissao || r['profissão']),
+        ramo: s(r.ramo),
+        renda_mensal: rendaNum,
+        estipulantes: s(r.estipulantes),
+        filial: s(r.filial),
+        parentesco: s(r.parentesco),
+        pasta_cliente: s(r.pasta_cliente || r['pasta cliente']),
+        vencimento_cnh: dateBR(r.vencimento_cnh || r['vencimento cnh']),
+        // Sistema
+        cliente_desde: dateBR(r.cliente_desde || r['cliente desde']),
+        ativo: parseBool(r.ativo, true),
+        receber_email: parseBool(r.receber_email || r['receber email'], true),
+        observacao: s(r.observacao || r.observacoes || r.obs),
+        tipo: s(r.tipo || r['tipo de pessoa']) === 'PJ' || (cpf && cpf.replace(/\D/g,'').length > 11) ? 'PJ' : 'PF',
         fonte: s(r.fonte) || 'Importação CSV/XLSX',
       }
       if (existente) {
