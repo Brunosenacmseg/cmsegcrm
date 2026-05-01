@@ -430,7 +430,7 @@ export default function ComissoesPage(){
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:4}}>Mapeamento de colunas</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>Arquivo: <strong style={{color:'var(--text)'}}>{nomeArquivo}</strong> · {excelData.rows.length} linhas</div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead><tr>{['Campo do CM.segCRM','Coluna do arquivo','Amostra'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Campo do CM Seguros','Coluna do arquivo','Amostra'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {mapeamento.map((m,i)=>{
                   const amostra=m.coluna?excelData.rows.slice(0,2).map((r:any)=>r[m.coluna]).filter(Boolean).join(' / ')||'—':'—'

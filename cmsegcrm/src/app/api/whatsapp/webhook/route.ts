@@ -180,5 +180,5 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  return NextResponse.json({ status: 'CM.segCRM WhatsApp Webhook online' })
+  return NextResponse.json({ status: 'CM Seguros WhatsApp Webhook online' })
 }
