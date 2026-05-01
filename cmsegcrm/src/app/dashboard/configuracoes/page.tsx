@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-type Aba = 'motivos' | 'produtos'
+type Aba = 'motivos' | 'produtos' | 'campos'
 
 export default function ConfiguracoesPage() {
   const supabase = createClient()
@@ -15,6 +15,12 @@ export default function ConfiguracoesPage() {
 
   const [motivos, setMotivos] = useState<any[]>([])
   const [produtos, setProdutos] = useState<any[]>([])
+  const [campos, setCampos] = useState<any[]>([])
+
+  // Form campo personalizado
+  const emptyCampo = { entidade:'negocio', nome:'', chave:'', tipo:'texto', opcoes:'', obrigatorio:false }
+  const [novoCampo, setNovoCampo] = useState<any>(emptyCampo)
+  const [editCampo, setEditCampo] = useState<any>(null)
 
   // Form motivo
   const [novoMotivo, setNovoMotivo] = useState('')
@@ -37,12 +43,61 @@ export default function ConfiguracoesPage() {
   }
 
   async function carregar() {
-    const [{ data: m }, { data: p }] = await Promise.all([
+    const [{ data: m }, { data: p }, { data: c }] = await Promise.all([
       supabase.from('motivos_perda').select('*').order('ordem').order('nome'),
       supabase.from('produtos').select('*').order('nome'),
+      supabase.from('campos_personalizados').select('*').order('entidade').order('ordem').order('nome'),
     ])
     setMotivos(m || [])
     setProdutos(p || [])
+    setCampos(c || [])
+  }
+
+  function slugify(s: string): string {
+    return s.toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+      .replace(/[^a-z0-9_\s]/g,'').trim().replace(/\s+/g,'_').slice(0, 60)
+  }
+
+  async function criarCampo() {
+    if (!novoCampo.nome.trim()) return
+    const chave = novoCampo.chave?.trim() || slugify(novoCampo.nome)
+    const opcoes = novoCampo.tipo === 'select' ? String(novoCampo.opcoes || '').split(',').map((s:string)=>s.trim()).filter(Boolean) : null
+    const { error } = await supabase.from('campos_personalizados').insert({
+      entidade: novoCampo.entidade,
+      nome: novoCampo.nome.trim(),
+      chave,
+      tipo: novoCampo.tipo,
+      opcoes,
+      obrigatorio: !!novoCampo.obrigatorio,
+      criado_por: profile?.id,
+    })
+    if (error) { alert('Erro: '+error.message); return }
+    setNovoCampo(emptyCampo)
+    await carregar()
+  }
+
+  async function salvarEdicaoCampo() {
+    if (!editCampo?.id || !editCampo?.nome?.trim()) return
+    const opcoes = editCampo.tipo === 'select'
+      ? (typeof editCampo.opcoes === 'string'
+          ? String(editCampo.opcoes).split(',').map((s:string)=>s.trim()).filter(Boolean)
+          : editCampo.opcoes)
+      : null
+    await supabase.from('campos_personalizados').update({
+      nome: editCampo.nome.trim(),
+      tipo: editCampo.tipo,
+      opcoes,
+      obrigatorio: !!editCampo.obrigatorio,
+      ativo: editCampo.ativo,
+    }).eq('id', editCampo.id)
+    setEditCampo(null)
+    await carregar()
+  }
+
+  async function excluirCampo(id: string) {
+    if (!confirm('Excluir esse campo? Os valores já preenchidos nas negociações continuam no banco mas não aparecerão mais.')) return
+    await supabase.from('campos_personalizados').delete().eq('id', id)
+    await carregar()
   }
 
   async function criarMotivo() {
@@ -105,7 +160,7 @@ export default function ConfiguracoesPage() {
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
         <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',marginBottom:18}}>
-          {([['motivos','✕ Motivos de Perda'],['produtos','📦 Produtos']] as [Aba,string][]).map(([k,l])=>(
+          {([['motivos','✕ Motivos de Perda'],['produtos','📦 Produtos'],['campos','🧩 Campos personalizados']] as [Aba,string][]).map(([k,l])=>(
             <button key={k} onClick={()=>setAba(k)}
               style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'DM Sans,sans-serif'}}>
               {l}
@@ -213,6 +268,91 @@ export default function ConfiguracoesPage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {aba === 'campos' && (
+          <div style={{maxWidth:920}}>
+            <div className="card" style={{marginBottom:16}}>
+              <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:10}}>
+                Campos extras que aparecem no card da negociação. Texto, número, data, lista (select), checkbox ou textarea.
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 2fr 1fr 1fr 1fr auto',gap:8}}>
+                <select value={novoCampo.entidade} onChange={e=>setNovoCampo((n:any)=>({...n,entidade:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                  <option value="negocio">Negócio</option>
+                  <option value="cliente">Cliente</option>
+                </select>
+                <input value={novoCampo.nome} onChange={e=>setNovoCampo((n:any)=>({...n,nome:e.target.value,chave:slugify(e.target.value)}))} placeholder='Nome do campo (ex: "Modelo do veículo")' style={inp} />
+                <input value={novoCampo.chave} onChange={e=>setNovoCampo((n:any)=>({...n,chave:slugify(e.target.value)}))} placeholder="chave_slug" style={{...inp,fontFamily:'monospace',fontSize:11}} />
+                <select value={novoCampo.tipo} onChange={e=>setNovoCampo((n:any)=>({...n,tipo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                  <option value="texto">Texto</option>
+                  <option value="textarea">Texto longo</option>
+                  <option value="numero">Número</option>
+                  <option value="data">Data</option>
+                  <option value="select">Lista (select)</option>
+                  <option value="boolean">Sim/Não</option>
+                </select>
+                <input value={novoCampo.opcoes} onChange={e=>setNovoCampo((n:any)=>({...n,opcoes:e.target.value}))} placeholder={novoCampo.tipo==='select'?'Op1, Op2, Op3':'(só p/ Lista)'} disabled={novoCampo.tipo!=='select'} style={{...inp,opacity:novoCampo.tipo==='select'?1:0.5}} />
+                <button onClick={criarCampo} className="btn-primary" style={{whiteSpace:'nowrap'}}>+ Adicionar</button>
+              </div>
+            </div>
+
+            <div className="card">
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:16}}>Campos cadastrados ({campos.length})</div>
+              {campos.length === 0 ? (
+                <div style={{padding:24,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>Nenhum campo cadastrado.</div>
+              ) : (
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                  <thead><tr style={{textAlign:'left',color:'var(--text-muted)',fontSize:10,letterSpacing:'1px',textTransform:'uppercase'}}>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Onde</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Nome</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Chave</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Tipo</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Opções</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}></th>
+                  </tr></thead>
+                  <tbody>
+                    {campos.map(c => (
+                      <tr key={c.id} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                        {editCampo?.id === c.id ? (
+                          <>
+                            <td style={{padding:'8px 4px'}}><span style={{fontSize:10,color:'var(--text-muted)'}}>{c.entidade}</span></td>
+                            <td style={{padding:'6px 4px'}}><input value={editCampo.nome} onChange={e=>setEditCampo((p:any)=>({...p,nome:e.target.value}))} style={inp} /></td>
+                            <td style={{padding:'6px 4px',fontFamily:'monospace',fontSize:11}}>{c.chave}</td>
+                            <td style={{padding:'6px 4px'}}>
+                              <select value={editCampo.tipo} onChange={e=>setEditCampo((p:any)=>({...p,tipo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                                <option value="texto">Texto</option><option value="textarea">Texto longo</option>
+                                <option value="numero">Número</option><option value="data">Data</option>
+                                <option value="select">Lista</option><option value="boolean">Sim/Não</option>
+                              </select>
+                            </td>
+                            <td style={{padding:'6px 4px'}}>
+                              <input value={Array.isArray(editCampo.opcoes)?editCampo.opcoes.join(', '):(editCampo.opcoes||'')} onChange={e=>setEditCampo((p:any)=>({...p,opcoes:e.target.value}))} disabled={editCampo.tipo!=='select'} style={{...inp,opacity:editCampo.tipo==='select'?1:0.5}} />
+                            </td>
+                            <td style={{padding:'6px 4px',textAlign:'right',whiteSpace:'nowrap'}}>
+                              <button onClick={salvarEdicaoCampo} className="btn-primary" style={{padding:'4px 10px',fontSize:11,marginRight:4}}>✓</button>
+                              <button onClick={()=>setEditCampo(null)} style={{padding:'4px 8px',fontSize:11,borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>✕</button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{padding:'10px 4px'}}><span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:5,background:'rgba(74,128,240,0.10)',color:'#7aa3f8',textTransform:'uppercase'}}>{c.entidade}</span></td>
+                            <td style={{padding:'10px 4px'}}>{c.nome}{c.obrigatorio && <span style={{color:'var(--red)',marginLeft:4}}>*</span>}</td>
+                            <td style={{padding:'10px 4px',fontFamily:'monospace',fontSize:11,color:'var(--text-muted)'}}>{c.chave}</td>
+                            <td style={{padding:'10px 4px',fontSize:11}}>{c.tipo}</td>
+                            <td style={{padding:'10px 4px',fontSize:11,color:'var(--text-muted)'}}>{Array.isArray(c.opcoes) ? c.opcoes.join(', ') : '—'}</td>
+                            <td style={{padding:'10px 4px',textAlign:'right',whiteSpace:'nowrap'}}>
+                              <button onClick={()=>setEditCampo({...c, opcoes: Array.isArray(c.opcoes)?c.opcoes.join(', '):''})} style={{padding:'4px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',marginRight:4}}>✎</button>
+                              <button onClick={()=>excluirCampo(c.id)} style={{padding:'4px 8px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>🗑</button>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>

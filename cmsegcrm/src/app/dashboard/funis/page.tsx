@@ -22,6 +22,9 @@ export default function FunisPage() {
   const [arrastando, setArrastando] = useState<string | null>(null)
   const [etapaHover, setEtapaHover] = useState<string | null>(null)
 
+  // Campos personalizados (definição do admin)
+  const [camposPers, setCamposPers] = useState<any[]>([])
+
   // Detalhes ricos do card aberto (tags / produtos / notas / origem)
   const [tagsCard, setTagsCard]         = useState<any[]>([])
   const [produtosCard, setProdutosCard] = useState<any[]>([])
@@ -65,7 +68,15 @@ export default function FunisPage() {
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
     supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
     supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
+    supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
   }, [])
+
+  async function setCustomField(chave: string, valor: any) {
+    if (!cardAtivo) return
+    const cf = { ...(cardAtivo.custom_fields || {}), [chave]: valor }
+    await supabase.from('negocios').update({ custom_fields: cf }).eq('id', cardAtivo.id)
+    setCardAtivo({ ...cardAtivo, custom_fields: cf })
+  }
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
@@ -197,6 +208,18 @@ export default function FunisPage() {
     await carregarNegocios()
   }
 
+  async function disparaAutomacao(trigger: string, negocioId: string) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      await fetch('/api/automacoes/executar', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ trigger, negocio_id: negocioId }),
+      })
+    } catch (e) { /* silencioso — automação falhou não bloqueia o usuário */ }
+  }
+
   async function moverCardParaEtapa(negocioId: string, novaEtapa: string) {
     // Otimistic update + persist
     setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, etapa: novaEtapa } : n))
@@ -204,6 +227,8 @@ export default function FunisPage() {
     if (error) {
       alert('Erro ao mover: ' + error.message)
       await carregarNegocios()
+    } else {
+      disparaAutomacao('etapa_alterada', negocioId)
     }
   }
 
@@ -223,6 +248,10 @@ export default function FunisPage() {
       }
     }
     await supabase.from('negocios').update(patch).eq('id', negocioId)
+
+    // Dispara automações vinculadas ao trigger
+    if (status === 'ganho')   disparaAutomacao('status_ganho',   negocioId)
+    if (status === 'perdido') disparaAutomacao('status_perdido', negocioId)
 
     // Meta Pixel: dispara Purchase quando marcar Ganho. Se tiver
     // meta_campaign_id, ajuda a otimizar campanhas.
@@ -708,6 +737,40 @@ export default function FunisPage() {
                       → {e}
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Campos personalizados */}
+            {camposPers.length > 0 && (
+              <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>🧩 Campos personalizados</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  {camposPers.map(c => {
+                    const valor = (cardAtivo.custom_fields || {})[c.chave] ?? ''
+                    const cmnInp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:6, padding:'5px 9px', color:'var(--text)', fontSize:12, outline:'none', boxSizing:'border-box' }
+                    return (
+                      <div key={c.id}>
+                        <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3}}>{c.nome}{c.obrigatorio && <span style={{color:'var(--red)'}}> *</span>}</label>
+                        {c.tipo === 'texto'    && <input value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
+                        {c.tipo === 'textarea' && <textarea value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} rows={2} style={{...cmnInp,resize:'none'}} />}
+                        {c.tipo === 'numero'   && <input type="number" value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
+                        {c.tipo === 'data'     && <input type="date"   value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
+                        {c.tipo === 'select'   && (
+                          <select value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={{...cmnInp,background:'#0e2040'}}>
+                            <option value="">—</option>
+                            {(c.opcoes || []).map((op:string) => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        )}
+                        {c.tipo === 'boolean'  && (
+                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer'}}>
+                            <input type="checkbox" checked={!!valor} onChange={e=>setCustomField(c.chave, e.target.checked)} />
+                            {valor ? 'Sim' : 'Não'}
+                          </label>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
