@@ -55,14 +55,45 @@ type Entidade = 'clientes' | 'negocios' | 'apolices' | 'propostas' | 'tarefas'
 
 const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hints: string[]; obrigatorio?: boolean }[]> = {
   clientes: [
-    { campo: 'nome',     label: 'Nome',     hints: ['nome','name','razao'], obrigatorio: true },
-    { campo: 'cpf_cnpj', label: 'CPF/CNPJ', hints: ['cpf','cnpj','documento'] },
-    { campo: 'email',    label: 'E-mail',   hints: ['email','e-mail'] },
-    { campo: 'telefone', label: 'Telefone', hints: ['telefone','fone','celular','whatsapp'] },
-    { campo: 'cep',      label: 'CEP',      hints: ['cep','codigo postal'] },
-    { campo: 'cidade',   label: 'Cidade',   hints: ['cidade','city'] },
-    { campo: 'estado',   label: 'Estado',   hints: ['estado','uf'] },
-    { campo: 'fonte',    label: 'Fonte',    hints: ['fonte','origem'] },
+    { campo: 'nome',     label: 'Nome',          hints: ['nome','name','razao'], obrigatorio: true },
+    { campo: 'cpf_cnpj', label: 'CPF/CNPJ',      hints: ['cpf','cnpj','documento'] },
+    { campo: 'tipo',     label: 'Tipo (PF/PJ)',  hints: ['tipo','tipo de pessoa','pf/pj'] },
+    // Contatos múltiplos
+    { campo: 'email',    label: 'E-mail 1',      hints: ['email 1','email1','e-mail','email'] },
+    { campo: 'email2',   label: 'E-mail 2',      hints: ['email 2','email2','email_2'] },
+    { campo: 'email3',   label: 'E-mail 3',      hints: ['email 3','email3','email_3'] },
+    { campo: 'telefone', label: 'Telefone 1',    hints: ['telefone 1','telefone1','telefone','fone','celular','whatsapp'] },
+    { campo: 'telefone2',label: 'Telefone 2',    hints: ['telefone 2','telefone2','fone2'] },
+    { campo: 'telefone3',label: 'Telefone 3',    hints: ['telefone 3','telefone3','fone3'] },
+    // Endereço
+    { campo: 'cep',          label: 'CEP',          hints: ['cep','codigo postal'] },
+    { campo: 'endereco',     label: 'Endereço',     hints: ['endereco','logradouro','rua'] },
+    { campo: 'numero',       label: 'Número',       hints: ['numero','número'] },
+    { campo: 'complemento',  label: 'Complemento',  hints: ['complemento','compl'] },
+    { campo: 'bairro',       label: 'Bairro',       hints: ['bairro'] },
+    { campo: 'cidade',       label: 'Cidade',       hints: ['cidade','city'] },
+    { campo: 'estado',       label: 'Estado/UF',    hints: ['estado','uf'] },
+    // Pessoais
+    { campo: 'rg',           label: 'RG',           hints: ['rg'] },
+    { campo: 'nascimento',   label: 'Nascimento',   hints: ['nascimento','data nasc'] },
+    { campo: 'aniversario',  label: 'Aniversário',  hints: ['aniversario','aniversário'] },
+    { campo: 'sexo',         label: 'Sexo',         hints: ['sexo','genero','gênero'] },
+    { campo: 'estado_civil', label: 'Estado Civil', hints: ['estado civil','civil'] },
+    // Profissional
+    { campo: 'profissao',    label: 'Profissão',    hints: ['profissao','profissão'] },
+    { campo: 'ramo',         label: 'Ramo',         hints: ['ramo'] },
+    { campo: 'renda_mensal', label: 'Renda Mensal', hints: ['renda','salario','salário'] },
+    { campo: 'estipulantes', label: 'Estipulantes', hints: ['estipulant'] },
+    { campo: 'filial',       label: 'Filial',       hints: ['filial','unidade'] },
+    { campo: 'parentesco',   label: 'Parentesco',   hints: ['parentesco','relacao'] },
+    { campo: 'pasta_cliente',label: 'Pasta Cliente',hints: ['pasta cliente','pasta','drive'] },
+    { campo: 'vencimento_cnh', label: 'Vencimento CNH', hints: ['vencimento cnh','cnh'] },
+    // Sistema
+    { campo: 'cliente_desde',label: 'Cliente Desde', hints: ['cliente desde','desde'] },
+    { campo: 'ativo',        label: 'Ativo (sim/não)', hints: ['ativo'] },
+    { campo: 'receber_email',label: 'Receber e-mail', hints: ['receber','newsletter','opt'] },
+    { campo: 'fonte',        label: 'Fonte',         hints: ['fonte','origem'] },
+    { campo: 'observacao',   label: 'Observação',    hints: ['observ','obs','notas'] },
   ],
   negocios: [
     { campo: 'titulo',     label: 'Título',           hints: ['titulo','title'], obrigatorio: true },
