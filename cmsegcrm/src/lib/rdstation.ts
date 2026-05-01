@@ -16,17 +16,19 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
   const qs = new URLSearchParams({ token, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) })
   const url = `${BASE}${path}?${qs.toString()}`
 
-  // 6 tentativas com backoff exponencial: 2s, 4s, 8s, 16s, 32s, 64s = até 2min
-  // por chamada. RD limita ~120 req/min, então em rajadas de paginação é
-  // comum bater 429. Respeita Retry-After se o RD enviar.
+  // 6 tentativas com backoff: 20s/30s/45s/60s/60s/60s = até ~4.5min de
+  // paciência por chamada (cabe no timeout maxDuration=300s do Vercel pro).
+  // RD pode bloquear por mais de 1min em contas com volume alto.
+  // Respeita Retry-After se o RD enviar.
+  const esperasSegundos = [20, 30, 45, 60, 60, 60]
   let totalEspera = 0
-  for (let tentativa = 0; tentativa < 6; tentativa++) {
+  for (let tentativa = 0; tentativa < esperasSegundos.length; tentativa++) {
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
 
     if (res.status === 429) {
-      // RD pode mandar Retry-After (em segundos)
+      registrarRateLimit() // ativa modo adaptativo
       const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10)
-      const esperaMs = Math.max(retryAfter * 1000, 2000 * Math.pow(2, tentativa)) // mínimo 2s, dobra a cada tentativa
+      const esperaMs = Math.max(retryAfter * 1000, esperasSegundos[tentativa] * 1000)
       totalEspera += esperaMs
       await new Promise(r => setTimeout(r, esperaMs))
       continue
@@ -35,18 +37,34 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
       const txt = await res.text().catch(() => '')
       throw new Error(`RD ${res.status} em ${path}: ${txt.slice(0, 180)}`)
     }
+    registrarSucesso()
     return res.json() as Promise<T>
   }
-  throw new Error(`RD: rate limit (429) excedido em ${path} — ${(totalEspera/1000).toFixed(0)}s de espera total`)
+  throw new Error(`RD: rate limit (429) excedido em ${path} após ${(totalEspera/1000).toFixed(0)}s de espera. Reduza o intervalo de datas (use 1-2 meses por vez) ou tente novamente em alguns minutos.`)
 }
 
-// Throttle global: garante intervalo mínimo entre chamadas RD pra
-// não bater no rate limit. ~120 req/min = 1 req a cada ~500ms.
+// ─── Throttle adaptativo ─────────────────────────────────────
+// Comece com 600ms entre requests (~100/min, abaixo do limite de 120 RD).
+// Após um 429, dobra o intervalo (até 5s). A cada 30 sucessos seguidos
+// sem 429, baixa pra metade até voltar ao mínimo.
+let intervaloMin = 600
+let sucessosConsecutivos = 0
+function registrarRateLimit() {
+  intervaloMin = Math.min(intervaloMin * 2, 5000)
+  sucessosConsecutivos = 0
+}
+function registrarSucesso() {
+  sucessosConsecutivos++
+  if (sucessosConsecutivos >= 30 && intervaloMin > 600) {
+    intervaloMin = Math.max(intervaloMin / 2, 600)
+    sucessosConsecutivos = 0
+  }
+}
+
 let ultimaRDFetch = 0
 async function rdFetchThrottled<T = any>(path: string, token: string, params: Record<string, string | number> = {}): Promise<T> {
   const agora = Date.now()
   const desdeUltima = agora - ultimaRDFetch
-  const intervaloMin = 600 // ~100 req/min, abaixo do limite de 120
   if (desdeUltima < intervaloMin) {
     await new Promise(r => setTimeout(r, intervaloMin - desdeUltima))
   }
