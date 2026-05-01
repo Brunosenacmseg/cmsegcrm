@@ -411,6 +411,22 @@ export default function FunisPage() {
     if (status === 'ganho')   disparaAutomacao('status_ganho',   negocioId)
     if (status === 'perdido') disparaAutomacao('status_perdido', negocioId)
 
+    // Pendência Autentique: ganho em VENDA/RENOVAÇÕES/META cria
+    // placeholder pra lembrar de enviar contrato pra assinatura
+    // (ou atualiza pra 'enviado' se já tinha sido mandado).
+    if (status === 'ganho') {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          await fetch('/api/autentique/pendencia', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ negocio_id: negocioId }),
+          })
+        }
+      } catch (e) { /* não-bloqueante */ }
+    }
+
     // Meta Pixel: dispara Purchase quando marcar Ganho. Se tiver
     // meta_campaign_id, ajuda a otimizar campanhas.
     if (status === 'ganho') {
@@ -952,10 +968,23 @@ export default function FunisPage() {
               </div>
             )}
 
-            {/* Campos personalizados */}
-            {camposPers.length > 0 && (
-              <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
-                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>🧩 Campos personalizados</div>
+            {/* Campos personalizados — sempre visível pra admin saber onde criar */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>🧩 Campos personalizados {camposPers.length > 0 ? `(${camposPers.length})` : ''}</div>
+                {profile?.role === 'admin' && (
+                  <a href="/dashboard/configuracoes" target="_blank" rel="noreferrer" style={{fontSize:10,color:'var(--gold)',textDecoration:'none'}}>
+                    ⚙ {camposPers.length > 0 ? 'Gerenciar' : 'Criar campos'} →
+                  </a>
+                )}
+              </div>
+              {camposPers.length === 0 ? (
+                <div style={{fontSize:11,color:'var(--text-muted)',padding:'4px 0'}}>
+                  {profile?.role === 'admin'
+                    ? <>Nenhum campo personalizado criado ainda. <a href="/dashboard/configuracoes" target="_blank" rel="noreferrer" style={{color:'var(--gold)'}}>Criar em Configurações → aba "🧩 Campos personalizados"</a>.</>
+                    : 'Nenhum campo personalizado configurado. Peça ao administrador.'}
+                </div>
+              ) : (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                   {camposPers.map(c => {
                     const valor = (cardAtivo.custom_fields || {})[c.chave] ?? ''
@@ -983,8 +1012,8 @@ export default function FunisPage() {
                     )
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Origem */}
             <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
