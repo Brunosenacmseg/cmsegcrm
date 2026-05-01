@@ -183,7 +183,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
         <div style={{padding:'26px 22px 20px',borderBottom:'1px solid var(--border)'}}>
           <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM Seguros</div>
-          <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:1,textTransform:'uppercase',marginTop:2,lineHeight:1.4}}>Transformando vidas através do seguro</div>
+          <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:1,textTransform:'uppercase',marginTop:2,lineHeight:1.4,fontWeight:700}}>Transformando vidas através do seguro</div>
         </div>
 
         <nav style={{flex:1,padding:'14px 0',overflowY:'auto'}}>
