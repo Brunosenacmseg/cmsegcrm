@@ -678,7 +678,7 @@ export default function FunisPage() {
                         {[1,2,3,4,5].map(n => (
                           <button key={n} onClick={()=>setQualificacao(neg.id, neg.qualificacao===n ? 0 : n)}
                             title={`${n} estrela${n>1?'s':''}`}
-                            style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:13,lineHeight:1,color:n<=(neg.qualificacao||0)?'var(--gold)':'rgba(255,255,255,0.18)'}}>
+                            style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:13,lineHeight:1,color:n<=(neg.qualificacao||0)?'var(--star)':'var(--star-empty)'}}>
                             ★
                           </button>
                         ))}
@@ -895,7 +895,7 @@ export default function FunisPage() {
                 {[1,2,3,4,5].map(n => (
                   <button key={n} onClick={()=>setQualificacao(cardAtivo.id, cardAtivo.qualificacao===n ? 0 : n)}
                     title={n===cardAtivo.qualificacao?'Clique pra remover':`${n} estrela${n>1?'s':''}`}
-                    style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:22,lineHeight:1,color:n<=(cardAtivo.qualificacao||0)?'var(--gold)':'rgba(255,255,255,0.18)',transition:'color 0.1s,transform 0.1s'}}
+                    style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:22,lineHeight:1,color:n<=(cardAtivo.qualificacao||0)?'var(--star)':'var(--star-empty)',transition:'color 0.1s,transform 0.1s'}}
                     onMouseEnter={e=>(e.currentTarget.style.transform='scale(1.15)')}
                     onMouseLeave={e=>(e.currentTarget.style.transform='scale(1)')}>
                     ★
@@ -903,7 +903,7 @@ export default function FunisPage() {
                 ))}
               </div>
               {cardAtivo.qualificacao > 0 && (
-                <span style={{fontSize:11,color:'var(--gold)',fontWeight:600}}>{cardAtivo.qualificacao}/5</span>
+                <span style={{fontSize:11,color:'var(--star)',fontWeight:600}}>{cardAtivo.qualificacao}/5</span>
               )}
             </div>
 
