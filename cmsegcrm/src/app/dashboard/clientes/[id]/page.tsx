@@ -129,7 +129,7 @@ export default function FichaClientePage() {
       {/* Topbar */}
       <div style={{
         height:56, borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center',
-        padding:'0 28px', gap:16, background:'rgba(10,22,40,0.7)', backdropFilter:'blur(8px)',
+        padding:'0 28px', gap:16, background:'var(--bg-soft)', backdropFilter:'blur(8px)',
         position:'sticky', top:0, zIndex:5, flexShrink:0
       }}>
         <span style={{color:'var(--text-muted)',cursor:'pointer',fontSize:13}} onClick={() => router.push('/dashboard/clientes')}>← Clientes</span>
@@ -138,7 +138,7 @@ export default function FichaClientePage() {
       </div>
 
       {/* Header da ficha */}
-      <div style={{padding:'20px 28px 0', borderBottom:'1px solid var(--border)', background:'rgba(10,22,40,0.4)', flexShrink:0}}>
+      <div style={{padding:'20px 28px 0', borderBottom:'1px solid var(--border)', background:'var(--bg-subtle)', flexShrink:0}}>
         <div style={{fontSize:12,color:'var(--text-muted)',display:'flex',gap:16,flexWrap:'wrap',marginBottom:16}}>
           {cliente.telefone && <span>📱 {cliente.telefone}</span>}
           {cliente.email    && <span>✉️ {cliente.email}</span>}

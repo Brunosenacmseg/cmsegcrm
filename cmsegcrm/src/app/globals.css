@@ -344,6 +344,19 @@ input[type="month"] {
 .nav-section-collapsed .nav-section-arrow { transform: rotate(-90deg); }
 
 /* Animação */
+
+/* Top-bars das paginas (sticky com altura 52-56px) precisam de
+   contraste forte: titulo em dourado vivo + body text preto. */
+[style*="height:56"][style*="position:'sticky'"],
+[style*="height:52"][style*="position:'sticky'"] {
+  color: var(--text);
+}
+[style*="height:56"][style*="position:'sticky'"] [style*="DM Serif Display"]:not([style*="color"]),
+[style*="height:52"][style*="position:'sticky'"] [style*="DM Serif Display"]:not([style*="color"]) {
+  color: var(--gold-bright) !important;
+  font-weight: 700 !important;
+}
+
 /* Texto dourado vibrante por default em containers com sombra
    (cards/kpi/modais/dropdowns/popups). Children que tem color
    explicito inline mantem a propria cor — labels mutados ficam

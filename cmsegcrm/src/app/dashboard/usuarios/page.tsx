@@ -169,7 +169,7 @@ export default function UsuariosPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',flexShrink:0}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'var(--bg-soft)',backdropFilter:'blur(8px)',flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Usuários & Equipes</div>
         <div style={{display:'flex',gap:4}}>
           {(['usuarios','equipes'] as const).map(a=>(

@@ -276,7 +276,7 @@ export default function RDStationPage() {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ height: 56, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 28px', background: 'rgba(10,22,40,0.7)', backdropFilter: 'blur(8px)', flexShrink: 0 }}>
+      <div style={{ height: 56, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 28px', background: 'var(--bg-soft)', backdropFilter: 'blur(8px)', flexShrink: 0 }}>
         <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 18 }}>🔁 RD Station CRM — Importação</div>
       </div>
 

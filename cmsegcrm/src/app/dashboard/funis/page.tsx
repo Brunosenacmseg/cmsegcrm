@@ -533,7 +533,7 @@ export default function FunisPage() {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:10,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:10,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         {/* Dropdown de funis (filtrado por equipe via RLS — funis já chegam só os permitidos) */}
         <div style={{position:'relative',minWidth:280}}>
           <button onClick={()=>setSeletorAberto(s=>!s)}
@@ -720,22 +720,22 @@ export default function FunisPage() {
           </div>
 
           {/* Gradientes nas bordas — sinalizam que tem conteúdo escondido */}
-          <div style={{position:'absolute',left:0,top:0,bottom:18,width:30,background:'linear-gradient(to right, rgba(10,22,40,0.85), transparent)',pointerEvents:'none',zIndex:5}} />
-          <div style={{position:'absolute',right:0,top:0,bottom:18,width:30,background:'linear-gradient(to left, rgba(10,22,40,0.85), transparent)',pointerEvents:'none',zIndex:5}} />
+          <div style={{position:'absolute',left:0,top:0,bottom:18,width:30,background:'linear-gradient(to right, rgba(0,0,0,0.06), transparent)',pointerEvents:'none',zIndex:5}} />
+          <div style={{position:'absolute',right:0,top:0,bottom:18,width:30,background:'linear-gradient(to left, rgba(0,0,0,0.06), transparent)',pointerEvents:'none',zIndex:5}} />
 
           {/* Setas SEMPRE visíveis (rolar mesmo se cabe na tela é inofensivo) */}
           <button onClick={()=>kanbanRef.current?.scrollBy({left:-340,behavior:'smooth'})}
             aria-label="Rolar para a esquerda"
-            style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'rgba(10,22,40,0.97)',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
+            style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'#ffffff',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
             onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.20)')}
-            onMouseLeave={e=>(e.currentTarget.style.background='rgba(10,22,40,0.97)')}>
+            onMouseLeave={e=>(e.currentTarget.style.background='#ffffff')}>
             ‹
           </button>
           <button onClick={()=>kanbanRef.current?.scrollBy({left:340,behavior:'smooth'})}
             aria-label="Rolar para a direita"
-            style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'rgba(10,22,40,0.97)',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
+            style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'#ffffff',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
             onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.20)')}
-            onMouseLeave={e=>(e.currentTarget.style.background='rgba(10,22,40,0.97)')}>
+            onMouseLeave={e=>(e.currentTarget.style.background='#ffffff')}>
             ›
           </button>
         </div>

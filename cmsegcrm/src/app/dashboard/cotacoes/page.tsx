@@ -401,7 +401,7 @@ export default function CotacoesPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>🔍 Cotações</div>
         <button className="btn-primary" onClick={()=>{setModal(true);setForm({...formVazio});setClienteSel(null);setClienteBusca('');setAba('segurado');setMsg('')}}>+ Nova Cotação</button>
       </div>

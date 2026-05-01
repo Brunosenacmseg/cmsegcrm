@@ -150,7 +150,7 @@ export default function MetasPage() {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ height: 56, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 28px', gap: 12, background: 'rgba(10,22,40,0.7)', backdropFilter: 'blur(8px)', position: 'sticky', top: 0, zIndex: 5, flexShrink: 0 }}>
+      <div style={{ height: 56, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 28px', gap: 12, background: 'var(--bg-soft)', backdropFilter: 'blur(8px)', position: 'sticky', top: 0, zIndex: 5, flexShrink: 0 }}>
         <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 18, flex: 1 }}>🎯 Metas</div>
         <button onClick={recalcularTodas} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', fontFamily: 'DM Sans,sans-serif' }}>🔄 Recalcular</button>
         {isAdminOrLider && <button className="btn-primary" onClick={() => { setModalAberto(true); setEditando(null); resetForm() }}>+ Nova Meta</button>}
