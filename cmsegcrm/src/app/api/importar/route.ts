@@ -169,61 +169,66 @@ async function importarClientes(linhas: any[]) {
 
 async function importarNegocios(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  // Pega funil padrão de venda (primeira linha) — pode ser overridable por linha via "funil" (nome)
   const { data: funis } = await supabaseAdmin.from('funis').select('id, nome, etapas, tipo').order('ordem')
   const funilDefault = (funis || []).find((f:any) => f.tipo === 'venda') || funis?.[0]
   if (!funilDefault) {
     return { ...stats, qtd_erros: linhas.length, erros: ['Nenhum funil cadastrado. Crie um funil antes de importar negócios.'] }
   }
+
+  // BULK: pré-carrega clientes por CPF/CNPJ em UMA query
+  const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
+  const clientePorCpf: Record<string, string> = {}
+  if (cpfsLote.length) {
+    const { data: cls } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
+    for (const c of cls || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+  }
+
+  // Monta payloads em memória (sem queries)
+  const novos: any[] = []
   for (const r of linhas) {
     try {
       const titulo = s(r.titulo) || s(r.cliente) || s(r.nome) || 'Negócio importado'
-      // Resolve funil/etapa
       const funilNome = s(r.funil)
       const f = funilNome ? (funis || []).find((x:any) => x.nome.toLowerCase() === funilNome.toLowerCase()) || funilDefault : funilDefault
       const etapa = s(r.etapa) || (f.etapas?.[0] || 'Novo')
-      // Resolve cliente por CPF
       const cpf = s(r.cpf_cnpj || r.cpf)
-      let clienteId: string | null = null
-      if (cpf) {
-        const { data: c } = await supabaseAdmin.from('clientes').select('id').eq('cpf_cnpj', cpf).maybeSingle()
-        clienteId = c?.id || null
-      }
+      const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
 
-      // Mapeamento estado/status → ganho/perdido/em_andamento
-      // Aceita variações em pt: vendida, vendido, ganha, ganhou, ganho,
-      // fechado, fechada, won → ganho. perdida, perdido, perdeu, lost,
-      // cancelada, cancelado → perdido. Senão (em andamento, ativo,
-      // aberto, vazio) → em_andamento.
       const estadoRaw = (s(r.estado || r.status || r.situacao) || '').toLowerCase()
       let status: 'ganho'|'perdido'|'em_andamento' = 'em_andamento'
       let dataFech: string | null = null
-      if (/vend|ganh|fechad|won/.test(estadoRaw))                 { status = 'ganho';   dataFech = new Date().toISOString() }
-      else if (/perd|cancel|lost/.test(estadoRaw))                { status = 'perdido'; dataFech = new Date().toISOString() }
+      if (/vend|ganh|fechad|won/.test(estadoRaw))   { status = 'ganho';   dataFech = new Date().toISOString() }
+      else if (/perd|cancel|lost/.test(estadoRaw))  { status = 'perdido'; dataFech = new Date().toISOString() }
 
-      const payload: any = {
-        titulo,
-        cliente_id: clienteId,
-        funil_id: f.id,
-        etapa,
-        produto: s(r.produto),
-        seguradora: s(r.seguradora),
+      novos.push({
+        titulo, cliente_id: clienteId, funil_id: f.id, etapa,
+        produto: s(r.produto), seguradora: s(r.seguradora),
         premio: n(r.premio || r.valor),
         comissao_pct: n(r.comissao_pct || r.comissao),
-        cpf_cnpj: cpf,
-        cep: s(r.cep),
+        cpf_cnpj: cpf, cep: s(r.cep),
         fonte: s(r.fonte) || 'Importação CSV/XLSX',
         vencimento: dateBR(r.vencimento),
         obs: s(r.obs || r.observacoes),
-        status,
-        data_fechamento: dataFech,
+        status, data_fechamento: dataFech,
         motivo_perda: status === 'perdido' ? (s(r.motivo_perda) || null) : null,
-      }
-      await supabaseAdmin.from('negocios').insert(payload)
-      stats.qtd_criados++
+      })
     } catch (e: any) {
       stats.qtd_erros++
       if (stats.erros.length < 20) stats.erros.push(e?.message?.slice(0, 120) || 'erro')
+    }
+  }
+
+  // INSERT batch (1 query pra todo o lote). Fallback row-by-row se falhar.
+  if (novos.length) {
+    const { error } = await supabaseAdmin.from('negocios').insert(novos)
+    if (error) {
+      for (const p of novos) {
+        const { error: e2 } = await supabaseAdmin.from('negocios').insert(p)
+        if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.titulo}: ${e2.message?.slice(0,80)}`) }
+        else stats.qtd_criados++
+      }
+    } else {
+      stats.qtd_criados += novos.length
     }
   }
   return stats
@@ -231,28 +236,50 @@ async function importarNegocios(linhas: any[]) {
 
 async function importarApolices(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  // BULK: pré-carrega clientes (por CPF) e apólices existentes (por número)
+  const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
+  const numerosLote = Array.from(new Set(linhas.map(r => s(r.numero || r.apolice)).filter(Boolean))) as string[]
+  const clientePorCpf: Record<string, string> = {}
+  const apolicePorNum: Record<string, string> = {}
+  if (cpfsLote.length) {
+    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
+    for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+  }
+  if (numerosLote.length) {
+    const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', numerosLote)
+    for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
+  }
+
+  // Pre-cria clientes que não existem (em batch)
+  const novosClientes: any[] = []
+  for (const r of linhas) {
+    const cpf = s(r.cpf_cnpj || r.cpf)
+    if (cpf && !clientePorCpf[cpf]) {
+      const nome = s(r.nome) || s(r.segurado) || s(r.cliente)
+      if (nome && !novosClientes.find(c => c.cpf_cnpj === cpf)) {
+        novosClientes.push({
+          nome, cpf_cnpj: cpf,
+          tipo: cpf.replace(/\D/g,'').length > 11 ? 'PJ' : 'PF',
+          fonte: 'Importação Apólices',
+        })
+      }
+    }
+  }
+  if (novosClientes.length) {
+    const { data: criados } = await supabaseAdmin.from('clientes').insert(novosClientes).select('id, cpf_cnpj')
+    for (const c of criados || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+  }
+
+  // Monta payloads + separa novos vs updates
+  const novos: any[] = []
+  const updates: { id: string; payload: any }[] = []
   for (const r of linhas) {
     try {
       const numero = s(r.numero || r.apolice)
       if (!numero) { stats.qtd_erros++; continue }
       const cpf = s(r.cpf_cnpj || r.cpf)
-      let clienteId: string | null = null
-      if (cpf) {
-        const { data: c } = await supabaseAdmin.from('clientes').select('id').eq('cpf_cnpj', cpf).maybeSingle()
-        clienteId = c?.id || null
-      }
-      if (!clienteId) {
-        // Cria cliente mínimo se possível
-        const nome = s(r.nome) || s(r.segurado) || s(r.cliente)
-        if (nome) {
-          const { data: novo } = await supabaseAdmin.from('clientes').insert({
-            nome, cpf_cnpj: cpf, tipo: cpf && cpf.replace(/\D/g,'').length > 11 ? 'PJ' : 'PF',
-            fonte: 'Importação Apólices'
-          }).select('id').single()
-          clienteId = novo?.id || null
-        }
-      }
-      if (!clienteId) { stats.qtd_erros++; continue }
+      const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
+      if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente`); continue }
 
       const payload: any = {
         cliente_id: clienteId,
@@ -265,18 +292,31 @@ async function importarApolices(linhas: any[]) {
         vigencia_fim: dateBR(r.vigencia_fim || r.fim || r.vencimento),
         placa: s(r.placa),
       }
-      const { data: existente } = await supabaseAdmin.from('apolices').select('id').eq('numero', numero).maybeSingle()
-      if (existente) {
-        await supabaseAdmin.from('apolices').update(payload).eq('id', existente.id)
-        stats.qtd_atualizados++
-      } else {
-        await supabaseAdmin.from('apolices').insert(payload)
-        stats.qtd_criados++
-      }
+      const existId = apolicePorNum[numero]
+      if (existId) updates.push({ id: existId, payload })
+      else novos.push(payload)
     } catch (e: any) {
       stats.qtd_erros++
       if (stats.erros.length < 20) stats.erros.push(e?.message?.slice(0, 120) || 'erro')
     }
+  }
+
+  if (novos.length) {
+    const { error } = await supabaseAdmin.from('apolices').insert(novos)
+    if (error) {
+      for (const p of novos) {
+        const { error: e2 } = await supabaseAdmin.from('apolices').insert(p)
+        if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.numero}: ${e2.message?.slice(0,80)}`) }
+        else stats.qtd_criados++
+      }
+    } else {
+      stats.qtd_criados += novos.length
+    }
+  }
+  for (const u of updates) {
+    const { error } = await supabaseAdmin.from('apolices').update(u.payload).eq('id', u.id)
+    if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${u.payload.numero}: ${error.message?.slice(0,80)}`) }
+    else stats.qtd_atualizados++
   }
   return stats
 }
