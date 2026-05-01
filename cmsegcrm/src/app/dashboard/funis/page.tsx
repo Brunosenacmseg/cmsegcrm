@@ -21,6 +21,8 @@ export default function FunisPage() {
   // Drag & drop kanban
   const [arrastando, setArrastando] = useState<string | null>(null)
   const [etapaHover, setEtapaHover] = useState<string | null>(null)
+  // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
+  const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
 
   // Campos personalizados (definição do admin)
   const [camposPers, setCamposPers] = useState<any[]>([])
@@ -354,7 +356,10 @@ export default function FunisPage() {
   }
 
   const funiAtual = funis.find(f => f.id === funilAtivo)
-  const negociosFunil = negocios.filter(n => n.funil_id === funilAtivo)
+  const negociosFunil = negocios.filter(n =>
+    n.funil_id === funilAtivo &&
+    (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus)
+  )
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
@@ -424,6 +429,23 @@ export default function FunisPage() {
           </>
         )}
         <div style={{flex:1}}/>
+        {/* Filtro por status */}
+        <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:2}}>
+          {([
+            ['todos',        'Todos',      'var(--text)'],
+            ['em_andamento', 'Andamento',  '#7aa3f8'],
+            ['ganho',        '✓ Ganho',    'var(--teal)'],
+            ['perdido',      '✕ Perdido',  'var(--red)'],
+          ] as const).map(([v,l,cor]) => (
+            <button key={v} onClick={()=>setFiltroStatus(v as any)}
+              style={{padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,
+                background: filtroStatus===v ? `color-mix(in srgb, ${cor} 18%, transparent)` : 'transparent',
+                color: filtroStatus===v ? cor : 'var(--text-muted)',
+                fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+              {l}
+            </button>
+          ))}
+        </div>
         {profile?.role === 'admin' && (
           <button onClick={()=>router.push('/dashboard/funis/configurar')}
             style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
