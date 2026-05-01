@@ -65,28 +65,30 @@ export default function MuralPage() {
   async function carregarHumor() {
     const hoje = new Date().toISOString().split('T')[0]
     const { data } = await supabase
-      .from('mural_reacoes')
-      .select('tipo,user_id,users(id,nome,avatar_url,role)')
-      .eq('post_id', 'humor-dia-' + hoje)
-    setHumorHoje(data||[])
+      .from('mural_humor')
+      .select('emoji,user_id,users(id,nome,avatar_url,role)')
+      .eq('dia', hoje)
+    const lista = (data||[]).map((r:any) => ({ ...r, tipo: r.emoji }))
+    setHumorHoje(lista)
     const { data: { user } } = await supabase.auth.getUser()
-    const meu = (data||[]).find((r:any) => r.user_id === user?.id)
-    setMeuHumor(meu?.tipo || null)
+    const meu = lista.find((r:any) => r.user_id === user?.id)
+    setMeuHumor(meu?.emoji || null)
   }
 
   async function registrarHumor(emoji: string) {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.id) return
     const hoje = new Date().toISOString().split('T')[0]
-    const postId = 'humor-dia-' + hoje
 
-    // Remover reação anterior se existir
-    await supabase.from('mural_reacoes').delete().eq('post_id', postId).eq('user_id', user?.id||'')
-
-    if (emoji !== meuHumor) {
-      await supabase.from('mural_reacoes').insert({ post_id: postId, user_id: user?.id, tipo: emoji })
-      setMeuHumor(emoji)
-    } else {
+    if (emoji === meuHumor) {
+      await supabase.from('mural_humor').delete().eq('dia', hoje).eq('user_id', user.id)
       setMeuHumor(null)
+    } else {
+      await supabase.from('mural_humor').upsert(
+        { user_id: user.id, dia: hoje, emoji },
+        { onConflict: 'user_id,dia' }
+      )
+      setMeuHumor(emoji)
     }
     await carregarHumor()
   }
