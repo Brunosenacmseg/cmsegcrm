@@ -16,6 +16,13 @@ export default function FunisPage() {
   const [seletorAberto, setSeletorAberto] = useState(false)
   const kanbanRef = useRef<HTMLDivElement>(null)
 
+  // Motivos de perda (admin cadastra em /dashboard/configuracoes)
+  const [motivosPerda, setMotivosPerda] = useState<any[]>([])
+  // Modal de marcar perdido
+  const [modalPerdido, setModalPerdido] = useState<any>(null)
+  const [motivoSelecionado, setMotivoSelecionado] = useState<string>('')
+  const [motivoCustom, setMotivoCustom] = useState<string>('')
+
   // Modal novo negócio
   const [modalNovo, setModalNovo] = useState(false)
   const [funilModal, setFunilModal] = useState<any>(null)
@@ -39,6 +46,9 @@ export default function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
+  useEffect(() => {
+    supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
+  }, [])
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -99,16 +109,20 @@ export default function FunisPage() {
     await carregarNegocios()
   }
 
-  async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string) {
+  async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string, motivoId?: string|null) {
     const patch: any = { status }
     if (status === 'em_andamento') {
       patch.data_fechamento = null
       patch.fechado_por     = null
       patch.motivo_perda    = null
+      patch.motivo_perda_id = null
     } else {
       patch.data_fechamento = new Date().toISOString()
       patch.fechado_por     = profile?.id || null
-      if (status === 'perdido') patch.motivo_perda = motivo || null
+      if (status === 'perdido') {
+        patch.motivo_perda    = motivo || null
+        patch.motivo_perda_id = motivoId || null
+      }
     }
     await supabase.from('negocios').update(patch).eq('id', negocioId)
 
@@ -598,7 +612,7 @@ export default function FunisPage() {
                   style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='ganho'?'default':'pointer',border:'1px solid rgba(28,181,160,0.4)',background:cardAtivo.status==='ganho'?'rgba(28,181,160,0.25)':'rgba(28,181,160,0.1)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='ganho'?0.7:1}}>
                   ✓ Marcar Ganho
                 </button>
-                <button onClick={()=>{ const m = prompt('Motivo da perda (opcional):',''); if (m === null) return; marcarStatus(cardAtivo.id,'perdido', m||undefined) }}
+                <button onClick={()=>{setModalPerdido(cardAtivo);setMotivoSelecionado('');setMotivoCustom('')}}
                   disabled={cardAtivo.status==='perdido'}
                   style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='perdido'?'default':'pointer',border:'1px solid rgba(224,82,82,0.4)',background:cardAtivo.status==='perdido'?'rgba(224,82,82,0.25)':'rgba(224,82,82,0.1)',color:'var(--red)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='perdido'?0.7:1}}>
                   ✕ Marcar Perdido
@@ -620,6 +634,62 @@ export default function FunisPage() {
                 🗑 Excluir
               </button>
               <button className="btn-secondary" onClick={()=>setModalCard(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Marcar negociação como Perdida */}
+      {modalPerdido && (
+        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalPerdido(null)}>
+          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6,color:'var(--red)'}}>
+              ✕ Marcar como Perdido
+            </div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>
+              {modalPerdido.titulo}
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:6}}>
+                Motivo da perda
+              </label>
+              {motivosPerda.length > 0 ? (
+                <select value={motivoSelecionado} onChange={e=>setMotivoSelecionado(e.target.value)}
+                  style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'10px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  <option value="">— selecione um motivo —</option>
+                  {motivosPerda.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  <option value="__custom__">— Outro motivo (digitar) —</option>
+                </select>
+              ) : (
+                <div style={{fontSize:11,color:'var(--warning)',background:'rgba(201,168,76,0.08)',border:'1px solid rgba(201,168,76,0.3)',padding:'8px 12px',borderRadius:8}}>
+                  Nenhum motivo cadastrado. {profile?.role==='admin' ? <>Cadastre em <a href="/dashboard/configuracoes" style={{color:'var(--gold)'}}>Configurações</a> ou peça pra rodar o sync RD.</> : 'Peça ao administrador pra cadastrar.'}
+                </div>
+              )}
+            </div>
+
+            {(motivoSelecionado === '__custom__' || motivosPerda.length === 0) && (
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:6}}>
+                  Descreva o motivo
+                </label>
+                <input value={motivoCustom} onChange={e=>setMotivoCustom(e.target.value)}
+                  placeholder="Ex: Cliente desistiu" style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:18}}>
+              <button onClick={()=>setModalPerdido(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={()=>{
+                const motivoObj = motivoSelecionado && motivoSelecionado !== '__custom__'
+                  ? motivosPerda.find(m => m.id === motivoSelecionado) : null
+                const motivoTexto = motivoObj?.nome || motivoCustom || null
+                marcarStatus(modalPerdido.id, 'perdido', motivoTexto || undefined, motivoObj?.id || null)
+                setModalPerdido(null); setMotivoSelecionado(''); setMotivoCustom('')
+              }} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.15)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+                ✕ Confirmar perda
+              </button>
             </div>
           </div>
         </div>

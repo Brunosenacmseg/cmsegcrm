@@ -475,6 +475,86 @@ async function importarAtividades(token: string, from?: string, to?: string) {
   return stats
 }
 
+async function importarMotivosPerda(token: string) {
+  const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  // RD expõe em /deal_lost_reasons (alguns ambientes em /lost_reasons)
+  let lista: any[] = []
+  for (const path of ['/deal_lost_reasons', '/lost_reasons']) {
+    for (const key of ['deal_lost_reasons', 'lost_reasons']) {
+      try {
+        const r = await listarTodos<any>(path, token, key)
+        if (r.length > 0) { lista = r; break }
+      } catch {}
+    }
+    if (lista.length > 0) break
+  }
+  stats.qtd_lidos = lista.length
+
+  for (const m of lista) {
+    try {
+      const id = rdId(m)
+      const nome = (m?.name || '').trim()
+      if (!nome) continue
+      // Match por rd_id, depois por nome
+      const { data: existente } = await supabaseAdmin.from('motivos_perda')
+        .select('id, rd_id').or(`rd_id.eq.${id || 'null'},nome.ilike.${nome.replace(/[,]/g,'')}`).maybeSingle()
+      if (existente) {
+        await supabaseAdmin.from('motivos_perda').update({ rd_id: id || existente.rd_id, nome }).eq('id', existente.id)
+        stats.qtd_atualizados++
+      } else {
+        await supabaseAdmin.from('motivos_perda').insert({ rd_id: id || null, nome })
+        stats.qtd_criados++
+      }
+    } catch (e: any) {
+      stats.qtd_erros++
+      if (stats.erros.length < 20) stats.erros.push(`motivo ${m?.name}: ${e?.message?.slice(0, 80)}`)
+    }
+  }
+  return stats
+}
+
+async function importarProdutos(token: string) {
+  const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  let lista: any[] = []
+  for (const path of ['/products']) {
+    for (const key of ['products']) {
+      try {
+        const r = await listarTodos<any>(path, token, key)
+        if (r.length > 0) { lista = r; break }
+      } catch {}
+    }
+    if (lista.length > 0) break
+  }
+  stats.qtd_lidos = lista.length
+
+  for (const p of lista) {
+    try {
+      const id = rdId(p)
+      const nome = (p?.name || '').trim()
+      if (!nome) continue
+      // RD expõe valor do produto em campos diferentes dependendo da
+      // configuração: base_price (mais comum), price, amount, value,
+      // unit_price, max_discount não conta. Pegamos o primeiro
+      // numérico encontrado.
+      const camposPreco = [p?.base_price, p?.price, p?.amount, p?.value, p?.unit_price]
+      const preco = camposPreco.map((v: any) => Number(v)).find((n: number) => Number.isFinite(n) && n > 0) ?? null
+      const { data: existente } = await supabaseAdmin.from('produtos')
+        .select('id, rd_id').or(`rd_id.eq.${id || 'null'},nome.ilike.${nome.replace(/[,]/g,'')}`).maybeSingle()
+      if (existente) {
+        await supabaseAdmin.from('produtos').update({ rd_id: id || existente.rd_id, nome, preco_base: preco }).eq('id', existente.id)
+        stats.qtd_atualizados++
+      } else {
+        await supabaseAdmin.from('produtos').insert({ rd_id: id || null, nome, preco_base: preco })
+        stats.qtd_criados++
+      }
+    } catch (e: any) {
+      stats.qtd_erros++
+      if (stats.erros.length < 20) stats.erros.push(`produto ${p?.name}: ${e?.message?.slice(0, 80)}`)
+    }
+  }
+  return stats
+}
+
 // ─── HTTP Handler ──────────────────────────────────────────
 export async function POST(request: NextRequest) {
   const auth = await checarAdmin(request)
@@ -500,7 +580,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(await ping(token))
     }
 
-    const ordem = ['usuarios', 'funis', 'contatos', 'negocios', 'atividades']
+    const ordem = ['usuarios', 'funis', 'motivos_perda', 'produtos', 'contatos', 'negocios', 'atividades']
     const recursos = action === 'all' ? ordem : [action]
     const resultados: Record<string, any> = {}
 
@@ -509,11 +589,13 @@ export async function POST(request: NextRequest) {
       const logId = await logSync(recursoLog, auth.userId)
       let stats
       try {
-        if (r === 'usuarios')        stats = await importarUsuarios(token)
-        else if (r === 'funis')      stats = await importarFunis(token)
-        else if (r === 'contatos')   stats = await importarContatos(token, from, to)
-        else if (r === 'negocios')   stats = await importarNegocios(token, from, to, detalhes)
-        else if (r === 'atividades') stats = await importarAtividades(token, from, to)
+        if (r === 'usuarios')             stats = await importarUsuarios(token)
+        else if (r === 'funis')           stats = await importarFunis(token)
+        else if (r === 'motivos_perda')   stats = await importarMotivosPerda(token)
+        else if (r === 'produtos')        stats = await importarProdutos(token)
+        else if (r === 'contatos')        stats = await importarContatos(token, from, to)
+        else if (r === 'negocios')        stats = await importarNegocios(token, from, to, detalhes)
+        else if (r === 'atividades')      stats = await importarAtividades(token, from, to)
         else { resultados[r] = { error: 'recurso inválido' }; continue }
       } catch (e: any) {
         stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 1, erros: [e?.message?.slice(0, 200) || 'erro'] }

@@ -1713,6 +1713,57 @@ create policy "admin_meta_eventos_mapping" on public.meta_eventos_mapping for al
 );
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 17. MOTIVOS DE PERDA + PRODUTOS (de 019)
+-- ═════════════════════════════════════════════════════════════════════
+
+create table if not exists public.motivos_perda (
+  id          uuid primary key default uuid_generate_v4(),
+  nome        text not null,
+  descricao   text,
+  ativo       boolean default true,
+  ordem       int default 0,
+  rd_id       text,
+  criado_por  uuid references public.users(id),
+  criado_em   timestamptz default now()
+);
+create unique index if not exists motivos_perda_rd_id_idx on public.motivos_perda(rd_id) where rd_id is not null;
+create unique index if not exists motivos_perda_nome_idx  on public.motivos_perda(lower(nome));
+
+create table if not exists public.produtos (
+  id          uuid primary key default uuid_generate_v4(),
+  nome        text not null,
+  descricao   text,
+  preco_base  numeric(12,2),
+  ativo       boolean default true,
+  rd_id       text,
+  criado_por  uuid references public.users(id),
+  criado_em   timestamptz default now()
+);
+create unique index if not exists produtos_rd_id_idx on public.produtos(rd_id) where rd_id is not null;
+create unique index if not exists produtos_nome_idx  on public.produtos(lower(nome));
+
+alter table public.motivos_perda enable row level security;
+alter table public.produtos      enable row level security;
+
+drop policy if exists "auth_le_motivos_perda" on public.motivos_perda;
+create policy "auth_le_motivos_perda" on public.motivos_perda for select using (auth.role() = 'authenticated');
+drop policy if exists "admin_escreve_motivos_perda" on public.motivos_perda;
+create policy "admin_escreve_motivos_perda" on public.motivos_perda for all using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+drop policy if exists "auth_le_produtos" on public.produtos;
+create policy "auth_le_produtos" on public.produtos for select using (auth.role() = 'authenticated');
+drop policy if exists "admin_escreve_produtos" on public.produtos;
+create policy "admin_escreve_produtos" on public.produtos for all using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+alter table public.negocios
+  add column if not exists motivo_perda_id uuid references public.motivos_perda(id) on delete set null;
+create index if not exists idx_negocios_motivo_perda_id on public.negocios(motivo_perda_id);
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql
