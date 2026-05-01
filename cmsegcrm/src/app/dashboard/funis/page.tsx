@@ -23,6 +23,8 @@ export default function FunisPage() {
   const [etapaHover, setEtapaHover] = useState<string | null>(null)
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
+  // Filtro por data (criação ou fechamento) com período opcional
+  const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
 
   // Campos personalizados (definição do admin)
   const [camposPers, setCamposPers] = useState<any[]>([])
@@ -522,9 +524,27 @@ export default function FunisPage() {
   }
 
   const funiAtual = funis.find(f => f.id === funilAtivo)
+
+  // Filtro por data (de/ate) sobre criacao ou fechamento.
+  // Ate inclui o dia inteiro (23:59:59).
+  function passaFiltroData(n: any): boolean {
+    if (filtroData.campo === 'sem') return true
+    const fonte = filtroData.campo === 'criacao' ? n.created_at : n.data_fechamento
+    if (!fonte) return false
+    const ts = new Date(fonte).getTime()
+    if (filtroData.de) {
+      if (ts < new Date(filtroData.de + 'T00:00:00').getTime()) return false
+    }
+    if (filtroData.ate) {
+      if (ts > new Date(filtroData.ate + 'T23:59:59').getTime()) return false
+    }
+    return true
+  }
+
   const negociosFunil = negocios.filter(n =>
     n.funil_id === funilAtivo &&
-    (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus)
+    (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus) &&
+    passaFiltroData(n)
   )
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
@@ -612,6 +632,30 @@ export default function FunisPage() {
             </button>
           ))}
         </div>
+
+        {/* Filtro por data — campo + período */}
+        <div style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:'2px 4px'}}>
+          <select value={filtroData.campo} onChange={e=>setFiltroData(f=>({...f,campo:e.target.value as any}))}
+            style={{border:'none',background:'transparent',color:filtroData.campo==='sem'?'var(--text-muted)':'var(--gold)',fontSize:11,fontWeight:600,padding:'4px 6px',cursor:'pointer',outline:'none'}}>
+            <option value="sem">📅 Sem filtro de data</option>
+            <option value="criacao">🆕 Por criação</option>
+            <option value="fechamento">🏁 Por fechamento</option>
+          </select>
+          {filtroData.campo !== 'sem' && (
+            <>
+              <input type="date" value={filtroData.de} onChange={e=>setFiltroData(f=>({...f,de:e.target.value}))}
+                title="De" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
+              <span style={{fontSize:10,color:'var(--text-muted)'}}>até</span>
+              <input type="date" value={filtroData.ate} onChange={e=>setFiltroData(f=>({...f,ate:e.target.value}))}
+                title="Até" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
+              {(filtroData.de || filtroData.ate) && (
+                <button onClick={()=>setFiltroData({campo:'sem',de:'',ate:''})}
+                  title="Limpar filtro" style={{border:'none',background:'transparent',color:'var(--red)',cursor:'pointer',fontSize:14,padding:'0 4px'}}>×</button>
+              )}
+            </>
+          )}
+        </div>
+
         {profile?.role === 'admin' && (
           <button onClick={()=>router.push('/dashboard/funis/configurar')}
             style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
@@ -703,6 +747,15 @@ export default function FunisPage() {
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
                         {neg.premio ? <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span> : <span/>}
                         {neg.produto && <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 6px',borderRadius:8}}>{neg.produto}</span>}
+                      </div>
+
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6,gap:6,fontSize:9,color:'var(--text-muted)',borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:5}}>
+                        {neg.created_at && (
+                          <span title="Data de criação">🆕 {new Date(neg.created_at).toLocaleDateString('pt-BR')}</span>
+                        )}
+                        {neg.data_fechamento && (
+                          <span title="Data de fechamento" style={{color:isGanho?'var(--teal)':isPerdido?'var(--red)':'var(--text-muted)'}}>🏁 {new Date(neg.data_fechamento).toLocaleDateString('pt-BR')}</span>
+                        )}
                       </div>
                     </div>
                     )
@@ -914,6 +967,8 @@ export default function FunisPage() {
                 ['Produto', cardAtivo.produto||'—'],
                 ['Prêmio', cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'],
                 ['Responsável', cardAtivo.users?.nome||'—'],
+                ['🆕 Criado em', cardAtivo.created_at ? new Date(cardAtivo.created_at).toLocaleString('pt-BR') : '—'],
+                ['🏁 Fechado em', cardAtivo.data_fechamento ? new Date(cardAtivo.data_fechamento).toLocaleString('pt-BR') : '— (em andamento)'],
               ].map(([l,v])=>(
                 <div key={l}><div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
                   <div style={{fontSize:13}}>{v}</div></div>
