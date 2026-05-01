@@ -140,6 +140,29 @@ export default function UsuariosPage() {
     await supabase.from('equipe_membros').delete().eq('equipe_id', equipeId).eq('user_id', userId); carregar()
   }
 
+  async function renomearEquipe(equipeId: string, nomeAtual: string) {
+    if (profile?.role !== 'admin') return
+    const novo = prompt('Novo nome da equipe:', nomeAtual)
+    if (!novo || novo.trim() === nomeAtual) return
+    await supabase.from('equipes').update({ nome: novo.trim() }).eq('id', equipeId)
+    carregar()
+  }
+
+  async function trocarLider(equipeId: string, liderId: string) {
+    if (profile?.role !== 'admin') return
+    await supabase.from('equipes').update({ lider_id: liderId || null }).eq('id', equipeId)
+    carregar()
+  }
+
+  async function excluirEquipe(equipeId: string, nome: string) {
+    if (profile?.role !== 'admin') return
+    if (!confirm(`Excluir a equipe "${nome}"? Membros perdem o vínculo, mas usuários e negociações são preservados.`)) return
+    await supabase.from('equipe_membros').delete().eq('equipe_id', equipeId)
+    const { error } = await supabase.from('equipes').delete().eq('id', equipeId)
+    if (error) { alert('Erro ao excluir: '+error.message); return }
+    carregar()
+  }
+
   const isAdmin = profile?.role === 'admin'
   const ri = (r: string) => ROLES.find(x => x.key === r) || ROLES[2]
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 14px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
@@ -272,9 +295,27 @@ export default function UsuariosPage() {
               </div>
             ):equipes.map(eq=>(
               <div key={eq.id} className="card" style={{marginBottom:16}}>
-                <div style={{marginBottom:14}}>
-                  <div style={{fontFamily:'DM Serif Display,serif',fontSize:16}}>{eq.nome}</div>
-                  <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Líder: <span style={{color:'var(--gold)'}}>{eq.users?.nome||'Sem líder'}</span> · {eq.equipe_membros?.length||0} membros</div>
+                <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14,gap:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:'DM Serif Display,serif',fontSize:16}}>{eq.nome}</div>
+                    <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Líder: <span style={{color:'var(--gold)'}}>{eq.users?.nome||'Sem líder'}</span> · {eq.equipe_membros?.length||0} membros</div>
+                  </div>
+                  {isAdmin && (
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      <select defaultValue={eq.lider_id||''} onChange={e=>trocarLider(eq.id,e.target.value)}
+                        style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:'pointer'}}
+                        title="Mudar líder">
+                        <option value="" style={{background:'#0e2040'}}>— Sem líder —</option>
+                        {usuarios.filter(u=>u.role==='lider'||u.role==='admin').map(u=>(
+                          <option key={u.id} value={u.id} style={{background:'#0e2040'}}>{u.nome}</option>
+                        ))}
+                      </select>
+                      <button onClick={()=>renomearEquipe(eq.id,eq.nome)}
+                        style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>✎ Renomear</button>
+                      <button onClick={()=>excluirEquipe(eq.id,eq.nome)}
+                        style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>🗑 Excluir</button>
+                    </div>
+                  )}
                 </div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:isAdmin?12:0}}>
                   {(eq.equipe_membros||[]).map((m:any)=>(
