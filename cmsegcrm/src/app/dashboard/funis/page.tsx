@@ -169,8 +169,15 @@ export default function FunisPage() {
     if (novoNome === null) return
     const nome = novoNome.trim()
     if (!nome || nome === f.nome) return
-    const { error } = await supabase.from('funis').update({ nome }).eq('id', f.id)
-    if (error) { alert('Erro ao renomear: ' + error.message); return }
+    // Usa endpoint server-side (bypassa RLS, dá erro claro)
+    const { data: { session } } = await supabase.auth.getSession()
+    const r = await fetch('/api/funis', {
+      method: 'PATCH',
+      headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token||''}` },
+      body: JSON.stringify({ id: f.id, nome })
+    })
+    const j = await r.json()
+    if (!r.ok) { alert('Erro ao renomear: ' + (j.error || 'falha')); return }
     await carregarFunis()
   }
 
@@ -181,18 +188,15 @@ export default function FunisPage() {
       : `Excluir o funil "${f.nome}"?\n\nEsta ação não pode ser desfeita.`
     if (!confirm(msg)) return
 
-    // Apaga primeiro os negócios do funil (FK negocios.funil_id não cascateia)
-    if (cards > 0) {
-      const { error: e1 } = await supabase.from('negocios').delete().eq('funil_id', f.id)
-      if (e1) { alert('Erro ao excluir os cards: ' + e1.message); return }
-    }
-
-    // Agora apaga o funil. .select() devolve as linhas removidas — se vier vazio,
-    // foi a RLS que bloqueou (não dispara erro nesse caso).
-    const { data, error } = await supabase.from('funis').delete().eq('id', f.id).select()
-    if (error) { alert('Erro ao excluir o funil: ' + error.message); return }
-    if (!data || data.length === 0) {
-      alert('Não foi possível excluir o funil.\n\nProvavelmente seu usuário não tem permissão de admin (RLS bloqueou silenciosamente).\n\nVerifique seu perfil em /dashboard/perfil ou peça pra um admin.')
+    // Usa endpoint server-side (bypassa RLS) — faz cascade dos cards.
+    const { data: { session } } = await supabase.auth.getSession()
+    const r = await fetch(`/api/funis?id=${f.id}&cascade=1`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session?.access_token||''}` },
+    })
+    const j = await r.json()
+    if (!r.ok) {
+      alert('Erro ao excluir o funil: ' + (j.error || 'falha desconhecida'))
       return
     }
 

@@ -21,6 +21,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/renovacoes',   icon:'🔄', label:'Renovações' },
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
+  { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE' },
   { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing' },
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', adminOnly:true },
@@ -42,6 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [totalNaoLidas, setTotalNaoLidas] = useState(0)
   const [showNotif, setShowNotif]         = useState(false)
   const [profile, setProfile]             = useState<any>(null)
+  const [temAcessoFin, setTemAcessoFin]   = useState(false)
   // Seções recolhidas — começa com Marketing/Integrações/Empresa/Config
   // recolhidos para reduzir densidade visual. Persiste em localStorage.
   const [secoesRecolhidas, setSecoesRecolhidas] = useState<Record<string,boolean>>(() => {
@@ -98,6 +100,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   async function carregarProfile(userId: string) {
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
+    // Acesso ao módulo financeiro: admin sempre tem; demais via financeiro_acessos
+    if (data?.role === 'admin') {
+      setTemAcessoFin(true)
+    } else {
+      const { data: ac } = await supabase.from('financeiro_acessos').select('user_id').eq('user_id', userId).maybeSingle()
+      setTemAcessoFin(!!ac)
+    }
   }
 
   async function carregarBadges(userId: string) {
@@ -155,7 +164,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   let lastSection = ''
   const isAdmin = profile?.role === 'admin'
-  const navVisible = NAV.filter(item => !item.adminOnly || isAdmin)
+  const navVisible = NAV.filter(item => {
+    if (item.adminOnly && !isAdmin) return false
+    // Financeiro só pra quem tem permissão
+    if (item.href === '/dashboard/financeiro' && !temAcessoFin) return false
+    return true
+  })
 
   return (
     <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
