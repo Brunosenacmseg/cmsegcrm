@@ -18,6 +18,8 @@ export default function ConectarMetaPage() {
     app_id: '',
     app_secret: '',
     verify_token: '',
+    pixel_id: '',
+    conversions_token: '',
   })
 
   useEffect(()=>{ init() }, [])
@@ -42,6 +44,7 @@ export default function ConectarMetaPage() {
       if (j.ad_account_id) setForm(f => ({ ...f, ad_account_id: j.ad_account_id }))
       if (j.page_id)       setForm(f => ({ ...f, page_id: j.page_id }))
       if (j.app_id)        setForm(f => ({ ...f, app_id: j.app_id }))
+      if (j.pixel_id)      setForm(f => ({ ...f, pixel_id: j.pixel_id }))
     } catch {}
     setLoading(false)
   }
@@ -63,7 +66,7 @@ export default function ConectarMetaPage() {
   async function desconectar() {
     if (!confirm('Desconectar a integração Meta? Os dados sincronizados serão mantidos.')) return
     const r = await fetch('/api/meta/connect', { method:'DELETE', headers: await authHeaders() })
-    if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',app_id:'',app_secret:'',verify_token:'' }); await init() }
+    if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'' }); await init() }
   }
 
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
@@ -143,10 +146,33 @@ export default function ConectarMetaPage() {
               </div>
             </div>
 
-            <div style={{marginBottom:18}}>
+            <div style={{marginBottom:14}}>
               <label style={lbl}>Verify Token (Webhook) *</label>
               <input value={form.verify_token} onChange={e=>setForm(f=>({...f,verify_token:e.target.value}))} placeholder="ex: cmsegcrm_meta_2026_xyz" style={inp} />
               <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Cole essa mesma string no campo &quot;Verify Token&quot; do webhook no Meta for Developers.</div>
+            </div>
+
+            {/* Pixel — separado por linha */}
+            <div style={{marginTop:18,paddingTop:18,borderTop:'1px solid var(--border)'}}>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--gold)',marginBottom:10}}>📊 Pixel de Conversão</div>
+              <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12,lineHeight:1.5}}>
+                O Pixel registra conversões (PageView, Lead, Purchase) automaticamente. Ative pra otimizar suas campanhas.
+                Pegue o ID em <a href="https://business.facebook.com/events_manager2/list/pixel" target="_blank" rel="noreferrer" style={{color:'var(--teal)'}}>Events Manager → Pixels</a>.
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+                <div>
+                  <label style={lbl}>Pixel ID</label>
+                  <input value={form.pixel_id} onChange={e=>setForm(f=>({...f,pixel_id:e.target.value}))} placeholder="ex: 1234567890123456" style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Conversions API Token (opcional)</label>
+                  <input type="password" value={form.conversions_token} onChange={e=>setForm(f=>({...f,conversions_token:e.target.value}))} placeholder="(server-side, evita bloqueio iOS)" style={inp} />
+                </div>
+              </div>
+              <div style={{fontSize:11,color:'var(--text-muted)',background:'rgba(74,128,240,0.07)',padding:'8px 12px',borderRadius:8,border:'1px solid rgba(74,128,240,0.2)'}}>
+                💡 Quando configurado, o pixel é injetado automaticamente nas páginas do CRM. PageView é registrado a cada navegação;
+                eventos Lead e Purchase quando vier um lead Meta ou um negócio for marcado como Ganho.
+              </div>
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>

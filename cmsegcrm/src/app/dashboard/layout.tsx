@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
+import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean }> = [
@@ -288,6 +289,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </main>
 
       <ChatIA />
+      <MetaPixel />
     </div>
   )
 }

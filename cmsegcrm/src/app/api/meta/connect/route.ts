@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
     ad_account_id: data?.ad_account_id || null,
     page_id: data?.page_id || null,
     app_id: data?.app_id || null,
+    pixel_id: data?.pixel_id || null,
+    tem_conversions_token: !!data?.conversions_token,
     webhook_subscribed: !!data?.webhook_subscribed,
     expires_at: data?.expires_at || null,
     configurado_em: data?.configurado_em || null,
@@ -53,12 +55,14 @@ export async function POST(req: NextRequest) {
   let body: any = {}
   try { body = await req.json() } catch {}
 
-  const access_token  = (body.access_token  || '').trim()
-  const ad_account_id = (body.ad_account_id || '').trim()
-  const page_id       = (body.page_id       || '').trim()
-  const app_id        = (body.app_id        || '').trim()
-  const app_secret    = (body.app_secret    || '').trim()
-  const verify_token  = (body.verify_token  || '').trim()
+  const access_token      = (body.access_token      || '').trim()
+  const ad_account_id     = (body.ad_account_id     || '').trim()
+  const page_id           = (body.page_id           || '').trim()
+  const app_id            = (body.app_id            || '').trim()
+  const app_secret        = (body.app_secret        || '').trim()
+  const verify_token      = (body.verify_token      || '').trim()
+  const pixel_id          = (body.pixel_id          || '').trim()
+  const conversions_token = (body.conversions_token || '').trim()
 
   if (!access_token) return NextResponse.json({ error: 'access_token é obrigatório' }, { status: 400 })
 
@@ -78,14 +82,16 @@ export async function POST(req: NextRequest) {
   const { error: errSave } = await supabaseAdmin.from('meta_config').upsert({
     id: 1,
     access_token,
-    ad_account_id: ad_account_id || null,
-    page_id:       page_id || null,
-    app_id:        app_id || null,
-    app_secret:    app_secret || null,
-    verify_token:  verify_token || null,
-    connected_by:  auth.userId,
-    configurado_em: new Date().toISOString(),
-    updated_at:    new Date().toISOString(),
+    ad_account_id:     ad_account_id || null,
+    page_id:           page_id || null,
+    app_id:            app_id || null,
+    app_secret:        app_secret || null,
+    verify_token:      verify_token || null,
+    pixel_id:          pixel_id || null,
+    conversions_token: conversions_token || null,
+    connected_by:      auth.userId,
+    configurado_em:    new Date().toISOString(),
+    updated_at:        new Date().toISOString(),
   })
   if (errSave) return NextResponse.json({ error: 'Erro ao salvar: ' + errSave.message }, { status: 500 })
 
