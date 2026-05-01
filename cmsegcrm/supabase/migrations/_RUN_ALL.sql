@@ -1981,6 +1981,16 @@ drop policy if exists "auth_escreve_automacoes_logs" on public.automacoes_logs;
 create policy "auth_escreve_automacoes_logs" on public.automacoes_logs for insert with check (auth.role() = 'authenticated');
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 21. NEGOCIOS.QUALIFICACAO (estrelas 1-5, de 023)
+-- ═════════════════════════════════════════════════════════════════════
+
+alter table public.negocios
+  add column if not exists qualificacao smallint default 0
+    check (qualificacao between 0 and 5);
+create index if not exists idx_negocios_qualificacao on public.negocios(qualificacao)
+  where qualificacao > 0;
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql

@@ -228,7 +228,24 @@ async function importarContatos(token: string, from?: string, to?: string) {
 async function importarNegocios(token: string, from?: string, to?: string, incluirDetalhes = false) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
 
-  // Mapas auxiliares
+  // ─── PIPELINES DO RD: nome + etapas (para resolver mismatch) ──
+  // Buscamos as pipelines primeiro pra evitar cair no fallback errado
+  // quando o deal só tem deal_pipeline_id mas não traz o name.
+  let rdPipelines: RDPipeline[] = []
+  for (const path of ['/deal_pipelines', '/pipelines']) {
+    for (const key of ['deal_pipelines', 'pipelines']) {
+      try { const r = await listarTodos<RDPipeline>(path, token, key); if (r.length) { rdPipelines = r; break } } catch {}
+    }
+    if (rdPipelines.length) break
+  }
+  const rdPipelinePorId:   Record<string, RDPipeline> = {}
+  const rdPipelineNomePorId: Record<string, string>   = {}
+  for (const p of rdPipelines) {
+    const pid = rdId(p)
+    if (pid) { rdPipelinePorId[pid] = p; if (p.name) rdPipelineNomePorId[pid] = p.name }
+  }
+
+  // ─── FUNIS LOCAIS ─────────────────────────────────────────────
   const { data: funis } = await supabaseAdmin.from('funis').select('id, rd_id, etapas, nome, tipo')
   const funilPorRd:   Record<string, any> = {}
   const funilPorNome: Record<string, any> = {}
@@ -237,20 +254,36 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
     if (f.nome)  funilPorNome[norm(f.nome)] = f
   }
 
-  // Funil fallback (caso pipeline do deal não exista)
-  let funilFallback: any = (funis || []).find((f: any) => f.tipo === 'venda')
+  // Auto-vincula rd_id em funis locais que ainda não têm: se algum
+  // funil local com nome bate com pipeline do RD, atualiza rd_id.
+  // Isso conserta o caso "rodei sync deals sem rodar sync funis".
+  for (const p of rdPipelines) {
+    const pid = rdId(p)
+    if (!pid || !p.name) continue
+    if (funilPorRd[pid]) continue
+    const local = funilPorNome[norm(p.name)]
+    if (local && !local.rd_id) {
+      await supabaseAdmin.from('funis').update({ rd_id: pid }).eq('id', local.id)
+      local.rd_id = pid
+      funilPorRd[pid] = local
+    }
+  }
+
+  // ─── FUNIL FALLBACK ────────────────────────────────────────────
+  // Em vez de cair na primeira venda (vira lixão de "VENDA"), criamos
+  // um funil dedicado "📥 RD: Importados" pra debugar facilmente.
+  let funilFallback: any = (funis || []).find((f: any) => f.nome === 'RD: Importados')
   if (!funilFallback) {
     const { data } = await supabaseAdmin.from('funis').insert({
       nome: 'RD: Importados', tipo: 'venda', emoji: '📥', cor: '#c9a84c',
       etapas: ['Novo', 'Em andamento', 'Ganho', 'Perdido'], ordem: 99,
-    }).select('id, etapas, nome, tipo').single()
+    }).select('id, rd_id, etapas, nome, tipo').single()
     funilFallback = data
   }
 
   // Stages → pipeline (para deals que vêm com deal_stage mas não com deal_pipeline)
   const stages = await listarTodos<RDStage>('/deal_stages', token, 'deal_stages')
   const pipelinePorStage: Record<string, string> = {}
-  const stagePipelineNome: Record<string, string> = {}
   for (const s of stages) {
     const sid = rdId(s)
     if (sid && s.deal_pipeline_id) pipelinePorStage[sid] = s.deal_pipeline_id
@@ -294,13 +327,47 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
       const detalhe = incluirDetalhes ? await buscarDealDetalhe(id, token) : null
       const dx = detalhe || d
 
-      // Resolver funil — por pipeline ID, depois por nome, senão fallback
+      // Resolver funil — encadeado em ordem de confiança:
+      //   1) rd_id do pipeline do deal bate com funil local
+      //   2) nome do pipeline do deal bate com funil local
+      //   3) deal só tem stage_id → resolve pipeline_id pela stage e
+      //      tenta nome do pipeline buscado em rdPipelineNomePorId
+      //   4) cria-se um funil novo automaticamente com o nome do RD
+      //      (pra não cair no "RD: Importados" silenciosamente)
       const stageId = rdId(dx.deal_stage)
       const pipelineId = rdId(dx.deal_pipeline) || (stageId ? pipelinePorStage[stageId] : null)
-      const pipeNome = dx.deal_pipeline?.name || ''
-      const funil = (pipelineId && funilPorRd[pipelineId])
-                  || (pipeNome && funilPorNome[norm(pipeNome)])
-                  || funilFallback
+      const pipeNomeFromDeal   = dx.deal_pipeline?.name || ''
+      const pipeNomeFromMaster = pipelineId ? (rdPipelineNomePorId[pipelineId] || '') : ''
+      const pipeNome = pipeNomeFromDeal || pipeNomeFromMaster
+
+      let funil: any =
+        (pipelineId && funilPorRd[pipelineId]) ||
+        (pipeNome && funilPorNome[norm(pipeNome)]) ||
+        null
+
+      // Se ainda não temos match mas SABEMOS o nome do pipeline pelo RD,
+      // criamos um funil novo com esse nome (auto-cadastro). Evita cair
+      // na "VENDA" como fallback errado.
+      if (!funil && pipeNome) {
+        const pipelineRD = pipelineId ? rdPipelinePorId[pipelineId] : null
+        const stagesRD: RDStage[] = (pipelineRD?.deal_stages || pipelineRD?.stages || [])
+          .slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
+        const etapas = stagesRD.map((s: any) => s.name || 'Etapa').filter(Boolean)
+        const { data: novo } = await supabaseAdmin.from('funis').insert({
+          rd_id: pipelineId || null, nome: pipeNome.trim(),
+          tipo: 'venda', emoji: '📊', cor: '#1cb5a0',
+          etapas: etapas.length ? etapas : ['Novo','Em andamento','Ganho','Perdido'],
+          ordem: 50,
+        }).select('id, rd_id, etapas, nome, tipo').single()
+        if (novo) {
+          funil = novo
+          if (novo.rd_id) funilPorRd[novo.rd_id] = novo
+          funilPorNome[norm(novo.nome)] = novo
+        }
+      }
+
+      // Último recurso: fallback dedicado.
+      if (!funil) funil = funilFallback
       if (!funil) { stats.qtd_erros++; stats.erros.push(`deal ${dx.name}: funil não encontrado`); continue }
 
       // Match etapa case-insensitive / sem acento

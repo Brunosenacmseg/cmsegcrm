@@ -220,6 +220,12 @@ export default function FunisPage() {
     } catch (e) { /* silencioso — automação falhou não bloqueia o usuário */ }
   }
 
+  async function setQualificacao(negocioId: string, estrelas: number) {
+    setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, qualificacao: estrelas } : n))
+    await supabase.from('negocios').update({ qualificacao: estrelas }).eq('id', negocioId)
+    if (cardAtivo?.id === negocioId) setCardAtivo({ ...cardAtivo, qualificacao: estrelas })
+  }
+
   async function moverCardParaEtapa(negocioId: string, novaEtapa: string) {
     // Otimistic update + persist
     setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, etapa: novaEtapa } : n))
@@ -479,6 +485,17 @@ export default function FunisPage() {
 
                       <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3,paddingRight:isGanho||isPerdido?60:0,textDecoration:isPerdido?'line-through':'none',opacity:isPerdido?0.75:1}}>{neg.titulo}</div>
 
+                      {/* Estrelas no card */}
+                      <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:1,marginBottom:6}}>
+                        {[1,2,3,4,5].map(n => (
+                          <button key={n} onClick={()=>setQualificacao(neg.id, neg.qualificacao===n ? 0 : n)}
+                            title={`${n} estrela${n>1?'s':''}`}
+                            style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:13,lineHeight:1,color:n<=(neg.qualificacao||0)?'var(--gold)':'rgba(255,255,255,0.18)'}}>
+                            ★
+                          </button>
+                        ))}
+                      </div>
+
                       {/* Cliente ou botão vincular */}
                       {neg.clientes ? (
                         <div style={{fontSize:11,color:'var(--teal)',marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
@@ -514,22 +531,25 @@ export default function FunisPage() {
             </div>
           </div>
 
-          {/* Botões de navegação lateral (visíveis quando o funil tem
-              mais etapas que cabem na tela) */}
-          {(funiAtual.etapas?.length || 0) > 4 && (
-            <>
-              <button onClick={()=>kanbanRef.current?.scrollBy({left:-320,behavior:'smooth'})}
-                aria-label="Rolar para a esquerda"
-                style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',zIndex:10,width:36,height:36,borderRadius:'50%',border:'1px solid var(--border)',background:'rgba(10,22,40,0.95)',color:'var(--gold)',cursor:'pointer',fontSize:18,fontWeight:700,boxShadow:'0 4px 12px rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                ‹
-              </button>
-              <button onClick={()=>kanbanRef.current?.scrollBy({left:320,behavior:'smooth'})}
-                aria-label="Rolar para a direita"
-                style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',zIndex:10,width:36,height:36,borderRadius:'50%',border:'1px solid var(--border)',background:'rgba(10,22,40,0.95)',color:'var(--gold)',cursor:'pointer',fontSize:18,fontWeight:700,boxShadow:'0 4px 12px rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                ›
-              </button>
-            </>
-          )}
+          {/* Gradientes nas bordas — sinalizam que tem conteúdo escondido */}
+          <div style={{position:'absolute',left:0,top:0,bottom:18,width:30,background:'linear-gradient(to right, rgba(10,22,40,0.85), transparent)',pointerEvents:'none',zIndex:5}} />
+          <div style={{position:'absolute',right:0,top:0,bottom:18,width:30,background:'linear-gradient(to left, rgba(10,22,40,0.85), transparent)',pointerEvents:'none',zIndex:5}} />
+
+          {/* Setas SEMPRE visíveis (rolar mesmo se cabe na tela é inofensivo) */}
+          <button onClick={()=>kanbanRef.current?.scrollBy({left:-340,behavior:'smooth'})}
+            aria-label="Rolar para a esquerda"
+            style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'rgba(10,22,40,0.97)',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
+            onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.20)')}
+            onMouseLeave={e=>(e.currentTarget.style.background='rgba(10,22,40,0.97)')}>
+            ‹
+          </button>
+          <button onClick={()=>kanbanRef.current?.scrollBy({left:340,behavior:'smooth'})}
+            aria-label="Rolar para a direita"
+            style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'rgba(10,22,40,0.97)',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
+            onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.20)')}
+            onMouseLeave={e=>(e.currentTarget.style.background='rgba(10,22,40,0.97)')}>
+            ›
+          </button>
         </div>
       )}
 
@@ -675,9 +695,28 @@ export default function FunisPage() {
         <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalCard(false)}>
           <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
-            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>{cardAtivo.titulo}</div>
               <button onClick={()=>setModalCard(false)} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:20,marginLeft:12}}>✕</button>
+            </div>
+
+            {/* Qualificação por estrelas */}
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+              <span style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>Qualificação</span>
+              <div style={{display:'flex',gap:3}}>
+                {[1,2,3,4,5].map(n => (
+                  <button key={n} onClick={()=>setQualificacao(cardAtivo.id, cardAtivo.qualificacao===n ? 0 : n)}
+                    title={n===cardAtivo.qualificacao?'Clique pra remover':`${n} estrela${n>1?'s':''}`}
+                    style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:22,lineHeight:1,color:n<=(cardAtivo.qualificacao||0)?'var(--gold)':'rgba(255,255,255,0.18)',transition:'color 0.1s,transform 0.1s'}}
+                    onMouseEnter={e=>(e.currentTarget.style.transform='scale(1.15)')}
+                    onMouseLeave={e=>(e.currentTarget.style.transform='scale(1)')}>
+                    ★
+                  </button>
+                ))}
+              </div>
+              {cardAtivo.qualificacao > 0 && (
+                <span style={{fontSize:11,color:'var(--gold)',fontWeight:600}}>{cardAtivo.qualificacao}/5</span>
+              )}
             </div>
 
             {/* Info */}
