@@ -41,6 +41,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [totalNaoLidas, setTotalNaoLidas] = useState(0)
   const [showNotif, setShowNotif]         = useState(false)
   const [profile, setProfile]             = useState<any>(null)
+  // Seções recolhidas — começa com Marketing/Integrações/Empresa/Config
+  // recolhidos para reduzir densidade visual. Persiste em localStorage.
+  const [secoesRecolhidas, setSecoesRecolhidas] = useState<Record<string,boolean>>(() => {
+    if (typeof window === 'undefined') return { 'Marketing':true,'Integrações':true,'Empresa':true,'Config':true }
+    try {
+      const s = localStorage.getItem('cm_nav_recolhidas')
+      if (s) return JSON.parse(s)
+    } catch {}
+    return { 'Marketing':true,'Integrações':true,'Empresa':true,'Config':true }
+  })
+  function toggleSecao(nome: string) {
+    setSecoesRecolhidas(prev => {
+      const novo = { ...prev, [nome]: !prev[nome] }
+      try { localStorage.setItem('cm_nav_recolhidas', JSON.stringify(novo)) } catch {}
+      return novo
+    })
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -149,27 +166,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:2,textTransform:'uppercase',marginTop:2}}>Corretora de Seguros</div>
         </div>
 
-        <nav style={{flex:1,padding:'18px 0',overflowY:'auto'}}>
+        <nav style={{flex:1,padding:'14px 0',overflowY:'auto'}}>
           {navVisible.map((item) => {
             const showSection = item.section && item.section !== lastSection
             if (item.section) lastSection = item.section
             const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
             const badgeCount = item.badge ? badges[item.badge]||0 : 0
+            // Seção atual (item dentro de uma seção): se a seção estiver
+            // recolhida, só mostra o cabeçalho clicável e oculta os filhos.
+            const secaoAtual = (() => {
+              // Encontra a seção mais recente declarada em itens anteriores
+              let s: string | undefined = undefined
+              for (const it of navVisible) {
+                if (it === item) break
+                if (it.section) s = it.section
+              }
+              return item.section || s
+            })()
+            const recolhida = secaoAtual ? !!secoesRecolhidas[secaoAtual] : false
             return (
               <div key={item.href}>
                 {showSection && (
-                  <div style={{fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--text-muted)',padding:'14px 22px 6px'}}>{item.section}</div>
+                  <div className={'nav-section' + (recolhida?' nav-section-collapsed':'')}
+                       onClick={() => toggleSecao(item.section!)}
+                       title={recolhida?'Expandir':'Recolher'}>
+                    <span>{item.section}</span>
+                    <span className="nav-section-arrow">▾</span>
+                  </div>
                 )}
-                <div onClick={() => router.push(item.href)}
-                  style={{display:'flex',alignItems:'center',gap:10,padding:'9px 22px',cursor:'pointer',fontSize:13.5,color:active?'var(--gold)':'var(--text-muted)',background:active?'rgba(201,168,76,0.08)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?500:400,transition:'all 0.18s'}}>
-                  <span style={{fontSize:16,width:20,textAlign:'center'}}>{item.icon}</span>
-                  {item.label}
-                  {badgeCount > 0 && (
-                    <span style={{marginLeft:'auto',background:'var(--red)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
-                      {badgeCount}
-                    </span>
-                  )}
-                </div>
+                {!recolhida && (
+                  <div onClick={() => router.push(item.href)}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'rgba(201,168,76,0.08)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?500:400,transition:'all 0.18s'}}
+                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLDivElement).style.color = 'var(--text)' }}
+                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLDivElement).style.color = 'var(--text-muted)' }}>
+                    <span style={{fontSize:15,width:20,textAlign:'center'}}>{item.icon}</span>
+                    {item.label}
+                    {badgeCount > 0 && (
+                      <span style={{marginLeft:'auto',background:'var(--danger)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
+                        {badgeCount}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
