@@ -33,7 +33,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config' },
-  { href:'/dashboard/configuracoes',icon:'⚙️', label:'Motivos & Produtos', section:'Config', adminOnly:true },
+  { href:'/dashboard/configuracoes',icon:'⚙️', label:'Configurações', section:'Config', adminOnly:true },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
