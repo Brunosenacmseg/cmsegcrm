@@ -382,11 +382,7 @@ input[type="month"] {
   border-color: rgba(201,168,76,0.30) !important;
 }
 
-/* Top-bar do layout (header global notificacoes/usuario) tambem */
-[style*="height:52"][style*="rgba(255,255,255,0.92)"] {
-  background: #0a1628 !important;
-  border-bottom: 1px solid #1a3460 !important;
-}
+/* Header global (altura 48) fica branco — pages top-bars (56) viram navy */
 
 /* Modais agora tem fundo branco (#ffffff) — children sem color
    explicita herdam preto. Mas o titulo DM Serif Display fica

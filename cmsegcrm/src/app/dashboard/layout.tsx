@@ -249,7 +249,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <main style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
         {/* Header com sino */}
-        <div style={{height:52,borderBottom:'1px solid #1a3460',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'#0a1628',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
+        <div style={{height:48,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'#ffffff',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
           <div style={{flex:1}}/>
 
           <div style={{position:'relative'}}>
