@@ -1991,6 +1991,50 @@ create index if not exists idx_negocios_qualificacao on public.negocios(qualific
   where qualificacao > 0;
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 22. CARD COMPLETO: notas só admin edita + config table (de 024)
+-- ═════════════════════════════════════════════════════════════════════
+
+drop policy if exists "auth_atualiza_propria_nota" on public.negocio_notas;
+drop policy if exists "auth_deleta_propria_nota"    on public.negocio_notas;
+create policy "admin_atualiza_nota" on public.negocio_notas for update using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+create policy "admin_deleta_nota" on public.negocio_notas for delete using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+create table if not exists public.config (
+  chave text primary key,
+  valor jsonb not null,
+  atualizado_em timestamptz default now()
+);
+alter table public.config enable row level security;
+drop policy if exists "auth_le_config" on public.config;
+create policy "auth_le_config" on public.config for select using (auth.role() = 'authenticated');
+drop policy if exists "admin_escreve_config" on public.config;
+create policy "admin_escreve_config" on public.config for all using (
+  exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+insert into public.config (chave, valor) values
+('autentique_email_template', jsonb_build_object(
+  'assunto', 'Documento para assinatura — CM.seg',
+  'mensagem',
+'Olá {{cliente}},
+
+Segue o documento "{{documento}}" para sua assinatura digital.
+
+Por favor, leia com atenção e clique no link recebido por e-mail para assinar.
+
+Qualquer dúvida, entre em contato.
+
+CM.seg — Corretora de Seguros'
+))
+on conflict (chave) do nothing;
+
+create index if not exists idx_anexos_negocio on public.anexos(negocio_id) where negocio_id is not null;
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql

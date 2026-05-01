@@ -27,6 +27,19 @@ export default function FunisPage() {
   // Campos personalizados (definição do admin)
   const [camposPers, setCamposPers] = useState<any[]>([])
 
+  // Anexos do card
+  const [anexosCard, setAnexosCard] = useState<any[]>([])
+  const [uploadando, setUploadando] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Modal de assinatura eletrônica (a partir de um anexo PDF)
+  const [modalAssinatura, setModalAssinatura] = useState(false)
+  const [emailTemplate, setEmailTemplate] = useState({ assunto:'', mensagem:'' })
+  const [formAssinatura, setFormAssinatura] = useState({
+    anexo_id:'', signatarios:[{ nome:'', email:'' }], mensagem:'',
+  })
+  const [enviandoAssin, setEnviandoAssin] = useState(false)
+
   // Detalhes ricos do card aberto (tags / produtos / notas / origem)
   const [tagsCard, setTagsCard]         = useState<any[]>([])
   const [produtosCard, setProdutosCard] = useState<any[]>([])
@@ -71,6 +84,9 @@ export default function FunisPage() {
     supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
     supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
     supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
+    supabase.from('config').select('valor').eq('chave','autentique_email_template').maybeSingle().then(({ data }) => {
+      if (data?.valor) setEmailTemplate(data.valor as any)
+    })
   }, [])
 
   async function setCustomField(chave: string, valor: any) {
@@ -82,19 +98,119 @@ export default function FunisPage() {
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
-    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); return }
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); return }
     Promise.all([
       supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
       supabase.from('negocio_produtos').select('*').eq('negocio_id', cardAtivo.id).order('criado_em'),
       supabase.from('negocio_notas').select('*, users(nome,avatar_url)').eq('negocio_id', cardAtivo.id).order('criado_em', { ascending: false }),
       cardAtivo.origem_id ? supabase.from('origens').select('*').eq('id', cardAtivo.origem_id).maybeSingle() : Promise.resolve({ data: null }),
-    ]).then(([t, p, n, o]) => {
+      supabase.from('anexos').select('*, users(nome)').eq('negocio_id', cardAtivo.id).order('created_at', { ascending: false }),
+    ]).then(([t, p, n, o, a]) => {
       setTagsCard((t.data || []).map((x: any) => x.tags).filter(Boolean))
       setProdutosCard(p.data || [])
       setNotasCard(n.data || [])
       setOrigemCard((o as any).data || null)
+      setAnexosCard((a as any).data || [])
     })
   }, [cardAtivo?.id])
+
+  async function uploadAnexos(files: FileList | null) {
+    if (!files || !cardAtivo || !profile?.id) return
+    setUploadando(true)
+    const novos: any[] = []
+    for (const file of Array.from(files)) {
+      const ts = Date.now()
+      const safe = file.name.replace(/[^\w.\-]/g, '_')
+      const path = `negocios/${cardAtivo.id}/${ts}_${safe}`
+      const { error: upErr } = await supabase.storage.from('cmsegcrm').upload(path, file, { upsert: false })
+      if (upErr) { alert('Erro upload '+file.name+': '+upErr.message); continue }
+      const { data: anx, error } = await supabase.from('anexos').insert({
+        bucket:       'cmsegcrm',
+        path,
+        nome_arquivo: file.name,
+        tipo_mime:    file.type,
+        tamanho_kb:   Math.round(file.size / 1024),
+        categoria:    'negocio',
+        negocio_id:   cardAtivo.id,
+        cliente_id:   cardAtivo.cliente_id || null,
+        user_id:      profile.id,
+      }).select('*, users(nome)').single()
+      if (error) { alert('Erro registrar '+file.name+': '+error.message); continue }
+      if (anx) novos.push(anx)
+    }
+    setAnexosCard(prev => [...novos, ...prev])
+    setUploadando(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function urlAnexo(anexo: any): Promise<string | null> {
+    const { data } = await supabase.storage.from(anexo.bucket || 'cmsegcrm').createSignedUrl(anexo.path, 60 * 60)
+    return data?.signedUrl || null
+  }
+
+  async function baixarAnexo(anexo: any) {
+    const url = await urlAnexo(anexo)
+    if (url) window.open(url, '_blank')
+  }
+
+  async function excluirAnexo(anexo: any) {
+    if (profile?.role !== 'admin' && anexo.user_id !== profile?.id) { alert('Apenas o autor ou admin pode excluir.'); return }
+    if (!confirm(`Excluir "${anexo.nome_arquivo}"?`)) return
+    await supabase.storage.from(anexo.bucket || 'cmsegcrm').remove([anexo.path])
+    await supabase.from('anexos').delete().eq('id', anexo.id)
+    setAnexosCard(prev => prev.filter(a => a.id !== anexo.id))
+  }
+
+  function aplicarTemplate(template: { assunto: string; mensagem: string }, anexoNome?: string) {
+    const cliente = cardAtivo?.clientes?.nome || 'cliente'
+    const negocio = cardAtivo?.titulo || ''
+    const documento = (anexoNome || '').replace(/\.pdf$/i, '')
+    return template.mensagem
+      .replace(/\{\{cliente\}\}/g,   cliente)
+      .replace(/\{\{negocio\}\}/g,   negocio)
+      .replace(/\{\{documento\}\}/g, documento)
+  }
+
+  function abrirModalAssinatura() {
+    if (!cardAtivo) return
+    const pdfs = anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo))
+    if (pdfs.length === 0) { alert('Anexe pelo menos um PDF na seção "Anexos" antes de enviar para assinatura.'); return }
+    const primeiroAnexo = pdfs[0]
+    const sigDefault = cardAtivo.clientes?.email
+      ? [{ nome: cardAtivo.clientes.nome || '', email: cardAtivo.clientes.email }]
+      : [{ nome: '', email: '' }]
+    setFormAssinatura({
+      anexo_id: primeiroAnexo.id,
+      signatarios: sigDefault,
+      mensagem: aplicarTemplate(emailTemplate, primeiroAnexo.nome_arquivo),
+    })
+    setModalAssinatura(true)
+  }
+
+  async function enviarParaAssinatura() {
+    if (!formAssinatura.anexo_id) return
+    const sigs = formAssinatura.signatarios.filter(s => s.email.trim())
+    if (sigs.length === 0) { alert('Adicione pelo menos 1 signatário com email'); return }
+    setEnviandoAssin(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch('/api/autentique/criar-de-anexo', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          anexo_id:    formAssinatura.anexo_id,
+          signatarios: sigs.map(s => ({ email: s.email.trim(), name: s.nome.trim() || undefined })),
+          mensagem:    formAssinatura.mensagem || undefined,
+          negocio_id:  cardAtivo.id,
+          cliente_id:  cardAtivo.cliente_id || null,
+        }),
+      })
+      const j = await r.json()
+      if (!r.ok) { alert('Erro: '+(j.error||'desconhecido')); return }
+      alert('✅ Documento enviado para assinatura. Acompanhe em /dashboard/autentique.')
+      setModalAssinatura(false)
+    } finally { setEnviandoAssin(false) }
+  }
 
   async function adicionarTag(nome: string, cor = '#c9a84c') {
     if (!cardAtivo || !nome.trim()) return
@@ -141,6 +257,22 @@ export default function FunisPage() {
     }).select('*, users(nome,avatar_url)').single()
     if (data) setNotasCard(prev => [data, ...prev])
     setNovaNota('')
+  }
+
+  async function excluirNota(id: string) {
+    if (profile?.role !== 'admin') { alert('Apenas administradores podem excluir notas'); return }
+    if (!confirm('Excluir essa anotação?')) return
+    await supabase.from('negocio_notas').delete().eq('id', id)
+    setNotasCard(prev => prev.filter(n => n.id !== id))
+  }
+
+  const [editandoNota, setEditandoNota] = useState<{ id: string; conteudo: string } | null>(null)
+  async function salvarEdicaoNota() {
+    if (!editandoNota) return
+    if (profile?.role !== 'admin') { alert('Apenas administradores podem editar notas'); return }
+    await supabase.from('negocio_notas').update({ conteudo: editandoNota.conteudo }).eq('id', editandoNota.id)
+    setNotasCard(prev => prev.map(n => n.id === editandoNota.id ? { ...n, conteudo: editandoNota.conteudo } : n))
+    setEditandoNota(null)
   }
 
   async function setOrigemDoCard(id: string) {
@@ -906,9 +1038,54 @@ export default function FunisPage() {
               </div>
             </div>
 
+            {/* Anexos */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:8}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>📎 Anexos ({anexosCard.length})</div>
+                <div style={{display:'flex',gap:6}}>
+                  <button onClick={()=>fileInputRef.current?.click()} disabled={uploadando}
+                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    {uploadando ? '⏳ Enviando...' : '+ Anexar arquivo'}
+                  </button>
+                  <button onClick={abrirModalAssinatura}
+                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    ✍ Assinatura eletrônica
+                  </button>
+                </div>
+              </div>
+              <input ref={fileInputRef} type="file" multiple onChange={e=>uploadAnexos(e.target.files)} style={{display:'none'}} />
+              {anexosCard.length === 0 ? (
+                <div style={{fontSize:11,color:'var(--text-muted)',padding:'8px 0'}}>Nenhum arquivo anexado. Anexe contratos, propostas e documentos relacionados.</div>
+              ) : (
+                <div>
+                  {anexosCard.map(a => {
+                    const isPdf = /\.pdf$/i.test(a.nome_arquivo)
+                    return (
+                      <div key={a.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                        <span style={{fontSize:14}}>{isPdf?'📄':'📎'}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.nome_arquivo}</div>
+                          <div style={{fontSize:10,color:'var(--text-muted)'}}>
+                            {a.users?.nome || '—'} · {a.tamanho_kb ? `${a.tamanho_kb} KB` : ''} · {new Date(a.created_at).toLocaleString('pt-BR')}
+                          </div>
+                        </div>
+                        <button onClick={()=>baixarAnexo(a)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}} title="Baixar">⬇</button>
+                        {(profile?.role === 'admin' || a.user_id === profile?.id) && (
+                          <button onClick={()=>excluirAnexo(a)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}} title="Excluir">×</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Notas */}
             <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
-              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>📝 Notas / Anotações</div>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>
+                📝 Notas / Anotações
+                {profile?.role !== 'admin' && <span style={{fontWeight:400,marginLeft:8,textTransform:'none',letterSpacing:0,fontSize:9,color:'var(--text-muted)'}}>· apenas admin pode editar/excluir</span>}
+              </div>
               <div style={{display:'flex',gap:6,marginBottom:8}}>
                 <input value={novaNota} onChange={e=>setNovaNota(e.target.value)}
                   onKeyDown={e=>{if(e.key==='Enter')adicionarNota()}}
@@ -916,17 +1093,41 @@ export default function FunisPage() {
                   style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
                 <button onClick={adicionarNota} disabled={!novaNota.trim()} style={{padding:'6px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>+</button>
               </div>
-              <div style={{maxHeight:200,overflow:'auto'}}>
+              <div style={{maxHeight:240,overflow:'auto'}}>
                 {notasCard.length === 0 ? (
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>Sem notas</div>
-                ) : notasCard.map(n => (
-                  <div key={n.id} style={{padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
-                    <div style={{fontSize:12,marginBottom:2}}>{n.conteudo}</div>
-                    <div style={{fontSize:10,color:'var(--text-muted)'}}>
-                      {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                ) : notasCard.map(n => {
+                  const editing = editandoNota?.id === n.id
+                  return (
+                    <div key={n.id} style={{padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                      {editing ? (
+                        <div style={{display:'flex',gap:6,marginBottom:4}}>
+                          <textarea value={editandoNota!.conteudo} onChange={e=>setEditandoNota(p=>p?{...p,conteudo:e.target.value}:p)}
+                            rows={2} style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 8px',color:'var(--text)',fontSize:12,outline:'none',resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                          <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                            <button onClick={salvarEdicaoNota} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>✓</button>
+                            <button onClick={()=>setEditandoNota(null)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>✕</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{fontSize:12,marginBottom:2,whiteSpace:'pre-wrap'}}>{n.conteudo}</div>
+                      )}
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                        <div style={{fontSize:10,color:'var(--text-muted)'}}>
+                          {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                        </div>
+                        {profile?.role === 'admin' && !editing && (
+                          <div style={{display:'flex',gap:4}}>
+                            <button onClick={()=>setEditandoNota({id:n.id,conteudo:n.conteudo})}
+                              style={{padding:'2px 6px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--gold)',cursor:'pointer'}}>✎</button>
+                            <button onClick={()=>excluirNota(n.id)}
+                              style={{padding:'2px 6px',fontSize:10,borderRadius:5,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>🗑</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 
@@ -1018,6 +1219,68 @@ export default function FunisPage() {
                 setModalPerdido(null); setMotivoSelecionado(''); setMotivoCustom('')
               }} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.15)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
                 ✕ Confirmar perda
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Enviar para assinatura eletrônica (Autentique) */}
+      {modalAssinatura && cardAtivo && (
+        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalAssinatura(false)}>
+          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>✍ Enviar para assinatura eletrônica</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>{cardAtivo.titulo}</div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Documento *</label>
+              <select value={formAssinatura.anexo_id} onChange={e=>{
+                const a = anexosCard.find(x => x.id === e.target.value)
+                setFormAssinatura(f => ({
+                  ...f,
+                  anexo_id: e.target.value,
+                  mensagem: aplicarTemplate(emailTemplate, a?.nome_arquivo),
+                }))
+              }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                {anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo)).map(a => (
+                  <option key={a.id} value={a.id}>{a.nome_arquivo}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Signatários *</label>
+              {formAssinatura.signatarios.map((s, i) => (
+                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:6}}>
+                  <input value={s.nome} onChange={e=>setFormAssinatura(f=>{const a=[...f.signatarios];a[i]={...a[i],nome:e.target.value};return {...f,signatarios:a}})} placeholder="Nome" style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none'}} />
+                  <input value={s.email} onChange={e=>setFormAssinatura(f=>{const a=[...f.signatarios];a[i]={...a[i],email:e.target.value};return {...f,signatarios:a}})} placeholder="email@exemplo.com" type="email" style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none'}} />
+                  <button onClick={()=>setFormAssinatura(f=>({...f,signatarios:f.signatarios.filter((_,j)=>j!==i)}))}
+                    disabled={formAssinatura.signatarios.length===1}
+                    style={{padding:'6px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:formAssinatura.signatarios.length===1?'not-allowed':'pointer',opacity:formAssinatura.signatarios.length===1?0.4:1}}>×</button>
+                </div>
+              ))}
+              <button onClick={()=>setFormAssinatura(f=>({...f,signatarios:[...f.signatarios,{nome:'',email:''}]}))}
+                style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>+ Adicionar signatário</button>
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>
+                Mensagem (template — variáveis: <code>{'{{cliente}}'}</code>, <code>{'{{negocio}}'}</code>, <code>{'{{documento}}'}</code>)
+              </label>
+              <textarea value={formAssinatura.mensagem} onChange={e=>setFormAssinatura(f=>({...f,mensagem:e.target.value}))} rows={6}
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}} />
+              {profile?.role === 'admin' && (
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
+                  <a href="/dashboard/configuracoes" style={{color:'var(--gold)'}}>Editar template padrão</a> nas Configurações.
+                </div>
+              )}
+            </div>
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalAssinatura(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={enviarParaAssinatura} disabled={enviandoAssin||!formAssinatura.anexo_id}>
+                {enviandoAssin ? 'Enviando...' : '✍ Enviar para assinatura'}
               </button>
             </div>
           </div>

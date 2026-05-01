@@ -246,7 +246,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main style={{marginLeft:'var(--sidebar-w)',flex:1,display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>setShowNotif(false)}>
+      <main style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
         {/* Header com sino */}
         <div style={{height:52,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'rgba(10,22,40,0.8)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
           <div style={{flex:1}}/>
