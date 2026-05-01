@@ -222,27 +222,64 @@ export default function ImportarPage() {
       return novo
     })
 
-    try {
-      const r = await fetch('/api/importar', {
-        method: 'POST',
-        headers: await authHeaders(),
-        body: JSON.stringify({ entidade, linhas, nome_arquivo: nomeArquivo, formato }),
-      })
-      const j = await r.json()
-      if (!r.ok) {
-        alert('Erro: ' + (j.error || 'falha'))
-        setImportando(false)
-        return
+    // Manda em lotes de 100 pra evitar timeout do Vercel (~60s no Hobby).
+    // Acumula stats de cada lote e parseia resposta com proteção contra
+    // HTML de erro (que aparece quando a função timeoutar mesmo assim).
+    const TAMANHO_LOTE = 100
+    const totalLotes = Math.ceil(linhas.length / TAMANHO_LOTE)
+    const acc = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+    let falhouTudo = false
+
+    for (let i = 0; i < linhas.length; i += TAMANHO_LOTE) {
+      const lote = linhas.slice(i, i + TAMANHO_LOTE)
+      const numLote = Math.floor(i / TAMANHO_LOTE) + 1
+      setResultado({ ...acc, _progresso: `Lote ${numLote}/${totalLotes} — ${i + lote.length}/${linhas.length} linhas` })
+      try {
+        const r = await fetch('/api/importar', {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify({ entidade, linhas: lote, nome_arquivo: nomeArquivo, formato }),
+        })
+        const txt = await r.text()
+        let j: any
+        try { j = JSON.parse(txt) }
+        catch {
+          // Vercel devolve HTML em timeout / 500. Tenta detectar.
+          const ehTimeout = /timeout|504|gateway|an error o/i.test(txt)
+          acc.qtd_erros += lote.length
+          acc.erros.push(ehTimeout
+            ? `Lote ${numLote}: timeout do servidor (lote grande). Tente arquivos menores.`
+            : `Lote ${numLote}: resposta inválida (${txt.slice(0, 80)})`
+          )
+          if (acc.erros.length > 30) acc.erros = acc.erros.slice(0, 30)
+          continue
+        }
+        if (!r.ok) {
+          acc.qtd_erros += lote.length
+          acc.erros.push(`Lote ${numLote}: ${j.error || 'erro'}`)
+          continue
+        }
+        const s = j.stats || {}
+        acc.qtd_lidos      += s.qtd_lidos      || lote.length
+        acc.qtd_criados    += s.qtd_criados    || 0
+        acc.qtd_atualizados+= s.qtd_atualizados|| 0
+        acc.qtd_erros      += s.qtd_erros      || 0
+        if (s.erros) acc.erros = [...acc.erros, ...s.erros].slice(0, 30)
+      } catch (e: any) {
+        acc.qtd_erros += lote.length
+        acc.erros.push(`Lote ${numLote}: ${e.message}`)
       }
-      setResultado(j.stats)
-      setStep('sucesso')
-      const { data: h } = await supabase.from('importacoes_dados').select('*').order('iniciado_em', { ascending: false }).limit(15)
-      setHistorico(h || [])
-    } catch (e: any) {
-      alert('Erro: ' + e.message)
-    } finally {
-      setImportando(false)
     }
+
+    setResultado(acc)
+    setStep('sucesso')
+    if (acc.qtd_criados + acc.qtd_atualizados === 0 && acc.qtd_erros === linhas.length) {
+      falhouTudo = true
+    }
+    if (falhouTudo) alert('Nenhuma linha foi importada. Veja a aba "Erros" pra detalhes.')
+    const { data: h } = await supabase.from('importacoes_dados').select('*').order('iniciado_em', { ascending: false }).limit(15)
+    setHistorico(h || [])
+    setImportando(false)
   }
 
   function novoImport() {
@@ -404,8 +441,16 @@ export default function ImportarPage() {
                 </table>
               </div>
               {excelData.rows.length > 10 && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>... e mais {excelData.rows.length-10} linhas</div>}
+              {importando && resultado?._progresso && (
+                <div style={{marginTop:16,padding:'12px 16px',background:'rgba(74,128,240,0.06)',border:'1px solid rgba(74,128,240,0.25)',borderRadius:8,fontSize:13}}>
+                  ⏳ {resultado._progresso}
+                  {' · '}
+                  <strong style={{color:'var(--success)'}}>{(resultado.qtd_criados||0) + (resultado.qtd_atualizados||0)} ok</strong>
+                  {(resultado.qtd_erros||0) > 0 && <> · <strong style={{color:'var(--danger)'}}>{resultado.qtd_erros} erros</strong></>}
+                </div>
+              )}
               <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
-                <button className="btn-secondary" onClick={()=>setStep('mapear')}>← Voltar</button>
+                <button className="btn-secondary" onClick={()=>setStep('mapear')} disabled={importando}>← Voltar</button>
                 <button className="btn-primary" onClick={confirmarImportacao} disabled={importando}>
                   {importando?'⏳ Importando...':'✅ Confirmar Importação'}
                 </button>
