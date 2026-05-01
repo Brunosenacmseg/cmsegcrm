@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CRM — Prévia de temas claros</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: #f8f9fc; padding: 24px; }
+h1 { font-family: 'DM Serif Display', serif; font-size: 28px; color: #0f172a; margin-bottom: 8px; }
+.descr { color: #64748b; font-size: 14px; max-width: 760px; margin-bottom: 28px; line-height: 1.6; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1400px; margin: 0 auto; }
+@media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+.theme-card { border-radius: 14px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+.theme-header { padding: 14px 18px; background: #0f172a; color: white; display: flex; justify-content: space-between; align-items: center; }
+.theme-title { font-family: 'DM Serif Display', serif; font-size: 18px; }
+.theme-subtitle { font-size: 11px; opacity: 0.75; letter-spacing: 1px; text-transform: uppercase; }
+.preview { display: flex; height: 540px; }
+
+/* ━━━━━ Componentes mockup ━━━━━ */
+.mock { flex: 1; display: flex; }
+.sidebar { width: 180px; padding: 14px 12px; flex-shrink: 0; }
+.brand { font-family: 'DM Serif Display', serif; font-size: 18px; margin-bottom: 18px; padding-left: 8px; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; font-size: 12px; margin-bottom: 2px; }
+.nav-item.active { font-weight: 600; }
+.content { flex: 1; padding: 16px 18px; overflow: hidden; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid; margin-bottom: 14px; }
+.title-page { font-family: 'DM Serif Display', serif; font-size: 16px; }
+.kpi-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.kpi { padding: 10px 12px; border-radius: 8px; border: 1px solid; }
+.kpi-label { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; opacity: 0.7; }
+.kpi-value { font-family: 'DM Serif Display', serif; font-size: 17px; font-weight: 700; }
+.kanban-col { padding: 8px; border-radius: 8px; border: 1px solid; min-height: 120px; }
+.kanban-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px; }
+.kanban-title { font-size: 11px; font-weight: 600; }
+.kanban-count { font-size: 9px; padding: 1px 6px; border-radius: 8px; }
+.kanban-card { padding: 8px 10px; border-radius: 6px; border: 1px solid; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.kanban-card-titulo { font-size: 11px; font-weight: 500; margin-bottom: 4px; }
+.kanban-card-cliente { font-size: 10px; opacity: 0.75; }
+.kanban-card-valor { font-size: 11px; font-weight: 600; margin-top: 4px; }
+.btn { padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+.btn-primary { color: white; }
+.btn-secondary { border: 1px solid; }
+.row-flex { display: flex; gap: 6px; align-items: center; }
+.badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* ━━━━━ TEMA A — CLEAN PRO ━━━━━ */
+.t-a .mock { background: #ffffff; }
+.t-a .sidebar { background: #f5f7fb; border-right: 1px solid #e2e8f0; }
+.t-a .brand { color: #0f172a; }
+.t-a .nav-item { color: #475569; }
+.t-a .nav-item.active { background: #dbeafe; color: #1e40af; }
+.t-a .nav-item:hover { background: #eff6ff; }
+.t-a .content { color: #0f172a; }
+.t-a .topbar { border-color: #e2e8f0; color: #0f172a; }
+.t-a .kpi { background: #ffffff; border-color: #e2e8f0; color: #0f172a; }
+.t-a .kpi-1 .kpi-value { color: #2563eb; }
+.t-a .kpi-2 .kpi-value { color: #059669; }
+.t-a .kpi-3 .kpi-value { color: #d97706; }
+.t-a .kanban-col { background: #f5f7fb; border-color: #e2e8f0; }
+.t-a .kanban-title { color: #0f172a; }
+.t-a .kanban-count { background: #dbeafe; color: #1e40af; }
+.t-a .kanban-card { background: #ffffff; border-color: #e2e8f0; color: #0f172a; }
+.t-a .kanban-card-cliente { color: #64748b; }
+.t-a .kanban-card-valor { color: #2563eb; }
+.t-a .btn-primary { background: #2563eb; }
+.t-a .btn-secondary { background: white; border-color: #cbd5e1; color: #0f172a; }
+.t-a .badge.success { background: #d1fae5; color: #065f46; }
+
+/* ━━━━━ TEMA B — CORPORATE BLUE ━━━━━ */
+.t-b .mock { background: #ffffff; }
+.t-b .sidebar { background: #eff3fa; border-right: 1px solid #cbd5e1; }
+.t-b .brand { color: #1e293b; }
+.t-b .nav-item { color: #475569; }
+.t-b .nav-item.active { background: #c7d7f5; color: #1e3a8a; font-weight: 700; }
+.t-b .nav-item:hover { background: #dbe6f7; }
+.t-b .content { color: #1e293b; }
+.t-b .topbar { border-color: #cbd5e1; color: #1e293b; }
+.t-b .kpi { background: #ffffff; border-color: #cbd5e1; color: #1e293b; }
+.t-b .kpi-1 .kpi-value { color: #1e40af; }
+.t-b .kpi-2 .kpi-value { color: #047857; }
+.t-b .kpi-3 .kpi-value { color: #b45309; }
+.t-b .kanban-col { background: #eff3fa; border-color: #cbd5e1; }
+.t-b .kanban-title { color: #1e293b; }
+.t-b .kanban-count { background: #c7d7f5; color: #1e3a8a; }
+.t-b .kanban-card { background: #ffffff; border-color: #cbd5e1; color: #1e293b; }
+.t-b .kanban-card-cliente { color: #475569; }
+.t-b .kanban-card-valor { color: #1e40af; }
+.t-b .btn-primary { background: #1e40af; }
+.t-b .btn-secondary { background: white; border-color: #94a3b8; color: #1e293b; }
+.t-b .badge.success { background: #d1fae5; color: #065f46; }
+
+/* ━━━━━ TEMA C — SOFT LIGHT ━━━━━ */
+.t-c .mock { background: #fafbfc; }
+.t-c .sidebar { background: #ffffff; border-right: 1px solid #e5e7eb; }
+.t-c .brand { color: #111827; }
+.t-c .nav-item { color: #4b5563; }
+.t-c .nav-item.active { background: #eff6ff; color: #1d4ed8; }
+.t-c .nav-item:hover { background: #f3f4f6; }
+.t-c .content { color: #111827; }
+.t-c .topbar { border-color: #e5e7eb; color: #111827; }
+.t-c .kpi { background: #ffffff; border-color: #e5e7eb; color: #111827; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.t-c .kpi-1 .kpi-value { color: #3b82f6; }
+.t-c .kpi-2 .kpi-value { color: #10b981; }
+.t-c .kpi-3 .kpi-value { color: #f59e0b; }
+.t-c .kanban-col { background: #f9fafb; border-color: #e5e7eb; }
+.t-c .kanban-title { color: #111827; }
+.t-c .kanban-count { background: #eff6ff; color: #1d4ed8; }
+.t-c .kanban-card { background: #ffffff; border-color: #e5e7eb; color: #111827; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.t-c .kanban-card-cliente { color: #6b7280; }
+.t-c .kanban-card-valor { color: #3b82f6; }
+.t-c .btn-primary { background: #3b82f6; }
+.t-c .btn-secondary { background: white; border-color: #d1d5db; color: #111827; }
+.t-c .badge.success { background: #d1fae5; color: #065f46; }
+
+/* ━━━━━ TEMA D — DOURADO MANTIDO ━━━━━ */
+.t-d .mock { background: #ffffff; }
+.t-d .sidebar { background: #faf8f3; border-right: 1px solid #e8e0c8; }
+.t-d .brand { color: #1a1a2e; }
+.t-d .nav-item { color: #4b5563; }
+.t-d .nav-item.active { background: #fdf6e3; color: #92702f; border-left: 3px solid #b8923f; }
+.t-d .nav-item:hover { background: #faf3e0; }
+.t-d .content { color: #1a1a2e; }
+.t-d .topbar { border-color: #e8e0c8; color: #1a1a2e; }
+.t-d .kpi { background: #ffffff; border-color: #e8e0c8; color: #1a1a2e; }
+.t-d .kpi-1 .kpi-value { color: #2563eb; }
+.t-d .kpi-2 .kpi-value { color: #b8923f; }
+.t-d .kpi-3 .kpi-value { color: #c2410c; }
+.t-d .kanban-col { background: #faf8f3; border-color: #e8e0c8; }
+.t-d .kanban-title { color: #1a1a2e; }
+.t-d .kanban-count { background: #fdf6e3; color: #92702f; }
+.t-d .kanban-card { background: #ffffff; border-color: #e8e0c8; color: #1a1a2e; }
+.t-d .kanban-card-cliente { color: #6b7280; }
+.t-d .kanban-card-valor { color: #b8923f; }
+.t-d .btn-primary { background: #2563eb; }
+.t-d .btn-secondary { background: white; border-color: #b8923f; color: #92702f; }
+.t-d .badge.success { background: #d1fae5; color: #065f46; }
+</style>
+</head>
+<body>
+
+<h1>Prévia de temas claros — CRM CM.seg</h1>
+<p class="descr">
+  4 propostas com os mesmos componentes do CRM real (sidebar, KPIs, kanban). Escolha a que mais
+  agrada e me responda <strong>"aplica A"</strong>, <strong>"aplica B"</strong>, etc.
+  Se quiser mistura ou ajuste de cor, é só falar (ex: <em>"A com botões mais escuros"</em>).
+</p>
+
+<div class="grid">
+
+  <!-- TEMA A -->
+  <div class="theme-card t-a">
+    <div class="theme-header">
+      <div class="theme-title">A — Clean Pro</div>
+      <div class="theme-subtitle">azul vibrante · branco</div>
+    </div>
+    <div class="preview">
+      <div class="mock">
+        <div class="sidebar">
+          <div class="brand">CM.seg</div>
+          <div class="nav-item">📈 Dashboard</div>
+          <div class="nav-item active">🏗 Funis</div>
+          <div class="nav-item">🔍 Cotações</div>
+          <div class="nav-item">📞 Telefone</div>
+          <div class="nav-item">💬 WhatsApp</div>
+          <div class="nav-item">👥 Clientes</div>
+          <div class="nav-item">📋 Apólices</div>
+          <div class="nav-item">💼 Financeiro</div>
+        </div>
+        <div class="content">
+          <div class="topbar">
+            <div class="title-page">💼 Funil — VENDA</div>
+            <div class="row-flex">
+              <button class="btn btn-secondary">⚙ Filtros</button>
+              <button class="btn btn-primary">+ Novo Card</button>
+            </div>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi kpi-1"><div class="kpi-label">Receita Bruta</div><div class="kpi-value">R$ 45.230</div></div>
+            <div class="kpi kpi-2"><div class="kpi-label">Ganhos</div><div class="kpi-value">12</div></div>
+            <div class="kpi kpi-3"><div class="kpi-label">Pendente</div><div class="kpi-value">R$ 8.420</div></div>
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-head">
+              <div class="kanban-title">PROPOSTA ENVIADA</div>
+              <span class="kanban-count">3</span>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Auto - João Silva</div>
+              <div class="kanban-card-cliente">👤 João Silva · ABC-1D23</div>
+              <div class="row-flex" style="justify-content:space-between;align-items:end;">
+                <div class="kanban-card-valor">R$ 4.500,00</div>
+                <span class="badge success">★★★★☆</span>
+              </div>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Vida - Maria Costa</div>
+              <div class="kanban-card-cliente">👤 Maria Costa</div>
+              <div class="kanban-card-valor">R$ 1.890,00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEMA B -->
+  <div class="theme-card t-b">
+    <div class="theme-header">
+      <div class="theme-title">B — Corporate Blue</div>
+      <div class="theme-subtitle">institucional · estilo bancário</div>
+    </div>
+    <div class="preview">
+      <div class="mock">
+        <div class="sidebar">
+          <div class="brand">CM.seg</div>
+          <div class="nav-item">📈 Dashboard</div>
+          <div class="nav-item active">🏗 Funis</div>
+          <div class="nav-item">🔍 Cotações</div>
+          <div class="nav-item">📞 Telefone</div>
+          <div class="nav-item">💬 WhatsApp</div>
+          <div class="nav-item">👥 Clientes</div>
+          <div class="nav-item">📋 Apólices</div>
+          <div class="nav-item">💼 Financeiro</div>
+        </div>
+        <div class="content">
+          <div class="topbar">
+            <div class="title-page">💼 Funil — VENDA</div>
+            <div class="row-flex">
+              <button class="btn btn-secondary">⚙ Filtros</button>
+              <button class="btn btn-primary">+ Novo Card</button>
+            </div>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi kpi-1"><div class="kpi-label">Receita Bruta</div><div class="kpi-value">R$ 45.230</div></div>
+            <div class="kpi kpi-2"><div class="kpi-label">Ganhos</div><div class="kpi-value">12</div></div>
+            <div class="kpi kpi-3"><div class="kpi-label">Pendente</div><div class="kpi-value">R$ 8.420</div></div>
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-head">
+              <div class="kanban-title">PROPOSTA ENVIADA</div>
+              <span class="kanban-count">3</span>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Auto - João Silva</div>
+              <div class="kanban-card-cliente">👤 João Silva · ABC-1D23</div>
+              <div class="kanban-card-valor">R$ 4.500,00</div>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Vida - Maria Costa</div>
+              <div class="kanban-card-cliente">👤 Maria Costa</div>
+              <div class="kanban-card-valor">R$ 1.890,00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEMA C -->
+  <div class="theme-card t-c">
+    <div class="theme-header">
+      <div class="theme-title">C — Soft Light</div>
+      <div class="theme-subtitle">descansa a vista · suave</div>
+    </div>
+    <div class="preview">
+      <div class="mock">
+        <div class="sidebar">
+          <div class="brand">CM.seg</div>
+          <div class="nav-item">📈 Dashboard</div>
+          <div class="nav-item active">🏗 Funis</div>
+          <div class="nav-item">🔍 Cotações</div>
+          <div class="nav-item">📞 Telefone</div>
+          <div class="nav-item">💬 WhatsApp</div>
+          <div class="nav-item">👥 Clientes</div>
+          <div class="nav-item">📋 Apólices</div>
+          <div class="nav-item">💼 Financeiro</div>
+        </div>
+        <div class="content">
+          <div class="topbar">
+            <div class="title-page">💼 Funil — VENDA</div>
+            <div class="row-flex">
+              <button class="btn btn-secondary">⚙ Filtros</button>
+              <button class="btn btn-primary">+ Novo Card</button>
+            </div>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi kpi-1"><div class="kpi-label">Receita Bruta</div><div class="kpi-value">R$ 45.230</div></div>
+            <div class="kpi kpi-2"><div class="kpi-label">Ganhos</div><div class="kpi-value">12</div></div>
+            <div class="kpi kpi-3"><div class="kpi-label">Pendente</div><div class="kpi-value">R$ 8.420</div></div>
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-head">
+              <div class="kanban-title">PROPOSTA ENVIADA</div>
+              <span class="kanban-count">3</span>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Auto - João Silva</div>
+              <div class="kanban-card-cliente">👤 João Silva · ABC-1D23</div>
+              <div class="kanban-card-valor">R$ 4.500,00</div>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Vida - Maria Costa</div>
+              <div class="kanban-card-cliente">👤 Maria Costa</div>
+              <div class="kanban-card-valor">R$ 1.890,00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEMA D -->
+  <div class="theme-card t-d">
+    <div class="theme-header">
+      <div class="theme-title">D — Dourado Mantido</div>
+      <div class="theme-subtitle">azul + dourado da marca</div>
+    </div>
+    <div class="preview">
+      <div class="mock">
+        <div class="sidebar">
+          <div class="brand">CM.seg</div>
+          <div class="nav-item">📈 Dashboard</div>
+          <div class="nav-item active">🏗 Funis</div>
+          <div class="nav-item">🔍 Cotações</div>
+          <div class="nav-item">📞 Telefone</div>
+          <div class="nav-item">💬 WhatsApp</div>
+          <div class="nav-item">👥 Clientes</div>
+          <div class="nav-item">📋 Apólices</div>
+          <div class="nav-item">💼 Financeiro</div>
+        </div>
+        <div class="content">
+          <div class="topbar">
+            <div class="title-page">💼 Funil — VENDA</div>
+            <div class="row-flex">
+              <button class="btn btn-secondary">⚙ Filtros</button>
+              <button class="btn btn-primary">+ Novo Card</button>
+            </div>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi kpi-1"><div class="kpi-label">Receita Bruta</div><div class="kpi-value">R$ 45.230</div></div>
+            <div class="kpi kpi-2"><div class="kpi-label">Ganhos</div><div class="kpi-value">12</div></div>
+            <div class="kpi kpi-3"><div class="kpi-label">Pendente</div><div class="kpi-value">R$ 8.420</div></div>
+          </div>
+          <div class="kanban-col">
+            <div class="kanban-head">
+              <div class="kanban-title">PROPOSTA ENVIADA</div>
+              <span class="kanban-count">3</span>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Auto - João Silva</div>
+              <div class="kanban-card-cliente">👤 João Silva · ABC-1D23</div>
+              <div class="kanban-card-valor">R$ 4.500,00</div>
+            </div>
+            <div class="kanban-card">
+              <div class="kanban-card-titulo">Vida - Maria Costa</div>
+              <div class="kanban-card-cliente">👤 Maria Costa</div>
+              <div class="kanban-card-valor">R$ 1.890,00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
