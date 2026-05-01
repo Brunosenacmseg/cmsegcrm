@@ -1996,6 +1996,8 @@ create index if not exists idx_negocios_qualificacao on public.negocios(qualific
 
 drop policy if exists "auth_atualiza_propria_nota" on public.negocio_notas;
 drop policy if exists "auth_deleta_propria_nota"    on public.negocio_notas;
+drop policy if exists "admin_atualiza_nota"         on public.negocio_notas;
+drop policy if exists "admin_deleta_nota"           on public.negocio_notas;
 create policy "admin_atualiza_nota" on public.negocio_notas for update using (
   exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
 );
