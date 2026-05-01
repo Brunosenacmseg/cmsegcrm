@@ -538,7 +538,10 @@ export default function WhatsAppPage() {
                   {mensagens.map(m=>(
                     <div key={m.id} style={{display:'flex',justifyContent:m.direcao==='enviada'?'flex-end':'flex-start'}}>
                       <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'rgba(201,168,76,0.15)':'rgba(255,255,255,0.06)',border:`1px solid ${m.direcao==='enviada'?'rgba(201,168,76,0.25)':'rgba(255,255,255,0.08)'}`}}>
-                        <div style={{fontSize:13,lineHeight:1.5}}>{m.conteudo}</div>
+                        <MidiaMensagem m={m} />
+                        {m.conteudo && (m.tipo==='text' || m.tipo==='sticker' || m.tipo==='document' || (m.conteudo && !['📷 Imagem','🎬 Vídeo','🎵 Áudio'].includes(m.conteudo))) && (
+                          <div style={{fontSize:13,lineHeight:1.5,marginTop:m.midia_url?6:0}}>{m.conteudo}</div>
+                        )}
                         <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,textAlign:'right'}}>
                           {new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
                           {m.direcao==='enviada'&&' ✓'}
@@ -714,6 +717,90 @@ export default function WhatsAppPage() {
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
     </Shell>
   )
+}
+
+// Renderiza a mídia da mensagem (imagem, vídeo, áudio, documento, sticker).
+// Resolve a signed URL do Storage sob demanda e mostra transcrição de áudio.
+function MidiaMensagem({ m }: { m: any }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [transcricao, setTranscricao] = useState<string | null>(m.transcricao || null)
+  const [transcrevendo, setTranscrevendo] = useState(false)
+
+  useEffect(() => {
+    if (!m.midia_url) return
+    let cancel = false
+    fetch(`/api/whatsapp/midia?path=${encodeURIComponent(m.midia_url)}`)
+      .then(r => r.json())
+      .then(d => { if (!cancel && d.url) setUrl(d.url) })
+    return () => { cancel = true }
+  }, [m.midia_url])
+
+  useEffect(() => { setTranscricao(m.transcricao || null) }, [m.transcricao])
+
+  async function transcreverAgora() {
+    setTranscrevendo(true)
+    try {
+      const r = await fetch('/api/whatsapp/midia', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ mensagem_id: m.id }),
+      })
+      const d = await r.json()
+      if (d.transcricao) setTranscricao(d.transcricao)
+      else alert('Não foi possível transcrever: ' + (d.error || 'erro desconhecido'))
+    } finally { setTranscrevendo(false) }
+  }
+
+  if (!m.midia_url) return null
+
+  if (m.tipo === 'image' || m.tipo === 'sticker') {
+    return url ? (
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt="" style={{maxWidth:260,maxHeight:280,borderRadius:8,display:'block'}} />
+      </a>
+    ) : <div style={{fontSize:11,color:'var(--text-muted)'}}>📷 carregando imagem...</div>
+  }
+
+  if (m.tipo === 'video') {
+    return url ? (
+      <video src={url} controls style={{maxWidth:280,borderRadius:8,display:'block'}} />
+    ) : <div style={{fontSize:11,color:'var(--text-muted)'}}>🎬 carregando vídeo...</div>
+  }
+
+  if (m.tipo === 'audio') {
+    return (
+      <div style={{minWidth:240}}>
+        {url
+          ? <audio src={url} controls style={{width:'100%'}} />
+          : <div style={{fontSize:11,color:'var(--text-muted)'}}>🎵 carregando áudio...</div>}
+        {transcricao ? (
+          <div style={{marginTop:6,padding:'6px 8px',background:'rgba(28,181,160,0.08)',border:'1px solid rgba(28,181,160,0.25)',borderRadius:6,fontSize:12,fontStyle:'italic',color:'var(--text)'}}>
+            <div style={{fontSize:10,color:'var(--teal)',fontWeight:600,marginBottom:2}}>📝 Transcrição</div>
+            {transcricao}
+          </div>
+        ) : (
+          <button onClick={transcreverAgora} disabled={transcrevendo}
+            style={{marginTop:6,fontSize:11,background:'rgba(255,255,255,0.06)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'4px 10px',cursor:'pointer'}}>
+            {transcrevendo ? 'Transcrevendo...' : '📝 Transcrever áudio'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (m.tipo === 'document') {
+    return url ? (
+      <a href={url} target="_blank" rel="noreferrer"
+        style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,textDecoration:'none',color:'var(--text)',minWidth:220}}>
+        <span style={{fontSize:24}}>📄</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.midia_nome || 'Documento'}</div>
+          <div style={{fontSize:10,color:'var(--text-muted)'}}>{m.midia_mimetype || 'arquivo'}</div>
+        </div>
+      </a>
+    ) : <div style={{fontSize:11,color:'var(--text-muted)'}}>📄 carregando arquivo...</div>
+  }
+
+  return null
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
