@@ -399,20 +399,13 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         await supabaseAdmin.from('negocios').update(payload).eq('id', existente.id)
         stats.qtd_atualizados++
       } else {
-        // Negócios sem cliente exigem cliente_id NOT NULL no schema original.
-        // Se não há cliente_id, criamos um placeholder com o nome do deal.
-        if (!payload.cliente_id) {
-          const { data: ph } = await supabaseAdmin.from('clientes').insert({
-            nome: dx.organization?.name || dx.name || 'Sem cliente (RD)',
-            tipo: dx.organization?.name ? 'PJ' : 'PF',
-            fonte: 'RD Station CRM',
-          }).select('id').single()
-          payload.cliente_id = ph?.id
-        }
-        if (payload.cliente_id) {
-          await supabaseAdmin.from('negocios').insert(payload)
-          stats.qtd_criados++
-        }
+        // Cliente_id pode ser null (schema já permite após 003_fix_schema.sql).
+        // NÃO criamos placeholder com nome do deal — isso poluía o módulo
+        // de clientes com pseudo-clientes que eram na verdade negócios.
+        // Se o deal não tem contato vinculado, salvamos negocio com
+        // cliente_id=null e a UI mostra botão "Vincular cliente".
+        await supabaseAdmin.from('negocios').insert(payload)
+        stats.qtd_criados++
       }
     } catch (e: any) {
       stats.qtd_erros++

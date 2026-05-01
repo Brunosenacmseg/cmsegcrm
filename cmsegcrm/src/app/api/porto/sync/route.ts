@@ -219,6 +219,8 @@ async function criarNegocio(funilId: string, etapa: string, titulo: string, prod
     titulo, funil_id: funilId, etapa, produto, premio, obs,
     cliente_id: clienteId || null,
     cpf_cnpj:   cpfCnpj   || null,
+    fonte:      'Porto Seguro',
+    seguradora: 'Porto Seguro',
   }).select('id').single()
   return data?.id || null
 }
@@ -339,6 +341,7 @@ async function processarAPP(arquivo: any, texto: string) {
             etapa:        'Ativo',
             produto,
             seguradora:   'Porto Seguro',
+            fonte:        'Porto Seguro',
             premio:       apolice.premio || 1,
             comissao_pct: apolice.comissao_pct || 0,
             obs:          `Apólice Porto ${num} (importada via integração)`,

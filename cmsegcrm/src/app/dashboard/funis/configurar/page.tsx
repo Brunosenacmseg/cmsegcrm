@@ -140,9 +140,32 @@ export default function ConfigurarFunisPage() {
   }
 
   async function excluir(f: Funil) {
-    if (!confirm(`Excluir o funil "${f.nome}"?\n\nObservação: cards (negócios) já existentes nesse funil podem ficar órfãos.`)) return
-    const { error } = await supabase.from('funis').delete().eq('id', f.id)
-    if (error) { alert('Erro ao excluir: '+error.message+'\nProvavelmente existem negócios vinculados.'); return }
+    // Conta cards do funil
+    const { count: cards } = await supabase
+      .from('negocios')
+      .select('*', { count: 'exact', head: true })
+      .eq('funil_id', f.id)
+
+    const msg = (cards || 0) > 0
+      ? `O funil "${f.nome}" tem ${cards} card(s).\n\nIsto irá excluir o funil E todos os ${cards} card(s) dentro dele.\nEsta ação NÃO pode ser desfeita.\n\nConfirmar?`
+      : `Excluir o funil "${f.nome}"?\n\nEsta ação não pode ser desfeita.`
+    if (!confirm(msg)) return
+
+    // Apaga primeiro os negócios (FK negocios.funil_id é RESTRICT)
+    if ((cards || 0) > 0) {
+      const { error: e1 } = await supabase.from('negocios').delete().eq('funil_id', f.id)
+      if (e1) { alert('Erro ao excluir os cards: ' + e1.message); return }
+    }
+
+    // Agora apaga o funil. .select() devolve as linhas removidas — se vier
+    // vazio, é a RLS que rejeitou silenciosamente.
+    const { data, error } = await supabase.from('funis').delete().eq('id', f.id).select()
+    if (error) { alert('Erro ao excluir o funil: ' + error.message); return }
+    if (!data || data.length === 0) {
+      alert('Não foi possível excluir o funil.\n\nProvavelmente seu usuário não tem permissão de admin (RLS bloqueou silenciosamente).\n\nVerifique seu perfil em /dashboard/perfil ou peça pra um admin.')
+      return
+    }
+
     await carregar()
   }
 
