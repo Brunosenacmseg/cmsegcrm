@@ -69,6 +69,8 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'cpf_cnpj',   label: 'CPF/CNPJ Cliente', hints: ['cpf','cnpj'] },
     { campo: 'funil',      label: 'Funil (nome)',     hints: ['funil','pipeline'] },
     { campo: 'etapa',      label: 'Etapa',            hints: ['etapa','stage'] },
+    { campo: 'estado',     label: 'Estado/Status',    hints: ['estado','status','situacao','situação'] },
+    { campo: 'motivo_perda', label: 'Motivo Perda',   hints: ['motivo','motivo_perda','razao'] },
     { campo: 'produto',    label: 'Produto',          hints: ['produto','ramo'] },
     { campo: 'seguradora', label: 'Seguradora',       hints: ['seguradora','cia'] },
     { campo: 'premio',     label: 'Prêmio',           hints: ['premio','prêmio','valor'] },

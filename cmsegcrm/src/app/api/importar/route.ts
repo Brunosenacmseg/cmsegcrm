@@ -111,6 +111,18 @@ async function importarNegocios(linhas: any[]) {
         const { data: c } = await supabaseAdmin.from('clientes').select('id').eq('cpf_cnpj', cpf).maybeSingle()
         clienteId = c?.id || null
       }
+
+      // Mapeamento estado/status → ganho/perdido/em_andamento
+      // Aceita variações em pt: vendida, vendido, ganha, ganhou, ganho,
+      // fechado, fechada, won → ganho. perdida, perdido, perdeu, lost,
+      // cancelada, cancelado → perdido. Senão (em andamento, ativo,
+      // aberto, vazio) → em_andamento.
+      const estadoRaw = (s(r.estado || r.status || r.situacao) || '').toLowerCase()
+      let status: 'ganho'|'perdido'|'em_andamento' = 'em_andamento'
+      let dataFech: string | null = null
+      if (/vend|ganh|fechad|won/.test(estadoRaw))                 { status = 'ganho';   dataFech = new Date().toISOString() }
+      else if (/perd|cancel|lost/.test(estadoRaw))                { status = 'perdido'; dataFech = new Date().toISOString() }
+
       const payload: any = {
         titulo,
         cliente_id: clienteId,
@@ -125,6 +137,9 @@ async function importarNegocios(linhas: any[]) {
         fonte: s(r.fonte) || 'Importação CSV/XLSX',
         vencimento: dateBR(r.vencimento),
         obs: s(r.obs || r.observacoes),
+        status,
+        data_fechamento: dataFech,
+        motivo_perda: status === 'perdido' ? (s(r.motivo_perda) || null) : null,
       }
       await supabaseAdmin.from('negocios').insert(payload)
       stats.qtd_criados++
