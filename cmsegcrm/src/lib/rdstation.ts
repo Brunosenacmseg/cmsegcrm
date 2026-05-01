@@ -16,12 +16,19 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
   const qs = new URLSearchParams({ token, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) })
   const url = `${BASE}${path}?${qs.toString()}`
 
-  for (let tentativa = 0; tentativa < 4; tentativa++) {
+  // 6 tentativas com backoff exponencial: 2s, 4s, 8s, 16s, 32s, 64s = até 2min
+  // por chamada. RD limita ~120 req/min, então em rajadas de paginação é
+  // comum bater 429. Respeita Retry-After se o RD enviar.
+  let totalEspera = 0
+  for (let tentativa = 0; tentativa < 6; tentativa++) {
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
 
     if (res.status === 429) {
-      // Rate limit — espera exponencial
-      await new Promise(r => setTimeout(r, 1500 * (tentativa + 1)))
+      // RD pode mandar Retry-After (em segundos)
+      const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10)
+      const esperaMs = Math.max(retryAfter * 1000, 2000 * Math.pow(2, tentativa)) // mínimo 2s, dobra a cada tentativa
+      totalEspera += esperaMs
+      await new Promise(r => setTimeout(r, esperaMs))
       continue
     }
     if (!res.ok) {
@@ -30,7 +37,21 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
     }
     return res.json() as Promise<T>
   }
-  throw new Error(`RD: rate limit excedido em ${path}`)
+  throw new Error(`RD: rate limit (429) excedido em ${path} — ${(totalEspera/1000).toFixed(0)}s de espera total`)
+}
+
+// Throttle global: garante intervalo mínimo entre chamadas RD pra
+// não bater no rate limit. ~120 req/min = 1 req a cada ~500ms.
+let ultimaRDFetch = 0
+async function rdFetchThrottled<T = any>(path: string, token: string, params: Record<string, string | number> = {}): Promise<T> {
+  const agora = Date.now()
+  const desdeUltima = agora - ultimaRDFetch
+  const intervaloMin = 600 // ~100 req/min, abaixo do limite de 120
+  if (desdeUltima < intervaloMin) {
+    await new Promise(r => setTimeout(r, intervaloMin - desdeUltima))
+  }
+  ultimaRDFetch = Date.now()
+  return rdFetch<T>(path, token, params)
 }
 
 // Extrai array de itens da resposta — tenta a chave primária e algumas alternativas comuns
@@ -50,7 +71,7 @@ export async function* paginar<T = any>(path: string, token: string, key: string
   let page = 1
   const limit = 200
   while (true) {
-    const data = await rdFetch<any>(path, token, { ...extraParams, page, limit })
+    const data = await rdFetchThrottled<any>(path, token, { ...extraParams, page, limit })
     const itens = extrairItens<T>(data, key)
     for (const item of itens) yield item
     if (itens.length < limit) break
@@ -192,7 +213,7 @@ export const rdId = (o: any): string | null => (o?._id || o?.id || null)
 // paginado costuma omitir). Tolera erro retornando null.
 export async function buscarDealDetalhe(id: string, token: string): Promise<RDDeal | null> {
   try {
-    return await rdFetch<RDDeal>(`/deals/${id}`, token)
+    return await rdFetchThrottled<RDDeal>(`/deals/${id}`, token)
   } catch {
     return null
   }
