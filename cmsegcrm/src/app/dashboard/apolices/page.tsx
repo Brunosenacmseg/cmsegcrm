@@ -142,17 +142,16 @@ export default function ApolicesPage() {
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'28px 28px 40px'}}>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:24}}>
           {[
-            {label:'Total de Apólices',val:filtrados.length,cor:'linear-gradient(90deg,#4a80f0,#7aa3f8)'},
-            {label:'Prêmio Total',val:'R$ '+fmt(premioTotal),cor:'linear-gradient(90deg,var(--gold),var(--gold-light))'},
-            {label:'Comissão Total',val:'R$ '+fmt(comissaoTotal),cor:'linear-gradient(90deg,var(--teal),#4dd9c7)'},
-            {label:'Vencendo (30d)',val:vencendo30d,cor:'linear-gradient(90deg,var(--red),#f08080)'},
-          ].map(({label,val,cor})=>(
-            <div key={label} className="card" style={{position:'relative',overflow:'hidden'}}>
-              <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:cor,borderRadius:'14px 14px 0 0'}}/>
-              <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>{label}</div>
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:26,lineHeight:1}}>{val}</div>
+            {label:'Total de Apólices', val:filtrados.length,           tone:'info'    as const},
+            {label:'Prêmio Total',      val:'R$ '+fmt(premioTotal),     tone:'warning' as const},
+            {label:'Comissão Total',    val:'R$ '+fmt(comissaoTotal),   tone:'success' as const},
+            {label:'Vencendo (30d)',    val:vencendo30d,                tone:'danger'  as const},
+          ].map(({label,val,tone})=>(
+            <div key={label} className={`kpi kpi-${tone}`}>
+              <div className="kpi-label">{label}</div>
+              <div className={`kpi-value ${tone === 'success' ? 'kpi-value-success' : tone === 'warning' ? 'kpi-value-warning' : tone === 'danger' ? 'kpi-value-danger' : ''}`}>{val}</div>
             </div>
           ))}
         </div>

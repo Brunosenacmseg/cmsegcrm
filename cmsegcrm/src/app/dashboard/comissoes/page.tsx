@@ -211,16 +211,15 @@ export default function ComissoesPage(){
             <span style={{marginLeft:'auto',fontSize:12,color:'var(--text-muted)'}}>{recLista.length} lançamento{recLista.length!==1?'s':''}</span>
           </div>
 
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:20,marginBottom:24}}>
             {[
-              {label:'Total Recebido '+(vistaAno?anoSel:MESES[mesSel]), val:'R$ '+fmtFull(recTotal), cor:'linear-gradient(90deg,var(--teal),#4dd9c7)'},
-              {label:'Lançamentos', val:recLista.length, cor:'linear-gradient(90deg,var(--gold),var(--gold-light))'},
-              {label:'Vendedores ativos', val:recRankVendedores.length, cor:'linear-gradient(90deg,#4a80f0,#7aa3f8)'},
-            ].map(({label,val,cor})=>(
-              <div key={label} className="card" style={{position:'relative',overflow:'hidden'}}>
-                <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:cor,borderRadius:'14px 14px 0 0'}}/>
-                <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>{label}</div>
-                <div style={{fontFamily:'DM Serif Display,serif',fontSize:26,lineHeight:1}}>{val}</div>
+              {label:'Total Recebido '+(vistaAno?anoSel:MESES[mesSel]), val:'R$ '+fmtFull(recTotal), tone:'success' as const},
+              {label:'Lançamentos',       val:recLista.length,                                       tone:'warning' as const},
+              {label:'Vendedores ativos', val:recRankVendedores.length,                              tone:'info'    as const},
+            ].map(({label,val,tone})=>(
+              <div key={label} className={`kpi kpi-${tone}`}>
+                <div className="kpi-label">{label}</div>
+                <div className={`kpi-value ${tone === 'success' ? 'kpi-value-success' : tone === 'warning' ? 'kpi-value-warning' : ''}`}>{val}</div>
               </div>
             ))}
           </div>
@@ -302,12 +301,16 @@ export default function ComissoesPage(){
             <button onClick={()=>setVistaAno(!vistaAno)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:vistaAno?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:vistaAno?'var(--gold)':'var(--text-muted)',borderColor:vistaAno?'var(--gold)':'var(--border)'}}>{vistaAno?'📅 Ver por mês':'📆 Ver ano'}</button>
           </div>
 
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
-            {[{label:'Comissão '+(vistaAno?anoSel:MESES[mesSel]),val:'R$ '+fmtFull(comissaoLista),cor:'linear-gradient(90deg,var(--teal),#4dd9c7)'},{label:'Prêmio Base',val:'R$ '+fmtFull(premioLista),cor:'linear-gradient(90deg,var(--gold),var(--gold-light))'},{label:'Média Comissão',val:mediaComissao.toFixed(1)+'%',cor:'linear-gradient(90deg,#4a80f0,#7aa3f8)'},{label:'Negócios',val:lista.length,cor:'linear-gradient(90deg,var(--red),#f08080)'}].map(({label,val,cor})=>(
-              <div key={label} className="card fade-up" style={{position:'relative',overflow:'hidden'}}>
-                <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:cor,borderRadius:'14px 14px 0 0'}}/>
-                <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>{label}</div>
-                <div style={{fontFamily:'DM Serif Display,serif',fontSize:26,lineHeight:1}}>{val}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:24}}>
+            {[
+              {label:'Comissão '+(vistaAno?anoSel:MESES[mesSel]), val:'R$ '+fmtFull(comissaoLista), tone:'success' as const},
+              {label:'Prêmio Base',     val:'R$ '+fmtFull(premioLista),         tone:'warning' as const},
+              {label:'Média Comissão',  val:mediaComissao.toFixed(1)+'%',       tone:'info'    as const},
+              {label:'Negócios',        val:lista.length,                       tone:'danger'  as const},
+            ].map(({label,val,tone})=>(
+              <div key={label} className={`kpi kpi-${tone} fade-up`}>
+                <div className="kpi-label">{label}</div>
+                <div className={`kpi-value ${tone === 'success' ? 'kpi-value-success' : tone === 'warning' ? 'kpi-value-warning' : tone === 'danger' ? 'kpi-value-danger' : ''}`}>{val}</div>
               </div>
             ))}
           </div>
