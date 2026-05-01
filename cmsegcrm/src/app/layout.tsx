@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'CM.segCRM',
-  description: 'CRM para Corretora de Seguros',
+  title: 'CM Seguros',
+  description: 'CM Seguros — Transformando vidas através do seguro',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

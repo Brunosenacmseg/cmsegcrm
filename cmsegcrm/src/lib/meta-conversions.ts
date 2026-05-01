@@ -90,7 +90,7 @@ export async function enviarEventoCRM(opts: CrmEventOpts) {
   const userData = opts.cliente ? montarUserData(opts.cliente) : {}
   const customData = {
     event_source: 'crm',
-    lead_event_source: opts.leadEventSource || 'CM.segCRM',
+    lead_event_source: opts.leadEventSource || 'CM Seguros',
     ...(opts.customData || {}),
   }
 
