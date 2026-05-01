@@ -22,6 +22,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
   { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE' },
+  { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar' },
   { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing' },
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', adminOnly:true },

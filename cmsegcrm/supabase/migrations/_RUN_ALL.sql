@@ -2134,6 +2134,58 @@ alter table public.clientes
   add column if not exists dados_porto jsonb;
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 25. CONTAS A PAGAR + COMPRAS PARA APROVACAO (de 027)
+-- ═════════════════════════════════════════════════════════════════════
+
+create table if not exists public.contas_pagar (
+  id uuid primary key default uuid_generate_v4(),
+  tipo text not null default 'conta' check (tipo in ('conta','compra_aprovacao')),
+  nome text not null, valor numeric(12,2) not null check (valor >= 0),
+  vencimento date not null, descricao text, fornecedor text, forma_pagto text,
+  anexo_id uuid references public.anexos(id) on delete set null,
+  status text not null default 'pendente' check (status in ('pendente','aprovado','pago','recusado')),
+  data_pagamento date, obs_admin text,
+  categoria_id uuid references public.financeiro_categorias(id),
+  despesa_id uuid references public.financeiro_despesas(id) on delete set null,
+  criado_por uuid references public.users(id),
+  aprovado_por uuid references public.users(id),
+  pago_por uuid references public.users(id),
+  recusado_por uuid references public.users(id),
+  criado_em timestamptz default now(), atualizado_em timestamptz default now()
+);
+create index if not exists idx_contas_pagar_status on public.contas_pagar(status);
+create index if not exists idx_contas_pagar_tipo   on public.contas_pagar(tipo);
+create index if not exists idx_contas_pagar_venc   on public.contas_pagar(vencimento);
+create index if not exists idx_contas_pagar_user   on public.contas_pagar(criado_por);
+
+alter table public.contas_pagar enable row level security;
+drop policy if exists "le_contas_pagar" on public.contas_pagar;
+create policy "le_contas_pagar" on public.contas_pagar for select using (
+  criado_por = auth.uid()
+  or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+drop policy if exists "insere_contas_pagar" on public.contas_pagar;
+create policy "insere_contas_pagar" on public.contas_pagar for insert with check (
+  auth.role() = 'authenticated' and criado_por = auth.uid()
+);
+drop policy if exists "atualiza_contas_pagar" on public.contas_pagar;
+create policy "atualiza_contas_pagar" on public.contas_pagar for update using (
+  (criado_por = auth.uid() and status = 'pendente')
+  or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+drop policy if exists "deleta_contas_pagar" on public.contas_pagar;
+create policy "deleta_contas_pagar" on public.contas_pagar for delete using (
+  (criado_por = auth.uid() and status = 'pendente')
+  or exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
+);
+
+create or replace function public.contas_pagar_set_atualizado()
+returns trigger as $$ begin new.atualizado_em = now(); return new; end; $$ language plpgsql;
+drop trigger if exists contas_pagar_atualizado on public.contas_pagar;
+create trigger contas_pagar_atualizado before update on public.contas_pagar
+  for each row execute procedure public.contas_pagar_set_atualizado();
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql
