@@ -551,7 +551,7 @@ export default function WhatsAppPage() {
 
                 {/* Painel emoji */}
                 {showEmojis && (
-                  <div style={{padding:'10px 16px',borderTop:'1px solid var(--border)',background:'rgba(10,22,40,0.95)',display:'flex',flexWrap:'wrap',gap:6}}>
+                  <div style={{padding:'10px 16px',borderTop:'1px solid var(--border)',background:'#ffffff',display:'flex',flexWrap:'wrap',gap:6}}>
                     {EMOJIS.map(e=>(
                       <button key={e} onClick={()=>setTextoEnvio(t=>t+e)}
                         style={{background:'none',border:'none',fontSize:22,cursor:'pointer',borderRadius:6,padding:'4px',transition:'transform 0.1s'}}
@@ -565,7 +565,7 @@ export default function WhatsAppPage() {
 
                 {/* Painel stickers */}
                 {showStickers && (
-                  <div style={{padding:'10px 16px',borderTop:'1px solid var(--border)',background:'rgba(10,22,40,0.95)',display:'flex',flexWrap:'wrap',gap:8}}>
+                  <div style={{padding:'10px 16px',borderTop:'1px solid var(--border)',background:'#ffffff',display:'flex',flexWrap:'wrap',gap:8}}>
                     {STICKERS_DEMO.map(s=>(
                       <button key={s.id} onClick={()=>enviarSticker(s)}
                         style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:10,padding:'8px 12px',cursor:'pointer',fontSize:24,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}
@@ -578,7 +578,7 @@ export default function WhatsAppPage() {
                 )}
 
                 {/* Input área */}
-                <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',background:'rgba(10,22,40,0.5)'}}>
+                <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',background:'var(--bg-soft)'}}>
                   {gravandoAudio ? (
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
                       <div style={{width:10,height:10,borderRadius:'50%',background:'var(--red)',animation:'pulse 1s infinite'}}/>
@@ -719,7 +719,7 @@ export default function WhatsAppPage() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>💬 WhatsApp</div>
       </div>
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>{children}</div>

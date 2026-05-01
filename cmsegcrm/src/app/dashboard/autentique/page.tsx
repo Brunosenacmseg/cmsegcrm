@@ -105,7 +105,7 @@ export default function AutentiquePage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'rgba(10,22,40,0.7)'}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)'}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>✍️ Autentique — Assinaturas Digitais</div>
         <button onClick={sincronizar} disabled={sync} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
           {sync ? 'Sincronizando...' : '🔄 Sincronizar status'}

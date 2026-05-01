@@ -279,7 +279,7 @@ export default function PortoIntegracaoPage() {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Topbar */}
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{flex:1,display:'flex',alignItems:'center',gap:12}}>
           <div style={{fontFamily:'DM Serif Display,serif',fontSize:18}}>🏢 Porto Seguro</div>
           <span style={{fontSize:11,padding:'2px 10px',borderRadius:10,background:'rgba(28,181,160,0.15)',color:'var(--teal)',border:'1px solid rgba(28,181,160,0.3)'}}>● Integração Ativa</span>

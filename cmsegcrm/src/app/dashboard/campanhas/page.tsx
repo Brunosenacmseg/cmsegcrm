@@ -114,7 +114,7 @@ export default function CampanhasPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'rgba(10,22,40,0.7)',position:'sticky',top:0,zIndex:5}}>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',position:'sticky',top:0,zIndex:5}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>📣 Campanhas Meta</div>
         <select value={periodo} onChange={e=>setPeriodo(Number(e.target.value) as any)}
           style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>
