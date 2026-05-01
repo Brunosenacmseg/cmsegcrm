@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-type Aba = 'motivos' | 'produtos' | 'campos'
+type Aba = 'motivos' | 'produtos' | 'campos' | 'templates'
 
 export default function ConfiguracoesPage() {
   const supabase = createClient()
@@ -21,6 +21,13 @@ export default function ConfiguracoesPage() {
   const emptyCampo = { entidade:'negocio', nome:'', chave:'', tipo:'texto', opcoes:'', obrigatorio:false }
   const [novoCampo, setNovoCampo] = useState<any>(emptyCampo)
   const [editCampo, setEditCampo] = useState<any>(null)
+
+  // Templates de email (assinatura)
+  const [templates, setTemplates] = useState<any[]>([])
+  const emptyTemplate = { nome:'', categoria:'assinatura', assunto:'', mensagem:'', is_default:false }
+  const [editTemplate, setEditTemplate] = useState<any>(null)
+  const [modalTemplate, setModalTemplate] = useState(false)
+  const [formTemplate, setFormTemplate] = useState<any>(emptyTemplate)
 
   // Form motivo
   const [novoMotivo, setNovoMotivo] = useState('')
@@ -43,14 +50,59 @@ export default function ConfiguracoesPage() {
   }
 
   async function carregar() {
-    const [{ data: m }, { data: p }, { data: c }] = await Promise.all([
+    const [{ data: m }, { data: p }, { data: c }, { data: t }] = await Promise.all([
       supabase.from('motivos_perda').select('*').order('ordem').order('nome'),
       supabase.from('produtos').select('*').order('nome'),
       supabase.from('campos_personalizados').select('*').order('entidade').order('ordem').order('nome'),
+      supabase.from('email_templates').select('*').order('categoria').order('nome'),
     ])
     setMotivos(m || [])
     setProdutos(p || [])
     setCampos(c || [])
+    setTemplates(t || [])
+  }
+
+  async function salvarTemplate() {
+    if (!formTemplate.nome.trim() || !formTemplate.mensagem.trim()) return
+    const payload: any = {
+      nome: formTemplate.nome.trim(),
+      categoria: formTemplate.categoria,
+      assunto: formTemplate.assunto || null,
+      mensagem: formTemplate.mensagem,
+      is_default: !!formTemplate.is_default,
+      criado_por: profile?.id,
+    }
+    // Se marcando default, desmarca os outros da mesma categoria primeiro
+    if (formTemplate.is_default) {
+      await supabase.from('email_templates').update({ is_default: false })
+        .eq('categoria', formTemplate.categoria).neq('id', editTemplate?.id || '00000000-0000-0000-0000-000000000000')
+    }
+    if (editTemplate) {
+      const { error } = await supabase.from('email_templates').update(payload).eq('id', editTemplate.id)
+      if (error) { alert('Erro: '+error.message); return }
+    } else {
+      const { error } = await supabase.from('email_templates').insert(payload)
+      if (error) { alert('Erro: '+error.message); return }
+    }
+    setModalTemplate(false); setEditTemplate(null); setFormTemplate(emptyTemplate)
+    await carregar()
+  }
+
+  async function excluirTemplate(id: string, nome: string) {
+    if (!confirm(`Excluir o template "${nome}"?`)) return
+    await supabase.from('email_templates').delete().eq('id', id)
+    await carregar()
+  }
+
+  async function toggleTemplateAtivo(t: any) {
+    await supabase.from('email_templates').update({ ativo: !t.ativo }).eq('id', t.id)
+    await carregar()
+  }
+
+  async function tornarDefault(t: any) {
+    await supabase.from('email_templates').update({ is_default: false }).eq('categoria', t.categoria)
+    await supabase.from('email_templates').update({ is_default: true }).eq('id', t.id)
+    await carregar()
   }
 
   function slugify(s: string): string {
@@ -160,7 +212,7 @@ export default function ConfiguracoesPage() {
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
         <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',marginBottom:18}}>
-          {([['motivos','✕ Motivos de Perda'],['produtos','📦 Produtos'],['campos','🧩 Campos personalizados']] as [Aba,string][]).map(([k,l])=>(
+          {([['motivos','✕ Motivos de Perda'],['produtos','📦 Produtos'],['campos','🧩 Campos personalizados'],['templates','📧 Templates de Email']] as [Aba,string][]).map(([k,l])=>(
             <button key={k} onClick={()=>setAba(k)}
               style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'DM Sans,sans-serif'}}>
               {l}
@@ -357,7 +409,113 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         )}
+
+        {aba === 'templates' && (
+          <div style={{maxWidth:920}}>
+            <div className="card" style={{marginBottom:16}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>📧 Templates de Email</div>
+                <button onClick={()=>{setEditTemplate(null);setFormTemplate(emptyTemplate);setModalTemplate(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>+ Novo template</button>
+              </div>
+              <div style={{fontSize:12,color:'var(--text-muted)',lineHeight:1.5}}>
+                Templates de mensagem usados ao enviar documentos para assinatura digital (Autentique).
+                Variáveis disponíveis: <code>{'{{cliente}}'}</code>, <code>{'{{negocio}}'}</code>, <code>{'{{documento}}'}</code>.
+                Marque um template como <strong style={{color:'var(--gold)'}}>padrão</strong> da categoria pra ele vir pré-selecionado quando alguém for enviar um documento.
+              </div>
+            </div>
+
+            {templates.length === 0 ? (
+              <div className="card" style={{textAlign:'center',padding:'30px 20px',color:'var(--text-muted)'}}>
+                <div style={{fontSize:36,marginBottom:10}}>📧</div>
+                <div style={{marginBottom:10}}>Nenhum template cadastrado.</div>
+                <button onClick={()=>{setEditTemplate(null);setFormTemplate(emptyTemplate);setModalTemplate(true)}} className="btn-primary">+ Criar primeiro</button>
+              </div>
+            ) : (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(360px, 1fr))',gap:14}}>
+                {templates.map(t => (
+                  <div key={t.id} className="card" style={{display:'flex',flexDirection:'column'}}>
+                    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8,gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>{t.nome}</div>
+                        <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:1,marginTop:2}}>{t.categoria}</div>
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end'}}>
+                        {t.is_default && <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:5,background:'rgba(201,168,76,0.18)',color:'var(--gold)',border:'1px solid rgba(201,168,76,0.4)',textTransform:'uppercase',letterSpacing:1}}>Padrão</span>}
+                        <button onClick={()=>toggleTemplateAtivo(t)} style={{fontSize:9,padding:'2px 7px',borderRadius:5,background:t.ativo?'var(--success-bg)':'rgba(255,255,255,0.04)',color:t.ativo?'var(--success)':'var(--text-muted)',border:'1px solid '+(t.ativo?'var(--success-border)':'var(--border)'),textTransform:'uppercase',letterSpacing:1,cursor:'pointer'}}>{t.ativo?'Ativo':'Inativo'}</button>
+                      </div>
+                    </div>
+                    {t.assunto && <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:8}}><strong style={{color:'var(--text)'}}>Assunto:</strong> {t.assunto}</div>}
+                    <pre style={{whiteSpace:'pre-wrap',fontSize:11,padding:10,background:'rgba(0,0,0,0.3)',borderRadius:8,fontFamily:'DM Sans,sans-serif',color:'var(--text-muted)',maxHeight:120,overflow:'auto',marginBottom:10}}>{t.mensagem}</pre>
+                    <div style={{display:'flex',gap:6,marginTop:'auto',flexWrap:'wrap'}}>
+                      {!t.is_default && (
+                        <button onClick={()=>tornarDefault(t)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',cursor:'pointer'}}>★ Tornar padrão</button>
+                      )}
+                      <button onClick={()=>{
+                        setEditTemplate(t)
+                        setFormTemplate({nome:t.nome,categoria:t.categoria,assunto:t.assunto||'',mensagem:t.mensagem,is_default:t.is_default})
+                        setModalTemplate(true)
+                      }} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>✎ Editar</button>
+                      <button onClick={()=>excluirTemplate(t.id, t.nome)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {modalTemplate && (
+        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalTemplate(false)}>
+          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>
+              {editTemplate ? '✎ Editar template' : '+ Novo template de email'}
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:12,marginBottom:14}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Nome *</label>
+                <input value={formTemplate.nome} onChange={e=>setFormTemplate((f:any)=>({...f,nome:e.target.value}))} placeholder='Ex: "Renovação Auto"' style={inp} autoFocus />
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Categoria</label>
+                <select value={formTemplate.categoria} onChange={e=>setFormTemplate((f:any)=>({...f,categoria:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                  <option value="assinatura">Assinatura</option>
+                  <option value="renovacao">Renovação</option>
+                  <option value="cobranca">Cobrança</option>
+                  <option value="geral">Geral</option>
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Padrão</label>
+                <label style={{display:'flex',alignItems:'center',gap:6,marginTop:8,cursor:'pointer',fontSize:13}}>
+                  <input type="checkbox" checked={!!formTemplate.is_default} onChange={e=>setFormTemplate((f:any)=>({...f,is_default:e.target.checked}))} style={{accentColor:'var(--gold)'}} />
+                  <span style={{color:'var(--gold)'}}>★ Padrão da categoria</span>
+                </label>
+              </div>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Assunto</label>
+              <input value={formTemplate.assunto} onChange={e=>setFormTemplate((f:any)=>({...f,assunto:e.target.value}))} placeholder="Documento para assinatura — CM.seg" style={inp} />
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>
+                Mensagem * <span style={{textTransform:'none',letterSpacing:0,fontWeight:400,color:'var(--text-muted)'}}>· variáveis: <code>{'{{cliente}}'}</code> <code>{'{{negocio}}'}</code> <code>{'{{documento}}'}</code></span>
+              </label>
+              <textarea value={formTemplate.mensagem} onChange={e=>setFormTemplate((f:any)=>({...f,mensagem:e.target.value}))} rows={10}
+                style={{...inp,resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}} />
+            </div>
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalTemplate(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={salvarTemplate} disabled={!formTemplate.nome.trim()||!formTemplate.mensagem.trim()}>✓ Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

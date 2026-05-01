@@ -34,9 +34,9 @@ export default function FunisPage() {
 
   // Modal de assinatura eletrônica (a partir de um anexo PDF)
   const [modalAssinatura, setModalAssinatura] = useState(false)
-  const [emailTemplate, setEmailTemplate] = useState({ assunto:'', mensagem:'' })
+  const [templates, setTemplates] = useState<any[]>([])
   const [formAssinatura, setFormAssinatura] = useState({
-    anexo_id:'', signatarios:[{ nome:'', email:'' }], mensagem:'',
+    anexo_id:'', template_id:'', signatarios:[{ nome:'', email:'' }], mensagem:'', assunto:'',
   })
   const [enviandoAssin, setEnviandoAssin] = useState(false)
 
@@ -84,9 +84,10 @@ export default function FunisPage() {
     supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
     supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
     supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
-    supabase.from('config').select('valor').eq('chave','autentique_email_template').maybeSingle().then(({ data }) => {
-      if (data?.valor) setEmailTemplate(data.valor as any)
-    })
+    supabase.from('email_templates').select('*').eq('ativo', true)
+      .in('categoria', ['assinatura','renovacao','cobranca','geral'])
+      .order('categoria').order('is_default', { ascending: false }).order('nome')
+      .then(({ data }) => setTemplates(data || []))
   }, [])
 
   async function setCustomField(chave: string, valor: any) {
@@ -161,14 +162,25 @@ export default function FunisPage() {
     setAnexosCard(prev => prev.filter(a => a.id !== anexo.id))
   }
 
-  function aplicarTemplate(template: { assunto: string; mensagem: string }, anexoNome?: string) {
+  function substituirVars(texto: string, anexoNome?: string) {
     const cliente = cardAtivo?.clientes?.nome || 'cliente'
     const negocio = cardAtivo?.titulo || ''
     const documento = (anexoNome || '').replace(/\.pdf$/i, '')
-    return template.mensagem
+    return (texto || '')
       .replace(/\{\{cliente\}\}/g,   cliente)
       .replace(/\{\{negocio\}\}/g,   negocio)
       .replace(/\{\{documento\}\}/g, documento)
+  }
+
+  function aplicarTemplateNoForm(templateId: string, anexoNome?: string) {
+    const t = templates.find(x => x.id === templateId)
+    if (!t) return
+    setFormAssinatura(f => ({
+      ...f,
+      template_id: templateId,
+      assunto:  substituirVars(t.assunto || '',  anexoNome),
+      mensagem: substituirVars(t.mensagem || '', anexoNome),
+    }))
   }
 
   function abrirModalAssinatura() {
@@ -179,10 +191,16 @@ export default function FunisPage() {
     const sigDefault = cardAtivo.clientes?.email
       ? [{ nome: cardAtivo.clientes.nome || '', email: cardAtivo.clientes.email }]
       : [{ nome: '', email: '' }]
+    // Pré-seleciona o template default (preferência: categoria assinatura)
+    const tDefault = templates.find(t => t.is_default && t.categoria === 'assinatura')
+                  || templates.find(t => t.is_default)
+                  || templates[0]
     setFormAssinatura({
       anexo_id: primeiroAnexo.id,
+      template_id: tDefault?.id || '',
       signatarios: sigDefault,
-      mensagem: aplicarTemplate(emailTemplate, primeiroAnexo.nome_arquivo),
+      mensagem:  tDefault ? substituirVars(tDefault.mensagem || '', primeiroAnexo.nome_arquivo) : '',
+      assunto:   tDefault ? substituirVars(tDefault.assunto || '',  primeiroAnexo.nome_arquivo) : '',
     })
     setModalAssinatura(true)
   }
@@ -1233,20 +1251,44 @@ export default function FunisPage() {
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>✍ Enviar para assinatura eletrônica</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>{cardAtivo.titulo}</div>
 
-            <div style={{marginBottom:14}}>
-              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Documento *</label>
-              <select value={formAssinatura.anexo_id} onChange={e=>{
-                const a = anexosCard.find(x => x.id === e.target.value)
-                setFormAssinatura(f => ({
-                  ...f,
-                  anexo_id: e.target.value,
-                  mensagem: aplicarTemplate(emailTemplate, a?.nome_arquivo),
-                }))
-              }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
-                {anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo)).map(a => (
-                  <option key={a.id} value={a.id}>{a.nome_arquivo}</option>
-                ))}
-              </select>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Documento *</label>
+                <select value={formAssinatura.anexo_id} onChange={e=>{
+                  const a = anexosCard.find(x => x.id === e.target.value)
+                  // Reaplica template ao trocar de doc (atualiza variáveis)
+                  const t = templates.find(x => x.id === formAssinatura.template_id)
+                  setFormAssinatura(f => ({
+                    ...f,
+                    anexo_id: e.target.value,
+                    mensagem: t ? substituirVars(t.mensagem || '', a?.nome_arquivo) : f.mensagem,
+                    assunto:  t ? substituirVars(t.assunto || '',  a?.nome_arquivo) : f.assunto,
+                  }))
+                }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  {anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo)).map(a => (
+                    <option key={a.id} value={a.id}>{a.nome_arquivo}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>
+                  Template
+                  {profile?.role === 'admin' && <a href="/dashboard/configuracoes" target="_blank" rel="noreferrer" style={{marginLeft:6,fontSize:9,color:'var(--gold)',textTransform:'none',letterSpacing:0,fontWeight:400}}>gerenciar →</a>}
+                </label>
+                <select value={formAssinatura.template_id} onChange={e=>{
+                  const a = anexosCard.find(x => x.id === formAssinatura.anexo_id)
+                  aplicarTemplateNoForm(e.target.value, a?.nome_arquivo)
+                }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  <option value="">— escolha um template —</option>
+                  {Array.from(new Set(templates.map(t => t.categoria))).map(cat => (
+                    <optgroup key={cat} label={cat.toUpperCase()}>
+                      {templates.filter(t => t.categoria === cat).map(t => (
+                        <option key={t.id} value={t.id}>{t.is_default ? '★ ' : ''}{t.nome}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div style={{marginBottom:14}}>
@@ -1264,17 +1306,20 @@ export default function FunisPage() {
                 style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>+ Adicionar signatário</button>
             </div>
 
+            {formAssinatura.assunto && (
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Assunto</label>
+                <input value={formAssinatura.assunto} onChange={e=>setFormAssinatura(f=>({...f,assunto:e.target.value}))}
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+            )}
+
             <div style={{marginBottom:18}}>
               <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>
-                Mensagem (template — variáveis: <code>{'{{cliente}}'}</code>, <code>{'{{negocio}}'}</code>, <code>{'{{documento}}'}</code>)
+                Mensagem <span style={{textTransform:'none',letterSpacing:0,fontWeight:400}}>· variáveis: <code>{'{{cliente}}'}</code> <code>{'{{negocio}}'}</code> <code>{'{{documento}}'}</code></span>
               </label>
               <textarea value={formAssinatura.mensagem} onChange={e=>setFormAssinatura(f=>({...f,mensagem:e.target.value}))} rows={6}
-                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}} />
-              {profile?.role === 'admin' && (
-                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
-                  <a href="/dashboard/configuracoes" style={{color:'var(--gold)'}}>Editar template padrão</a> nas Configurações.
-                </div>
-              )}
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5,boxSizing:'border-box'}} />
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
