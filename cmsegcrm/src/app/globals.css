@@ -111,6 +111,27 @@ input[type="month"] {
 ::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.25); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(201,168,76,0.45); }
 
+/* Scrollbar destacada para o kanban — sempre visível e mais grossa,
+   pra ficar óbvio que dá pra rolar lateralmente quando o funil tem
+   muitas etapas. */
+.kanban-scroll {
+  scrollbar-color: rgba(201,168,76,0.45) rgba(255,255,255,0.04);
+  scrollbar-width: thin;
+}
+.kanban-scroll::-webkit-scrollbar { height: 14px; }
+.kanban-scroll::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.04);
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.kanban-scroll::-webkit-scrollbar-thumb {
+  background: rgba(201,168,76,0.45);
+  border: 3px solid #0a1628;
+  border-radius: 8px;
+  min-width: 60px;
+}
+.kanban-scroll::-webkit-scrollbar-thumb:hover { background: rgba(201,168,76,0.7); }
+
 /* ────────────────────────────────────────────────────────
    COMPONENTES UTILITÁRIOS
    ──────────────────────────────────────────────────────── */

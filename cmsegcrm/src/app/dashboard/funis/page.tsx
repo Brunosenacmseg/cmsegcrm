@@ -14,6 +14,7 @@ export default function FunisPage() {
   const [loading, setLoading]     = useState(true)
   const [funilAtivo, setFunilAtivo] = useState<string|null>(null)
   const [seletorAberto, setSeletorAberto] = useState(false)
+  const kanbanRef = useRef<HTMLDivElement>(null)
 
   // Modal novo negócio
   const [modalNovo, setModalNovo] = useState(false)
@@ -290,12 +291,14 @@ export default function FunisPage() {
 
       {/* Kanban */}
       {funiAtual && (
-        <div style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px'}}>
-          <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
-            {(funiAtual.etapas||[]).map((etapa: string) => {
-              const cards = negociosFunil.filter(n => n.etapa === etapa)
-              return (
-                <div key={etapa} style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+          <div className="kanban-scroll" ref={kanbanRef}
+            style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px 60px 20px 20px',scrollBehavior:'smooth'}}>
+            <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
+              {(funiAtual.etapas||[]).map((etapa: string) => {
+                const cards = negociosFunil.filter(n => n.etapa === etapa)
+                return (
+                  <div key={etapa} style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
                   {/* Header coluna */}
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
                     <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
@@ -346,15 +349,33 @@ export default function FunisPage() {
                     )
                   })}
 
-                  {cards.length === 0 && (
-                    <div style={{padding:'20px 12px',textAlign:'center',color:'var(--text-muted)',fontSize:11,border:'1px dashed var(--border)',borderRadius:12}}>
-                      Sem cards
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+                    {cards.length === 0 && (
+                      <div style={{padding:'20px 12px',textAlign:'center',color:'var(--text-muted)',fontSize:11,border:'1px dashed var(--border)',borderRadius:12}}>
+                        Sem cards
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
+
+          {/* Botões de navegação lateral (visíveis quando o funil tem
+              mais etapas que cabem na tela) */}
+          {(funiAtual.etapas?.length || 0) > 4 && (
+            <>
+              <button onClick={()=>kanbanRef.current?.scrollBy({left:-320,behavior:'smooth'})}
+                aria-label="Rolar para a esquerda"
+                style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',zIndex:10,width:36,height:36,borderRadius:'50%',border:'1px solid var(--border)',background:'rgba(10,22,40,0.95)',color:'var(--gold)',cursor:'pointer',fontSize:18,fontWeight:700,boxShadow:'0 4px 12px rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                ‹
+              </button>
+              <button onClick={()=>kanbanRef.current?.scrollBy({left:320,behavior:'smooth'})}
+                aria-label="Rolar para a direita"
+                style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',zIndex:10,width:36,height:36,borderRadius:'50%',border:'1px solid var(--border)',background:'rgba(10,22,40,0.95)',color:'var(--gold)',cursor:'pointer',fontSize:18,fontWeight:700,boxShadow:'0 4px 12px rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                ›
+              </button>
+            </>
+          )}
         </div>
       )}
 
