@@ -18,6 +18,20 @@ export default function FunisPage() {
 
   // Motivos de perda (admin cadastra em /dashboard/configuracoes)
   const [motivosPerda, setMotivosPerda] = useState<any[]>([])
+  // Drag & drop kanban
+  const [arrastando, setArrastando] = useState<string | null>(null)
+  const [etapaHover, setEtapaHover] = useState<string | null>(null)
+
+  // Detalhes ricos do card aberto (tags / produtos / notas / origem)
+  const [tagsCard, setTagsCard]         = useState<any[]>([])
+  const [produtosCard, setProdutosCard] = useState<any[]>([])
+  const [notasCard, setNotasCard]       = useState<any[]>([])
+  const [origemCard, setOrigemCard]     = useState<any | null>(null)
+  const [origens, setOrigens]           = useState<any[]>([])
+  const [tagsAll, setTagsAll]           = useState<any[]>([])
+  const [produtosAll, setProdutosAll]   = useState<any[]>([])
+  const [novaNota, setNovaNota]         = useState('')
+  const [novoProdNeg, setNovoProdNeg]   = useState({ produto_id: '', quantidade: '1', valor_unit: '' })
   // Modal de marcar perdido
   const [modalPerdido, setModalPerdido] = useState<any>(null)
   const [motivoSelecionado, setMotivoSelecionado] = useState<string>('')
@@ -48,7 +62,81 @@ export default function FunisPage() {
   useEffect(() => { init() }, [])
   useEffect(() => {
     supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
+    supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
+    supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
+    supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
   }, [])
+
+  // Quando abrir um card, carrega detalhes ricos
+  useEffect(() => {
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); return }
+    Promise.all([
+      supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
+      supabase.from('negocio_produtos').select('*').eq('negocio_id', cardAtivo.id).order('criado_em'),
+      supabase.from('negocio_notas').select('*, users(nome,avatar_url)').eq('negocio_id', cardAtivo.id).order('criado_em', { ascending: false }),
+      cardAtivo.origem_id ? supabase.from('origens').select('*').eq('id', cardAtivo.origem_id).maybeSingle() : Promise.resolve({ data: null }),
+    ]).then(([t, p, n, o]) => {
+      setTagsCard((t.data || []).map((x: any) => x.tags).filter(Boolean))
+      setProdutosCard(p.data || [])
+      setNotasCard(n.data || [])
+      setOrigemCard((o as any).data || null)
+    })
+  }, [cardAtivo?.id])
+
+  async function adicionarTag(nome: string, cor = '#c9a84c') {
+    if (!cardAtivo || !nome.trim()) return
+    let tag = tagsAll.find(t => t.nome.toLowerCase() === nome.trim().toLowerCase())
+    if (!tag) {
+      const { data } = await supabase.from('tags').insert({ nome: nome.trim(), cor }).select('*').single()
+      if (!data) return
+      tag = data
+      setTagsAll(prev => [...prev, data])
+    }
+    await supabase.from('negocio_tags').upsert({ negocio_id: cardAtivo.id, tag_id: tag.id })
+    setTagsCard(prev => prev.find(x => x.id === tag!.id) ? prev : [...prev, tag!])
+  }
+
+  async function removerTag(tagId: string) {
+    if (!cardAtivo) return
+    await supabase.from('negocio_tags').delete().eq('negocio_id', cardAtivo.id).eq('tag_id', tagId)
+    setTagsCard(prev => prev.filter(t => t.id !== tagId))
+  }
+
+  async function adicionarProduto() {
+    if (!cardAtivo) return
+    const prod = produtosAll.find(p => p.id === novoProdNeg.produto_id)
+    if (!prod) return
+    const qtd = parseInt(novoProdNeg.quantidade) || 1
+    const valor = parseFloat(novoProdNeg.valor_unit.replace(',', '.')) || prod.preco_base || 0
+    const { data } = await supabase.from('negocio_produtos').insert({
+      negocio_id: cardAtivo.id, produto_id: prod.id, nome_snapshot: prod.nome,
+      quantidade: qtd, valor_unit: valor,
+    }).select('*').single()
+    if (data) setProdutosCard(prev => [...prev, data])
+    setNovoProdNeg({ produto_id: '', quantidade: '1', valor_unit: '' })
+  }
+
+  async function removerProduto(id: string) {
+    await supabase.from('negocio_produtos').delete().eq('id', id)
+    setProdutosCard(prev => prev.filter(p => p.id !== id))
+  }
+
+  async function adicionarNota() {
+    if (!cardAtivo || !novaNota.trim() || !profile?.id) return
+    const { data } = await supabase.from('negocio_notas').insert({
+      negocio_id: cardAtivo.id, user_id: profile.id, conteudo: novaNota.trim(),
+    }).select('*, users(nome,avatar_url)').single()
+    if (data) setNotasCard(prev => [data, ...prev])
+    setNovaNota('')
+  }
+
+  async function setOrigemDoCard(id: string) {
+    if (!cardAtivo) return
+    const v = id || null
+    await supabase.from('negocios').update({ origem_id: v }).eq('id', cardAtivo.id)
+    setCardAtivo({ ...cardAtivo, origem_id: v })
+    setOrigemCard(v ? origens.find(o => o.id === v) : null)
+  }
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -107,6 +195,16 @@ export default function FunisPage() {
   async function moverEtapa(negocioId: string, novaEtapa: string) {
     await supabase.from('negocios').update({ etapa: novaEtapa }).eq('id', negocioId)
     await carregarNegocios()
+  }
+
+  async function moverCardParaEtapa(negocioId: string, novaEtapa: string) {
+    // Otimistic update + persist
+    setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, etapa: novaEtapa } : n))
+    const { error } = await supabase.from('negocios').update({ etapa: novaEtapa }).eq('id', negocioId)
+    if (error) {
+      alert('Erro ao mover: ' + error.message)
+      await carregarNegocios()
+    }
   }
 
   async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string, motivoId?: string|null) {
@@ -311,8 +409,18 @@ export default function FunisPage() {
             <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
               {(funiAtual.etapas||[]).map((etapa: string) => {
                 const cards = negociosFunil.filter(n => n.etapa === etapa)
+                const ehHover = etapaHover === etapa && arrastando
                 return (
-                  <div key={etapa} style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+                  <div key={etapa}
+                    onDragOver={e=>{e.preventDefault();setEtapaHover(etapa)}}
+                    onDragLeave={()=>setEtapaHover(prev => prev===etapa?null:prev)}
+                    onDrop={e=>{
+                      e.preventDefault()
+                      const id = e.dataTransfer.getData('text/plain')
+                      if (id) moverCardParaEtapa(id, etapa)
+                      setArrastando(null); setEtapaHover(null)
+                    }}
+                    style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8,padding:6,borderRadius:12,background:ehHover?'rgba(201,168,76,0.08)':'transparent',outline:ehHover?'2px dashed rgba(201,168,76,0.5)':'none',outlineOffset:-2,transition:'background 0.15s'}}>
                   {/* Header coluna */}
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
                     <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
@@ -327,7 +435,10 @@ export default function FunisPage() {
                     const bgCard    = isGanho ? 'rgba(28,181,160,0.06)' : isPerdido ? 'rgba(224,82,82,0.06)'  : 'rgba(255,255,255,0.04)'
                     return (
                     <div key={neg.id} onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
-                      style={{background:bgCard,border:'1px solid '+corBorda,borderRadius:12,padding:'12px',cursor:'pointer',transition:'all 0.15s',position:'relative'}}
+                      draggable
+                      onDragStart={e=>{e.dataTransfer.setData('text/plain', neg.id);e.dataTransfer.effectAllowed='move';setArrastando(neg.id)}}
+                      onDragEnd={()=>{setArrastando(null);setEtapaHover(null)}}
+                      style={{background:bgCard,border:'1px solid '+corBorda,borderRadius:12,padding:'12px',cursor:arrastando===neg.id?'grabbing':'grab',transition:'all 0.15s',position:'relative',opacity:arrastando===neg.id?0.5:1}}
                       onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--gold)')}
                       onMouseLeave={e=>(e.currentTarget.style.borderColor=corBorda)}>
 
@@ -600,6 +711,100 @@ export default function FunisPage() {
                 </div>
               </div>
             )}
+
+            {/* Origem */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>📍 Origem do lead</div>
+              <select value={cardAtivo.origem_id || ''} onChange={e=>setOrigemDoCard(e.target.value)}
+                style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                <option value="">— sem origem —</option>
+                {origens.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              </select>
+            </div>
+
+            {/* Tags */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>🏷 Tags</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+                {tagsCard.map(t => (
+                  <span key={t.id} style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,padding:'3px 8px',borderRadius:12,background:(t.cor||'#c9a84c')+'22',border:'1px solid '+(t.cor||'#c9a84c')+'66',color:t.cor||'#c9a84c'}}>
+                    {t.nome}
+                    <button onClick={()=>removerTag(t.id)} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:13,lineHeight:1,padding:0}}>×</button>
+                  </span>
+                ))}
+                {tagsCard.length === 0 && <span style={{fontSize:11,color:'var(--text-muted)'}}>Nenhuma tag</span>}
+              </div>
+              <select value="" onChange={e=>{if(e.target.value){adicionarTag(tagsAll.find(t=>t.id===e.target.value)?.nome||'');(e.target as HTMLSelectElement).value=''}}}
+                style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',color:'var(--text)',fontSize:11,cursor:'pointer',marginBottom:6}}>
+                <option value="">+ Adicionar tag existente...</option>
+                {tagsAll.filter(t => !tagsCard.find(tc => tc.id === t.id)).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+              <input placeholder="Ou digite uma nova tag e tecle Enter" onKeyDown={e=>{
+                if (e.key === 'Enter') {
+                  const v = (e.target as HTMLInputElement).value.trim()
+                  if (v) { adicionarTag(v); (e.target as HTMLInputElement).value = '' }
+                }
+              }} style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',color:'var(--text)',fontSize:11,outline:'none',boxSizing:'border-box'}} />
+            </div>
+
+            {/* Produtos do negócio */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>📦 Produtos</div>
+                <div style={{fontSize:11,color:'var(--teal)',fontWeight:600}}>
+                  Total: R$ {produtosCard.reduce((s,p)=>s + (Number(p.quantidade||1)*Number(p.valor_unit||0) - Number(p.desconto||0)), 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                </div>
+              </div>
+              {produtosCard.length === 0 ? (
+                <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>Nenhum produto adicionado</div>
+              ) : (
+                <div style={{marginBottom:8}}>
+                  {produtosCard.map(p => (
+                    <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                      <div style={{flex:1}}>{p.nome_snapshot}</div>
+                      <div style={{color:'var(--text-muted)'}}>{p.quantidade}× R$ {Number(p.valor_unit).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+                      <button onClick={()=>removerProduto(p.id)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:13}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{display:'grid',gridTemplateColumns:'2fr 0.8fr 1fr auto',gap:6}}>
+                <select value={novoProdNeg.produto_id} onChange={e=>{
+                  const p = produtosAll.find(x => x.id === e.target.value)
+                  setNovoProdNeg(s => ({ ...s, produto_id: e.target.value, valor_unit: p?.preco_base ? String(p.preco_base) : s.valor_unit }))
+                }} style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11}}>
+                  <option value="">Produto…</option>
+                  {produtosAll.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+                <input value={novoProdNeg.quantidade} onChange={e=>setNovoProdNeg(s=>({...s,quantidade:e.target.value}))} placeholder="Qtd" style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11,outline:'none'}} />
+                <input value={novoProdNeg.valor_unit} onChange={e=>setNovoProdNeg(s=>({...s,valor_unit:e.target.value}))} placeholder="Valor unit." style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11,outline:'none'}} />
+                <button onClick={adicionarProduto} disabled={!novoProdNeg.produto_id} style={{padding:'6px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>+</button>
+              </div>
+            </div>
+
+            {/* Notas */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>📝 Notas / Anotações</div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>
+                <input value={novaNota} onChange={e=>setNovaNota(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter')adicionarNota()}}
+                  placeholder="Adicionar uma nota..."
+                  style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
+                <button onClick={adicionarNota} disabled={!novaNota.trim()} style={{padding:'6px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>+</button>
+              </div>
+              <div style={{maxHeight:200,overflow:'auto'}}>
+                {notasCard.length === 0 ? (
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>Sem notas</div>
+                ) : notasCard.map(n => (
+                  <div key={n.id} style={{padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                    <div style={{fontSize:12,marginBottom:2}}>{n.conteudo}</div>
+                    <div style={{fontSize:10,color:'var(--text-muted)'}}>
+                      {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Ganho / Perdido */}
             <div style={{marginBottom:16,padding:'12px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>

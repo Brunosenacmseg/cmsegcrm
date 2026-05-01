@@ -394,18 +394,65 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         data_fechamento: dataFech,
       }
 
+      // Origem (deal_source) — auto-cria em origens se vier do RD
+      let origemId: string | null = null
+      const dealSource = (dx as any).deal_source
+      if (dealSource?.name) {
+        const srcRdId = rdId(dealSource)
+        const { data: orig } = await supabaseAdmin.from('origens')
+          .select('id').or(`rd_id.eq.${srcRdId || 'null'},nome.ilike.${dealSource.name.replace(/[,]/g,'')}`).maybeSingle()
+        if (orig) {
+          origemId = orig.id
+          if (srcRdId) await supabaseAdmin.from('origens').update({ rd_id: srcRdId, nome: dealSource.name }).eq('id', orig.id)
+        } else {
+          const { data: nova } = await supabaseAdmin.from('origens').insert({ rd_id: srcRdId || null, nome: dealSource.name }).select('id').single()
+          origemId = nova?.id || null
+        }
+      }
+      payload.origem_id = origemId
+
+      let negocioId: string | null = null
       const { data: existente } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', id).maybeSingle()
       if (existente) {
         await supabaseAdmin.from('negocios').update(payload).eq('id', existente.id)
+        negocioId = existente.id
         stats.qtd_atualizados++
       } else {
-        // Cliente_id pode ser null (schema já permite após 003_fix_schema.sql).
-        // NÃO criamos placeholder com nome do deal — isso poluía o módulo
-        // de clientes com pseudo-clientes que eram na verdade negócios.
-        // Se o deal não tem contato vinculado, salvamos negocio com
-        // cliente_id=null e a UI mostra botão "Vincular cliente".
-        await supabaseAdmin.from('negocios').insert(payload)
+        const { data: novo } = await supabaseAdmin.from('negocios').insert(payload).select('id').single()
+        negocioId = novo?.id || null
         stats.qtd_criados++
+      }
+
+      // Tags do deal → tabela tags + junction negocio_tags
+      if (negocioId && Array.isArray((dx as any).tags) && (dx as any).tags.length) {
+        for (const t of (dx as any).tags) {
+          const tagNome = t?.name?.trim()
+          if (!tagNome) continue
+          const tagRd = rdId(t)
+          let tagId: string | null = null
+          const { data: tagExist } = await supabaseAdmin.from('tags')
+            .select('id').or(`rd_id.eq.${tagRd || 'null'},nome.ilike.${tagNome.replace(/[,]/g,'')}`).maybeSingle()
+          if (tagExist) tagId = tagExist.id
+          else {
+            const { data: nova } = await supabaseAdmin.from('tags').insert({ rd_id: tagRd || null, nome: tagNome }).select('id').single()
+            tagId = nova?.id || null
+          }
+          if (tagId) {
+            await supabaseAdmin.from('negocio_tags').upsert({ negocio_id: negocioId, tag_id: tagId })
+          }
+        }
+      }
+
+      // Produtos do deal → negocio_produtos (idempotente: limpa antes de re-popular)
+      if (negocioId && Array.isArray(dx.deal_products) && dx.deal_products.length) {
+        await supabaseAdmin.from('negocio_produtos').delete().eq('negocio_id', negocioId)
+        const linhas = dx.deal_products.map((dp: any) => {
+          const nomeProd = dp?.product?.name || dp?.name || dp?.description || 'Produto'
+          const valor    = Number(dp?.price ?? dp?.base_price ?? dp?.amount ?? dp?.value) || 0
+          const qtd      = Number(dp?.quantity ?? dp?.amount_quantity ?? 1) || 1
+          return { negocio_id: negocioId, nome_snapshot: nomeProd, quantidade: qtd, valor_unit: valor }
+        })
+        if (linhas.length) await supabaseAdmin.from('negocio_produtos').insert(linhas)
       }
     } catch (e: any) {
       stats.qtd_erros++
