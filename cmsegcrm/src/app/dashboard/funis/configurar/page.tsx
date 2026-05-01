@@ -115,12 +115,20 @@ export default function ConfigurarFunisPage() {
     }
     let funilId: string | null = null
     if (editandoId === 'novo') {
+      // INSERT continua via supabase client (admin tem RLS de insert)
       const r = await supabase.from('funis').insert(payload).select('id').single()
       if (r.error) { setSalvando(false); setErro(r.error.message); return }
       funilId = (r.data as any)?.id || null
     } else {
-      const r = await supabase.from('funis').update(payload).eq('id', editandoId!)
-      if (r.error) { setSalvando(false); setErro(r.error.message); return }
+      // UPDATE via endpoint server-side (bypassa RLS, dá erro claro)
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch('/api/funis', {
+        method: 'PATCH',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token||''}` },
+        body: JSON.stringify({ id: editandoId, ...payload })
+      })
+      const j = await r.json()
+      if (!r.ok) { setSalvando(false); setErro(j.error || 'Erro ao atualizar'); return }
       funilId = editandoId as string
     }
 
@@ -140,7 +148,6 @@ export default function ConfigurarFunisPage() {
   }
 
   async function excluir(f: Funil) {
-    // Conta cards do funil
     const { count: cards } = await supabase
       .from('negocios')
       .select('*', { count: 'exact', head: true })
@@ -151,21 +158,14 @@ export default function ConfigurarFunisPage() {
       : `Excluir o funil "${f.nome}"?\n\nEsta ação não pode ser desfeita.`
     if (!confirm(msg)) return
 
-    // Apaga primeiro os negócios (FK negocios.funil_id é RESTRICT)
-    if ((cards || 0) > 0) {
-      const { error: e1 } = await supabase.from('negocios').delete().eq('funil_id', f.id)
-      if (e1) { alert('Erro ao excluir os cards: ' + e1.message); return }
-    }
-
-    // Agora apaga o funil. .select() devolve as linhas removidas — se vier
-    // vazio, é a RLS que rejeitou silenciosamente.
-    const { data, error } = await supabase.from('funis').delete().eq('id', f.id).select()
-    if (error) { alert('Erro ao excluir o funil: ' + error.message); return }
-    if (!data || data.length === 0) {
-      alert('Não foi possível excluir o funil.\n\nProvavelmente seu usuário não tem permissão de admin (RLS bloqueou silenciosamente).\n\nVerifique seu perfil em /dashboard/perfil ou peça pra um admin.')
-      return
-    }
-
+    // Usa endpoint server-side (bypassa RLS, faz cascade dos cards)
+    const { data: { session } } = await supabase.auth.getSession()
+    const r = await fetch(`/api/funis?id=${f.id}&cascade=1`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session?.access_token||''}` },
+    })
+    const j = await r.json()
+    if (!r.ok) { alert('Erro ao excluir: ' + (j.error || 'falha')); return }
     await carregar()
   }
 
