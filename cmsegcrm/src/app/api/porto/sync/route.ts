@@ -211,6 +211,178 @@ async function buscarApolice(num: string) {
   return data
 }
 
+// ─── PARSER UNIVERSAL DE LINHA PORTO ─────────────────────────
+// Os arquivos de retorno da Porto são fixed-width com layouts
+// diferentes por tipo (.APP, .SAP, .SI2, .COM, .RET). Em vez de
+// tentar adivinhar o layout exato (que muda por produto/ramo),
+// extraímos via regex todos os campos identificáveis: CPF, CNPJ,
+// nome, placa, datas, valores, número da apólice, ramo. Sempre que
+// um padrão é encontrado, removemos do texto para não capturar de
+// novo no próximo regex.
+interface CamposPorto {
+  ramo?:        string
+  apolice?:     string
+  cpf?:         string
+  cnpj?:        string
+  cpf_cnpj?:    string
+  nome?:        string
+  placa?:       string
+  modelo?:      string
+  ano_modelo?:  string
+  vigencia_ini?: string  // YYYY-MM-DD
+  vigencia_fim?: string
+  premio?:      number
+  iof?:         number
+  comissao_pct?: number
+  endosso?:     string
+}
+
+function normalizarData(s: string): string | null {
+  if (!s) return null
+  // dd/mm/yyyy ou dd-mm-yyyy
+  let m = s.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  // yyyymmdd
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/)
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  // ddmmyyyy
+  m = s.match(/^(\d{2})(\d{2})(\d{4})$/)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  return null
+}
+
+function extrairCamposPorto(linha: string): CamposPorto {
+  const out: CamposPorto = {}
+  let buf = ' ' + linha + ' '
+
+  // Placa (Mercosul ABC1D23 ou antiga ABC1234)
+  const placaMatch = buf.match(/\b([A-Z]{3}[ -]?[0-9][A-Z0-9][0-9]{2})\b/i)
+  if (placaMatch) {
+    out.placa = placaMatch[1].replace(/[ -]/g, '').toUpperCase()
+    buf = buf.replace(placaMatch[0], ' '.repeat(placaMatch[0].length))
+  }
+
+  // CNPJ (14 dígitos juntos ou com pontuação)
+  const cnpjMatch = buf.match(/(?<!\d)(\d{2}[\.\-\/]?\d{3}[\.\-\/]?\d{3}[\.\-\/]?\d{4}[\.\-\/]?\d{2}|\d{14})(?!\d)/)
+  if (cnpjMatch) {
+    const d = cnpjMatch[1].replace(/\D/g,'')
+    if (d.length === 14) { out.cnpj = d; out.cpf_cnpj = d; buf = buf.replace(cnpjMatch[0], ' '.repeat(cnpjMatch[0].length)) }
+  }
+  if (!out.cnpj) {
+    // CPF (11 dígitos)
+    const cpfMatch = buf.match(/(?<!\d)(\d{3}[\.\-]?\d{3}[\.\-]?\d{3}[\.\-]?\d{2}|\d{11})(?!\d)/)
+    if (cpfMatch) {
+      const d = cpfMatch[1].replace(/\D/g,'')
+      if (d.length === 11) { out.cpf = d; out.cpf_cnpj = d; buf = buf.replace(cpfMatch[0], ' '.repeat(cpfMatch[0].length)) }
+    }
+  }
+
+  // Datas: pega a primeira (vigência início) e segunda (vigência fim)
+  const datasMatch = Array.from(buf.matchAll(/(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{8})/g))
+  if (datasMatch.length >= 1) out.vigencia_ini = normalizarData(datasMatch[0][1]) || undefined
+  if (datasMatch.length >= 2) out.vigencia_fim = normalizarData(datasMatch[1][1]) || undefined
+  for (const d of datasMatch) buf = buf.replace(d[0], ' '.repeat(d[0].length))
+
+  // Valor monetário: padrão "1.234,56" ou "00000123456" (valor em centavos com 13 dígitos)
+  // Pega o primeiro como prêmio. Outros vão pra IOF se acharmos.
+  const valorMatch = buf.match(/\b(\d{1,3}(?:\.\d{3})*,\d{2})\b/)
+  if (valorMatch) {
+    out.premio = parseFloat(valorMatch[1].replace(/\./g,'').replace(',','.'))
+    buf = buf.replace(valorMatch[0], ' '.repeat(valorMatch[0].length))
+  } else {
+    // Fixed-width: 11-15 dígitos representando centavos (valor*100 zero-padded)
+    const valorFW = buf.match(/(?<!\d)(\d{11,15})(?!\d)/)
+    if (valorFW && parseInt(valorFW[1]) > 0) {
+      const cents = parseInt(valorFW[1])
+      if (cents < 1e12) { // sanity check: não passa de 10 bilhões
+        out.premio = cents / 100
+        buf = buf.replace(valorFW[0], ' '.repeat(valorFW[0].length))
+      }
+    }
+  }
+
+  // Ramo (3 dígitos no início) + Apólice (10 dígitos depois) em fixed-width
+  const ramoApol = linha.match(/^(\d{3})(\d{10})/)
+  if (ramoApol) {
+    out.ramo = ramoApol[1]
+    out.apolice = ramoApol[2].replace(/^0+/, '') || ramoApol[2]
+  }
+
+  // Endosso (5-6 dígitos depois da apólice em alguns formatos)
+  // Não confiável sem layout — pulamos por enquanto.
+
+  // Modelo do veículo: muitas vezes é texto longo após placa.
+  // Vamos pegar uma palavra de marca conhecida + possivelmente palavras seguintes.
+  const modeloMatch = linha.match(/\b(VOLKSWAGEN|FIAT|CHEVROLET|GM|FORD|HONDA|TOYOTA|HYUNDAI|RENAULT|NISSAN|PEUGEOT|CITROEN|JEEP|BMW|MERCEDES|AUDI|VOLVO|MITSUBISHI|KIA|LAND ROVER|RANGE ROVER|HARLEY|YAMAHA|SUZUKI|KAWASAKI|DUCATI|TRIUMPH)\b[\s\w\-\/\.]{0,40}/i)
+  if (modeloMatch) out.modelo = modeloMatch[0].trim().slice(0, 80)
+
+  // Ano modelo (4 dígitos entre 1980-2100)
+  const anoMatch = buf.match(/\b(19[89]\d|20\d{2}|21\d{2})\b/)
+  if (anoMatch) out.ano_modelo = anoMatch[1]
+
+  // Nome do segurado: depois de tirar CPF/CNPJ/placa/datas/valores,
+  // pega a sequência mais longa de letras + espaços (nome em maiúsculas
+  // é o padrão Porto). Mín 8 chars, máx 80.
+  const restoLimpo = buf
+    .replace(/\d/g, ' ')
+    .replace(/[^\wÀ-ÿ\s]/g, ' ')
+    .replace(/\s+/g, ' ').trim()
+  const candidatos = restoLimpo.split(/\s{2,}/).map(s => s.trim()).filter(Boolean)
+  // Pega o mais longo que parece nome (>= 2 palavras de 3+ letras)
+  let melhorNome = ''
+  for (const c of candidatos) {
+    if (c.length < 8 || c.length > 80) continue
+    const palavras = c.split(/\s+/).filter(p => /^[A-ZÀ-ÿ][A-Za-zÀ-ÿ]{2,}$/.test(p))
+    if (palavras.length >= 2 && c.length > melhorNome.length) melhorNome = c
+  }
+  if (melhorNome) out.nome = melhorNome
+
+  return out
+}
+
+// Procura ou cria cliente com base nos campos extraídos. Quando criamos
+// novo, fonte = 'Porto Seguro' e tipo PJ se temos CNPJ.
+async function obterOuCriarCliente(c: CamposPorto, dadosBrutos?: any): Promise<string | null> {
+  const cpfCnpj = c.cpf_cnpj || c.cpf || c.cnpj
+  if (!cpfCnpj && !c.nome) return null
+
+  // 1) Match por CPF/CNPJ
+  if (cpfCnpj) {
+    const { data: existente } = await supabaseAdmin.from('clientes')
+      .select('id, nome, fonte').or(`cpf_cnpj.eq.${cpfCnpj}`).maybeSingle()
+    if (existente) {
+      // Atualiza nome se estava vazio e agora temos
+      if (c.nome && (!existente.nome || existente.nome === 'Sem nome')) {
+        await supabaseAdmin.from('clientes').update({ nome: c.nome }).eq('id', existente.id)
+      }
+      return existente.id
+    }
+  }
+
+  // 2) Match por nome + sem CPF (fallback fraco — só se não tem CPF nenhum)
+  if (!cpfCnpj && c.nome) {
+    const { data: existente } = await supabaseAdmin.from('clientes')
+      .select('id').ilike('nome', c.nome).maybeSingle()
+    if (existente) return existente.id
+  }
+
+  // 3) Cria cliente novo se temos pelo menos CPF/CNPJ ou nome
+  const tipo = c.cnpj ? 'PJ' : 'PF'
+  const payload: any = {
+    nome:     c.nome || (cpfCnpj ? `Cliente ${cpfCnpj}` : 'Cliente Porto'),
+    tipo,
+    cpf_cnpj: cpfCnpj || null,
+    fonte:    'Porto Seguro',
+  }
+  if (dadosBrutos) payload.dados_porto = dadosBrutos
+  const { data: novo, error } = await supabaseAdmin.from('clientes').insert(payload).select('id').single()
+  if (error) {
+    console.warn('[Porto] erro criando cliente:', error.message, payload)
+    return null
+  }
+  return novo?.id || null
+}
+
 // Criar negócio — cliente_id e equipe_id opcionais
 async function criarNegocio(opts: {
   funilId: string; etapa: string; titulo: string; produto: string; premio: number; obs: string;
@@ -265,13 +437,25 @@ async function processarSAP(arquivo: any, texto: string) {
     try {
       if (reg.pago) { importados++; continue }
 
-      // Buscar cliente pelo CPF
-      const cpfRaw = (reg.cpf_cliente||'').replace(/\D/g,'')
+      // Re-extrai campos da linha pra pegar nome do segurado
+      // (o parsearSAP simples não extrai isso). Procura pela linha
+      // original que casa com esse número de apólice.
+      const linhaOriginal = texto.split(/\r?\n/).find(l => l.includes(reg.numero_apolice)) || ''
+      const camposExtra = linhaOriginal ? extrairCamposPorto(linhaOriginal) : ({} as CamposPorto)
+
+      // Buscar cliente pelo CPF; se não existe E temos nome, cria
+      const cpfRaw = (reg.cpf_cliente||'').replace(/\D/g,'') || camposExtra.cpf_cnpj || ''
       let clienteId: string | null = null
       if (cpfRaw.length >= 8) {
         const { data: cli } = await supabaseAdmin.from('clientes').select('id')
           .or(`cpf_cnpj.eq.${cpfRaw},cpf_cnpj.ilike.%${cpfRaw}%`).maybeSingle()
         clienteId = cli?.id || null
+      }
+      if (!clienteId && (camposExtra.nome || cpfRaw)) {
+        clienteId = await obterOuCriarCliente({
+          ...camposExtra,
+          cpf_cnpj: cpfRaw || camposExtra.cpf_cnpj,
+        }, { linha: linhaOriginal, registro: reg, arquivo: arquivo.nomeArquivo })
       }
 
       // Buscar apólice
@@ -280,8 +464,10 @@ async function processarSAP(arquivo: any, texto: string) {
       // Criar apólice se não existe
       if (!apolice) {
         const { data: nova } = await supabaseAdmin.from('apolices').upsert({
-          numero: reg.numero_apolice, seguradora: 'Porto Seguro',
+          numero: reg.numero_apolice, seguradora: 'Porto Seguro', fonte: 'Porto Seguro',
           produto: arquivo.produto || '', cliente_id: clienteId, status: 'ativo',
+          nome_segurado: camposExtra.nome || null,
+          cpf_cnpj_segurado: cpfRaw || null,
         }, { onConflict: 'numero', ignoreDuplicates: false })
           .select('id,cliente_id,vendedor_id,numero,produto').single()
         apolice = nova
@@ -346,19 +532,49 @@ async function processarAPP(arquivo: any, texto: string) {
 
   for (const linha of texto.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('9'))) {
     try {
-      const c0 = linha.trim().split(/\s{2,}/)[0]?.trim() || ''
-      if (c0.length < 10) continue
-      const num = c0.slice(3, 13).replace(/^0+/, '')
-      if (!num || num.length < 3) continue
+      // Extrai TUDO o que conseguir da linha
+      const campos = extrairCamposPorto(linha)
 
-      // 1) Upsert na tabela apolices
-      const { data: apolice } = await supabaseAdmin.from('apolices').upsert({
-        numero: num, seguradora: 'Porto Seguro', produto, status: 'ativo',
-      }, { onConflict: 'numero', ignoreDuplicates: false }).select('id, cliente_id, vendedor_id, premio, comissao_pct').single()
+      const num = campos.apolice
+      if (!num || num.length < 3) {
+        // Linha que não conseguimos parsear apólice — guarda pra debug
+        msgs.push(`SemNumApolice: ${linha.slice(0,80)}`)
+        continue
+      }
 
-      // 2) Espelhar em negocios para aparecer no módulo /dashboard/apolices
-      // O módulo Apólices lista negocios com premio > 0; usamos premio simbólico = 1
-      // até que dados de prêmio cheguem via .COM (comissões) ou inserção manual.
+      // 1) Cria/atualiza cliente com nome+CPF se temos
+      const dadosBrutos = { linha, campos, arquivo: arquivo.nomeArquivo }
+      const clienteId = await obterOuCriarCliente(campos, dadosBrutos)
+
+      // 2) Upsert apólice com TODOS os campos extraídos
+      const apolicePayload: any = {
+        numero:           num,
+        seguradora:       'Porto Seguro',
+        fonte:            'Porto Seguro',
+        produto,
+        status:           'ativo',
+        cliente_id:       clienteId,
+        nome_segurado:    campos.nome || null,
+        cpf_cnpj_segurado: campos.cpf_cnpj || null,
+        placa:            campos.placa || null,
+        modelo:           campos.modelo || null,
+        ano_modelo:       campos.ano_modelo || null,
+        vigencia_ini:     campos.vigencia_ini || null,
+        vigencia_fim:     campos.vigencia_fim || null,
+        premio:           campos.premio || null,
+        valor_iof:        campos.iof || null,
+        comissao_pct:     campos.comissao_pct || null,
+        dados_porto:      dadosBrutos,
+      }
+      const { data: apolice, error: errApol } = await supabaseAdmin.from('apolices').upsert(apolicePayload, {
+        onConflict: 'numero', ignoreDuplicates: false,
+      }).select('id, cliente_id, vendedor_id, premio, comissao_pct').single()
+      if (errApol) {
+        msgs.push(`Apólice ${num}: ${errApol.message?.slice(0,80)}`)
+        erros++; continue
+      }
+
+      // 3) Espelha em negocios para aparecer no módulo /dashboard/apolices
       if (apolice) {
         const { data: existing } = await supabaseAdmin.from('negocios').select('id')
           .eq('produto', produto).eq('seguradora', 'Porto Seguro')
@@ -366,16 +582,18 @@ async function processarAPP(arquivo: any, texto: string) {
 
         if (!existing) {
           await supabaseAdmin.from('negocios').insert({
-            titulo:       `Apólice ${num}`,
-            cliente_id:   apolice.cliente_id || null,
+            titulo:       campos.nome ? `Apólice ${num} — ${campos.nome}` : `Apólice ${num}`,
+            cliente_id:   clienteId || apolice.cliente_id || null,
             vendedor_id:  apolice.vendedor_id || null,
             etapa:        'Ativo',
             produto,
             seguradora:   'Porto Seguro',
             fonte:        'Porto Seguro',
-            premio:       apolice.premio || 1,
+            placa:        campos.placa || null,
+            cpf_cnpj:     campos.cpf_cnpj || null,
+            premio:       apolice.premio || campos.premio || 1,
             comissao_pct: apolice.comissao_pct || 0,
-            obs:          `Apólice Porto ${num} (importada via integração)`,
+            obs:          `Apólice Porto ${num}${campos.placa ? ' · '+campos.placa : ''}${campos.modelo ? ' · '+campos.modelo : ''} (importação Porto)`,
           })
         }
       }
@@ -415,11 +633,19 @@ async function processarSI2(arquivo: any, texto: string) {
   for (const linha of texto.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('9'))) {
     try {
       const t  = linha.trim()
-      const c0 = t.split(/\s{2,}/)[0]?.trim() || ''
-      const num = c0.length >= 13 ? c0.slice(3,13).replace(/^0+/,'') : c0
+      const campos = extrairCamposPorto(t)
+      const num = campos.apolice || (t.match(/(\d{3})(\d{10})/)?.[2]?.replace(/^0+/,'') || '')
+
+      if (!num || num.length < 3) continue
 
       const { data: apolice } = await supabaseAdmin.from('apolices')
         .select('id,cliente_id,vendedor_id,negocio_id').or(`numero.eq.${num},numero.ilike.%${num}%`).maybeSingle()
+
+      // Se não existe apólice + temos nome/CPF, cria cliente novo
+      let clienteSinistro: string | null = apolice?.cliente_id || null
+      if (!clienteSinistro && (campos.nome || campos.cpf_cnpj)) {
+        clienteSinistro = await obterOuCriarCliente(campos, { linha: t, arquivo: arquivo.nomeArquivo })
+      }
 
       // 1) Tenta achar negociação ja existente — primeiro pela apólice,
       //    depois pelo cliente (em qualquer funil que não esteja
@@ -429,9 +655,9 @@ async function processarSI2(arquivo: any, texto: string) {
         const { data } = await supabaseAdmin.from('negocios').select('id').eq('id', apolice.negocio_id).maybeSingle()
         if (data?.id) negocioExistenteId = data.id
       }
-      if (!negocioExistenteId && apolice?.cliente_id) {
+      if (!negocioExistenteId && clienteSinistro) {
         const { data } = await supabaseAdmin.from('negocios').select('id')
-          .eq('cliente_id', apolice.cliente_id)
+          .eq('cliente_id', clienteSinistro)
           .not('status', 'eq', 'perdido')
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (data?.id) negocioExistenteId = data.id
@@ -439,31 +665,27 @@ async function processarSI2(arquivo: any, texto: string) {
 
       let negId: string | null = null
       if (negocioExistenteId) {
-        // 2) Atualiza status da negociação que já existe (sinistro
-        //    aberto pra um cliente nosso) — empurra obs e mantém
-        //    histórico.
         await supabaseAdmin.from('negocios').update({
           obs: `🚨 Sinistro recebido da Porto: Apólice ${num} | ${t.slice(0,200)}`,
         }).eq('id', negocioExistenteId)
         negId = negocioExistenteId
       } else {
-        // 3) Não tem negociação — cria card novo no funil Sinistro,
-        //    primeira etapa, atribuído à equipe Sinistro.
         negId = await criarNegocio({
           funilId:   FUNIL_SINISTRO_ID,
           etapa:     etapaInicialSin,
-          titulo:    `Sinistro - Apólice ${num}`,
+          titulo:    campos.nome ? `Sinistro - ${campos.nome} (Apólice ${num})` : `Sinistro - Apólice ${num}`,
           produto:   'Sinistro',
           premio:    0,
-          obs:       `Apólice ${num} | ${t.slice(0,200)}`,
-          clienteId: apolice?.cliente_id || null,
+          obs:       `Apólice ${num}${campos.placa?' · Placa '+campos.placa:''} | ${t.slice(0,200)}`,
+          clienteId: clienteSinistro,
+          cpfCnpj:   campos.cpf_cnpj || undefined,
           equipeId:  equipeSinistroId,
         })
       }
 
-      if (apolice?.cliente_id) {
+      if (clienteSinistro) {
         await supabaseAdmin.from('historico').insert({
-          cliente_id: apolice.cliente_id, tipo: 'red',
+          cliente_id: clienteSinistro, tipo: 'red',
           titulo: `🚨 Sinistro Porto Seguro`,
           descricao: `Apólice ${num} | ${t.slice(0,100)}`,
           negocio_id: negId,
