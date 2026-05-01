@@ -362,10 +362,10 @@ export default function FichaClientePage() {
 
       {/* MODAL NOVO NEGÓCIO */}
       {modalNeg && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.75)',zIndex:200,
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.40)',zIndex:200,
           display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}
           onClick={e => e.target===e.currentTarget && setModalNeg(false)}>
-          <div style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:18,
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:18,
             padding:'30px 32px',width:520,maxWidth:'95vw',maxHeight:'90vh',overflowY:'auto',
             animation:'fadeUp 0.25s ease'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)',marginBottom:18}}>

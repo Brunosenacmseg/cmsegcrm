@@ -39,7 +39,7 @@ const INP_STYLE: React.CSSProperties = {
   fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box',
 }
 const SEL_STYLE: React.CSSProperties = {
-  ...INP_STYLE, cursor:'pointer', background:'#0e2040',
+  ...INP_STYLE, cursor:'pointer', background:'#ffffff',
 }
 
 // ─── Componentes de campo — FORA do componente principal ─────────────────────
@@ -85,7 +85,7 @@ function Sel({ label, value, onChange, opts }: SelProps) {
     <Campo label={label}>
       <select value={value} onChange={e => onChange(e.target.value)} style={SEL_STYLE}>
         <option value="">— Selecione —</option>
-        {opts.map(o => <option key={o} value={o} style={{ background:'#0e2040' }}>{o}</option>)}
+        {opts.map(o => <option key={o} value={o} style={{ background:'#ffffff' }}>{o}</option>)}
       </select>
     </Campo>
   )
@@ -453,9 +453,9 @@ export default function CotacoesPage() {
 
       {/* Modal */}
       {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.88)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&!calculando&&setModal(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,width:720,maxWidth:'97vw',maxHeight:'93vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,width:720,maxWidth:'97vw',maxHeight:'93vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
 
             <div style={{padding:'18px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:18}}>🔍 Nova Cotação — Automóvel</div>
@@ -473,7 +473,7 @@ export default function CotacoesPage() {
                 <>
                   <input value={clienteBusca} onChange={e=>buscarClientes(e.target.value)} placeholder="🔍 Buscar cliente existente (opcional)..." style={{...INP_STYLE,borderRadius:20}} />
                   {clientesRes.length>0&&(
-                    <div style={{position:'absolute',top:'100%',left:24,right:24,background:'#0e2040',border:'1px solid var(--border)',borderRadius:10,zIndex:10,maxHeight:200,overflow:'auto',boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
+                    <div style={{position:'absolute',top:'100%',left:24,right:24,background:'#ffffff',border:'1px solid var(--border)',borderRadius:10,zIndex:10,maxHeight:200,overflow:'auto',boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
                       {clientesRes.map(c=>(
                         <div key={c.id} onClick={()=>selecionarCliente(c)} style={{padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.05)'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.08)')}

@@ -220,9 +220,9 @@ export default function ManuaisPage() {
 
       {/* Modal upload */}
       {modalAberto && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,12,26,0.85)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)' }}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)' }}
           onClick={e => e.target === e.currentTarget && !uploading && setModalAberto(false)}>
-          <div style={{ background: '#0a1628', border: '1px solid var(--border)', borderRadius: 20, padding: '28px 32px', width: 480, maxWidth: '95vw' }}>
+          <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 20, padding: '28px 32px', width: 480, maxWidth: '95vw' }}>
             <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 20, marginBottom: 20 }}>📎 Adicionar arquivo</div>
 
             <div style={{ marginBottom: 14 }}>

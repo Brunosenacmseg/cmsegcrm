@@ -407,7 +407,7 @@ export default function MuralPage() {
                       {totalReacoes > 0 && <span style={{fontSize:12}}>{totalReacoes}</span>}
                     </button>
                     {reacaoAberta === post.id && (
-                      <div onClick={e=>e.stopPropagation()} style={{position:'absolute',bottom:'100%',left:0,marginBottom:8,background:'#0e2040',border:'1px solid var(--border)',borderRadius:30,padding:'8px 12px',display:'flex',gap:6,zIndex:10,boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
+                      <div onClick={e=>e.stopPropagation()} style={{position:'absolute',bottom:'100%',left:0,marginBottom:8,background:'#ffffff',border:'1px solid var(--border)',borderRadius:30,padding:'8px 12px',display:'flex',gap:6,zIndex:10,boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
                         {REACOES.map(r=>(
                           <button key={r} onClick={()=>reagir(post.id,r)}
                             style={{background:'none',border:'none',fontSize:20,cursor:'pointer',padding:'4px',borderRadius:8}}
@@ -470,7 +470,7 @@ export default function MuralPage() {
 
       {/* Dropdown menções */}
       {mencaoPos && usuariosFiltrados.length > 0 && (
-        <div onClick={e=>e.stopPropagation()} style={{position:'fixed',top:mencaoPos.top,left:mencaoPos.left,background:'#0e2040',border:'1px solid var(--border)',borderRadius:10,zIndex:1000,minWidth:220,maxHeight:200,overflow:'auto',boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
+        <div onClick={e=>e.stopPropagation()} style={{position:'fixed',top:mencaoPos.top,left:mencaoPos.left,background:'#ffffff',border:'1px solid var(--border)',borderRadius:10,zIndex:1000,minWidth:220,maxHeight:200,overflow:'auto',boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
           {usuariosFiltrados.slice(0,6).map(u=>(
             <div key={u.id} onClick={()=>inserirMencao(u)}
               style={{padding:'8px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}

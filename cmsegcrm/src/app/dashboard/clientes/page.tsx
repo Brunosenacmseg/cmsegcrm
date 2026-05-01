@@ -262,9 +262,9 @@ export default function ClientesPage() {
 
       {/* Modal */}
       {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.88)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModal(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,width:680,maxWidth:'97vw',maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,width:680,maxWidth:'97vw',maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
             {/* Header modal */}
             <div style={{padding:'20px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:18}}>{editando?'Editar Cliente':'Novo Cliente'}</div>
