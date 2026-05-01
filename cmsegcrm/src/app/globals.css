@@ -5,6 +5,7 @@
   --navy-light:  #4b5563;        /* linhas */
   --gold:        #b8923f;        /* dourado escuro acessível em fundo claro */
   --gold-light:  #d4af6c;
+  --gold-bright: #c9a84c;        /* dourado vibrante p/ texto em cards/sombras */
   --gold-soft:   #fdf6e3;        /* bg dourado clarinho (chips/active) */
   --teal:        #059669;        /* verde — usado em estrelas e positivos */
   --teal-light:  #10b981;
@@ -158,6 +159,7 @@ input[type="month"] {
   border-radius: var(--radius-lg);
   padding: var(--space-5) var(--space-6);
   box-shadow: var(--shadow-sm);
+  color: var(--gold-bright); /* texto default dentro do card vai em dourado vibrante */
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 .card-elevated {
@@ -179,6 +181,7 @@ input[type="month"] {
   padding: var(--space-5) var(--space-6);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
+  color: var(--gold-bright); /* texto default em dourado vibrante */
   transition: border-color 0.18s;
 }
 .kpi::before {
@@ -205,7 +208,7 @@ input[type="month"] {
   font-family: 'DM Serif Display', serif;
   font-size: var(--fs-xl);
   line-height: var(--lh-tight);
-  color: var(--text);
+  color: var(--gold-bright);
 }
 .kpi-value-success { color: var(--success); }
 .kpi-value-warning { color: var(--warning); }
@@ -341,6 +344,28 @@ input[type="month"] {
 .nav-section-collapsed .nav-section-arrow { transform: rotate(-90deg); }
 
 /* Animação */
+/* Texto dourado vibrante por default em containers com sombra
+   (cards/kpi/modais/dropdowns/popups). Children que tem color
+   explicito inline mantem a propria cor — labels mutados ficam
+   cinza, badges ficam coloridos, etc. So o texto sem color
+   declarado herda dourado. */
+.card *,
+.kpi *,
+.card-elevated * {
+  /* nada — heranca natural via color do container */
+}
+
+/* Modais (overlay com box-shadow grande) e dropdowns */
+[style*="box-shadow"][style*="rgba(0,0,0"],
+[style*="boxShadow"][style*="rgba(0,0,0"] {
+  color: var(--gold-bright);
+}
+
+/* Headers/topbars com sombra que aplicam fontFamily DM Serif */
+[style*="DM Serif Display"]:not([style*="color"]) {
+  color: var(--gold-bright);
+}
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }

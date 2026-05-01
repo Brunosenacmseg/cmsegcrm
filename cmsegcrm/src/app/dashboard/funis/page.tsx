@@ -643,7 +643,7 @@ export default function FunisPage() {
                       if (id) moverCardParaEtapa(id, etapa)
                       setArrastando(null); setEtapaHover(null)
                     }}
-                    style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8,padding:6,borderRadius:12,background:ehHover?'rgba(201,168,76,0.08)':'transparent',outline:ehHover?'2px dashed rgba(201,168,76,0.5)':'none',outlineOffset:-2,transition:'background 0.15s'}}>
+                    style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8,padding:'10px 8px',borderRadius:12,background:ehHover?'rgba(201,168,76,0.12)':'#f1f3f8',border:'1px solid #e2e6ee',outline:ehHover?'2px dashed rgba(201,168,76,0.5)':'none',outlineOffset:-2,transition:'background 0.15s'}}>
                   {/* Header coluna */}
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
                     <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
