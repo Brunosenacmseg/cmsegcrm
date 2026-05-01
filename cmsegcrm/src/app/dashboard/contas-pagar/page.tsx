@@ -25,10 +25,11 @@ export default function ContasPagarPage() {
   const [categorias, setCategorias] = useState<any[]>([])
 
   const [modal, setModal] = useState(false)
-  const empty = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', file:null as File|null }
+  const empty = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', file:null as File|null, nf:null as File|null }
   const [form, setForm] = useState<any>(empty)
   const [salvando, setSalvando] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const nfRef = useRef<HTMLInputElement>(null)
 
   // Modal de pagar (admin escolhe categoria + forma)
   const [modalPagar, setModalPagar] = useState<any>(null)
@@ -49,7 +50,7 @@ export default function ContasPagarPage() {
 
   async function carregar() {
     let q = supabase.from('contas_pagar')
-      .select('*, criado:criado_por(nome), aprovado:aprovado_por(nome), pago:pago_por(nome), anexo:anexo_id(path,bucket,nome_arquivo), categoria:categoria_id(codigo,nome)')
+      .select('*, criado:criado_por(nome), aprovado:aprovado_por(nome), pago:pago_por(nome), anexo:anexo_id(path,bucket,nome_arquivo), nf_anexo:nf_anexo_id(path,bucket,nome_arquivo), categoria:categoria_id(codigo,nome)')
       .eq('tipo', aba)
       .order('vencimento', { ascending: true })
     if (filtroStatus !== 'todos') q = q.eq('status', filtroStatus)
@@ -62,20 +63,23 @@ export default function ContasPagarPage() {
     if (!profile?.id) return
     setSalvando(true)
     let anexoId: string | null = null
+    let nfAnexoId: string | null = null
     try {
-      if (form.file) {
+      const subirAnexo = async (file: File, rotulo: string) => {
         const ts = Date.now()
-        const safe = form.file.name.replace(/[^\w.\-]/g,'_')
+        const safe = file.name.replace(/[^\w.\-]/g,'_')
         const path = `contas_pagar/${profile.id}/${ts}_${safe}`
-        const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, form.file)
-        if (errUp) { alert('Erro upload PDF: '+errUp.message); setSalvando(false); return }
+        const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, file)
+        if (errUp) throw new Error(`Erro upload ${rotulo}: ${errUp.message}`)
         const { data: anx } = await supabase.from('anexos').insert({
-          bucket:'cmsegcrm', path, nome_arquivo: form.file.name,
-          tipo_mime: form.file.type, tamanho_kb: Math.round(form.file.size/1024),
+          bucket:'cmsegcrm', path, nome_arquivo: file.name,
+          tipo_mime: file.type, tamanho_kb: Math.round(file.size/1024),
           categoria: 'outro', user_id: profile.id,
         }).select('id').single()
-        anexoId = anx?.id || null
+        return anx?.id || null
       }
+      if (form.file) anexoId = await subirAnexo(form.file, 'PDF/Boleto')
+      if (form.nf)   nfAnexoId = await subirAnexo(form.nf, 'Nota Fiscal')
       const valor = parseFloat(String(form.valor).replace(/[R$\s.]/g,'').replace(',','.'))
       const { error } = await supabase.from('contas_pagar').insert({
         tipo: aba,
@@ -85,11 +89,14 @@ export default function ContasPagarPage() {
         descricao: form.descricao || null,
         fornecedor: form.fornecedor || null,
         anexo_id: anexoId,
+        nf_anexo_id: nfAnexoId,
         criado_por: profile.id,
       })
       if (error) { alert('Erro: '+error.message); return }
       setModal(false); setForm(empty)
       await carregar()
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao salvar')
     } finally { setSalvando(false) }
   }
 
@@ -250,6 +257,9 @@ export default function ContasPagarPage() {
                     {c.anexo && (
                       <button onClick={()=>baixarAnexo(c.anexo)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>📄 Ver PDF</button>
                     )}
+                    {c.nf_anexo && (
+                      <button onClick={()=>baixarAnexo(c.nf_anexo)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>📑 Ver NF</button>
+                    )}
                     {isAdmin && c.status === 'pendente' && (
                       <>
                         {aba === 'compra_aprovacao' && (
@@ -318,6 +328,14 @@ export default function ContasPagarPage() {
                   style={{...inp,padding:'7px 13px'}} />
                 {form.file && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>{form.file.name} · {Math.round(form.file.size/1024)} KB</div>}
               </div>
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={lbl}>Anexar Nota Fiscal</label>
+              <input ref={nfRef} type="file" accept="application/pdf,application/xml,text/xml,image/*"
+                onChange={e=>setForm((f:any)=>({...f,nf:e.target.files?.[0]||null}))}
+                style={{...inp,padding:'7px 13px'}} />
+              {form.nf && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>{form.nf.name} · {Math.round(form.nf.size/1024)} KB</div>}
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
