@@ -50,7 +50,7 @@ export default function LoginPage() {
           <div style={{fontFamily:'DM Serif Display, serif', fontSize:32, color:'var(--gold)', marginBottom:4}}>
             CM Seguros
           </div>
-          <div style={{fontSize:12, color:'var(--text-muted)', letterSpacing:1, textTransform:'uppercase'}}>
+          <div style={{fontSize:12, color:'var(--text-muted)', letterSpacing:1, textTransform:'uppercase', fontWeight:700}}>
             Transformando vidas através do seguro
           </div>
         </div>
