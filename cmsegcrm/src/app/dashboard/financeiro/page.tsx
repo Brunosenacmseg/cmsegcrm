@@ -591,9 +591,9 @@ export default function FinanceiroPage() {
 
       {/* Modal: Lançar/Editar despesa */}
       {modalDespesa && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalDespesa(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:600,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:600,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>
               {editandoDespesa?'✎ Editar despesa':'+ Lançar nova despesa'}
             </div>
@@ -604,7 +604,7 @@ export default function FinanceiroPage() {
                 <select onChange={e=>{
                   const r = recorrentes.find((x:any)=>x.id===e.target.value)
                   if (r) aplicarRecorrente(r)
-                }} value={formDespesa.recorrente_id} style={{...inp,background:'#0e2040'}}>
+                }} value={formDespesa.recorrente_id} style={{...inp,background:'#ffffff'}}>
                   <option value="">— selecione um modelo (opcional) —</option>
                   {recorrentes.map((r:any)=> (
                     <option key={r.id} value={r.id}>{r.descricao} · R$ {fmt(r.valor_padrao)}</option>
@@ -616,14 +616,14 @@ export default function FinanceiroPage() {
             <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12,marginBottom:14}}>
               <div>
                 <label style={lbl}>Categoria *</label>
-                <select value={formDespesa.categoria_id} onChange={e=>setFormDespesa((f:any)=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formDespesa.categoria_id} onChange={e=>setFormDespesa((f:any)=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="">— selecione —</option>
                   {categorias.map(c => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}
                 </select>
               </div>
               <div>
                 <label style={lbl}>Tipo</label>
-                <select value={formDespesa.tipo_despesa} onChange={e=>setFormDespesa((f:any)=>({...f,tipo_despesa:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formDespesa.tipo_despesa} onChange={e=>setFormDespesa((f:any)=>({...f,tipo_despesa:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="FIXA">FIXA</option>
                   <option value="VARIÁVEL">VARIÁVEL</option>
                 </select>
@@ -653,7 +653,7 @@ export default function FinanceiroPage() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:14}}>
               <div>
                 <label style={lbl}>Forma de pagto</label>
-                <select value={formDespesa.forma_pagto} onChange={e=>setFormDespesa((f:any)=>({...f,forma_pagto:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formDespesa.forma_pagto} onChange={e=>setFormDespesa((f:any)=>({...f,forma_pagto:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   {FORMAS_PGTO.map(fp=> <option key={fp} value={fp}>{fp}</option>)}
                 </select>
               </div>
@@ -693,9 +693,9 @@ export default function FinanceiroPage() {
 
       {/* Modal: Recorrente */}
       {modalRecorrente && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalRecorrente(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:600,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:600,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>
               {editandoRecorrente?'✎ Editar modelo':'🔁 Novo modelo de despesa recorrente'}
             </div>
@@ -706,14 +706,14 @@ export default function FinanceiroPage() {
             <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12,marginBottom:14}}>
               <div>
                 <label style={lbl}>Categoria</label>
-                <select value={formRecorrente.categoria_id} onChange={e=>setFormRecorrente((f:any)=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formRecorrente.categoria_id} onChange={e=>setFormRecorrente((f:any)=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="">— selecione —</option>
                   {categorias.map(c => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}
                 </select>
               </div>
               <div>
                 <label style={lbl}>Tipo</label>
-                <select value={formRecorrente.tipo_despesa} onChange={e=>setFormRecorrente((f:any)=>({...f,tipo_despesa:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formRecorrente.tipo_despesa} onChange={e=>setFormRecorrente((f:any)=>({...f,tipo_despesa:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="FIXA">FIXA</option>
                   <option value="VARIÁVEL">VARIÁVEL</option>
                 </select>
@@ -732,7 +732,7 @@ export default function FinanceiroPage() {
               </div>
               <div>
                 <label style={lbl}>Forma pgto</label>
-                <select value={formRecorrente.forma_pagto} onChange={e=>setFormRecorrente((f:any)=>({...f,forma_pagto:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formRecorrente.forma_pagto} onChange={e=>setFormRecorrente((f:any)=>({...f,forma_pagto:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   {FORMAS_PGTO.map(fp=> <option key={fp} value={fp}>{fp}</option>)}
                 </select>
               </div>
@@ -768,9 +768,9 @@ export default function FinanceiroPage() {
 
       {/* Modal: nova categoria */}
       {modalCategoria && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalCategoria(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:420,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:420,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>+ Nova categoria</div>
             <div style={{marginBottom:14}}>
               <label style={lbl}>Código *</label>
@@ -782,7 +782,7 @@ export default function FinanceiroPage() {
             </div>
             <div style={{marginBottom:18}}>
               <label style={lbl}>Tipo</label>
-              <select value={formCategoria.tipo} onChange={e=>setFormCategoria(f=>({...f,tipo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+              <select value={formCategoria.tipo} onChange={e=>setFormCategoria(f=>({...f,tipo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                 <option value="despesa">Despesa</option>
                 <option value="imposto">Imposto</option>
                 <option value="receita">Receita</option>
@@ -798,9 +798,9 @@ export default function FinanceiroPage() {
 
       {/* Modal: gerenciar acessos */}
       {modalAcessos && isAdmin && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalAcessos(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:520,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:520,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>👥 Acesso ao módulo Financeiro</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>
               Admins sempre têm acesso. Usuários adicionais autorizados aqui também podem ver e lançar.

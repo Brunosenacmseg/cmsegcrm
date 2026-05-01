@@ -274,9 +274,9 @@ export default function ContasPagarPage() {
       </div>
 
       {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModal(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:540,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:540,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>
               + Lançar {aba === 'conta' ? 'conta a pagar' : 'compra para aprovação'}
             </div>
@@ -331,9 +331,9 @@ export default function ContasPagarPage() {
       )}
 
       {modalPagar && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalPagar(null)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6,color:'var(--teal)'}}>💸 Pagar conta</div>
             <div style={{fontSize:13,marginBottom:18}}>
               <strong>{modalPagar.nome}</strong> · R$ {fmt(modalPagar.valor)}
@@ -342,14 +342,14 @@ export default function ContasPagarPage() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
               <div>
                 <label style={lbl}>Categoria DRE</label>
-                <select value={formPagar.categoria_id} onChange={e=>setFormPagar(f=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formPagar.categoria_id} onChange={e=>setFormPagar(f=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="">— sem categoria —</option>
                   {categorias.map(c => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}
                 </select>
               </div>
               <div>
                 <label style={lbl}>Forma pagto</label>
-                <select value={formPagar.forma_pagto} onChange={e=>setFormPagar(f=>({...f,forma_pagto:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formPagar.forma_pagto} onChange={e=>setFormPagar(f=>({...f,forma_pagto:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   {['PIX','BOLETO','TED','CARTÃO DE CRÉDITO','DÉBITO COMISSÃO','DINHEIRO'].map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
               </div>

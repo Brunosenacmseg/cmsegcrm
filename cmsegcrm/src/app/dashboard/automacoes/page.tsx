@@ -225,9 +225,9 @@ export default function AutomacoesPage() {
       </div>
 
       {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModal(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:720,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:720,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>
               {editando ? '✎ Editar automação' : '⚡ Nova automação'}
             </div>
@@ -247,13 +247,13 @@ export default function AutomacoesPage() {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
                 <div>
                   <label style={lbl}>Evento</label>
-                  <select value={form.trigger} onChange={e=>setForm((f:any)=>({...f,trigger:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                  <select value={form.trigger} onChange={e=>setForm((f:any)=>({...f,trigger:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                     {TRIGGERS.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={lbl}>Funil (opcional)</label>
-                  <select value={form.funil_id} onChange={e=>setForm((f:any)=>({...f,funil_id:e.target.value,etapa_filtro:''}))} style={{...inp,background:'#0e2040'}}>
+                  <select value={form.funil_id} onChange={e=>setForm((f:any)=>({...f,funil_id:e.target.value,etapa_filtro:''}))} style={{...inp,background:'#ffffff'}}>
                     <option value="">— qualquer funil —</option>
                     {funis.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                   </select>
@@ -261,7 +261,7 @@ export default function AutomacoesPage() {
                 {form.trigger === 'etapa_alterada' && (
                   <div>
                     <label style={lbl}>Etapa (opcional)</label>
-                    <select value={form.etapa_filtro} onChange={e=>setForm((f:any)=>({...f,etapa_filtro:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                    <select value={form.etapa_filtro} onChange={e=>setForm((f:any)=>({...f,etapa_filtro:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                       <option value="">— qualquer etapa —</option>
                       {(funilSelecionado?.etapas || []).map((et:string) => <option key={et} value={et}>{et}</option>)}
                     </select>
@@ -280,7 +280,7 @@ export default function AutomacoesPage() {
               ) : form.acoes.map((ac:any, idx:number) => (
                 <div key={idx} style={{padding:10,background:'rgba(0,0,0,0.2)',borderRadius:8,marginBottom:8,border:'1px solid var(--border)'}}>
                   <div style={{display:'flex',gap:8,marginBottom:8}}>
-                    <select value={ac.tipo} onChange={e=>alterarAcao(idx,{tipo:e.target.value})} style={{...inp,background:'#0e2040',flex:1}}>
+                    <select value={ac.tipo} onChange={e=>alterarAcao(idx,{tipo:e.target.value})} style={{...inp,background:'#ffffff',flex:1}}>
                       {TIPOS_ACAO.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
                     </select>
                     <button onClick={()=>removerAcao(idx)} style={{padding:'6px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>×</button>
@@ -288,11 +288,11 @@ export default function AutomacoesPage() {
 
                   {ac.tipo === 'criar_negocio_em_funil' && (
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                      <select value={ac.funil_id||''} onChange={e=>alterarAcao(idx,{funil_id:e.target.value})} style={{...inp,background:'#0e2040'}}>
+                      <select value={ac.funil_id||''} onChange={e=>alterarAcao(idx,{funil_id:e.target.value})} style={{...inp,background:'#ffffff'}}>
                         <option value="">Funil destino *</option>
                         {funis.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                       </select>
-                      <select value={ac.etapa||''} onChange={e=>alterarAcao(idx,{etapa:e.target.value})} style={{...inp,background:'#0e2040'}}>
+                      <select value={ac.etapa||''} onChange={e=>alterarAcao(idx,{etapa:e.target.value})} style={{...inp,background:'#ffffff'}}>
                         <option value="">— primeira etapa —</option>
                         {(funis.find(f=>f.id===ac.funil_id)?.etapas || []).map((et:string)=>(
                           <option key={et} value={et}>{et}</option>
@@ -322,7 +322,7 @@ export default function AutomacoesPage() {
                   {ac.tipo === 'criar_tarefa' && (
                     <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 0.6fr',gap:8}}>
                       <input value={ac.titulo||''} onChange={e=>alterarAcao(idx,{titulo:e.target.value})} placeholder="Título da tarefa" style={inp} />
-                      <select value={ac.responsavel_id||''} onChange={e=>alterarAcao(idx,{responsavel_id:e.target.value})} style={{...inp,background:'#0e2040'}}>
+                      <select value={ac.responsavel_id||''} onChange={e=>alterarAcao(idx,{responsavel_id:e.target.value})} style={{...inp,background:'#ffffff'}}>
                         <option value="">— vendedor do negócio —</option>
                         {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
                       </select>
@@ -332,7 +332,7 @@ export default function AutomacoesPage() {
 
                   {ac.tipo === 'notificar' && (
                     <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:8}}>
-                      <select value={ac.user_id||''} onChange={e=>alterarAcao(idx,{user_id:e.target.value})} style={{...inp,background:'#0e2040'}}>
+                      <select value={ac.user_id||''} onChange={e=>alterarAcao(idx,{user_id:e.target.value})} style={{...inp,background:'#ffffff'}}>
                         <option value="">— vendedor do negócio —</option>
                         {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
                       </select>

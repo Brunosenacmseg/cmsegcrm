@@ -345,16 +345,64 @@ input[type="month"] {
 
 /* Animação */
 
-/* Top-bars das paginas (sticky com altura 52-56px) precisam de
-   contraste forte: titulo em dourado vivo + body text preto. */
+/* Top-bars das paginas (sticky com altura 52-56px): fundo azul
+   marinho escuro com letras DOURADAS VIBRANTES — estilo banco/
+   corretora premium. Sobrescreve o background inline (var(--bg-soft)
+   ou #0a1628 cinza translucido legado) e forca contraste alto. */
 [style*="height:56"][style*="position:'sticky'"],
 [style*="height:52"][style*="position:'sticky'"] {
-  color: var(--text);
+  background: #0a1628 !important;
+  color: var(--gold-bright) !important;
+  border-bottom: 1px solid #1a3460 !important;
 }
+
+/* Todo texto dentro do top-bar fica dourado por default.
+   Children com cor explicita inline mantem (ex: badges
+   semanticos verde/vermelho). */
+[style*="height:56"][style*="position:'sticky'"] *:not([style*="color"]):not([style*="background"]),
+[style*="height:52"][style*="position:'sticky'"] *:not([style*="color"]):not([style*="background"]) {
+  color: var(--gold-bright);
+}
+
+/* Titulos DM Serif Display dentro do top-bar — destaque forte */
 [style*="height:56"][style*="position:'sticky'"] [style*="DM Serif Display"]:not([style*="color"]),
 [style*="height:52"][style*="position:'sticky'"] [style*="DM Serif Display"]:not([style*="color"]) {
   color: var(--gold-bright) !important;
   font-weight: 700 !important;
+}
+
+/* Selects e inputs dentro do top-bar precisam virar tema escuro
+   (antes herdavam o tema claro e ficavam cinza muito claro). */
+[style*="height:56"][style*="position:'sticky'"] select,
+[style*="height:52"][style*="position:'sticky'"] select,
+[style*="height:56"][style*="position:'sticky'"] input,
+[style*="height:52"][style*="position:'sticky'"] input {
+  background: rgba(255,255,255,0.08) !important;
+  color: var(--gold-bright) !important;
+  border-color: rgba(201,168,76,0.30) !important;
+}
+
+/* Top-bar do layout (header global notificacoes/usuario) tambem */
+[style*="height:52"][style*="rgba(255,255,255,0.92)"] {
+  background: #0a1628 !important;
+  border-bottom: 1px solid #1a3460 !important;
+}
+
+/* Modais agora tem fundo branco (#ffffff) — children sem color
+   explicita herdam preto. Mas o titulo DM Serif Display fica
+   dourado vibrante por consistencia. Inputs voltam ao tema claro. */
+[style*="background:'#ffffff'"][style*="borderRadius:20"] [style*="DM Serif Display"]:not([style*="color"]),
+[style*='background: "#ffffff"'][style*="borderRadius:20"] [style*="DM Serif Display"]:not([style*="color"]) {
+  color: var(--gold-bright);
+}
+
+/* Inputs/selects dentro de modais com fundo claro precisam virar
+   tema claro (eram background: rgba(255,255,255,0.05) com color
+   var(--text) que era branco no tema escuro). */
+.modal-light input, .modal-light select, .modal-light textarea {
+  background: #ffffff !important;
+  color: var(--text) !important;
+  border-color: var(--border-strong) !important;
 }
 
 /* Texto dourado vibrante por default em containers com sombra

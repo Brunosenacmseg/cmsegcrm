@@ -249,7 +249,7 @@ export default function TelefonePage() {
                   <input value={buscaCliente} onChange={e=>buscarClientes(e.target.value)}
                     placeholder="🔍 Buscar cliente..." style={inp} />
                   {clientesBusca.length>0&&(
-                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:180,overflow:'auto'}}>
+                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:180,overflow:'auto'}}>
                       {clientesBusca.map(c=>(
                         <div key={c.id} onClick={()=>selecionarCliente(c)} style={{padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.05)'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.08)')}

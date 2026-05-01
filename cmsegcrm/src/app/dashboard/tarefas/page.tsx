@@ -208,9 +208,9 @@ export default function TarefasPage() {
 
       {/* Modal nova tarefa */}
       {modalAberto && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalAberto(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:500,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:500,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,marginBottom:20}}>+ Nova Tarefa</div>
             <div style={{marginBottom:14}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Título *</label>
@@ -223,8 +223,8 @@ export default function TarefasPage() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
               <div>
                 <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Tipo</label>
-                <select value={form.tipo} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
-                  {TIPOS.map(t=><option key={t} value={t} style={{background:'#0e2040'}}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+                <select value={form.tipo} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                  {TIPOS.map(t=><option key={t} value={t} style={{background:'#ffffff'}}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
                 </select>
               </div>
               <div>
@@ -234,10 +234,10 @@ export default function TarefasPage() {
             </div>
             <div style={{marginBottom:14}}>
               <label style={{fontSize:12,color:'var(--gold)',display:'block',marginBottom:4}}>👤 Responsável</label>
-              <select value={form.responsavel_id} onChange={e=>setForm(f=>({...f,responsavel_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
-                <option value={profile?.id} style={{background:'#0e2040'}}>Eu mesmo ({profile?.nome})</option>
+              <select value={form.responsavel_id} onChange={e=>setForm(f=>({...f,responsavel_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                <option value={profile?.id} style={{background:'#ffffff'}}>Eu mesmo ({profile?.nome})</option>
                 {usuarios.filter(u=>u.id!==profile?.id).map(u=>(
-                  <option key={u.id} value={u.id} style={{background:'#0e2040'}}>{u.nome}</option>
+                  <option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>
                 ))}
               </select>
               {form.responsavel_id && form.responsavel_id !== profile?.id && (
@@ -257,7 +257,7 @@ export default function TarefasPage() {
                 <>
                   <input value={buscaCliente} onChange={e=>buscarClientes(e.target.value)} placeholder="🔍 Buscar cliente..." style={inp} />
                   {clientesBusca.length > 0 && (
-                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:160,overflow:'auto'}}>
+                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:160,overflow:'auto'}}>
                       {clientesBusca.map(c=>(
                         <div key={c.id} onClick={()=>{setClienteSel(c);setBuscaCliente(c.nome);setClientesBusca([])}}
                           style={{padding:'8px 14px',cursor:'pointer',fontSize:13}}
