@@ -51,39 +51,37 @@ const dateBR = (v: any) => {
 
 async function importarClientes(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  for (const r of linhas) {
+
+  const parseBool = (v: any, def = true): boolean => {
+    if (v === undefined || v === null || v === '') return def
+    const t = String(v).toLowerCase().trim()
+    if (/^(nao|não|no|false|0|inativo)$/.test(t)) return false
+    return true
+  }
+
+  // 1. Pre-processa todas as linhas montando os payloads e coletando
+  //    chaves de busca (cpf e email) — sem nenhuma chamada ao banco.
+  const items: { cpf: string|null; email: string|null; payload: any; idx: number }[] = []
+  for (let idx = 0; idx < linhas.length; idx++) {
+    const r = linhas[idx]
     try {
       const cpf = s(r.cpf_cnpj || r.cpf || r.cnpj)
-      const email = s(r.email)?.toLowerCase()
+      const email = s(r.email)?.toLowerCase() || null
       const nome = s(r.nome)
       if (!nome && !cpf && !email) { stats.qtd_erros++; continue }
 
-      // Tenta achar por cpf, email, ou nome
-      let existente: any = null
-      if (cpf) ({ data: existente } = await supabaseAdmin.from('clientes').select('id').eq('cpf_cnpj', cpf).maybeSingle())
-      if (!existente && email) ({ data: existente } = await supabaseAdmin.from('clientes').select('id').eq('email', email).maybeSingle())
-
-      // Booleans (aceita "sim", "true", "1", "ativo" → true)
-      const parseBool = (v: any, def = true): boolean => {
-        if (v === undefined || v === null || v === '') return def
-        const t = String(v).toLowerCase().trim()
-        if (/^(nao|não|no|false|0|inativo)$/.test(t)) return false
-        return true
-      }
       const renda = r.renda_mensal || r.renda
       const rendaNum = renda ? n(renda) : null
 
       const payload: any = {
         nome: nome || email || cpf,
         cpf_cnpj: cpf,
-        // Contatos múltiplos
         email,
         email2: s(r.email2 || r.email_2 || r['email 2'])?.toLowerCase() || null,
         email3: s(r.email3 || r.email_3 || r['email 3'])?.toLowerCase() || null,
         telefone:  s(r.telefone  || r.telefone1 || r['telefone 1'] || r.fone || r.celular),
         telefone2: s(r.telefone2 || r.telefone_2 || r['telefone 2'] || r.fone2 || r.celular2),
         telefone3: s(r.telefone3 || r.telefone_3 || r['telefone 3'] || r.fone3),
-        // Endereço
         cep: s(r.cep),
         endereco: s(r.endereco || r.logradouro || r.rua),
         numero: s(r.numero),
@@ -91,13 +89,11 @@ async function importarClientes(linhas: any[]) {
         bairro: s(r.bairro),
         cidade: s(r.cidade),
         estado: s(r.estado || r.uf),
-        // Documentos / dados pessoais
         rg: s(r.rg),
         nascimento: dateBR(r.nascimento || r['data nascimento']),
         aniversario: s(r.aniversario),
         sexo: s(r.sexo || r.genero),
         estado_civil: s(r.estado_civil || r['estado civil']),
-        // Profissional
         profissao: s(r.profissao || r['profissão']),
         ramo: s(r.ramo),
         renda_mensal: rendaNum,
@@ -106,7 +102,6 @@ async function importarClientes(linhas: any[]) {
         parentesco: s(r.parentesco),
         pasta_cliente: s(r.pasta_cliente || r['pasta cliente']),
         vencimento_cnh: dateBR(r.vencimento_cnh || r['vencimento cnh']),
-        // Sistema
         cliente_desde: dateBR(r.cliente_desde || r['cliente desde']),
         ativo: parseBool(r.ativo, true),
         receber_email: parseBool(r.receber_email || r['receber email'], true),
@@ -114,18 +109,61 @@ async function importarClientes(linhas: any[]) {
         tipo: s(r.tipo || r['tipo de pessoa']) === 'PJ' || (cpf && cpf.replace(/\D/g,'').length > 11) ? 'PJ' : 'PF',
         fonte: s(r.fonte) || 'Importação CSV/XLSX',
       }
-      if (existente) {
-        await supabaseAdmin.from('clientes').update(payload).eq('id', existente.id)
-        stats.qtd_atualizados++
-      } else {
-        await supabaseAdmin.from('clientes').insert(payload)
-        stats.qtd_criados++
-      }
+      items.push({ cpf, email, payload, idx })
     } catch (e: any) {
       stats.qtd_erros++
-      if (stats.erros.length < 20) stats.erros.push(e?.message?.slice(0, 120) || 'erro')
+      if (stats.erros.length < 20) stats.erros.push(`linha ${idx+1}: ${e?.message?.slice(0,100)}`)
     }
   }
+
+  if (items.length === 0) return stats
+
+  // 2. UMA query batch pra ver quais já existem (por CPF e por email).
+  const cpfs   = Array.from(new Set(items.map(i => i.cpf  ).filter(Boolean))) as string[]
+  const emails = Array.from(new Set(items.map(i => i.email).filter(Boolean))) as string[]
+  const existentesPorCpf:   Record<string, string> = {}
+  const existentesPorEmail: Record<string, string> = {}
+  if (cpfs.length) {
+    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfs)
+    for (const c of data || []) if (c.cpf_cnpj) existentesPorCpf[c.cpf_cnpj] = c.id
+  }
+  if (emails.length) {
+    const { data } = await supabaseAdmin.from('clientes').select('id, email').in('email', emails)
+    for (const c of data || []) if (c.email) existentesPorEmail[c.email] = c.id
+  }
+
+  // 3. Separa em "novos" (insert batch) e "existentes" (update individual)
+  const novos: any[] = []
+  const updates: { id: string; payload: any }[] = []
+  for (const it of items) {
+    const existId = (it.cpf && existentesPorCpf[it.cpf]) || (it.email && existentesPorEmail[it.email]) || null
+    if (existId) updates.push({ id: existId, payload: it.payload })
+    else novos.push(it.payload)
+  }
+
+  // 4. Insert em batch (1 query pra centenas de linhas)
+  if (novos.length) {
+    const { error } = await supabaseAdmin.from('clientes').insert(novos)
+    if (error) {
+      // Se o batch falha por um registro ruim, faz fallback row-by-row pra
+      // identificar quais linhas tem problema sem perder o resto.
+      for (const p of novos) {
+        const { error: e2 } = await supabaseAdmin.from('clientes').insert(p)
+        if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.nome}: ${e2.message?.slice(0,80)}`) }
+        else stats.qtd_criados++
+      }
+    } else {
+      stats.qtd_criados += novos.length
+    }
+  }
+
+  // 5. Updates: ainda sequencial mas só pros que existem (geralmente <10)
+  for (const u of updates) {
+    const { error } = await supabaseAdmin.from('clientes').update(u.payload).eq('id', u.id)
+    if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${u.payload.nome}: ${error.message?.slice(0,80)}`) }
+    else stats.qtd_atualizados++
+  }
+
   return stats
 }
 
