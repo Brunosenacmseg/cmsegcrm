@@ -110,6 +110,23 @@ export default function FunisPage() {
       if (status === 'perdido') patch.motivo_perda = motivo || null
     }
     await supabase.from('negocios').update(patch).eq('id', negocioId)
+
+    // Meta Pixel: dispara Purchase quando marcar Ganho. Se tiver
+    // meta_campaign_id, ajuda a otimizar campanhas.
+    if (status === 'ganho') {
+      const neg = negocios.find(n => n.id === negocioId)
+      if (neg && typeof window !== 'undefined' && (window as any).fbq) {
+        try {
+          ;(window as any).fbq('track', 'Purchase', {
+            value: Number(neg.premio || 0),
+            currency: 'BRL',
+            content_name: neg.titulo || neg.produto || '',
+            content_category: neg.produto || '',
+          })
+        } catch {}
+      }
+    }
+
     setModalCard(false)
     await carregarNegocios()
   }
