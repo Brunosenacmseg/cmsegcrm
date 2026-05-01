@@ -1857,6 +1857,62 @@ create policy "auth_deleta_propria_nota" on public.negocio_notas for delete usin
 );
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 19. AUTENTIQUE - assinaturas digitais (de 021)
+-- ═════════════════════════════════════════════════════════════════════
+
+create table if not exists public.assinaturas (
+  id uuid primary key default uuid_generate_v4(),
+  autentique_id text unique,
+  nome_documento text not null,
+  arquivo_url text, arquivo_nome text, pasta text,
+  status text not null default 'pendente'
+    check (status in ('pendente','enviado','assinado','recusado','expirado','cancelado','erro')),
+  url_assinatura text, url_pdf_final text,
+  total_signatarios int default 0, total_assinados int default 0,
+  negocio_id uuid references public.negocios(id) on delete set null,
+  apolice_id uuid references public.apolices(id) on delete set null,
+  cliente_id uuid references public.clientes(id) on delete set null,
+  enviado_por uuid references public.users(id),
+  obs text, payload_resposta jsonb,
+  criado_em timestamptz default now(),
+  atualizado_em timestamptz default now(),
+  concluido_em timestamptz
+);
+create index if not exists idx_assinaturas_negocio on public.assinaturas(negocio_id);
+create index if not exists idx_assinaturas_apolice on public.assinaturas(apolice_id);
+create index if not exists idx_assinaturas_cliente on public.assinaturas(cliente_id);
+create index if not exists idx_assinaturas_status  on public.assinaturas(status);
+
+create table if not exists public.assinaturas_signatarios (
+  id uuid primary key default uuid_generate_v4(),
+  assinatura_id uuid not null references public.assinaturas(id) on delete cascade,
+  autentique_id text, nome text, email text, cpf text,
+  funcao text default 'sign',
+  status text default 'pendente' check (status in ('pendente','assinado','recusado','expirado')),
+  link_assinatura text, assinado_em timestamptz, criado_em timestamptz default now()
+);
+create index if not exists idx_assin_signs_assin on public.assinaturas_signatarios(assinatura_id);
+
+alter table public.assinaturas enable row level security;
+alter table public.assinaturas_signatarios enable row level security;
+
+drop policy if exists "auth_le_assinaturas" on public.assinaturas;
+create policy "auth_le_assinaturas" on public.assinaturas for select using (auth.role() = 'authenticated');
+drop policy if exists "auth_escreve_assinaturas" on public.assinaturas;
+create policy "auth_escreve_assinaturas" on public.assinaturas for all using (auth.role() = 'authenticated');
+
+drop policy if exists "auth_le_assin_signs" on public.assinaturas_signatarios;
+create policy "auth_le_assin_signs" on public.assinaturas_signatarios for select using (auth.role() = 'authenticated');
+drop policy if exists "auth_escreve_assin_signs" on public.assinaturas_signatarios;
+create policy "auth_escreve_assin_signs" on public.assinaturas_signatarios for all using (auth.role() = 'authenticated');
+
+create or replace function public.update_atualizado_em()
+returns trigger as $$ begin new.atualizado_em = now(); return new; end; $$ language plpgsql;
+drop trigger if exists assinaturas_atualizado_em on public.assinaturas;
+create trigger assinaturas_atualizado_em before update on public.assinaturas
+  for each row execute procedure public.update_atualizado_em();
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql
