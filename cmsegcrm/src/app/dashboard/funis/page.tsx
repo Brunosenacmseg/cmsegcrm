@@ -13,6 +13,7 @@ export default function FunisPage() {
   const [usuarios, setUsuarios]   = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
   const [funilAtivo, setFunilAtivo] = useState<string|null>(null)
+  const [seletorAberto, setSeletorAberto] = useState(false)
 
   // Modal novo negócio
   const [modalNovo, setModalNovo] = useState(false)
@@ -192,33 +193,68 @@ export default function FunisPage() {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:8,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0,overflowX:'auto'}}>
-        <div style={{display:'flex',gap:4,flex:1,minWidth:0,alignItems:'center'}}>
-          {funis.map(f => {
-            const ativo = funilAtivo === f.id
-            return (
-              <div key={f.id} style={{display:'flex',alignItems:'center',gap:2}}>
-                <button onClick={()=>setFunilAtivo(f.id)}
-                  style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap',background:ativo?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:ativo?'var(--gold)':'var(--text-muted)',borderColor:ativo?'var(--gold)':'var(--border)'}}>
-                  {f.emoji} {f.nome}
-                  <span style={{marginLeft:6,fontSize:10,opacity:0.7}}>{negocios.filter(n=>n.funil_id===f.id).length}</span>
-                </button>
-                {ativo && profile?.role === 'admin' && (
-                  <>
-                    <button onClick={()=>renomearFunil(f)} title="Renomear funil"
-                      style={{padding:'6px 8px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif'}}>
-                      ✎
-                    </button>
-                    <button onClick={()=>excluirFunil(f)} title="Excluir funil"
-                      style={{padding:'6px 8px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
-                      🗑
-                    </button>
-                  </>
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:10,background:'rgba(10,22,40,0.7)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
+        {/* Dropdown de funis (filtrado por equipe via RLS — funis já chegam só os permitidos) */}
+        <div style={{position:'relative',minWidth:280}}>
+          <button onClick={()=>setSeletorAberto(s=>!s)}
+            style={{width:'100%',padding:'9px 14px',borderRadius:10,fontSize:13,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',gap:10,justifyContent:'space-between'}}>
+            <span style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+              <span style={{fontSize:16}}>{funiAtual?.emoji || '🏗'}</span>
+              <span style={{fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                {funiAtual?.nome || 'Selecione um funil'}
+              </span>
+              {funiAtual && (
+                <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10,marginLeft:6}}>
+                  {negocios.filter(n=>n.funil_id===funiAtual.id).length}
+                </span>
+              )}
+            </span>
+            <span style={{fontSize:11,color:'var(--text-muted)',transition:'transform 0.18s',transform:seletorAberto?'rotate(180deg)':'none'}}>▾</span>
+          </button>
+
+          {seletorAberto && (
+            <>
+              <div onClick={()=>setSeletorAberto(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
+              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,right:0,zIndex:50,background:'#0e2040',border:'1px solid var(--border)',borderRadius:10,boxShadow:'var(--shadow-lg)',maxHeight:'70vh',overflow:'auto',padding:6}}>
+                {funis.length === 0 && (
+                  <div style={{padding:20,textAlign:'center',color:'var(--text-muted)',fontSize:12}}>
+                    Nenhum funil disponível pra você. {profile?.role==='admin' ? 'Crie em ⚙ Configurar funis.' : 'Peça ao admin pra liberar.'}
+                  </div>
                 )}
+                {funis.map(f => {
+                  const ativo = funilAtivo === f.id
+                  const cardCount = negocios.filter(n=>n.funil_id===f.id).length
+                  return (
+                    <div key={f.id}
+                      onClick={()=>{ setFunilAtivo(f.id); setSeletorAberto(false) }}
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,cursor:'pointer',background:ativo?'rgba(201,168,76,0.10)':'transparent',color:ativo?'var(--gold)':'var(--text)',transition:'background 0.12s'}}
+                      onMouseEnter={e=>{if(!ativo)(e.currentTarget as HTMLDivElement).style.background='rgba(255,255,255,0.04)'}}
+                      onMouseLeave={e=>{if(!ativo)(e.currentTarget as HTMLDivElement).style.background='transparent'}}>
+                      <span style={{fontSize:16,width:22,textAlign:'center'}}>{f.emoji||'📁'}</span>
+                      <span style={{flex:1,fontSize:13,fontWeight:ativo?500:400}}>{f.nome}</span>
+                      <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10}}>{cardCount}</span>
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
+            </>
+          )}
         </div>
+
+        {/* Ações sobre o funil ativo (admin) */}
+        {funiAtual && profile?.role === 'admin' && (
+          <>
+            <button onClick={()=>renomearFunil(funiAtual)} title="Renomear funil"
+              style={{padding:'9px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif'}}>
+              ✎ Renomear
+            </button>
+            <button onClick={()=>excluirFunil(funiAtual)} title="Excluir funil"
+              style={{padding:'9px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+              🗑 Excluir
+            </button>
+          </>
+        )}
+        <div style={{flex:1}}/>
         {profile?.role === 'admin' && (
           <button onClick={()=>router.push('/dashboard/funis/configurar')}
             style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
