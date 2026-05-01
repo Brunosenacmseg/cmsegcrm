@@ -16,21 +16,60 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
   const qs = new URLSearchParams({ token, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) })
   const url = `${BASE}${path}?${qs.toString()}`
 
-  for (let tentativa = 0; tentativa < 4; tentativa++) {
+  // 6 tentativas com backoff: 20s/30s/45s/60s/60s/60s = até ~4.5min de
+  // paciência por chamada (cabe no timeout maxDuration=300s do Vercel pro).
+  // RD pode bloquear por mais de 1min em contas com volume alto.
+  // Respeita Retry-After se o RD enviar.
+  const esperasSegundos = [20, 30, 45, 60, 60, 60]
+  let totalEspera = 0
+  for (let tentativa = 0; tentativa < esperasSegundos.length; tentativa++) {
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) })
 
     if (res.status === 429) {
-      // Rate limit — espera exponencial
-      await new Promise(r => setTimeout(r, 1500 * (tentativa + 1)))
+      registrarRateLimit() // ativa modo adaptativo
+      const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10)
+      const esperaMs = Math.max(retryAfter * 1000, esperasSegundos[tentativa] * 1000)
+      totalEspera += esperaMs
+      await new Promise(r => setTimeout(r, esperaMs))
       continue
     }
     if (!res.ok) {
       const txt = await res.text().catch(() => '')
       throw new Error(`RD ${res.status} em ${path}: ${txt.slice(0, 180)}`)
     }
+    registrarSucesso()
     return res.json() as Promise<T>
   }
-  throw new Error(`RD: rate limit excedido em ${path}`)
+  throw new Error(`RD: rate limit (429) excedido em ${path} após ${(totalEspera/1000).toFixed(0)}s de espera. Reduza o intervalo de datas (use 1-2 meses por vez) ou tente novamente em alguns minutos.`)
+}
+
+// ─── Throttle adaptativo ─────────────────────────────────────
+// Comece com 600ms entre requests (~100/min, abaixo do limite de 120 RD).
+// Após um 429, dobra o intervalo (até 5s). A cada 30 sucessos seguidos
+// sem 429, baixa pra metade até voltar ao mínimo.
+let intervaloMin = 600
+let sucessosConsecutivos = 0
+function registrarRateLimit() {
+  intervaloMin = Math.min(intervaloMin * 2, 5000)
+  sucessosConsecutivos = 0
+}
+function registrarSucesso() {
+  sucessosConsecutivos++
+  if (sucessosConsecutivos >= 30 && intervaloMin > 600) {
+    intervaloMin = Math.max(intervaloMin / 2, 600)
+    sucessosConsecutivos = 0
+  }
+}
+
+let ultimaRDFetch = 0
+async function rdFetchThrottled<T = any>(path: string, token: string, params: Record<string, string | number> = {}): Promise<T> {
+  const agora = Date.now()
+  const desdeUltima = agora - ultimaRDFetch
+  if (desdeUltima < intervaloMin) {
+    await new Promise(r => setTimeout(r, intervaloMin - desdeUltima))
+  }
+  ultimaRDFetch = Date.now()
+  return rdFetch<T>(path, token, params)
 }
 
 // Extrai array de itens da resposta — tenta a chave primária e algumas alternativas comuns
@@ -50,7 +89,7 @@ export async function* paginar<T = any>(path: string, token: string, key: string
   let page = 1
   const limit = 200
   while (true) {
-    const data = await rdFetch<any>(path, token, { ...extraParams, page, limit })
+    const data = await rdFetchThrottled<any>(path, token, { ...extraParams, page, limit })
     const itens = extrairItens<T>(data, key)
     for (const item of itens) yield item
     if (itens.length < limit) break
@@ -192,7 +231,7 @@ export const rdId = (o: any): string | null => (o?._id || o?.id || null)
 // paginado costuma omitir). Tolera erro retornando null.
 export async function buscarDealDetalhe(id: string, token: string): Promise<RDDeal | null> {
   try {
-    return await rdFetch<RDDeal>(`/deals/${id}`, token)
+    return await rdFetchThrottled<RDDeal>(`/deals/${id}`, token)
   } catch {
     return null
   }

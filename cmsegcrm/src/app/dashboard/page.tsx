@@ -186,18 +186,17 @@ export default function DashboardPage() {
         )}
 
         {/* KPIs principais — agora 4 cards com comparação */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:16}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
           {[
-            {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),         color:'linear-gradient(90deg,var(--gold),var(--gold-light))', sub: dPremio.texto, subCor: dPremio.cor},
-            {label:'Novos Clientes (mês)', value:dados.novosClientes,           color:'linear-gradient(90deg,var(--teal),#4dd9c7)',          sub: dClientes.texto, subCor: dClientes.cor},
-            {label:'Negócios Ativos',      value:dados.apolicesAtivas,          color:'linear-gradient(90deg,#4a80f0,#7aa3f8)',              sub:'Em pipeline'},
-            {label:'Renovações (30d)',     value:dados.renovacoes30d,           color:'linear-gradient(90deg,var(--red),#f08080)',           sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente', subCor: dados.renovacoes30d>0?'var(--red)':'var(--text-muted)'},
-          ].map(({label,value,color,sub,subCor})=>(
-            <div key={label} className="card fade-up" style={{position:'relative',overflow:'hidden'}}>
-              <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:color,borderRadius:'14px 14px 0 0'}}/>
-              <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>{label}</div>
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:28,lineHeight:1}}>{value}</div>
-              {sub&&<div style={{fontSize:12,color:subCor||'var(--text-muted)',marginTop:6}}>{sub}</div>}
+            {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor},
+            {label:'Novos Clientes (mês)', value:dados.novosClientes,     tone:'success' as const, sub: dClientes.texto, subCor: dClientes.cor},
+            {label:'Negócios Ativos',      value:dados.apolicesAtivas,    tone:'info'    as const, sub:'Em pipeline'},
+            {label:'Renovações (30d)',     value:dados.renovacoes30d,     tone:'danger'  as const, sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente', subCor: dados.renovacoes30d>0?'var(--danger)':'var(--text-muted)'},
+          ].map(({label,value,tone,sub,subCor})=>(
+            <div key={label} className={`kpi kpi-${tone} fade-up`}>
+              <div className="kpi-label">{label}</div>
+              <div className={`kpi-value ${tone === 'success' ? 'kpi-value-success' : tone === 'warning' ? 'kpi-value-warning' : tone === 'danger' ? 'kpi-value-danger' : ''}`}>{value}</div>
+              {sub && <div style={{fontSize:12,color:subCor||'var(--text-muted)',marginTop:8}}>{sub}</div>}
             </div>
           ))}
         </div>

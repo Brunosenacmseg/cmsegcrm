@@ -73,6 +73,7 @@ export default function RDStationPage() {
   const [dataInicio, setDataInicio] = useState(dataDefaultInicio())
   const [dataFim, setDataFim]       = useState(dataHoje())
   const [progresso, setProgresso]   = useState<{ atual: number, total: number, mes: string } | null>(null)
+  const [incluirDetalhes, setIncluirDetalhes] = useState(false)
   const [oauth, setOauth] = useState<{ conectado: boolean; expiraEm?: string; clientIdConfigurado: boolean } | null>(null)
 
   async function authHeaders(): Promise<Record<string, string>> {
@@ -125,9 +126,23 @@ export default function RDStationPage() {
     const headers = await authHeaders()
     if (!usaEnv && token.trim()) headers['x-rd-token'] = token.trim()
     const r = await fetch('/api/rdstation/sync', {
-      method: 'POST', headers, body: JSON.stringify({ action, from, to }),
+      method: 'POST', headers, body: JSON.stringify({ action, from, to, detalhes: incluirDetalhes }),
     })
-    return { ok: r.ok, json: await r.json() }
+    // Vercel devolve HTML genérico ("An error occurred...") em timeouts/500.
+    // Não jogamos JSON.parse direto pra não quebrar com SyntaxError.
+    const txt = await r.text()
+    let json: any
+    try { json = JSON.parse(txt) }
+    catch {
+      // Heurística: detecta timeout do Vercel / página de erro
+      const ehTimeout = /timeout|504|gateway|an error o/i.test(txt)
+      json = {
+        error: ehTimeout
+          ? 'Timeout no servidor (Vercel mata em ~60s no plano free / 300s no pro). Use janela mensal menor ou desmarque "incluir detalhes".'
+          : 'Resposta inválida do servidor: ' + txt.slice(0, 120)
+      }
+    }
+    return { ok: r.ok, json }
   }
 
   function acumular(prev: Stats | undefined, novo: Stats): Stats {
@@ -411,6 +426,12 @@ export default function RDStationPage() {
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 {gerarJanelasMensais(dataInicio, dataFim).length} meses serão processados
               </span>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={incluirDetalhes} onChange={e => setIncluirDetalhes(e.target.checked)} />
+                Incluir notas e campos adicionais (mais lento — 1 request extra por deal, pode estourar timeout do Vercel)
+              </label>
             </div>
           </div>
 

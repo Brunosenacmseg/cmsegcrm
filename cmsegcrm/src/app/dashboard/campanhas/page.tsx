@@ -158,20 +158,20 @@ export default function CampanhasPage() {
         ) : (
           <>
             {/* Cards de totais */}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',gap:14,marginBottom:24}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))',gap:20,marginBottom:24}}>
               {[
-                { label:'Gasto', val:`R$ ${fmt(tGasto)}`, cor:'var(--red)' },
-                { label:'Receita', val:`R$ ${fmt(tReceita)}`, cor:'var(--teal)' },
-                { label:'ROAS', val:roas.toFixed(2)+'x', cor:roas>=1?'var(--teal)':'var(--red)' },
-                { label:'Leads', val:fmtN(tLeads), cor:'var(--gold)' },
-                { label:'Vendas', val:fmtN(tVendas), cor:'var(--gold)' },
-                { label:'CPL', val:`R$ ${fmt(cpl)}`, cor:'var(--text)' },
-                { label:'CTR', val:ctr.toFixed(2)+'%', cor:'var(--text)' },
-                { label:'Impressões', val:fmtN(tImpressoes), cor:'var(--text-muted)' },
+                { label:'Gasto',     val:`R$ ${fmt(tGasto)}`,         tone:'danger'  as const },
+                { label:'Receita',   val:`R$ ${fmt(tReceita)}`,       tone:'success' as const },
+                { label:'ROAS',      val:roas.toFixed(2)+'x',         tone:(roas>=1?'success':'danger') as 'success'|'danger' },
+                { label:'Leads',     val:fmtN(tLeads),                tone:'warning' as const },
+                { label:'Vendas',    val:fmtN(tVendas),               tone:'success' as const },
+                { label:'CPL',       val:`R$ ${fmt(cpl)}`,            tone:'info'    as const },
+                { label:'CTR',       val:ctr.toFixed(2)+'%',          tone:'info'    as const },
+                { label:'Impressões',val:fmtN(tImpressoes),           tone:'neutral' as const },
               ].map(card => (
-                <div key={card.label} className="card" style={{padding:'14px 16px'}}>
-                  <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>{card.label}</div>
-                  <div style={{fontSize:20,fontWeight:600,color:card.cor,fontFamily:'DM Serif Display,serif'}}>{card.val}</div>
+                <div key={card.label} className={`kpi kpi-${card.tone}`}>
+                  <div className="kpi-label">{card.label}</div>
+                  <div className={`kpi-value kpi-value-${card.tone === 'neutral' || card.tone === 'info' ? '' : card.tone}`}>{card.val}</div>
                 </div>
               ))}
             </div>

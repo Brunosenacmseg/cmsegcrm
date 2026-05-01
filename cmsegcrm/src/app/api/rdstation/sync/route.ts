@@ -225,7 +225,7 @@ async function importarContatos(token: string, from?: string, to?: string) {
   return stats
 }
 
-async function importarNegocios(token: string, from?: string, to?: string) {
+async function importarNegocios(token: string, from?: string, to?: string, incluirDetalhes = false) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
 
   // Mapas auxiliares
@@ -288,8 +288,10 @@ async function importarNegocios(token: string, from?: string, to?: string) {
       const id = rdId(d)
       if (!id) continue
 
-      // Detalhe completo (notes, custom_fields) — endpoint /deals/:id retorna mais
-      const detalhe = await buscarDealDetalhe(id, token)
+      // Detalhe completo (notes, custom_fields) — só quando explicitamente
+      // solicitado (incluirDetalhes), pois adiciona 1 HTTP por deal e
+      // facilmente estoura timeout do Vercel com volume alto.
+      const detalhe = incluirDetalhes ? await buscarDealDetalhe(id, token) : null
       const dx = detalhe || d
 
       // Resolver funil — por pipeline ID, depois por nome, senão fallback
@@ -491,11 +493,13 @@ export async function POST(request: NextRequest) {
   let action: string = ''
   let from: string | undefined
   let to: string | undefined
+  let detalhes = false
   try {
     const body = await request.json()
     action = body.action
     from = body.from
     to = body.to
+    detalhes = !!body.detalhes
   } catch {}
 
   try {
@@ -515,7 +519,7 @@ export async function POST(request: NextRequest) {
         if (r === 'usuarios')        stats = await importarUsuarios(token)
         else if (r === 'funis')      stats = await importarFunis(token)
         else if (r === 'contatos')   stats = await importarContatos(token, from, to)
-        else if (r === 'negocios')   stats = await importarNegocios(token, from, to)
+        else if (r === 'negocios')   stats = await importarNegocios(token, from, to, detalhes)
         else if (r === 'atividades') stats = await importarAtividades(token, from, to)
         else { resultados[r] = { error: 'recurso inválido' }; continue }
       } catch (e: any) {
