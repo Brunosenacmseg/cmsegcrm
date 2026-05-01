@@ -2186,6 +2186,28 @@ create trigger contas_pagar_atualizado before update on public.contas_pagar
   for each row execute procedure public.contas_pagar_set_atualizado();
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 26. CLIENTE - CAMPOS EXTRAS (de 028)
+-- ═════════════════════════════════════════════════════════════════════
+
+alter table public.clientes
+  add column if not exists aniversario      text,
+  add column if not exists cliente_desde    date,
+  add column if not exists vencimento_cnh   date,
+  add column if not exists ativo            boolean default true,
+  add column if not exists receber_email    boolean default true,
+  add column if not exists profissao        text,
+  add column if not exists ramo             text,
+  add column if not exists renda_mensal     numeric(12,2),
+  add column if not exists estipulantes     text,
+  add column if not exists filial           text,
+  add column if not exists parentesco       text,
+  add column if not exists pasta_cliente    text;
+
+create index if not exists idx_clientes_ativo on public.clientes(ativo) where ativo = true;
+create index if not exists idx_clientes_venc_cnh on public.clientes(vencimento_cnh) where vencimento_cnh is not null;
+create index if not exists idx_clientes_cliente_desde on public.clientes(cliente_desde);
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql

@@ -73,6 +73,7 @@ export default function ClientesPage() {
   const router   = useRouter()
 
   const [profile, setProfile]     = useState<any>(null)
+  const [usuarios, setUsuarios]   = useState<any[]>([])
   const [clientes, setClientes]   = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
   const [busca, setBusca]         = useState('')
@@ -81,7 +82,7 @@ export default function ClientesPage() {
   const [editando, setEditando]   = useState<any>(null)
 
   const clienteVazio = {
-    tipo:'PF', nome:'', cpf_cnpj:'', nascimento:'', rg:'', sexo:'', estado_civil:'',
+    tipo:'PF', nome:'', cpf_cnpj:'', nascimento:'', aniversario:'', rg:'', sexo:'', estado_civil:'',
     telefone:'', telefone2:'', telefone3:'',
     email:'', email2:'', email3:'',
     cep:'', endereco:'', numero:'', complemento:'', bairro:'', cidade:'', estado:'',
@@ -89,9 +90,14 @@ export default function ClientesPage() {
     cep3:'', endereco3:'', numero3:'', complemento3:'', bairro3:'', cidade3:'', estado3:'',
     observacao:'',
     vendedor_id:'',
+    // Novos campos (migration 028)
+    cliente_desde:'', vencimento_cnh:'',
+    ativo:true, receber_email:true,
+    profissao:'', ramo:'', renda_mensal:'',
+    estipulantes:'', filial:'', parentesco:'', pasta_cliente:'',
   }
   const [form, setForm] = useState({ ...clienteVazio })
-  const [abaModal, setAbaModal] = useState<'dados'|'enderecos'|'contato'|'obs'>('dados')
+  const [abaModal, setAbaModal] = useState<'dados'|'enderecos'|'contato'|'profissional'|'sistema'|'obs'>('dados')
 
   useEffect(() => { init() }, [])
 
@@ -99,6 +105,8 @@ export default function ClientesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
+    const { data: usrs } = await supabase.from('users').select('id,nome,role').order('nome')
+    setUsuarios(usrs || [])
     await carregar()
   }
 
@@ -134,10 +142,14 @@ export default function ClientesPage() {
   async function salvar() {
     if (!form.nome && !form.cpf_cnpj) { alert('Informe nome ou CPF/CNPJ'); return }
     setSalvando(true)
-    const payload = {
+    const renda = form.renda_mensal ? parseFloat(String(form.renda_mensal).replace(/[R$\s.]/g,'').replace(',','.')) || null : null
+    const payload: any = {
       ...form,
-      nascimento: form.nascimento || null,
-      vendedor_id: form.vendedor_id || profile?.id,
+      nascimento:     form.nascimento || null,
+      cliente_desde:  form.cliente_desde || null,
+      vencimento_cnh: form.vencimento_cnh || null,
+      renda_mensal:   renda,
+      vendedor_id:    form.vendedor_id || profile?.id,
     }
     if (editando) {
       await supabase.from('clientes').update(payload).eq('id', editando.id)
@@ -197,6 +209,19 @@ export default function ClientesPage() {
       estado3:      c.estado3||'',
       observacao:   c.observacao||'',
       vendedor_id:  c.vendedor_id||'',
+      // Novos campos
+      aniversario:    c.aniversario||'',
+      cliente_desde:  c.cliente_desde||'',
+      vencimento_cnh: c.vencimento_cnh||'',
+      ativo:          c.ativo === false ? false : true,
+      receber_email:  c.receber_email === false ? false : true,
+      profissao:      c.profissao||'',
+      ramo:           c.ramo||'',
+      renda_mensal:   c.renda_mensal != null ? String(c.renda_mensal) : '',
+      estipulantes:   c.estipulantes||'',
+      filial:         c.filial||'',
+      parentesco:     c.parentesco||'',
+      pasta_cliente:  c.pasta_cliente||'',
     })
     setAbaModal('dados')
     setModal(true)
@@ -273,7 +298,7 @@ export default function ClientesPage() {
 
             {/* Abas */}
             <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',flexShrink:0}}>
-              {([['dados','👤 Dados'],['contato','📞 Contato'],['enderecos','📍 Endereços'],['obs','📝 Obs']] as const).map(([k,l])=>(
+              {([['dados','👤 Dados'],['contato','📞 Contato'],['enderecos','📍 Endereços'],['profissional','💼 Profissional'],['sistema','⚙ Sistema'],['obs','📝 Obs']] as const).map(([k,l])=>(
                 <button key={k} onClick={()=>setAbaModal(k as any)}
                   style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',borderBottom:abaModal===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:abaModal===k?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',marginBottom:-1}}>
                   {l}
@@ -314,12 +339,17 @@ export default function ClientesPage() {
                       </select>
                     </Campo>
                   </div>
-                  <Campo label="Estado Civil">
-                    <select value={form.estado_civil} onChange={e=>setForm(f=>({...f,estado_civil:e.target.value}))} style={sel}>
-                      <option value="">— Selecione —</option>
-                      {ESTADOS_CIVIS.map(s=><option key={s}>{s}</option>)}
-                    </select>
-                  </Campo>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                    <Campo label="Estado Civil">
+                      <select value={form.estado_civil} onChange={e=>setForm(f=>({...f,estado_civil:e.target.value}))} style={sel}>
+                        <option value="">— Selecione —</option>
+                        {ESTADOS_CIVIS.map(s=><option key={s}>{s}</option>)}
+                      </select>
+                    </Campo>
+                    <Campo label="Aniversário (DD/MM)">
+                      <input value={form.aniversario} onChange={e=>setForm(f=>({...f,aniversario:e.target.value}))} placeholder="01/05" maxLength={5} style={inp} />
+                    </Campo>
+                  </div>
                 </div>
               )}
 
@@ -345,6 +375,73 @@ export default function ClientesPage() {
                   <EnderecoBloco prefix=""  titulo="📍 Endereço Principal" form={form} setForm={setForm} buscarCep={buscarCep} inp={inp} sel={sel} />
                   <EnderecoBloco prefix="2" titulo="📍 Endereço 2"          form={form} setForm={setForm} buscarCep={buscarCep} inp={inp} sel={sel} />
                   <EnderecoBloco prefix="3" titulo="📍 Endereço 3"          form={form} setForm={setForm} buscarCep={buscarCep} inp={inp} sel={sel} />
+                </div>
+              )}
+
+              {abaModal==='profissional' && (
+                <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                    <Campo label="Profissão">
+                      <input value={form.profissao} onChange={e=>setForm(f=>({...f,profissao:e.target.value}))} placeholder="Ex: Médico, Engenheiro" style={inp} />
+                    </Campo>
+                    <Campo label="Ramo de Atuação">
+                      <input value={form.ramo} onChange={e=>setForm(f=>({...f,ramo:e.target.value}))} placeholder="Ex: Saúde, Tecnologia" style={inp} />
+                    </Campo>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                    <Campo label="Renda Mensal (R$)">
+                      <input value={form.renda_mensal} onChange={e=>setForm(f=>({...f,renda_mensal:e.target.value}))} placeholder="0,00" style={inp} />
+                    </Campo>
+                    <Campo label="Vencimento CNH">
+                      <input type="date" value={form.vencimento_cnh} onChange={e=>setForm(f=>({...f,vencimento_cnh:e.target.value}))} style={inp} />
+                    </Campo>
+                  </div>
+                  <Campo label="Estipulantes">
+                    <input value={form.estipulantes} onChange={e=>setForm(f=>({...f,estipulantes:e.target.value}))} placeholder="Empresa/órgão estipulante (apólices coletivas)" style={inp} />
+                  </Campo>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                    <Campo label="Filial">
+                      <input value={form.filial} onChange={e=>setForm(f=>({...f,filial:e.target.value}))} placeholder="Ex: Matriz, Unidade SP" style={inp} />
+                    </Campo>
+                    <Campo label="Parentesco">
+                      <input value={form.parentesco} onChange={e=>setForm(f=>({...f,parentesco:e.target.value}))} placeholder="Ex: Cônjuge de João" style={inp} />
+                    </Campo>
+                  </div>
+                </div>
+              )}
+
+              {abaModal==='sistema' && (
+                <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                    <Campo label="Cliente desde">
+                      <input type="date" value={form.cliente_desde} onChange={e=>setForm(f=>({...f,cliente_desde:e.target.value}))} style={inp} />
+                    </Campo>
+                    <Campo label="Vendedor responsável">
+                      <select value={form.vendedor_id} onChange={e=>setForm(f=>({...f,vendedor_id:e.target.value}))} style={sel}>
+                        <option value="">— Sem vendedor —</option>
+                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                      </select>
+                    </Campo>
+                  </div>
+                  <Campo label="Pasta do Cliente (URL externa)">
+                    <input value={form.pasta_cliente} onChange={e=>setForm(f=>({...f,pasta_cliente:e.target.value}))} placeholder="https://drive.google.com/... (opcional)" style={inp} />
+                  </Campo>
+                  <div style={{display:'flex',gap:14,padding:'10px 12px',background:'var(--bg-subtle)',border:'1px solid var(--border-soft)',borderRadius:8}}>
+                    <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}>
+                      <input type="checkbox" checked={!!form.ativo} onChange={e=>setForm(f=>({...f,ativo:e.target.checked}))} />
+                      <span>✅ Cliente ativo</span>
+                    </label>
+                    <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13}}>
+                      <input type="checkbox" checked={!!form.receber_email} onChange={e=>setForm(f=>({...f,receber_email:e.target.checked}))} />
+                      <span>✉ Receber e-mail (newsletter, avisos)</span>
+                    </label>
+                  </div>
+                  {form.nascimento && (
+                    <div style={{fontSize:12,color:'var(--text-muted)',padding:'8px 12px',background:'rgba(184,146,63,0.06)',border:'1px solid rgba(184,146,63,0.2)',borderRadius:8}}>
+                      📅 Idade: <strong>{Math.floor((Date.now() - new Date(form.nascimento+'T12:00:00').getTime()) / (365.25*24*60*60*1000))}</strong> anos
+                      {' '} (calculado a partir do nascimento)
+                    </div>
+                  )}
                 </div>
               )}
 
