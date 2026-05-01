@@ -222,10 +222,9 @@ export default function ImportarPage() {
       return novo
     })
 
-    // Manda em lotes de 100 pra evitar timeout do Vercel (~60s no Hobby).
-    // Acumula stats de cada lote e parseia resposta com proteção contra
-    // HTML de erro (que aparece quando a função timeoutar mesmo assim).
-    const TAMANHO_LOTE = 100
+    // Manda em lotes de 50 pra evitar timeout do Vercel (~60s no Hobby).
+    // Backend faz batch insert + lookup unificado, entao 50 rodam em <5s.
+    const TAMANHO_LOTE = 50
     const totalLotes = Math.ceil(linhas.length / TAMANHO_LOTE)
     const acc = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
     let falhouTudo = false
