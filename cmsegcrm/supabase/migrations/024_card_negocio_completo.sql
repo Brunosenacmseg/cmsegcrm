@@ -5,9 +5,11 @@
 -- C) anexos.cliente_id e anexos.categoria já existem; UI usará.
 -- ─────────────────────────────────────────────────────────────
 
--- A) Notas: apenas admin pode editar e excluir
+-- A) Notas: apenas admin pode editar e excluir (idempotente)
 drop policy if exists "auth_atualiza_propria_nota" on public.negocio_notas;
 drop policy if exists "auth_deleta_propria_nota"    on public.negocio_notas;
+drop policy if exists "admin_atualiza_nota"         on public.negocio_notas;
+drop policy if exists "admin_deleta_nota"           on public.negocio_notas;
 
 create policy "admin_atualiza_nota" on public.negocio_notas for update using (
   exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
