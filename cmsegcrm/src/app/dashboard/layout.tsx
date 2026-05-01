@@ -147,7 +147,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (!checked) return (
-    <div style={{minHeight:'100vh',background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>
+    <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>
       Carregando...
     </div>
   )
@@ -180,7 +180,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,background:'radial-gradient(ellipse 60% 50% at 80% 10%, rgba(201,168,76,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 10% 80%, rgba(28,181,160,0.06) 0%, transparent 60%)'}}/>
 
-      <aside style={{width:'var(--sidebar-w)',background:'linear-gradient(180deg,#0c1e3a 0%,#091529 100%)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
+      <aside style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
         <div style={{padding:'26px 22px 20px',borderBottom:'1px solid var(--border)'}}>
           <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM.segCRM</div>
           <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:2,textTransform:'uppercase',marginTop:2}}>Corretora de Seguros</div>
@@ -216,7 +216,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )}
                 {!recolhida && (
                   <div onClick={() => router.push(item.href)}
-                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'rgba(201,168,76,0.08)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?500:400,transition:'all 0.18s'}}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'var(--gold-soft)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?600:400,transition:'all 0.18s'}}
                     onMouseEnter={e => { if (!active) (e.currentTarget as HTMLDivElement).style.color = 'var(--text)' }}
                     onMouseLeave={e => { if (!active) (e.currentTarget as HTMLDivElement).style.color = 'var(--text-muted)' }}>
                     <span style={{fontSize:15,width:20,textAlign:'center'}}>{item.icon}</span>
@@ -249,12 +249,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <main style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
         {/* Header com sino */}
-        <div style={{height:52,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'rgba(10,22,40,0.8)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
+        <div style={{height:52,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'rgba(255,255,255,0.92)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
           <div style={{flex:1}}/>
 
           <div style={{position:'relative'}}>
             <button onClick={e=>{e.stopPropagation();setShowNotif(!showNotif)}}
-              style={{background:'rgba(255,255,255,0.06)',border:'1px solid var(--border)',borderRadius:10,padding:'7px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:8,color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:13}}>
+              style={{background:'#ffffff',border:'1px solid var(--border-strong)',borderRadius:10,padding:'7px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:8,color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:13}}>
               <span style={{fontSize:16}}>🔔</span>
               <span style={{fontSize:12,color:'var(--text-muted)'}}>Notificações</span>
               {totalNaoLidas > 0 && (
@@ -265,7 +265,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             {showNotif && (
-              <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 10px)',left:'50%',transform:'translateX(-50%)',width:380,background:'#0a1628',border:'1px solid var(--border)',borderRadius:16,zIndex:100,boxShadow:'0 12px 48px rgba(0,0,0,0.6)',overflow:'hidden'}}>
+              <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 10px)',left:'50%',transform:'translateX(-50%)',width:380,background:'#ffffff',border:'1px solid var(--border-soft)',borderRadius:16,zIndex:100,boxShadow:'var(--shadow-lg)',overflow:'hidden'}}>
                 <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <div style={{fontSize:14,fontWeight:600}}>🔔 Notificações</div>
                   {totalNaoLidas > 0 && (

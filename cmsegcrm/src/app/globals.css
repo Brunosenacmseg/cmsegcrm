@@ -1,43 +1,61 @@
 :root {
-  /* ─── Cores base ──────────────────────────────────────── */
-  --navy:       #0a1628;
-  --navy-mid:   #112240;
-  --navy-light: #1a3460;
-  --gold:       #c9a84c;   /* acento ÚNICO de destaque/CTA */
-  --gold-light: #e6c97a;
-  --teal:       #1cb5a0;
-  --red:        #e05252;
-  --blue:       #4a80f0;
-  --text:       #f3f6fc;   /* +contraste vs anterior #e8eef8 */
-  --text-muted: #94a3c7;   /* +contraste vs anterior #7a90b8 */
-  --border:     rgba(201,168,76,0.18);
-  --border-soft: rgba(255,255,255,0.06);
-  --card-bg:    rgba(17,34,64,0.85);
-  --card-elevated: rgba(20,40,72,0.92); /* cards principais */
-  --sidebar-w:  220px;
+  /* ─── Cores base — TEMA D (CLARO COM DOURADO) ────────── */
+  --navy:        #1a1a2e;        /* texto principal — quase preto */
+  --navy-mid:    #2a2a40;        /* subtítulos */
+  --navy-light:  #4b5563;        /* linhas */
+  --gold:        #b8923f;        /* dourado escuro acessível em fundo claro */
+  --gold-light:  #d4af6c;
+  --gold-soft:   #fdf6e3;        /* bg dourado clarinho (chips/active) */
+  --teal:        #059669;        /* verde — usado em estrelas e positivos */
+  --teal-light:  #10b981;
+  --red:         #dc2626;
+  --blue:        #2563eb;        /* azul vibrante — CTA principal */
+  --blue-dark:   #1d4ed8;
+  --blue-soft:   #dbeafe;        /* bg azul clarinho */
+
+  --text:        #1a1a2e;        /* preto suave */
+  --text-muted:  #6b7280;        /* cinza médio */
+  --text-faint:  #9ca3af;        /* cinza claro */
+
+  --bg:          #ffffff;        /* fundo principal */
+  --bg-soft:     #faf8f3;        /* fundo levemente quente (cards/sidebar) */
+  --bg-subtle:   #f5f7fb;        /* fundo cinza-azulado bem claro */
+
+  --border:      #e8e0c8;        /* borda dourada bem clara */
+  --border-soft: #e5e7eb;        /* borda cinza neutra */
+  --border-strong: #cbd5e1;
+
+  --card-bg:       #ffffff;
+  --card-elevated: #ffffff;
+
+  --sidebar-w:   220px;
 
   /* ─── Tokens semânticos de status ─────────────────────── */
-  --success:       var(--teal);
-  --success-bg:    rgba(28,181,160,0.12);
-  --success-border:rgba(28,181,160,0.32);
-  --warning:       #e6c97a;
-  --warning-bg:    rgba(230,201,122,0.12);
-  --warning-border:rgba(230,201,122,0.32);
-  --danger:        var(--red);
-  --danger-bg:     rgba(224,82,82,0.12);
-  --danger-border: rgba(224,82,82,0.32);
-  --info:          var(--blue);
-  --info-bg:       rgba(74,128,240,0.12);
-  --info-border:   rgba(74,128,240,0.32);
-  --neutral:       var(--text-muted);
-  --neutral-bg:    rgba(255,255,255,0.06);
-  --neutral-border:rgba(255,255,255,0.10);
+  --success:        var(--teal);
+  --success-bg:     #d1fae5;
+  --success-border: #a7f3d0;
+  --warning:        #d97706;
+  --warning-bg:     #fef3c7;
+  --warning-border: #fde68a;
+  --danger:         var(--red);
+  --danger-bg:      #fee2e2;
+  --danger-border:  #fecaca;
+  --info:           var(--blue);
+  --info-bg:        var(--blue-soft);
+  --info-border:    #bfdbfe;
+  --neutral:        var(--text-muted);
+  --neutral-bg:     #f3f4f6;
+  --neutral-border: #e5e7eb;
 
-  /* ─── Tipografia (3 tamanhos / 3 pesos) ──────────────── */
-  --fs-sm: 12px;   /* corpo / labels */
-  --fs-md: 14px;   /* destaques inline */
-  --fs-lg: 22px;   /* títulos de página */
-  --fs-xl: 28px;   /* números de KPI */
+  /* Estrelas — verde (escolha do usuário) */
+  --star:           var(--teal);
+  --star-empty:     #d1d5db;
+
+  /* ─── Tipografia ──────────────────────────────────────── */
+  --fs-sm: 12px;
+  --fs-md: 14px;
+  --fs-lg: 22px;
+  --fs-xl: 28px;
   --fw-regular: 400;
   --fw-medium:  500;
   --fw-bold:    700;
@@ -57,16 +75,16 @@
   --radius-md: 10px;
   --radius-lg: 14px;
 
-  /* ─── Sombras ─────────────────────────────────────────── */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.18);
-  --shadow-md: 0 4px 14px rgba(0,0,0,0.24);
-  --shadow-lg: 0 8px 28px rgba(0,0,0,0.36);
+  /* ─── Sombras (mais suaves no tema claro) ─────────────── */
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.06);
+  --shadow-md: 0 2px 8px rgba(15,23,42,0.08);
+  --shadow-lg: 0 8px 24px rgba(15,23,42,0.12);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
@@ -75,102 +93,92 @@ body {
   font-weight: var(--fw-regular);
   letter-spacing: var(--tracking);
   line-height: var(--lh-normal);
-  background: var(--navy);
+  background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Garantir contraste em todos os <select> e <option> da aplicação */
+/* Garantir contraste em todos os <select> e <option> */
 select {
-  color-scheme: dark;
+  color-scheme: light;
   color: var(--text);
 }
 select option {
-  background-color: #0e2040;
+  background-color: #ffffff;
   color: var(--text);
 }
 select option:checked {
-  background-color: #1a3460;
+  background-color: var(--gold-soft);
   color: var(--gold);
 }
 
-/* Date/time inputs também ficam pretos no Windows sem isso */
 input[type="date"],
 input[type="datetime-local"],
 input[type="time"],
 input[type="month"] {
-  color-scheme: dark;
+  color-scheme: light;
   color: var(--text);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 8px; height: 8px; }
+/* Scrollbar global */
+::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.25); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(201,168,76,0.45); }
+::-webkit-scrollbar-thumb { background: rgba(184,146,63,0.25); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(184,146,63,0.50); }
 
-/* Scrollbar destacada para o kanban — sempre visível e bem grossa.
-   Fix necessário porque macOS esconde scrollbars finas e o usuário
-   não percebia que dava pra rolar. */
+/* Scrollbar destacada do kanban */
 .kanban-scroll {
-  scrollbar-color: rgba(201,168,76,0.6) rgba(201,168,76,0.10);
+  scrollbar-color: rgba(184,146,63,0.6) rgba(184,146,63,0.10);
   scrollbar-width: auto;
   scrollbar-gutter: stable;
 }
-.kanban-scroll::-webkit-scrollbar {
-  height: 18px;
-  width: 18px;
-}
+.kanban-scroll::-webkit-scrollbar { height: 18px; width: 18px; }
 .kanban-scroll::-webkit-scrollbar-track {
-  background: rgba(201,168,76,0.08);
+  background: rgba(184,146,63,0.10);
   border-top: 1px solid var(--border);
 }
 .kanban-scroll::-webkit-scrollbar-thumb {
-  background: rgba(201,168,76,0.55);
-  border: 4px solid #0a1628;
+  background: rgba(184,146,63,0.55);
+  border: 4px solid #ffffff;
   border-radius: 10px;
   min-width: 80px;
 }
-.kanban-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(201,168,76,0.85);
-}
-.kanban-scroll::-webkit-scrollbar-thumb:active {
-  background: var(--gold);
-}
+.kanban-scroll::-webkit-scrollbar-thumb:hover { background: rgba(184,146,63,0.85); }
+.kanban-scroll::-webkit-scrollbar-thumb:active { background: var(--gold); }
 
 /* ────────────────────────────────────────────────────────
    COMPONENTES UTILITÁRIOS
    ──────────────────────────────────────────────────────── */
 
-/* Card com mais respiro e contraste */
 .card {
   background: var(--card-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
   padding: var(--space-5) var(--space-6);
-  transition: border-color 0.18s, transform 0.18s;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 .card-elevated {
   background: var(--card-elevated);
   box-shadow: var(--shadow-md);
 }
-.card-clickable {
-  cursor: pointer;
-}
+.card-clickable { cursor: pointer; }
 .card-clickable:hover {
   border-color: var(--gold);
+  box-shadow: var(--shadow-md);
 }
 
-/* Card de KPI: barra colorida no topo + label uppercase + valor grande */
+/* KPI: barra colorida no topo + label uppercase + valor grande */
 .kpi {
   position: relative;
   background: var(--card-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
   padding: var(--space-5) var(--space-6);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
   transition: border-color 0.18s;
 }
 .kpi::before {
@@ -203,10 +211,10 @@ input[type="month"] {
 .kpi-value-warning { color: var(--warning); }
 .kpi-value-danger  { color: var(--danger); }
 
-/* Botões */
+/* Botão primário — AZUL (CTA principal) */
 .btn-primary {
-  background: var(--gold);
-  color: var(--navy);
+  background: var(--blue);
+  color: #ffffff;
   border: none;
   border-radius: var(--radius-md);
   padding: 10px 20px;
@@ -216,14 +224,14 @@ input[type="month"] {
   cursor: pointer;
   transition: background 0.16s, transform 0.06s;
 }
-.btn-primary:hover     { background: var(--gold-light); }
+.btn-primary:hover     { background: var(--blue-dark); }
 .btn-primary:active    { transform: translateY(1px); }
-.btn-primary:disabled  { opacity: 0.55; cursor: not-allowed; }
+.btn-primary:disabled  { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
   border-radius: var(--radius-md);
   padding: 10px 20px;
   font-size: var(--fs-sm);
@@ -231,7 +239,7 @@ input[type="month"] {
   cursor: pointer;
   transition: all 0.16s;
 }
-.btn-secondary:hover { color: var(--text); border-color: var(--gold); }
+.btn-secondary:hover { background: var(--bg-subtle); border-color: var(--blue); color: var(--blue); }
 
 .btn-ghost {
   background: transparent;
@@ -243,26 +251,26 @@ input[type="month"] {
   cursor: pointer;
   transition: all 0.16s;
 }
-.btn-ghost:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.btn-ghost:hover { color: var(--text); background: var(--bg-subtle); }
 
 /* Inputs */
 .input {
   width: 100%;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border);
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   color: var(--text);
   font-size: var(--fs-sm);
   font-family: 'DM Sans', sans-serif;
   outline: none;
-  transition: border-color 0.16s, background 0.16s;
+  transition: border-color 0.16s, box-shadow 0.16s;
 }
 .input:focus {
-  border-color: var(--gold);
-  background: rgba(255,255,255,0.07);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
 }
-.input::placeholder { color: var(--text-muted); }
+.input::placeholder { color: var(--text-faint); }
 
 .label {
   display: block;
@@ -274,7 +282,7 @@ input[type="month"] {
   margin-bottom: 6px;
 }
 
-/* Badges semânticos */
+/* Badges */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -293,12 +301,12 @@ input[type="month"] {
 .badge-info    { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
 .badge-neutral { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
 
-/* Aliases legados (compatibilidade com código existente) */
-.badge-teal   { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
-.badge-gold   { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
-.badge-red    { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
-.badge-blue   { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
-.badge-gray   { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
+/* Aliases legados */
+.badge-teal { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.badge-gold { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.badge-red  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.badge-blue { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
+.badge-gray { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
 
 /* Títulos */
 .h1 {
@@ -313,13 +321,13 @@ input[type="month"] {
   color: var(--text);
 }
 
-/* Sidebar — seção colapsável */
+/* Sidebar */
 .nav-section {
   font-size: 9px;
   font-weight: var(--fw-bold);
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-faint);
   padding: 14px 22px 6px;
   display: flex;
   align-items: center;
@@ -328,18 +336,49 @@ input[type="month"] {
   user-select: none;
   transition: color 0.15s;
 }
-.nav-section:hover { color: var(--text); }
-.nav-section-arrow {
-  font-size: 10px;
-  transition: transform 0.18s;
-}
-.nav-section-collapsed .nav-section-arrow {
-  transform: rotate(-90deg);
-}
+.nav-section:hover { color: var(--text-muted); }
+.nav-section-arrow { font-size: 10px; transition: transform 0.18s; }
+.nav-section-collapsed .nav-section-arrow { transform: rotate(-90deg); }
 
-/* Animação entrada */
+/* Animação */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-up { animation: fadeUp 0.3s ease both; }
+
+/* ────────────────────────────────────────────────────────
+   COMPATIBILIDADE COM INLINE-STYLES LEGADOS
+   Sobrescreve os backgrounds escuros que estavam hardcoded
+   nos componentes via inline style. Ordem importa.
+   ──────────────────────────────────────────────────────── */
+
+/* Containers principais que usavam navy/dark */
+[style*="background:#0a1628"], [style*="background: #0a1628"],
+[style*="background:'#0a1628'"], [style*='background: "#0a1628"'] {
+  background: var(--bg) !important;
+  color: var(--text);
+}
+[style*="background:#0e2040"], [style*="background: #0e2040"],
+[style*="background:'#0e2040'"] {
+  background: #ffffff !important;
+  color: var(--text);
+}
+[style*="background:#112240"], [style*="background:'#112240'"] {
+  background: var(--bg-soft) !important;
+}
+
+/* Backgrounds RGBA escuros típicos */
+[style*="rgba(10,22,40"] { background: var(--card-bg) !important; }
+[style*="rgba(255,255,255,0.04)"], [style*="rgba(255,255,255, 0.04)"] {
+  background: var(--bg-subtle) !important;
+}
+[style*="rgba(255,255,255,0.05)"], [style*="rgba(255,255,255, 0.05)"] {
+  background: #ffffff !important;
+}
+[style*="rgba(255,255,255,0.06)"] { background: var(--bg-subtle) !important; }
+[style*="rgba(255,255,255,0.08)"] { background: var(--neutral-bg) !important; }
+
+/* Modal overlays escuros — virar overlay claro */
+[style*="rgba(5,12,26,0.85)"],
+[style*="rgba(5,12,26,0.75)"] { background: rgba(15,23,42,0.45) !important; }
