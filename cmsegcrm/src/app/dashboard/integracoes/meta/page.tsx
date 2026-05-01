@@ -20,7 +20,10 @@ export default function ConectarMetaPage() {
     verify_token: '',
     pixel_id: '',
     conversions_token: '',
+    dataset_id: '',
   })
+  const [testandoCAPI, setTestandoCAPI] = useState(false)
+  const [respostaCAPI, setRespostaCAPI] = useState<string|null>(null)
 
   useEffect(()=>{ init() }, [])
 
@@ -45,6 +48,7 @@ export default function ConectarMetaPage() {
       if (j.page_id)       setForm(f => ({ ...f, page_id: j.page_id }))
       if (j.app_id)        setForm(f => ({ ...f, app_id: j.app_id }))
       if (j.pixel_id)      setForm(f => ({ ...f, pixel_id: j.pixel_id }))
+      if (j.dataset_id)    setForm(f => ({ ...f, dataset_id: j.dataset_id }))
     } catch {}
     setLoading(false)
   }
@@ -66,7 +70,19 @@ export default function ConectarMetaPage() {
   async function desconectar() {
     if (!confirm('Desconectar a integração Meta? Os dados sincronizados serão mantidos.')) return
     const r = await fetch('/api/meta/connect', { method:'DELETE', headers: await authHeaders() })
-    if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'' }); await init() }
+    if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'',dataset_id:'' }); await init() }
+  }
+
+  async function testarCAPI() {
+    setTestandoCAPI(true); setRespostaCAPI(null)
+    try {
+      const r = await fetch('/api/meta/conversions', {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ event_name: 'Lead', test: true }),
+      })
+      const j = await r.json()
+      setRespostaCAPI(r.ok ? '✅ Evento de teste enviado. Verifique em Events Manager → Test Events.' : ('❌ ' + (j.error || 'erro')))
+    } finally { setTestandoCAPI(false) }
   }
 
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
@@ -173,6 +189,29 @@ export default function ConectarMetaPage() {
                 💡 Quando configurado, o pixel é injetado automaticamente nas páginas do CRM. PageView é registrado a cada navegação;
                 eventos Lead e Purchase quando vier um lead Meta ou um negócio for marcado como Ganho.
               </div>
+            </div>
+
+            {/* Conversions API — Eventos de CRM (server-side) */}
+            <div style={{marginTop:18,paddingTop:18,borderTop:'1px solid var(--border)'}}>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--gold)',marginBottom:10}}>🔄 API de Conversão — Eventos de CRM</div>
+              <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12,lineHeight:1.5}}>
+                Envia mudanças de status do lead (Lead → MQL → SQL → Customer) direto pra Meta via servidor.
+                <strong style={{color:'var(--warning)'}}> Apenas negociações no funil &quot;META + MULTICANAL&quot; disparam eventos.</strong>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr',gap:12,marginBottom:14}}>
+                <div>
+                  <label style={lbl}>Dataset ID (do Events Manager)</label>
+                  <input value={form.dataset_id} onChange={e=>setForm(f=>({...f,dataset_id:e.target.value}))} placeholder="ex: 1278482872791335" style={inp} />
+                  <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>Pegue em Events Manager → Conjuntos de dados → Visão geral. É o ID que aparece na URL <code>graph.facebook.com/v25.0/&lt;DATASET&gt;/events</code>.</div>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:10,marginBottom:8}}>
+                <button onClick={testarCAPI} disabled={testandoCAPI||!form.dataset_id||!form.conversions_token}
+                  style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                  {testandoCAPI?'Enviando...':'🧪 Enviar evento de teste'}
+                </button>
+              </div>
+              {respostaCAPI && <div style={{fontSize:11,color:'var(--text)',padding:'8px 12px',background:'rgba(0,0,0,0.3)',borderRadius:6}}>{respostaCAPI}</div>}
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>

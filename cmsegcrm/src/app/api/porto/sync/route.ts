@@ -21,6 +21,26 @@ const PORTO_SENHA = process.env.PORTO_SENHA || ''
 const FUNIL_COBRANCA_ETAPA = 'Em Atraso'
 const FUNIL_SINISTRO_ETAPA = 'Novo Sinistro'
 
+// Busca funil por NOME exato (lookup principal — replicamos os funis
+// do RD Station, então temos "FUNIL COBRANÇA" e "SINISTRO"). Se não
+// achar pelo nome, cai no `tipo` antigo como fallback.
+async function buscarFunilPorNome(nomes: string[], tipoFallback?: 'cobranca' | 'posVenda') {
+  for (const nome of nomes) {
+    const { data } = await supabaseAdmin.from('funis').select('id, etapas, nome').ilike('nome', nome).limit(1).maybeSingle()
+    if (data?.id) return data
+  }
+  if (tipoFallback) {
+    const { data } = await supabaseAdmin.from('funis').select('id, etapas, nome').eq('tipo', tipoFallback).limit(1).maybeSingle()
+    return data
+  }
+  return null
+}
+
+async function buscarEquipeId(nome: string): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('equipes').select('id').ilike('nome', nome).limit(1).maybeSingle()
+  return data?.id || null
+}
+
 // Funis são buscados dinamicamente pelo `tipo` para evitar UUIDs hardcoded
 async function buscarFunilId(tipo: 'cobranca' | 'posVenda'): Promise<string | null> {
   const { data } = await supabaseAdmin.from('funis').select('id').eq('tipo', tipo).limit(1).maybeSingle()
@@ -191,8 +211,12 @@ async function buscarApolice(num: string) {
   return data
 }
 
-// Criar negócio — cliente_id é opcional agora
-async function criarNegocio(funilId: string, etapa: string, titulo: string, produto: string, premio: number, obs: string, clienteId?: string | null, cpfCnpj?: string) {
+// Criar negócio — cliente_id e equipe_id opcionais
+async function criarNegocio(opts: {
+  funilId: string; etapa: string; titulo: string; produto: string; premio: number; obs: string;
+  clienteId?: string | null; cpfCnpj?: string; equipeId?: string | null;
+}) {
+  const { funilId, etapa, titulo, produto, premio, obs, clienteId, cpfCnpj, equipeId } = opts
   // Se tem cliente, verificar se já existe negócio aberto
   if (clienteId) {
     const { data: existing } = await supabaseAdmin.from('negocios').select('id')
@@ -200,17 +224,16 @@ async function criarNegocio(funilId: string, etapa: string, titulo: string, prod
       .not('etapa', 'in', '("Pago","Cancelado","Concluído","Negado","Fechado Ganho","Fechado Perdido")')
       .maybeSingle()
     if (existing?.id) {
-      await supabaseAdmin.from('negocios').update({ etapa, obs }).eq('id', existing.id)
+      await supabaseAdmin.from('negocios').update({ etapa, obs, equipe_id: equipeId || null }).eq('id', existing.id)
       return existing.id
     }
   } else if (cpfCnpj) {
-    // Sem cliente mas com CPF — verificar por CPF no negócio
     const { data: existing } = await supabaseAdmin.from('negocios').select('id')
       .eq('cpf_cnpj', cpfCnpj).eq('funil_id', funilId)
       .not('etapa', 'in', '("Pago","Cancelado","Concluído","Negado","Fechado Ganho","Fechado Perdido")')
       .maybeSingle()
     if (existing?.id) {
-      await supabaseAdmin.from('negocios').update({ etapa, obs }).eq('id', existing.id)
+      await supabaseAdmin.from('negocios').update({ etapa, obs, equipe_id: equipeId || null }).eq('id', existing.id)
       return existing.id
     }
   }
@@ -219,6 +242,7 @@ async function criarNegocio(funilId: string, etapa: string, titulo: string, prod
     titulo, funil_id: funilId, etapa, produto, premio, obs,
     cliente_id: clienteId || null,
     cpf_cnpj:   cpfCnpj   || null,
+    equipe_id:  equipeId  || null,
     fonte:      'Porto Seguro',
     seguradora: 'Porto Seguro',
   }).select('id').single()
@@ -231,8 +255,11 @@ async function processarSAP(arquivo: any, texto: string) {
   let importados = 0, erros = 0
   const msgs: string[] = []
   const apolicesVistas = new Set<string>()
-  const FUNIL_COBRANCA_ID = await buscarFunilId('cobranca')
-  if (!FUNIL_COBRANCA_ID) return { importados: 0, erros: registros.length, msgs: ['Funil de Cobrança não encontrado. Crie um funil tipo=cobranca.'] }
+  const funilCobranca = await buscarFunilPorNome(['FUNIL COBRANÇA','FUNIL COBRANCA','COBRANÇA','Cobrança'], 'cobranca')
+  if (!funilCobranca) return { importados: 0, erros: registros.length, msgs: ['Funil de Cobrança não encontrado.'] }
+  const FUNIL_COBRANCA_ID = funilCobranca.id
+  const etapaInicialCob = (funilCobranca.etapas || [])[0] || FUNIL_COBRANCA_ETAPA
+  const equipeCobrancaId = await buscarEquipeId('Cobrança')
 
   for (const reg of registros) {
     try {
@@ -269,13 +296,17 @@ async function processarSAP(arquivo: any, texto: string) {
       if (!apolicesVistas.has(reg.numero_apolice)) {
         apolicesVistas.add(reg.numero_apolice)
 
-        const negId = await criarNegocio(
-          FUNIL_COBRANCA_ID, FUNIL_COBRANCA_ETAPA,
-          `Cobrança - Apólice ${reg.numero_apolice}`,
-          arquivo.produto || 'Cobrança', reg.valor,
-          `Apólice ${reg.numero_apolice} | Parcela ${reg.parcela}/${reg.total_parcelas} | Venc: ${reg.vencimento} | R$ ${reg.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} | ${reg.dias_atraso} dias em atraso`,
-          clienteFinal, cpfRaw || undefined
-        )
+        const negId = await criarNegocio({
+          funilId:   FUNIL_COBRANCA_ID,
+          etapa:     etapaInicialCob,
+          titulo:    `Cobrança - Apólice ${reg.numero_apolice}`,
+          produto:   arquivo.produto || 'Cobrança',
+          premio:    reg.valor,
+          obs:       `Apólice ${reg.numero_apolice} | Parcela ${reg.parcela}/${reg.total_parcelas} | Venc: ${reg.vencimento} | R$ ${reg.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} | ${reg.dias_atraso} dias em atraso`,
+          clienteId: clienteFinal,
+          cpfCnpj:   cpfRaw || undefined,
+          equipeId:  equipeCobrancaId,
+        })
 
         // Notificar gestores
         const { data: gestores } = await supabaseAdmin.from('users').select('id').in('role', ['admin','lider'])
@@ -375,8 +406,11 @@ async function processarCOM(arquivo: any, texto: string) {
 async function processarSI2(arquivo: any, texto: string) {
   let importados = 0, erros = 0
   const msgs: string[] = []
-  const FUNIL_SINISTRO_ID = await buscarFunilId('posVenda')
-  if (!FUNIL_SINISTRO_ID) return { importados: 0, erros: 1, msgs: ['Funil de Sinistros (posVenda) não encontrado.'] }
+  const funilSinistro = await buscarFunilPorNome(['SINISTRO','Sinistros'], 'posVenda')
+  if (!funilSinistro) return { importados: 0, erros: 1, msgs: ['Funil de Sinistros não encontrado.'] }
+  const FUNIL_SINISTRO_ID = funilSinistro.id
+  const etapaInicialSin = (funilSinistro.etapas || [])[0] || FUNIL_SINISTRO_ETAPA
+  const equipeSinistroId = await buscarEquipeId('Sinistro')
 
   for (const linha of texto.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('9'))) {
     try {
@@ -385,21 +419,54 @@ async function processarSI2(arquivo: any, texto: string) {
       const num = c0.length >= 13 ? c0.slice(3,13).replace(/^0+/,'') : c0
 
       const { data: apolice } = await supabaseAdmin.from('apolices')
-        .select('cliente_id,vendedor_id').or(`numero.eq.${num},numero.ilike.%${num}%`).maybeSingle()
+        .select('id,cliente_id,vendedor_id,negocio_id').or(`numero.eq.${num},numero.ilike.%${num}%`).maybeSingle()
 
-      // Criar card no funil Sinistros — com ou sem cliente
-      const negId = await criarNegocio(
-        FUNIL_SINISTRO_ID, FUNIL_SINISTRO_ETAPA,
-        `Sinistro - Apólice ${num}`, 'Sinistro', 0,
-        `Apólice ${num} | ${t.slice(0,200)}`,
-        apolice?.cliente_id || null
-      )
+      // 1) Tenta achar negociação ja existente — primeiro pela apólice,
+      //    depois pelo cliente (em qualquer funil que não esteja
+      //    fechado).
+      let negocioExistenteId: string | null = null
+      if (apolice?.negocio_id) {
+        const { data } = await supabaseAdmin.from('negocios').select('id').eq('id', apolice.negocio_id).maybeSingle()
+        if (data?.id) negocioExistenteId = data.id
+      }
+      if (!negocioExistenteId && apolice?.cliente_id) {
+        const { data } = await supabaseAdmin.from('negocios').select('id')
+          .eq('cliente_id', apolice.cliente_id)
+          .not('status', 'eq', 'perdido')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (data?.id) negocioExistenteId = data.id
+      }
+
+      let negId: string | null = null
+      if (negocioExistenteId) {
+        // 2) Atualiza status da negociação que já existe (sinistro
+        //    aberto pra um cliente nosso) — empurra obs e mantém
+        //    histórico.
+        await supabaseAdmin.from('negocios').update({
+          obs: `🚨 Sinistro recebido da Porto: Apólice ${num} | ${t.slice(0,200)}`,
+        }).eq('id', negocioExistenteId)
+        negId = negocioExistenteId
+      } else {
+        // 3) Não tem negociação — cria card novo no funil Sinistro,
+        //    primeira etapa, atribuído à equipe Sinistro.
+        negId = await criarNegocio({
+          funilId:   FUNIL_SINISTRO_ID,
+          etapa:     etapaInicialSin,
+          titulo:    `Sinistro - Apólice ${num}`,
+          produto:   'Sinistro',
+          premio:    0,
+          obs:       `Apólice ${num} | ${t.slice(0,200)}`,
+          clienteId: apolice?.cliente_id || null,
+          equipeId:  equipeSinistroId,
+        })
+      }
 
       if (apolice?.cliente_id) {
         await supabaseAdmin.from('historico').insert({
           cliente_id: apolice.cliente_id, tipo: 'red',
           titulo: `🚨 Sinistro Porto Seguro`,
           descricao: `Apólice ${num} | ${t.slice(0,100)}`,
+          negocio_id: negId,
         })
       }
       if (apolice?.vendedor_id) {

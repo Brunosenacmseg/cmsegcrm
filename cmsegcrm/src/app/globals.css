@@ -111,6 +111,35 @@ input[type="month"] {
 ::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.25); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(201,168,76,0.45); }
 
+/* Scrollbar destacada para o kanban — sempre visível e bem grossa.
+   Fix necessário porque macOS esconde scrollbars finas e o usuário
+   não percebia que dava pra rolar. */
+.kanban-scroll {
+  scrollbar-color: rgba(201,168,76,0.6) rgba(201,168,76,0.10);
+  scrollbar-width: auto;
+  scrollbar-gutter: stable;
+}
+.kanban-scroll::-webkit-scrollbar {
+  height: 18px;
+  width: 18px;
+}
+.kanban-scroll::-webkit-scrollbar-track {
+  background: rgba(201,168,76,0.08);
+  border-top: 1px solid var(--border);
+}
+.kanban-scroll::-webkit-scrollbar-thumb {
+  background: rgba(201,168,76,0.55);
+  border: 4px solid #0a1628;
+  border-radius: 10px;
+  min-width: 80px;
+}
+.kanban-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(201,168,76,0.85);
+}
+.kanban-scroll::-webkit-scrollbar-thumb:active {
+  background: var(--gold);
+}
+
 /* ────────────────────────────────────────────────────────
    COMPONENTES UTILITÁRIOS
    ──────────────────────────────────────────────────────── */

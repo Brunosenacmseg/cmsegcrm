@@ -14,6 +14,46 @@ export default function FunisPage() {
   const [loading, setLoading]     = useState(true)
   const [funilAtivo, setFunilAtivo] = useState<string|null>(null)
   const [seletorAberto, setSeletorAberto] = useState(false)
+  const kanbanRef = useRef<HTMLDivElement>(null)
+
+  // Motivos de perda (admin cadastra em /dashboard/configuracoes)
+  const [motivosPerda, setMotivosPerda] = useState<any[]>([])
+  // Drag & drop kanban
+  const [arrastando, setArrastando] = useState<string | null>(null)
+  const [etapaHover, setEtapaHover] = useState<string | null>(null)
+  // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
+  const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
+
+  // Campos personalizados (definição do admin)
+  const [camposPers, setCamposPers] = useState<any[]>([])
+
+  // Anexos do card
+  const [anexosCard, setAnexosCard] = useState<any[]>([])
+  const [uploadando, setUploadando] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Modal de assinatura eletrônica (a partir de um anexo PDF)
+  const [modalAssinatura, setModalAssinatura] = useState(false)
+  const [templates, setTemplates] = useState<any[]>([])
+  const [formAssinatura, setFormAssinatura] = useState({
+    anexo_id:'', template_id:'', signatarios:[{ nome:'', email:'' }], mensagem:'', assunto:'',
+  })
+  const [enviandoAssin, setEnviandoAssin] = useState(false)
+
+  // Detalhes ricos do card aberto (tags / produtos / notas / origem)
+  const [tagsCard, setTagsCard]         = useState<any[]>([])
+  const [produtosCard, setProdutosCard] = useState<any[]>([])
+  const [notasCard, setNotasCard]       = useState<any[]>([])
+  const [origemCard, setOrigemCard]     = useState<any | null>(null)
+  const [origens, setOrigens]           = useState<any[]>([])
+  const [tagsAll, setTagsAll]           = useState<any[]>([])
+  const [produtosAll, setProdutosAll]   = useState<any[]>([])
+  const [novaNota, setNovaNota]         = useState('')
+  const [novoProdNeg, setNovoProdNeg]   = useState({ produto_id: '', quantidade: '1', valor_unit: '' })
+  // Modal de marcar perdido
+  const [modalPerdido, setModalPerdido] = useState<any>(null)
+  const [motivoSelecionado, setMotivoSelecionado] = useState<string>('')
+  const [motivoCustom, setMotivoCustom] = useState<string>('')
 
   // Modal novo negócio
   const [modalNovo, setModalNovo] = useState(false)
@@ -38,6 +78,228 @@ export default function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
+  useEffect(() => {
+    supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
+    supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
+    supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
+    supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
+    supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
+    supabase.from('email_templates').select('*').eq('ativo', true)
+      .in('categoria', ['assinatura','renovacao','cobranca','geral'])
+      .order('categoria').order('is_default', { ascending: false }).order('nome')
+      .then(({ data }) => setTemplates(data || []))
+  }, [])
+
+  async function setCustomField(chave: string, valor: any) {
+    if (!cardAtivo) return
+    const cf = { ...(cardAtivo.custom_fields || {}), [chave]: valor }
+    await supabase.from('negocios').update({ custom_fields: cf }).eq('id', cardAtivo.id)
+    setCardAtivo({ ...cardAtivo, custom_fields: cf })
+  }
+
+  // Quando abrir um card, carrega detalhes ricos
+  useEffect(() => {
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); return }
+    Promise.all([
+      supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
+      supabase.from('negocio_produtos').select('*').eq('negocio_id', cardAtivo.id).order('criado_em'),
+      supabase.from('negocio_notas').select('*, users(nome,avatar_url)').eq('negocio_id', cardAtivo.id).order('criado_em', { ascending: false }),
+      cardAtivo.origem_id ? supabase.from('origens').select('*').eq('id', cardAtivo.origem_id).maybeSingle() : Promise.resolve({ data: null }),
+      supabase.from('anexos').select('*, users(nome)').eq('negocio_id', cardAtivo.id).order('created_at', { ascending: false }),
+    ]).then(([t, p, n, o, a]) => {
+      setTagsCard((t.data || []).map((x: any) => x.tags).filter(Boolean))
+      setProdutosCard(p.data || [])
+      setNotasCard(n.data || [])
+      setOrigemCard((o as any).data || null)
+      setAnexosCard((a as any).data || [])
+    })
+  }, [cardAtivo?.id])
+
+  async function uploadAnexos(files: FileList | null) {
+    if (!files || !cardAtivo || !profile?.id) return
+    setUploadando(true)
+    const novos: any[] = []
+    for (const file of Array.from(files)) {
+      const ts = Date.now()
+      const safe = file.name.replace(/[^\w.\-]/g, '_')
+      const path = `negocios/${cardAtivo.id}/${ts}_${safe}`
+      const { error: upErr } = await supabase.storage.from('cmsegcrm').upload(path, file, { upsert: false })
+      if (upErr) { alert('Erro upload '+file.name+': '+upErr.message); continue }
+      const { data: anx, error } = await supabase.from('anexos').insert({
+        bucket:       'cmsegcrm',
+        path,
+        nome_arquivo: file.name,
+        tipo_mime:    file.type,
+        tamanho_kb:   Math.round(file.size / 1024),
+        categoria:    'negocio',
+        negocio_id:   cardAtivo.id,
+        cliente_id:   cardAtivo.cliente_id || null,
+        user_id:      profile.id,
+      }).select('*, users(nome)').single()
+      if (error) { alert('Erro registrar '+file.name+': '+error.message); continue }
+      if (anx) novos.push(anx)
+    }
+    setAnexosCard(prev => [...novos, ...prev])
+    setUploadando(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function urlAnexo(anexo: any): Promise<string | null> {
+    const { data } = await supabase.storage.from(anexo.bucket || 'cmsegcrm').createSignedUrl(anexo.path, 60 * 60)
+    return data?.signedUrl || null
+  }
+
+  async function baixarAnexo(anexo: any) {
+    const url = await urlAnexo(anexo)
+    if (url) window.open(url, '_blank')
+  }
+
+  async function excluirAnexo(anexo: any) {
+    if (profile?.role !== 'admin' && anexo.user_id !== profile?.id) { alert('Apenas o autor ou admin pode excluir.'); return }
+    if (!confirm(`Excluir "${anexo.nome_arquivo}"?`)) return
+    await supabase.storage.from(anexo.bucket || 'cmsegcrm').remove([anexo.path])
+    await supabase.from('anexos').delete().eq('id', anexo.id)
+    setAnexosCard(prev => prev.filter(a => a.id !== anexo.id))
+  }
+
+  function substituirVars(texto: string, anexoNome?: string) {
+    const cliente = cardAtivo?.clientes?.nome || 'cliente'
+    const negocio = cardAtivo?.titulo || ''
+    const documento = (anexoNome || '').replace(/\.pdf$/i, '')
+    return (texto || '')
+      .replace(/\{\{cliente\}\}/g,   cliente)
+      .replace(/\{\{negocio\}\}/g,   negocio)
+      .replace(/\{\{documento\}\}/g, documento)
+  }
+
+  function aplicarTemplateNoForm(templateId: string, anexoNome?: string) {
+    const t = templates.find(x => x.id === templateId)
+    if (!t) return
+    setFormAssinatura(f => ({
+      ...f,
+      template_id: templateId,
+      assunto:  substituirVars(t.assunto || '',  anexoNome),
+      mensagem: substituirVars(t.mensagem || '', anexoNome),
+    }))
+  }
+
+  function abrirModalAssinatura() {
+    if (!cardAtivo) return
+    const pdfs = anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo))
+    if (pdfs.length === 0) { alert('Anexe pelo menos um PDF na seção "Anexos" antes de enviar para assinatura.'); return }
+    const primeiroAnexo = pdfs[0]
+    const sigDefault = cardAtivo.clientes?.email
+      ? [{ nome: cardAtivo.clientes.nome || '', email: cardAtivo.clientes.email }]
+      : [{ nome: '', email: '' }]
+    // Pré-seleciona o template default (preferência: categoria assinatura)
+    const tDefault = templates.find(t => t.is_default && t.categoria === 'assinatura')
+                  || templates.find(t => t.is_default)
+                  || templates[0]
+    setFormAssinatura({
+      anexo_id: primeiroAnexo.id,
+      template_id: tDefault?.id || '',
+      signatarios: sigDefault,
+      mensagem:  tDefault ? substituirVars(tDefault.mensagem || '', primeiroAnexo.nome_arquivo) : '',
+      assunto:   tDefault ? substituirVars(tDefault.assunto || '',  primeiroAnexo.nome_arquivo) : '',
+    })
+    setModalAssinatura(true)
+  }
+
+  async function enviarParaAssinatura() {
+    if (!formAssinatura.anexo_id) return
+    const sigs = formAssinatura.signatarios.filter(s => s.email.trim())
+    if (sigs.length === 0) { alert('Adicione pelo menos 1 signatário com email'); return }
+    setEnviandoAssin(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch('/api/autentique/criar-de-anexo', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          anexo_id:    formAssinatura.anexo_id,
+          signatarios: sigs.map(s => ({ email: s.email.trim(), name: s.nome.trim() || undefined })),
+          mensagem:    formAssinatura.mensagem || undefined,
+          negocio_id:  cardAtivo.id,
+          cliente_id:  cardAtivo.cliente_id || null,
+        }),
+      })
+      const j = await r.json()
+      if (!r.ok) { alert('Erro: '+(j.error||'desconhecido')); return }
+      alert('✅ Documento enviado para assinatura. Acompanhe em /dashboard/autentique.')
+      setModalAssinatura(false)
+    } finally { setEnviandoAssin(false) }
+  }
+
+  async function adicionarTag(nome: string, cor = '#c9a84c') {
+    if (!cardAtivo || !nome.trim()) return
+    let tag = tagsAll.find(t => t.nome.toLowerCase() === nome.trim().toLowerCase())
+    if (!tag) {
+      const { data } = await supabase.from('tags').insert({ nome: nome.trim(), cor }).select('*').single()
+      if (!data) return
+      tag = data
+      setTagsAll(prev => [...prev, data])
+    }
+    await supabase.from('negocio_tags').upsert({ negocio_id: cardAtivo.id, tag_id: tag.id })
+    setTagsCard(prev => prev.find(x => x.id === tag!.id) ? prev : [...prev, tag!])
+  }
+
+  async function removerTag(tagId: string) {
+    if (!cardAtivo) return
+    await supabase.from('negocio_tags').delete().eq('negocio_id', cardAtivo.id).eq('tag_id', tagId)
+    setTagsCard(prev => prev.filter(t => t.id !== tagId))
+  }
+
+  async function adicionarProduto() {
+    if (!cardAtivo) return
+    const prod = produtosAll.find(p => p.id === novoProdNeg.produto_id)
+    if (!prod) return
+    const qtd = parseInt(novoProdNeg.quantidade) || 1
+    const valor = parseFloat(novoProdNeg.valor_unit.replace(',', '.')) || prod.preco_base || 0
+    const { data } = await supabase.from('negocio_produtos').insert({
+      negocio_id: cardAtivo.id, produto_id: prod.id, nome_snapshot: prod.nome,
+      quantidade: qtd, valor_unit: valor,
+    }).select('*').single()
+    if (data) setProdutosCard(prev => [...prev, data])
+    setNovoProdNeg({ produto_id: '', quantidade: '1', valor_unit: '' })
+  }
+
+  async function removerProduto(id: string) {
+    await supabase.from('negocio_produtos').delete().eq('id', id)
+    setProdutosCard(prev => prev.filter(p => p.id !== id))
+  }
+
+  async function adicionarNota() {
+    if (!cardAtivo || !novaNota.trim() || !profile?.id) return
+    const { data } = await supabase.from('negocio_notas').insert({
+      negocio_id: cardAtivo.id, user_id: profile.id, conteudo: novaNota.trim(),
+    }).select('*, users(nome,avatar_url)').single()
+    if (data) setNotasCard(prev => [data, ...prev])
+    setNovaNota('')
+  }
+
+  async function excluirNota(id: string) {
+    if (profile?.role !== 'admin') { alert('Apenas administradores podem excluir notas'); return }
+    if (!confirm('Excluir essa anotação?')) return
+    await supabase.from('negocio_notas').delete().eq('id', id)
+    setNotasCard(prev => prev.filter(n => n.id !== id))
+  }
+
+  const [editandoNota, setEditandoNota] = useState<{ id: string; conteudo: string } | null>(null)
+  async function salvarEdicaoNota() {
+    if (!editandoNota) return
+    if (profile?.role !== 'admin') { alert('Apenas administradores podem editar notas'); return }
+    await supabase.from('negocio_notas').update({ conteudo: editandoNota.conteudo }).eq('id', editandoNota.id)
+    setNotasCard(prev => prev.map(n => n.id === editandoNota.id ? { ...n, conteudo: editandoNota.conteudo } : n))
+    setEditandoNota(null)
+  }
+
+  async function setOrigemDoCard(id: string) {
+    if (!cardAtivo) return
+    const v = id || null
+    await supabase.from('negocios').update({ origem_id: v }).eq('id', cardAtivo.id)
+    setCardAtivo({ ...cardAtivo, origem_id: v })
+    setOrigemCard(v ? origens.find(o => o.id === v) : null)
+  }
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -98,18 +360,56 @@ export default function FunisPage() {
     await carregarNegocios()
   }
 
-  async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string) {
+  async function disparaAutomacao(trigger: string, negocioId: string) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      await fetch('/api/automacoes/executar', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ trigger, negocio_id: negocioId }),
+      })
+    } catch (e) { /* silencioso — automação falhou não bloqueia o usuário */ }
+  }
+
+  async function setQualificacao(negocioId: string, estrelas: number) {
+    setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, qualificacao: estrelas } : n))
+    await supabase.from('negocios').update({ qualificacao: estrelas }).eq('id', negocioId)
+    if (cardAtivo?.id === negocioId) setCardAtivo({ ...cardAtivo, qualificacao: estrelas })
+  }
+
+  async function moverCardParaEtapa(negocioId: string, novaEtapa: string) {
+    // Otimistic update + persist
+    setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, etapa: novaEtapa } : n))
+    const { error } = await supabase.from('negocios').update({ etapa: novaEtapa }).eq('id', negocioId)
+    if (error) {
+      alert('Erro ao mover: ' + error.message)
+      await carregarNegocios()
+    } else {
+      disparaAutomacao('etapa_alterada', negocioId)
+    }
+  }
+
+  async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string, motivoId?: string|null) {
     const patch: any = { status }
     if (status === 'em_andamento') {
       patch.data_fechamento = null
       patch.fechado_por     = null
       patch.motivo_perda    = null
+      patch.motivo_perda_id = null
     } else {
       patch.data_fechamento = new Date().toISOString()
       patch.fechado_por     = profile?.id || null
-      if (status === 'perdido') patch.motivo_perda = motivo || null
+      if (status === 'perdido') {
+        patch.motivo_perda    = motivo || null
+        patch.motivo_perda_id = motivoId || null
+      }
     }
     await supabase.from('negocios').update(patch).eq('id', negocioId)
+
+    // Dispara automações vinculadas ao trigger
+    if (status === 'ganho')   disparaAutomacao('status_ganho',   negocioId)
+    if (status === 'perdido') disparaAutomacao('status_perdido', negocioId)
 
     // Meta Pixel: dispara Purchase quando marcar Ganho. Se tiver
     // meta_campaign_id, ajuda a otimizar campanhas.
@@ -206,7 +506,10 @@ export default function FunisPage() {
   }
 
   const funiAtual = funis.find(f => f.id === funilAtivo)
-  const negociosFunil = negocios.filter(n => n.funil_id === funilAtivo)
+  const negociosFunil = negocios.filter(n =>
+    n.funil_id === funilAtivo &&
+    (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus)
+  )
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
@@ -276,6 +579,23 @@ export default function FunisPage() {
           </>
         )}
         <div style={{flex:1}}/>
+        {/* Filtro por status */}
+        <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:2}}>
+          {([
+            ['todos',        'Todos',      'var(--text)'],
+            ['em_andamento', 'Andamento',  '#7aa3f8'],
+            ['ganho',        '✓ Ganho',    'var(--teal)'],
+            ['perdido',      '✕ Perdido',  'var(--red)'],
+          ] as const).map(([v,l,cor]) => (
+            <button key={v} onClick={()=>setFiltroStatus(v as any)}
+              style={{padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,
+                background: filtroStatus===v ? `color-mix(in srgb, ${cor} 18%, transparent)` : 'transparent',
+                color: filtroStatus===v ? cor : 'var(--text-muted)',
+                fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+              {l}
+            </button>
+          ))}
+        </div>
         {profile?.role === 'admin' && (
           <button onClick={()=>router.push('/dashboard/funis/configurar')}
             style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
@@ -290,12 +610,24 @@ export default function FunisPage() {
 
       {/* Kanban */}
       {funiAtual && (
-        <div style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px'}}>
-          <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
-            {(funiAtual.etapas||[]).map((etapa: string) => {
-              const cards = negociosFunil.filter(n => n.etapa === etapa)
-              return (
-                <div key={etapa} style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+          <div className="kanban-scroll" ref={kanbanRef}
+            style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px 60px 20px 20px',scrollBehavior:'smooth'}}>
+            <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
+              {(funiAtual.etapas||[]).map((etapa: string) => {
+                const cards = negociosFunil.filter(n => n.etapa === etapa)
+                const ehHover = etapaHover === etapa && arrastando
+                return (
+                  <div key={etapa}
+                    onDragOver={e=>{e.preventDefault();setEtapaHover(etapa)}}
+                    onDragLeave={()=>setEtapaHover(prev => prev===etapa?null:prev)}
+                    onDrop={e=>{
+                      e.preventDefault()
+                      const id = e.dataTransfer.getData('text/plain')
+                      if (id) moverCardParaEtapa(id, etapa)
+                      setArrastando(null); setEtapaHover(null)
+                    }}
+                    style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8,padding:6,borderRadius:12,background:ehHover?'rgba(201,168,76,0.08)':'transparent',outline:ehHover?'2px dashed rgba(201,168,76,0.5)':'none',outlineOffset:-2,transition:'background 0.15s'}}>
                   {/* Header coluna */}
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
                     <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
@@ -310,7 +642,10 @@ export default function FunisPage() {
                     const bgCard    = isGanho ? 'rgba(28,181,160,0.06)' : isPerdido ? 'rgba(224,82,82,0.06)'  : 'rgba(255,255,255,0.04)'
                     return (
                     <div key={neg.id} onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
-                      style={{background:bgCard,border:'1px solid '+corBorda,borderRadius:12,padding:'12px',cursor:'pointer',transition:'all 0.15s',position:'relative'}}
+                      draggable
+                      onDragStart={e=>{e.dataTransfer.setData('text/plain', neg.id);e.dataTransfer.effectAllowed='move';setArrastando(neg.id)}}
+                      onDragEnd={()=>{setArrastando(null);setEtapaHover(null)}}
+                      style={{background:bgCard,border:'1px solid '+corBorda,borderRadius:12,padding:'12px',cursor:arrastando===neg.id?'grabbing':'grab',transition:'all 0.15s',position:'relative',opacity:arrastando===neg.id?0.5:1}}
                       onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--gold)')}
                       onMouseLeave={e=>(e.currentTarget.style.borderColor=corBorda)}>
 
@@ -321,6 +656,17 @@ export default function FunisPage() {
                       )}
 
                       <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3,paddingRight:isGanho||isPerdido?60:0,textDecoration:isPerdido?'line-through':'none',opacity:isPerdido?0.75:1}}>{neg.titulo}</div>
+
+                      {/* Estrelas no card */}
+                      <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:1,marginBottom:6}}>
+                        {[1,2,3,4,5].map(n => (
+                          <button key={n} onClick={()=>setQualificacao(neg.id, neg.qualificacao===n ? 0 : n)}
+                            title={`${n} estrela${n>1?'s':''}`}
+                            style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:13,lineHeight:1,color:n<=(neg.qualificacao||0)?'var(--gold)':'rgba(255,255,255,0.18)'}}>
+                            ★
+                          </button>
+                        ))}
+                      </div>
 
                       {/* Cliente ou botão vincular */}
                       {neg.clientes ? (
@@ -346,15 +692,36 @@ export default function FunisPage() {
                     )
                   })}
 
-                  {cards.length === 0 && (
-                    <div style={{padding:'20px 12px',textAlign:'center',color:'var(--text-muted)',fontSize:11,border:'1px dashed var(--border)',borderRadius:12}}>
-                      Sem cards
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+                    {cards.length === 0 && (
+                      <div style={{padding:'20px 12px',textAlign:'center',color:'var(--text-muted)',fontSize:11,border:'1px dashed var(--border)',borderRadius:12}}>
+                        Sem cards
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
+
+          {/* Gradientes nas bordas — sinalizam que tem conteúdo escondido */}
+          <div style={{position:'absolute',left:0,top:0,bottom:18,width:30,background:'linear-gradient(to right, rgba(10,22,40,0.85), transparent)',pointerEvents:'none',zIndex:5}} />
+          <div style={{position:'absolute',right:0,top:0,bottom:18,width:30,background:'linear-gradient(to left, rgba(10,22,40,0.85), transparent)',pointerEvents:'none',zIndex:5}} />
+
+          {/* Setas SEMPRE visíveis (rolar mesmo se cabe na tela é inofensivo) */}
+          <button onClick={()=>kanbanRef.current?.scrollBy({left:-340,behavior:'smooth'})}
+            aria-label="Rolar para a esquerda"
+            style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'rgba(10,22,40,0.97)',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
+            onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.20)')}
+            onMouseLeave={e=>(e.currentTarget.style.background='rgba(10,22,40,0.97)')}>
+            ‹
+          </button>
+          <button onClick={()=>kanbanRef.current?.scrollBy({left:340,behavior:'smooth'})}
+            aria-label="Rolar para a direita"
+            style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',zIndex:10,width:42,height:42,borderRadius:'50%',border:'1px solid var(--gold)',background:'rgba(10,22,40,0.97)',color:'var(--gold)',cursor:'pointer',fontSize:22,fontWeight:700,boxShadow:'0 6px 18px rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}
+            onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.20)')}
+            onMouseLeave={e=>(e.currentTarget.style.background='rgba(10,22,40,0.97)')}>
+            ›
+          </button>
         </div>
       )}
 
@@ -500,9 +867,28 @@ export default function FunisPage() {
         <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalCard(false)}>
           <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
-            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>{cardAtivo.titulo}</div>
               <button onClick={()=>setModalCard(false)} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:20,marginLeft:12}}>✕</button>
+            </div>
+
+            {/* Qualificação por estrelas */}
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+              <span style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>Qualificação</span>
+              <div style={{display:'flex',gap:3}}>
+                {[1,2,3,4,5].map(n => (
+                  <button key={n} onClick={()=>setQualificacao(cardAtivo.id, cardAtivo.qualificacao===n ? 0 : n)}
+                    title={n===cardAtivo.qualificacao?'Clique pra remover':`${n} estrela${n>1?'s':''}`}
+                    style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:22,lineHeight:1,color:n<=(cardAtivo.qualificacao||0)?'var(--gold)':'rgba(255,255,255,0.18)',transition:'color 0.1s,transform 0.1s'}}
+                    onMouseEnter={e=>(e.currentTarget.style.transform='scale(1.15)')}
+                    onMouseLeave={e=>(e.currentTarget.style.transform='scale(1)')}>
+                    ★
+                  </button>
+                ))}
+              </div>
+              {cardAtivo.qualificacao > 0 && (
+                <span style={{fontSize:11,color:'var(--gold)',fontWeight:600}}>{cardAtivo.qualificacao}/5</span>
+              )}
             </div>
 
             {/* Info */}
@@ -566,6 +952,203 @@ export default function FunisPage() {
               </div>
             )}
 
+            {/* Campos personalizados */}
+            {camposPers.length > 0 && (
+              <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>🧩 Campos personalizados</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  {camposPers.map(c => {
+                    const valor = (cardAtivo.custom_fields || {})[c.chave] ?? ''
+                    const cmnInp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:6, padding:'5px 9px', color:'var(--text)', fontSize:12, outline:'none', boxSizing:'border-box' }
+                    return (
+                      <div key={c.id}>
+                        <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3}}>{c.nome}{c.obrigatorio && <span style={{color:'var(--red)'}}> *</span>}</label>
+                        {c.tipo === 'texto'    && <input value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
+                        {c.tipo === 'textarea' && <textarea value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} rows={2} style={{...cmnInp,resize:'none'}} />}
+                        {c.tipo === 'numero'   && <input type="number" value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
+                        {c.tipo === 'data'     && <input type="date"   value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
+                        {c.tipo === 'select'   && (
+                          <select value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={{...cmnInp,background:'#0e2040'}}>
+                            <option value="">—</option>
+                            {(c.opcoes || []).map((op:string) => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        )}
+                        {c.tipo === 'boolean'  && (
+                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer'}}>
+                            <input type="checkbox" checked={!!valor} onChange={e=>setCustomField(c.chave, e.target.checked)} />
+                            {valor ? 'Sim' : 'Não'}
+                          </label>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Origem */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>📍 Origem do lead</div>
+              <select value={cardAtivo.origem_id || ''} onChange={e=>setOrigemDoCard(e.target.value)}
+                style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                <option value="">— sem origem —</option>
+                {origens.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              </select>
+            </div>
+
+            {/* Tags */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>🏷 Tags</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+                {tagsCard.map(t => (
+                  <span key={t.id} style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,padding:'3px 8px',borderRadius:12,background:(t.cor||'#c9a84c')+'22',border:'1px solid '+(t.cor||'#c9a84c')+'66',color:t.cor||'#c9a84c'}}>
+                    {t.nome}
+                    <button onClick={()=>removerTag(t.id)} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:13,lineHeight:1,padding:0}}>×</button>
+                  </span>
+                ))}
+                {tagsCard.length === 0 && <span style={{fontSize:11,color:'var(--text-muted)'}}>Nenhuma tag</span>}
+              </div>
+              <select value="" onChange={e=>{if(e.target.value){adicionarTag(tagsAll.find(t=>t.id===e.target.value)?.nome||'');(e.target as HTMLSelectElement).value=''}}}
+                style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',color:'var(--text)',fontSize:11,cursor:'pointer',marginBottom:6}}>
+                <option value="">+ Adicionar tag existente...</option>
+                {tagsAll.filter(t => !tagsCard.find(tc => tc.id === t.id)).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+              <input placeholder="Ou digite uma nova tag e tecle Enter" onKeyDown={e=>{
+                if (e.key === 'Enter') {
+                  const v = (e.target as HTMLInputElement).value.trim()
+                  if (v) { adicionarTag(v); (e.target as HTMLInputElement).value = '' }
+                }
+              }} style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',color:'var(--text)',fontSize:11,outline:'none',boxSizing:'border-box'}} />
+            </div>
+
+            {/* Produtos do negócio */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>📦 Produtos</div>
+                <div style={{fontSize:11,color:'var(--teal)',fontWeight:600}}>
+                  Total: R$ {produtosCard.reduce((s,p)=>s + (Number(p.quantidade||1)*Number(p.valor_unit||0) - Number(p.desconto||0)), 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                </div>
+              </div>
+              {produtosCard.length === 0 ? (
+                <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>Nenhum produto adicionado</div>
+              ) : (
+                <div style={{marginBottom:8}}>
+                  {produtosCard.map(p => (
+                    <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                      <div style={{flex:1}}>{p.nome_snapshot}</div>
+                      <div style={{color:'var(--text-muted)'}}>{p.quantidade}× R$ {Number(p.valor_unit).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+                      <button onClick={()=>removerProduto(p.id)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:13}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{display:'grid',gridTemplateColumns:'2fr 0.8fr 1fr auto',gap:6}}>
+                <select value={novoProdNeg.produto_id} onChange={e=>{
+                  const p = produtosAll.find(x => x.id === e.target.value)
+                  setNovoProdNeg(s => ({ ...s, produto_id: e.target.value, valor_unit: p?.preco_base ? String(p.preco_base) : s.valor_unit }))
+                }} style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11}}>
+                  <option value="">Produto…</option>
+                  {produtosAll.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+                <input value={novoProdNeg.quantidade} onChange={e=>setNovoProdNeg(s=>({...s,quantidade:e.target.value}))} placeholder="Qtd" style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11,outline:'none'}} />
+                <input value={novoProdNeg.valor_unit} onChange={e=>setNovoProdNeg(s=>({...s,valor_unit:e.target.value}))} placeholder="Valor unit." style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11,outline:'none'}} />
+                <button onClick={adicionarProduto} disabled={!novoProdNeg.produto_id} style={{padding:'6px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>+</button>
+              </div>
+            </div>
+
+            {/* Anexos */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:8}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>📎 Anexos ({anexosCard.length})</div>
+                <div style={{display:'flex',gap:6}}>
+                  <button onClick={()=>fileInputRef.current?.click()} disabled={uploadando}
+                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    {uploadando ? '⏳ Enviando...' : '+ Anexar arquivo'}
+                  </button>
+                  <button onClick={abrirModalAssinatura}
+                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    ✍ Assinatura eletrônica
+                  </button>
+                </div>
+              </div>
+              <input ref={fileInputRef} type="file" multiple onChange={e=>uploadAnexos(e.target.files)} style={{display:'none'}} />
+              {anexosCard.length === 0 ? (
+                <div style={{fontSize:11,color:'var(--text-muted)',padding:'8px 0'}}>Nenhum arquivo anexado. Anexe contratos, propostas e documentos relacionados.</div>
+              ) : (
+                <div>
+                  {anexosCard.map(a => {
+                    const isPdf = /\.pdf$/i.test(a.nome_arquivo)
+                    return (
+                      <div key={a.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                        <span style={{fontSize:14}}>{isPdf?'📄':'📎'}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.nome_arquivo}</div>
+                          <div style={{fontSize:10,color:'var(--text-muted)'}}>
+                            {a.users?.nome || '—'} · {a.tamanho_kb ? `${a.tamanho_kb} KB` : ''} · {new Date(a.created_at).toLocaleString('pt-BR')}
+                          </div>
+                        </div>
+                        <button onClick={()=>baixarAnexo(a)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}} title="Baixar">⬇</button>
+                        {(profile?.role === 'admin' || a.user_id === profile?.id) && (
+                          <button onClick={()=>excluirAnexo(a)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}} title="Excluir">×</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Notas */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>
+                📝 Notas / Anotações
+                {profile?.role !== 'admin' && <span style={{fontWeight:400,marginLeft:8,textTransform:'none',letterSpacing:0,fontSize:9,color:'var(--text-muted)'}}>· apenas admin pode editar/excluir</span>}
+              </div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>
+                <input value={novaNota} onChange={e=>setNovaNota(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter')adicionarNota()}}
+                  placeholder="Adicionar uma nota..."
+                  style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
+                <button onClick={adicionarNota} disabled={!novaNota.trim()} style={{padding:'6px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>+</button>
+              </div>
+              <div style={{maxHeight:240,overflow:'auto'}}>
+                {notasCard.length === 0 ? (
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>Sem notas</div>
+                ) : notasCard.map(n => {
+                  const editing = editandoNota?.id === n.id
+                  return (
+                    <div key={n.id} style={{padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                      {editing ? (
+                        <div style={{display:'flex',gap:6,marginBottom:4}}>
+                          <textarea value={editandoNota!.conteudo} onChange={e=>setEditandoNota(p=>p?{...p,conteudo:e.target.value}:p)}
+                            rows={2} style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 8px',color:'var(--text)',fontSize:12,outline:'none',resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                          <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                            <button onClick={salvarEdicaoNota} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>✓</button>
+                            <button onClick={()=>setEditandoNota(null)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>✕</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{fontSize:12,marginBottom:2,whiteSpace:'pre-wrap'}}>{n.conteudo}</div>
+                      )}
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                        <div style={{fontSize:10,color:'var(--text-muted)'}}>
+                          {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                        </div>
+                        {profile?.role === 'admin' && !editing && (
+                          <div style={{display:'flex',gap:4}}>
+                            <button onClick={()=>setEditandoNota({id:n.id,conteudo:n.conteudo})}
+                              style={{padding:'2px 6px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--gold)',cursor:'pointer'}}>✎</button>
+                            <button onClick={()=>excluirNota(n.id)}
+                              style={{padding:'2px 6px',fontSize:10,borderRadius:5,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>🗑</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* Ganho / Perdido */}
             <div style={{marginBottom:16,padding:'12px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
               <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>
@@ -577,7 +1160,7 @@ export default function FunisPage() {
                   style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='ganho'?'default':'pointer',border:'1px solid rgba(28,181,160,0.4)',background:cardAtivo.status==='ganho'?'rgba(28,181,160,0.25)':'rgba(28,181,160,0.1)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='ganho'?0.7:1}}>
                   ✓ Marcar Ganho
                 </button>
-                <button onClick={()=>{ const m = prompt('Motivo da perda (opcional):',''); if (m === null) return; marcarStatus(cardAtivo.id,'perdido', m||undefined) }}
+                <button onClick={()=>{setModalPerdido(cardAtivo);setMotivoSelecionado('');setMotivoCustom('')}}
                   disabled={cardAtivo.status==='perdido'}
                   style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='perdido'?'default':'pointer',border:'1px solid rgba(224,82,82,0.4)',background:cardAtivo.status==='perdido'?'rgba(224,82,82,0.25)':'rgba(224,82,82,0.1)',color:'var(--red)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='perdido'?0.7:1}}>
                   ✕ Marcar Perdido
@@ -599,6 +1182,151 @@ export default function FunisPage() {
                 🗑 Excluir
               </button>
               <button className="btn-secondary" onClick={()=>setModalCard(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Marcar negociação como Perdida */}
+      {modalPerdido && (
+        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalPerdido(null)}>
+          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6,color:'var(--red)'}}>
+              ✕ Marcar como Perdido
+            </div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>
+              {modalPerdido.titulo}
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:6}}>
+                Motivo da perda
+              </label>
+              {motivosPerda.length > 0 ? (
+                <select value={motivoSelecionado} onChange={e=>setMotivoSelecionado(e.target.value)}
+                  style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'10px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  <option value="">— selecione um motivo —</option>
+                  {motivosPerda.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  <option value="__custom__">— Outro motivo (digitar) —</option>
+                </select>
+              ) : (
+                <div style={{fontSize:11,color:'var(--warning)',background:'rgba(201,168,76,0.08)',border:'1px solid rgba(201,168,76,0.3)',padding:'8px 12px',borderRadius:8}}>
+                  Nenhum motivo cadastrado. {profile?.role==='admin' ? <>Cadastre em <a href="/dashboard/configuracoes" style={{color:'var(--gold)'}}>Configurações</a> ou peça pra rodar o sync RD.</> : 'Peça ao administrador pra cadastrar.'}
+                </div>
+              )}
+            </div>
+
+            {(motivoSelecionado === '__custom__' || motivosPerda.length === 0) && (
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:6}}>
+                  Descreva o motivo
+                </label>
+                <input value={motivoCustom} onChange={e=>setMotivoCustom(e.target.value)}
+                  placeholder="Ex: Cliente desistiu" style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:18}}>
+              <button onClick={()=>setModalPerdido(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={()=>{
+                const motivoObj = motivoSelecionado && motivoSelecionado !== '__custom__'
+                  ? motivosPerda.find(m => m.id === motivoSelecionado) : null
+                const motivoTexto = motivoObj?.nome || motivoCustom || null
+                marcarStatus(modalPerdido.id, 'perdido', motivoTexto || undefined, motivoObj?.id || null)
+                setModalPerdido(null); setMotivoSelecionado(''); setMotivoCustom('')
+              }} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.15)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+                ✕ Confirmar perda
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Enviar para assinatura eletrônica (Autentique) */}
+      {modalAssinatura && cardAtivo && (
+        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalAssinatura(false)}>
+          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>✍ Enviar para assinatura eletrônica</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>{cardAtivo.titulo}</div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Documento *</label>
+                <select value={formAssinatura.anexo_id} onChange={e=>{
+                  const a = anexosCard.find(x => x.id === e.target.value)
+                  // Reaplica template ao trocar de doc (atualiza variáveis)
+                  const t = templates.find(x => x.id === formAssinatura.template_id)
+                  setFormAssinatura(f => ({
+                    ...f,
+                    anexo_id: e.target.value,
+                    mensagem: t ? substituirVars(t.mensagem || '', a?.nome_arquivo) : f.mensagem,
+                    assunto:  t ? substituirVars(t.assunto || '',  a?.nome_arquivo) : f.assunto,
+                  }))
+                }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  {anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo)).map(a => (
+                    <option key={a.id} value={a.id}>{a.nome_arquivo}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>
+                  Template
+                  {profile?.role === 'admin' && <a href="/dashboard/configuracoes" target="_blank" rel="noreferrer" style={{marginLeft:6,fontSize:9,color:'var(--gold)',textTransform:'none',letterSpacing:0,fontWeight:400}}>gerenciar →</a>}
+                </label>
+                <select value={formAssinatura.template_id} onChange={e=>{
+                  const a = anexosCard.find(x => x.id === formAssinatura.anexo_id)
+                  aplicarTemplateNoForm(e.target.value, a?.nome_arquivo)
+                }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  <option value="">— escolha um template —</option>
+                  {Array.from(new Set(templates.map(t => t.categoria))).map(cat => (
+                    <optgroup key={cat} label={cat.toUpperCase()}>
+                      {templates.filter(t => t.categoria === cat).map(t => (
+                        <option key={t.id} value={t.id}>{t.is_default ? '★ ' : ''}{t.nome}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Signatários *</label>
+              {formAssinatura.signatarios.map((s, i) => (
+                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:6}}>
+                  <input value={s.nome} onChange={e=>setFormAssinatura(f=>{const a=[...f.signatarios];a[i]={...a[i],nome:e.target.value};return {...f,signatarios:a}})} placeholder="Nome" style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none'}} />
+                  <input value={s.email} onChange={e=>setFormAssinatura(f=>{const a=[...f.signatarios];a[i]={...a[i],email:e.target.value};return {...f,signatarios:a}})} placeholder="email@exemplo.com" type="email" style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none'}} />
+                  <button onClick={()=>setFormAssinatura(f=>({...f,signatarios:f.signatarios.filter((_,j)=>j!==i)}))}
+                    disabled={formAssinatura.signatarios.length===1}
+                    style={{padding:'6px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:formAssinatura.signatarios.length===1?'not-allowed':'pointer',opacity:formAssinatura.signatarios.length===1?0.4:1}}>×</button>
+                </div>
+              ))}
+              <button onClick={()=>setFormAssinatura(f=>({...f,signatarios:[...f.signatarios,{nome:'',email:''}]}))}
+                style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>+ Adicionar signatário</button>
+            </div>
+
+            {formAssinatura.assunto && (
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Assunto</label>
+                <input value={formAssinatura.assunto} onChange={e=>setFormAssinatura(f=>({...f,assunto:e.target.value}))}
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+              </div>
+            )}
+
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>
+                Mensagem <span style={{textTransform:'none',letterSpacing:0,fontWeight:400}}>· variáveis: <code>{'{{cliente}}'}</code> <code>{'{{negocio}}'}</code> <code>{'{{documento}}'}</code></span>
+              </label>
+              <textarea value={formAssinatura.mensagem} onChange={e=>setFormAssinatura(f=>({...f,mensagem:e.target.value}))} rows={6}
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5,boxSizing:'border-box'}} />
+            </div>
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalAssinatura(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={enviarParaAssinatura} disabled={enviandoAssin||!formAssinatura.anexo_id}>
+                {enviandoAssin ? 'Enviando...' : '✍ Enviar para assinatura'}
+              </button>
             </div>
           </div>
         </div>

@@ -451,6 +451,35 @@ export default function RDStationPage() {
               </button>
             </div>
 
+            {/* Remapear funis: corrige negociações que cairam no funil
+                errado em uma importação anterior */}
+            <div style={{marginTop:14,padding:'12px 16px',background:'rgba(201,168,76,0.06)',border:'1px solid rgba(201,168,76,0.25)',borderRadius:10,display:'flex',alignItems:'center',gap:14}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--gold)'}}>🛠 Remapear funis (correção)</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2,lineHeight:1.4}}>
+                  Reconsulta o RD e move as negociações pra o funil/etapa/status correto.
+                  Use se uma importação anterior caiu no funil errado (ex: cards do Rastreador foram pra Vendas).
+                  Não toca em cliente, vendedor, prêmio nem obs.
+                </div>
+              </div>
+              <button onClick={async ()=>{
+                if (!confirm('Re-roda mapeamento de TODAS as negociações vindas do RD para o funil/etapa correto. OK?')) return
+                setRodando('remapear'); setErro(null)
+                try {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  const r = await fetch('/api/rdstation/remapear-funis', {
+                    method: 'POST',
+                    headers: { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token}` },
+                  })
+                  const j = await r.json()
+                  if (!r.ok) setErro(j.error || 'erro')
+                  else setErro(`✅ ${j.stats.atualizados} negociação(ões) movida(s) · ${j.stats.ignorados} ignorada(s) · ${j.stats.erros} erro(s)`)
+                } finally { setRodando(null) }
+              }} disabled={!!rodando} className="btn-secondary" style={{padding:'10px 18px',fontSize:13,whiteSpace:'nowrap'}}>
+                {rodando === 'remapear' ? '⏳ Remapeando...' : '🛠 Remapear agora'}
+              </button>
+            </div>
+
             {progresso && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>

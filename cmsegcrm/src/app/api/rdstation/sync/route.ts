@@ -228,7 +228,24 @@ async function importarContatos(token: string, from?: string, to?: string) {
 async function importarNegocios(token: string, from?: string, to?: string, incluirDetalhes = false) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
 
-  // Mapas auxiliares
+  // ─── PIPELINES DO RD: nome + etapas (para resolver mismatch) ──
+  // Buscamos as pipelines primeiro pra evitar cair no fallback errado
+  // quando o deal só tem deal_pipeline_id mas não traz o name.
+  let rdPipelines: RDPipeline[] = []
+  for (const path of ['/deal_pipelines', '/pipelines']) {
+    for (const key of ['deal_pipelines', 'pipelines']) {
+      try { const r = await listarTodos<RDPipeline>(path, token, key); if (r.length) { rdPipelines = r; break } } catch {}
+    }
+    if (rdPipelines.length) break
+  }
+  const rdPipelinePorId:   Record<string, RDPipeline> = {}
+  const rdPipelineNomePorId: Record<string, string>   = {}
+  for (const p of rdPipelines) {
+    const pid = rdId(p)
+    if (pid) { rdPipelinePorId[pid] = p; if (p.name) rdPipelineNomePorId[pid] = p.name }
+  }
+
+  // ─── FUNIS LOCAIS ─────────────────────────────────────────────
   const { data: funis } = await supabaseAdmin.from('funis').select('id, rd_id, etapas, nome, tipo')
   const funilPorRd:   Record<string, any> = {}
   const funilPorNome: Record<string, any> = {}
@@ -237,20 +254,36 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
     if (f.nome)  funilPorNome[norm(f.nome)] = f
   }
 
-  // Funil fallback (caso pipeline do deal não exista)
-  let funilFallback: any = (funis || []).find((f: any) => f.tipo === 'venda')
+  // Auto-vincula rd_id em funis locais que ainda não têm: se algum
+  // funil local com nome bate com pipeline do RD, atualiza rd_id.
+  // Isso conserta o caso "rodei sync deals sem rodar sync funis".
+  for (const p of rdPipelines) {
+    const pid = rdId(p)
+    if (!pid || !p.name) continue
+    if (funilPorRd[pid]) continue
+    const local = funilPorNome[norm(p.name)]
+    if (local && !local.rd_id) {
+      await supabaseAdmin.from('funis').update({ rd_id: pid }).eq('id', local.id)
+      local.rd_id = pid
+      funilPorRd[pid] = local
+    }
+  }
+
+  // ─── FUNIL FALLBACK ────────────────────────────────────────────
+  // Em vez de cair na primeira venda (vira lixão de "VENDA"), criamos
+  // um funil dedicado "📥 RD: Importados" pra debugar facilmente.
+  let funilFallback: any = (funis || []).find((f: any) => f.nome === 'RD: Importados')
   if (!funilFallback) {
     const { data } = await supabaseAdmin.from('funis').insert({
       nome: 'RD: Importados', tipo: 'venda', emoji: '📥', cor: '#c9a84c',
       etapas: ['Novo', 'Em andamento', 'Ganho', 'Perdido'], ordem: 99,
-    }).select('id, etapas, nome, tipo').single()
+    }).select('id, rd_id, etapas, nome, tipo').single()
     funilFallback = data
   }
 
   // Stages → pipeline (para deals que vêm com deal_stage mas não com deal_pipeline)
   const stages = await listarTodos<RDStage>('/deal_stages', token, 'deal_stages')
   const pipelinePorStage: Record<string, string> = {}
-  const stagePipelineNome: Record<string, string> = {}
   for (const s of stages) {
     const sid = rdId(s)
     if (sid && s.deal_pipeline_id) pipelinePorStage[sid] = s.deal_pipeline_id
@@ -294,13 +327,47 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
       const detalhe = incluirDetalhes ? await buscarDealDetalhe(id, token) : null
       const dx = detalhe || d
 
-      // Resolver funil — por pipeline ID, depois por nome, senão fallback
+      // Resolver funil — encadeado em ordem de confiança:
+      //   1) rd_id do pipeline do deal bate com funil local
+      //   2) nome do pipeline do deal bate com funil local
+      //   3) deal só tem stage_id → resolve pipeline_id pela stage e
+      //      tenta nome do pipeline buscado em rdPipelineNomePorId
+      //   4) cria-se um funil novo automaticamente com o nome do RD
+      //      (pra não cair no "RD: Importados" silenciosamente)
       const stageId = rdId(dx.deal_stage)
       const pipelineId = rdId(dx.deal_pipeline) || (stageId ? pipelinePorStage[stageId] : null)
-      const pipeNome = dx.deal_pipeline?.name || ''
-      const funil = (pipelineId && funilPorRd[pipelineId])
-                  || (pipeNome && funilPorNome[norm(pipeNome)])
-                  || funilFallback
+      const pipeNomeFromDeal   = dx.deal_pipeline?.name || ''
+      const pipeNomeFromMaster = pipelineId ? (rdPipelineNomePorId[pipelineId] || '') : ''
+      const pipeNome = pipeNomeFromDeal || pipeNomeFromMaster
+
+      let funil: any =
+        (pipelineId && funilPorRd[pipelineId]) ||
+        (pipeNome && funilPorNome[norm(pipeNome)]) ||
+        null
+
+      // Se ainda não temos match mas SABEMOS o nome do pipeline pelo RD,
+      // criamos um funil novo com esse nome (auto-cadastro). Evita cair
+      // na "VENDA" como fallback errado.
+      if (!funil && pipeNome) {
+        const pipelineRD = pipelineId ? rdPipelinePorId[pipelineId] : null
+        const stagesRD: RDStage[] = (pipelineRD?.deal_stages || pipelineRD?.stages || [])
+          .slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
+        const etapas = stagesRD.map((s: any) => s.name || 'Etapa').filter(Boolean)
+        const { data: novo } = await supabaseAdmin.from('funis').insert({
+          rd_id: pipelineId || null, nome: pipeNome.trim(),
+          tipo: 'venda', emoji: '📊', cor: '#1cb5a0',
+          etapas: etapas.length ? etapas : ['Novo','Em andamento','Ganho','Perdido'],
+          ordem: 50,
+        }).select('id, rd_id, etapas, nome, tipo').single()
+        if (novo) {
+          funil = novo
+          if (novo.rd_id) funilPorRd[novo.rd_id] = novo
+          funilPorNome[norm(novo.nome)] = novo
+        }
+      }
+
+      // Último recurso: fallback dedicado.
+      if (!funil) funil = funilFallback
       if (!funil) { stats.qtd_erros++; stats.erros.push(`deal ${dx.name}: funil não encontrado`); continue }
 
       // Match etapa case-insensitive / sem acento
@@ -394,18 +461,65 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         data_fechamento: dataFech,
       }
 
+      // Origem (deal_source) — auto-cria em origens se vier do RD
+      let origemId: string | null = null
+      const dealSource = (dx as any).deal_source
+      if (dealSource?.name) {
+        const srcRdId = rdId(dealSource)
+        const { data: orig } = await supabaseAdmin.from('origens')
+          .select('id').or(`rd_id.eq.${srcRdId || 'null'},nome.ilike.${dealSource.name.replace(/[,]/g,'')}`).maybeSingle()
+        if (orig) {
+          origemId = orig.id
+          if (srcRdId) await supabaseAdmin.from('origens').update({ rd_id: srcRdId, nome: dealSource.name }).eq('id', orig.id)
+        } else {
+          const { data: nova } = await supabaseAdmin.from('origens').insert({ rd_id: srcRdId || null, nome: dealSource.name }).select('id').single()
+          origemId = nova?.id || null
+        }
+      }
+      payload.origem_id = origemId
+
+      let negocioId: string | null = null
       const { data: existente } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', id).maybeSingle()
       if (existente) {
         await supabaseAdmin.from('negocios').update(payload).eq('id', existente.id)
+        negocioId = existente.id
         stats.qtd_atualizados++
       } else {
-        // Cliente_id pode ser null (schema já permite após 003_fix_schema.sql).
-        // NÃO criamos placeholder com nome do deal — isso poluía o módulo
-        // de clientes com pseudo-clientes que eram na verdade negócios.
-        // Se o deal não tem contato vinculado, salvamos negocio com
-        // cliente_id=null e a UI mostra botão "Vincular cliente".
-        await supabaseAdmin.from('negocios').insert(payload)
+        const { data: novo } = await supabaseAdmin.from('negocios').insert(payload).select('id').single()
+        negocioId = novo?.id || null
         stats.qtd_criados++
+      }
+
+      // Tags do deal → tabela tags + junction negocio_tags
+      if (negocioId && Array.isArray((dx as any).tags) && (dx as any).tags.length) {
+        for (const t of (dx as any).tags) {
+          const tagNome = t?.name?.trim()
+          if (!tagNome) continue
+          const tagRd = rdId(t)
+          let tagId: string | null = null
+          const { data: tagExist } = await supabaseAdmin.from('tags')
+            .select('id').or(`rd_id.eq.${tagRd || 'null'},nome.ilike.${tagNome.replace(/[,]/g,'')}`).maybeSingle()
+          if (tagExist) tagId = tagExist.id
+          else {
+            const { data: nova } = await supabaseAdmin.from('tags').insert({ rd_id: tagRd || null, nome: tagNome }).select('id').single()
+            tagId = nova?.id || null
+          }
+          if (tagId) {
+            await supabaseAdmin.from('negocio_tags').upsert({ negocio_id: negocioId, tag_id: tagId })
+          }
+        }
+      }
+
+      // Produtos do deal → negocio_produtos (idempotente: limpa antes de re-popular)
+      if (negocioId && Array.isArray(dx.deal_products) && dx.deal_products.length) {
+        await supabaseAdmin.from('negocio_produtos').delete().eq('negocio_id', negocioId)
+        const linhas = dx.deal_products.map((dp: any) => {
+          const nomeProd = dp?.product?.name || dp?.name || dp?.description || 'Produto'
+          const valor    = Number(dp?.price ?? dp?.base_price ?? dp?.amount ?? dp?.value) || 0
+          const qtd      = Number(dp?.quantity ?? dp?.amount_quantity ?? 1) || 1
+          return { negocio_id: negocioId, nome_snapshot: nomeProd, quantidade: qtd, valor_unit: valor }
+        })
+        if (linhas.length) await supabaseAdmin.from('negocio_produtos').insert(linhas)
       }
     } catch (e: any) {
       stats.qtd_erros++
@@ -475,6 +589,86 @@ async function importarAtividades(token: string, from?: string, to?: string) {
   return stats
 }
 
+async function importarMotivosPerda(token: string) {
+  const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  // RD expõe em /deal_lost_reasons (alguns ambientes em /lost_reasons)
+  let lista: any[] = []
+  for (const path of ['/deal_lost_reasons', '/lost_reasons']) {
+    for (const key of ['deal_lost_reasons', 'lost_reasons']) {
+      try {
+        const r = await listarTodos<any>(path, token, key)
+        if (r.length > 0) { lista = r; break }
+      } catch {}
+    }
+    if (lista.length > 0) break
+  }
+  stats.qtd_lidos = lista.length
+
+  for (const m of lista) {
+    try {
+      const id = rdId(m)
+      const nome = (m?.name || '').trim()
+      if (!nome) continue
+      // Match por rd_id, depois por nome
+      const { data: existente } = await supabaseAdmin.from('motivos_perda')
+        .select('id, rd_id').or(`rd_id.eq.${id || 'null'},nome.ilike.${nome.replace(/[,]/g,'')}`).maybeSingle()
+      if (existente) {
+        await supabaseAdmin.from('motivos_perda').update({ rd_id: id || existente.rd_id, nome }).eq('id', existente.id)
+        stats.qtd_atualizados++
+      } else {
+        await supabaseAdmin.from('motivos_perda').insert({ rd_id: id || null, nome })
+        stats.qtd_criados++
+      }
+    } catch (e: any) {
+      stats.qtd_erros++
+      if (stats.erros.length < 20) stats.erros.push(`motivo ${m?.name}: ${e?.message?.slice(0, 80)}`)
+    }
+  }
+  return stats
+}
+
+async function importarProdutos(token: string) {
+  const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  let lista: any[] = []
+  for (const path of ['/products']) {
+    for (const key of ['products']) {
+      try {
+        const r = await listarTodos<any>(path, token, key)
+        if (r.length > 0) { lista = r; break }
+      } catch {}
+    }
+    if (lista.length > 0) break
+  }
+  stats.qtd_lidos = lista.length
+
+  for (const p of lista) {
+    try {
+      const id = rdId(p)
+      const nome = (p?.name || '').trim()
+      if (!nome) continue
+      // RD expõe valor do produto em campos diferentes dependendo da
+      // configuração: base_price (mais comum), price, amount, value,
+      // unit_price, max_discount não conta. Pegamos o primeiro
+      // numérico encontrado.
+      const camposPreco = [p?.base_price, p?.price, p?.amount, p?.value, p?.unit_price]
+      const preco = camposPreco.map((v: any) => Number(v)).find((n: number) => Number.isFinite(n) && n > 0) ?? null
+      const { data: existente } = await supabaseAdmin.from('produtos')
+        .select('id, rd_id').or(`rd_id.eq.${id || 'null'},nome.ilike.${nome.replace(/[,]/g,'')}`).maybeSingle()
+      if (existente) {
+        await supabaseAdmin.from('produtos').update({ rd_id: id || existente.rd_id, nome, preco_base: preco }).eq('id', existente.id)
+        stats.qtd_atualizados++
+      } else {
+        await supabaseAdmin.from('produtos').insert({ rd_id: id || null, nome, preco_base: preco })
+        stats.qtd_criados++
+      }
+    } catch (e: any) {
+      stats.qtd_erros++
+      if (stats.erros.length < 20) stats.erros.push(`produto ${p?.name}: ${e?.message?.slice(0, 80)}`)
+    }
+  }
+  return stats
+}
+
 // ─── HTTP Handler ──────────────────────────────────────────
 export async function POST(request: NextRequest) {
   const auth = await checarAdmin(request)
@@ -500,7 +694,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(await ping(token))
     }
 
-    const ordem = ['usuarios', 'funis', 'contatos', 'negocios', 'atividades']
+    const ordem = ['usuarios', 'funis', 'motivos_perda', 'produtos', 'contatos', 'negocios', 'atividades']
     const recursos = action === 'all' ? ordem : [action]
     const resultados: Record<string, any> = {}
 
@@ -509,11 +703,13 @@ export async function POST(request: NextRequest) {
       const logId = await logSync(recursoLog, auth.userId)
       let stats
       try {
-        if (r === 'usuarios')        stats = await importarUsuarios(token)
-        else if (r === 'funis')      stats = await importarFunis(token)
-        else if (r === 'contatos')   stats = await importarContatos(token, from, to)
-        else if (r === 'negocios')   stats = await importarNegocios(token, from, to, detalhes)
-        else if (r === 'atividades') stats = await importarAtividades(token, from, to)
+        if (r === 'usuarios')             stats = await importarUsuarios(token)
+        else if (r === 'funis')           stats = await importarFunis(token)
+        else if (r === 'motivos_perda')   stats = await importarMotivosPerda(token)
+        else if (r === 'produtos')        stats = await importarProdutos(token)
+        else if (r === 'contatos')        stats = await importarContatos(token, from, to)
+        else if (r === 'negocios')        stats = await importarNegocios(token, from, to, detalhes)
+        else if (r === 'atividades')      stats = await importarAtividades(token, from, to)
         else { resultados[r] = { error: 'recurso inválido' }; continue }
       } catch (e: any) {
         stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 1, erros: [e?.message?.slice(0, 200) || 'erro'] }

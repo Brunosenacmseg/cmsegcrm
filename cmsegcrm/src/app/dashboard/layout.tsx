@@ -26,10 +26,14 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', adminOnly:true },
   { href:'/dashboard/integracoes/meta', icon:'🔗', label:'Conectar Meta', adminOnly:true },
+  { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
+  { href:'/dashboard/automacoes',   icon:'⚡', label:'Automações', adminOnly:true },
+  { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique' },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config' },
+  { href:'/dashboard/configuracoes',icon:'⚙️', label:'Motivos & Produtos', section:'Config', adminOnly:true },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -242,7 +246,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main style={{marginLeft:'var(--sidebar-w)',flex:1,display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>setShowNotif(false)}>
+      <main style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
         {/* Header com sino */}
         <div style={{height:52,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'rgba(10,22,40,0.8)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
           <div style={{flex:1}}/>

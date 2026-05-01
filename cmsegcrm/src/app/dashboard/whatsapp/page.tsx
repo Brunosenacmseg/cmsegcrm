@@ -15,6 +15,38 @@ const STICKERS_DEMO = [
   { id:'6', emoji:'💪', label:'Força' },
 ]
 
+// Formata telefone brasileiro: 5511999998888 -> +55 (11) 99999-8888.
+// Se não parecer um telefone válido (ex: código @lid do Meta com 18+
+// dígitos), retorna null para que a UI esconda em vez de mostrar lixo.
+function formatarTelefone(numero?: string | null): string | null {
+  if (!numero) return null
+  const d = String(numero).replace(/\D/g, '')
+  if (d.length < 10 || d.length > 14) return null
+  // 13 dígitos com 55 → +55 (XX) 9XXXX-XXXX
+  if (d.length === 13 && d.startsWith('55')) {
+    return `+55 (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`
+  }
+  // 12 dígitos com 55 (fixo) → +55 (XX) XXXX-XXXX
+  if (d.length === 12 && d.startsWith('55')) {
+    return `+55 (${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`
+  }
+  // 11 dígitos (DDD + celular) → (XX) 9XXXX-XXXX
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
+  // 10 dígitos (DDD + fixo) → (XX) XXXX-XXXX
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
+  return `+${d}`
+}
+
+// Texto para exibir o contato: nome > telefone formatado > "Sem número".
+// Nunca devolve o código @lid bruto.
+function rotuloContato(c: any): string {
+  if (c?.clientes?.nome) return c.clientes.nome
+  if (c?.remoto_nome && !c.remoto_nome.includes('@lid')) return c.remoto_nome
+  const tel = formatarTelefone(c?.remoto_numero)
+  if (tel) return tel
+  return 'Contato sem número'
+}
+
 export default function WhatsAppPage() {
   const supabase = createClient()
   const router   = useRouter()
@@ -63,7 +95,13 @@ export default function WhatsAppPage() {
   // Histórico
   const [salvandoHistorico, setSalvandoHistorico] = useState(false)
 
+  // Agentes IA disponíveis (admin cadastra em /dashboard/agentes-ia)
+  const [agentesIA, setAgentesIA] = useState<any[]>([])
+
   useEffect(() => { carregarInstancia() }, [])
+  useEffect(() => {
+    supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }) => setAgentesIA(data || []))
+  }, [])
   useEffect(() => { msgFimRef.current?.scrollIntoView({ behavior:'smooth' }) }, [mensagens])
   useEffect(() => {
     if (!instancia) return
@@ -145,6 +183,20 @@ export default function WhatsAppPage() {
     await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'desconectar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
     await supabase.from('whatsapp_instancias').update({ status:'disconnected', qrcode:null }).eq('id', instancia.id)
     setInstancia((prev: any) => ({ ...prev, status:'disconnected', qrcode:null }))
+  }
+
+  async function setAgenteWhats(agenteId: string) {
+    if (!instancia) return
+    const novo = agenteId || null
+    await supabase.from('whatsapp_instancias').update({ agente_id: novo }).eq('id', instancia.id)
+    setInstancia((p:any) => ({ ...p, agente_id: novo }))
+  }
+
+  async function toggleAgente(ativo: boolean) {
+    if (!instancia) return
+    if (ativo && !instancia.agente_id) { alert('Selecione um agente antes de ativar.'); return }
+    await supabase.from('whatsapp_instancias').update({ agente_ativo: ativo }).eq('id', instancia.id)
+    setInstancia((p:any) => ({ ...p, agente_ativo: ativo }))
   }
 
   async function salvarConfig() {
@@ -263,11 +315,11 @@ export default function WhatsAppPage() {
     if (!conversa?.cliente_id) { alert('Vincule esta conversa a um cliente antes de registrar no histórico.'); return }
     setSalvandoHistorico(true)
     const ultimas = mensagens.slice(-20)
-    const resumo = ultimas.map(m => `[${m.direcao==='enviada'?'Eu':conversa.remoto_nome||'Cliente'}] ${m.conteudo}`).join('\n')
+    const resumo = ultimas.map(m => `[${m.direcao==='enviada'?'Eu':rotuloContato(conversa)}] ${m.conteudo}`).join('\n')
     await supabase.from('historico').insert({
       cliente_id: conversa.cliente_id,
       tipo: 'info',
-      titulo: `💬 Conversa WhatsApp — ${conversa.remoto_nome||conversa.remoto_numero}`,
+      titulo: `💬 Conversa WhatsApp — ${rotuloContato(conversa)}`,
       descricao: resumo.slice(0, 2000),
     })
     setSalvandoHistorico(false)
@@ -368,6 +420,32 @@ export default function WhatsAppPage() {
               </div>
             </div>
 
+            {/* Agente de IA */}
+            <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)',background:instancia.agente_ativo?'rgba(28,181,160,0.05)':'transparent'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                <div style={{fontSize:11,fontWeight:600,color:instancia.agente_ativo?'var(--teal)':'var(--text-muted)',letterSpacing:'1px',textTransform:'uppercase'}}>
+                  🤖 Agente IA
+                </div>
+                <label style={{position:'relative',display:'inline-block',width:34,height:18,cursor:'pointer'}}>
+                  <input type="checkbox" checked={!!instancia.agente_ativo} onChange={e=>toggleAgente(e.target.checked)}
+                    style={{opacity:0,width:0,height:0}} />
+                  <span style={{position:'absolute',inset:0,borderRadius:18,background:instancia.agente_ativo?'var(--teal)':'rgba(255,255,255,0.1)',transition:'background 0.2s'}}>
+                    <span style={{position:'absolute',top:2,left:instancia.agente_ativo?18:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}}/>
+                  </span>
+                </label>
+              </div>
+              <select value={instancia.agente_id||''} onChange={e=>setAgenteWhats(e.target.value)}
+                style={{width:'100%',padding:'5px 8px',borderRadius:6,border:'1px solid var(--border)',background:'#0e2040',color:'var(--text)',fontSize:11,cursor:'pointer'}}>
+                <option value="">— selecione um agente —</option>
+                {agentesIA.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+              </select>
+              {instancia.agente_ativo && instancia.agente_id && (
+                <div style={{fontSize:10,color:'var(--teal)',marginTop:5}}>
+                  ✓ Respondendo automaticamente
+                </div>
+              )}
+            </div>
+
             <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
               <button onClick={()=>{setModalNovaConversa(true);setNovoNumero('');setNovaNomeBusca('');setClienteNovaConversa(null);setClientesBusca([])}}
                 style={{width:'100%',padding:'7px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
@@ -390,10 +468,13 @@ export default function WhatsAppPage() {
                   style={{padding:'12px 16px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.04)',background:conversa?.remoto_jid===conv.remoto_jid?'rgba(201,168,76,0.08)':'transparent',transition:'background 0.15s'}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
                     <div style={{fontWeight:500,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>
-                      {conv.clientes?.nome||conv.remoto_nome||conv.remoto_numero}
+                      {rotuloContato(conv)}
                     </div>
                     {conv.nao_lidas>0&&<span style={{background:'var(--teal)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',flexShrink:0}}>{conv.nao_lidas}</span>}
                   </div>
+                  {formatarTelefone(conv.remoto_numero) && rotuloContato(conv) !== formatarTelefone(conv.remoto_numero) && (
+                    <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:2}}>📱 {formatarTelefone(conv.remoto_numero)}</div>
+                  )}
                   <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.conteudo}</div>
                   <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{new Date(conv.created_at).toLocaleDateString('pt-BR')}</div>
                 </div>
@@ -423,11 +504,11 @@ export default function WhatsAppPage() {
                   ) : (
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
                       <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,var(--gold),var(--teal))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:'var(--navy)',flexShrink:0}}>
-                        {(conversa.clientes?.nome||conversa.remoto_nome||'?')[0].toUpperCase()}
+                        {rotuloContato(conversa)[0].toUpperCase()}
                       </div>
                       <div style={{flex:1}}>
-                        <div style={{fontWeight:600,fontSize:14}}>{conversa.clientes?.nome||conversa.remoto_nome||conversa.remoto_numero}</div>
-                        <div style={{fontSize:11,color:'var(--text-muted)'}}>📱 {conversa.remoto_numero}</div>
+                        <div style={{fontWeight:600,fontSize:14}}>{rotuloContato(conversa)}</div>
+                        <div style={{fontSize:11,color:'var(--text-muted)'}}>📱 {formatarTelefone(conversa.remoto_numero) || 'número não disponível'}</div>
                       </div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
                         <button onClick={()=>{setEditandoContato(true);setEditNome(conversa.remoto_nome||'');setEditNumero(conversa.remoto_numero||'')}}

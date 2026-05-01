@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
     page_id: data?.page_id || null,
     app_id: data?.app_id || null,
     pixel_id: data?.pixel_id || null,
+    dataset_id: data?.dataset_id || null,
     tem_conversions_token: !!data?.conversions_token,
     webhook_subscribed: !!data?.webhook_subscribed,
     expires_at: data?.expires_at || null,
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
   const verify_token      = (body.verify_token      || '').trim()
   const pixel_id          = (body.pixel_id          || '').trim()
   const conversions_token = (body.conversions_token || '').trim()
+  const dataset_id        = (body.dataset_id        || '').trim()
 
   if (!access_token) return NextResponse.json({ error: 'access_token é obrigatório' }, { status: 400 })
 
@@ -89,6 +91,7 @@ export async function POST(req: NextRequest) {
     verify_token:      verify_token || null,
     pixel_id:          pixel_id || null,
     conversions_token: conversions_token || null,
+    dataset_id:        dataset_id || null,
     connected_by:      auth.userId,
     configurado_em:    new Date().toISOString(),
     updated_at:        new Date().toISOString(),
