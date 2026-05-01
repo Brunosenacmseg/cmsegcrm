@@ -175,42 +175,165 @@ async function importarNegocios(linhas: any[]) {
     return { ...stats, qtd_erros: linhas.length, erros: ['Nenhum funil cadastrado. Crie um funil antes de importar negócios.'] }
   }
 
-  // BULK: pré-carrega clientes por CPF/CNPJ em UMA query
-  const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
+  // BULK: pré-carrega clientes (CPF) + usuarios (responsavel) + equipes
+  const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf || r.CPF)).filter(Boolean))) as string[]
   const clientePorCpf: Record<string, string> = {}
   if (cpfsLote.length) {
     const { data: cls } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
     for (const c of cls || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
+  const { data: usuarios } = await supabaseAdmin.from('users').select('id, nome, email')
+  const userPorNome:  Record<string, string> = {}
+  const userPorEmail: Record<string, string> = {}
+  for (const u of usuarios || []) {
+    if (u.nome)  userPorNome[u.nome.toLowerCase().trim()] = u.id
+    if (u.email) userPorEmail[u.email.toLowerCase().trim()] = u.id
+  }
+  const { data: equipes } = await supabaseAdmin.from('equipes').select('id, nome')
+  const equipePorNome: Record<string, string> = {}
+  for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
 
-  // Monta payloads em memória (sem queries)
+  // Helpers locais
+  const parseBoolOpt = (v: any): boolean | null => {
+    if (v === undefined || v === null || v === '') return null
+    const t = String(v).toLowerCase().trim()
+    if (/^(sim|s|yes|y|true|1|verdadeiro|on|ativo)$/.test(t)) return true
+    if (/^(nao|não|no|false|0|inativo|off)$/.test(t)) return false
+    return null
+  }
+  const combinaDataHora = (data: any, hora: any): string | null => {
+    const d = dateBR(data); if (!d) return null
+    const h = s(hora) || '00:00'
+    return `${d}T${h.length === 5 ? h+':00' : h}`
+  }
+  const qualifNum = (v: any): number => {
+    if (!v) return 0
+    const t = String(v).trim()
+    // RD usa ⭐ ou número 1-5
+    const stars = (t.match(/⭐|★/g) || []).length
+    if (stars > 0) return Math.min(stars, 5)
+    const num = parseInt(t.replace(/\D/g,'')) || 0
+    return Math.min(Math.max(num, 0), 5)
+  }
+
+  // Conjunto de campos "conhecidos" (já mapeados pra colunas).
+  // Qualquer outra coluna vai pra custom_fields.
+  const camposConhecidos = new Set([
+    'titulo','title','nome','cliente','empresa','funil','pipeline','etapa','stage',
+    'estado','status','situacao','situação','motivo_perda','motivo','razao',
+    'qualificacao','qualificação','valor_unico','valor único','valor_recorrente','valor recorrente',
+    'pausada','data_criacao','data de criação','hora_criacao','hora de criação',
+    'data_primeiro_contato','data do primeiro contato','hora_primeiro_contato','hora do primeiro contato',
+    'data_ultimo_contato','data do último contato','data do ultimo contato','hora_ultimo_contato','hora do último contato','hora do ultimo contato',
+    'data_proxima_tarefa','data da próxima tarefa','data da proxima tarefa','hora_proxima_tarefa','hora da próxima tarefa','hora da proxima tarefa',
+    'previsao_fechamento','previsão de fechamento','previsao de fechamento',
+    'data_fechamento','data de fechamento','hora_fechamento','hora de fechamento',
+    'fonte','origem','campanha','responsavel','responsável','produtos','produto','ramo',
+    'equipe','equipes do responsável','equipes do responsavel','anotacao_motivo_perda','anotação do motivo de perda',
+    'data_nascimento','data de nascimento','seguradora','vigencia','vigência','vigencia do seguro','vigência do seguro',
+    'email','e-mail','telefone','fone','celular','whatsapp','comissao','comissao_pct',
+    'particular','rastreador','cpf','cpf_cnpj','cnpj','placa','modelo','modelo do veiculo','modelo do veículo',
+    'cpf_2','cpf 2','cep','tipo_seguro','tipo do seguro','operadora','tipo_cnpj','tipo de cnpj',
+    'funcionario_clt','funcionário clt','funcionario clt','profissao','profissão','possui_plano','possui plano',
+    'plano_atual','plano atual','motivo_troca_plano','motivo troca de plano','cidade',
+    'mensalidade_atual','mensalidade atual','idade_beneficiarios','idade dos beneficiarios','idade dos beneficiários',
+    'possui_hospital_preferencia','possui hospital de preferencia','possui hospital de preferência','qual_hospital','qual hospital',
+    'contatos','cargo','vencimento','obs','observacoes','observações','observacao','observação',
+  ])
+
+  // Monta payloads em memória
   const novos: any[] = []
   for (const r of linhas) {
     try {
-      const titulo = s(r.titulo) || s(r.cliente) || s(r.nome) || 'Negócio importado'
-      const funilNome = s(r.funil)
+      const titulo = s(r.titulo) || s(r.nome) || s(r.cliente) || s(r.empresa) || 'Negócio importado'
+      const funilNome = s(r.funil) || s(r.pipeline)
       const f = funilNome ? (funis || []).find((x:any) => x.nome.toLowerCase() === funilNome.toLowerCase()) || funilDefault : funilDefault
-      const etapa = s(r.etapa) || (f.etapas?.[0] || 'Novo')
-      const cpf = s(r.cpf_cnpj || r.cpf)
+      const etapa = s(r.etapa) || s(r.stage) || (f.etapas?.[0] || 'Novo')
+      const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
       const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
 
+      // Status
       const estadoRaw = (s(r.estado || r.status || r.situacao) || '').toLowerCase()
       let status: 'ganho'|'perdido'|'em_andamento' = 'em_andamento'
-      let dataFech: string | null = null
-      if (/vend|ganh|fechad|won/.test(estadoRaw))   { status = 'ganho';   dataFech = new Date().toISOString() }
-      else if (/perd|cancel|lost/.test(estadoRaw))  { status = 'perdido'; dataFech = new Date().toISOString() }
+      let dataFech: string | null = combinaDataHora(r.data_fechamento || r['data de fechamento'], r.hora_fechamento || r['hora de fechamento'])
+      if (/vend|ganh|fechad|won/.test(estadoRaw))   { status = 'ganho';   if (!dataFech) dataFech = new Date().toISOString() }
+      else if (/perd|cancel|lost/.test(estadoRaw))  { status = 'perdido'; if (!dataFech) dataFech = new Date().toISOString() }
+
+      // Responsavel: tenta nome, depois email
+      const respRaw = s(r.responsavel || r['responsável']) || ''
+      let vendedorId: string | null = null
+      if (respRaw) {
+        vendedorId = userPorNome[respRaw.toLowerCase()] || userPorEmail[respRaw.toLowerCase()] || null
+      }
+
+      // Equipe
+      const equipeRaw = s(r.equipe || r['equipes do responsável'] || r['equipes do responsavel']) || ''
+      const equipeId = equipeRaw ? equipePorNome[equipeRaw.toLowerCase()] || null : null
+
+      // custom_fields: tudo que não casa com campo conhecido
+      const customFields: Record<string, any> = {}
+      for (const [k, v] of Object.entries(r)) {
+        if (v === '' || v === null || v === undefined) continue
+        const kn = k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
+        if (!camposConhecidos.has(kn)) customFields[k] = v
+      }
 
       novos.push({
-        titulo, cliente_id: clienteId, funil_id: f.id, etapa,
-        produto: s(r.produto), seguradora: s(r.seguradora),
-        premio: n(r.premio || r.valor),
+        titulo,
+        cliente_id: clienteId,
+        funil_id: f.id,
+        etapa,
+        produto: s(r.produto || r.ramo) || s(r['tipo do seguro']) || s(r['tipo_seguro']),
+        seguradora: s(r.seguradora),
+        seguradora_atual: s(r.seguradora) || s(r['seguradora atual']),
+        premio: n(r.premio || r.valor || r.valor_unico || r['valor único']),
+        valor_unico: n(r.valor_unico || r['valor único']),
+        valor_recorrente: n(r.valor_recorrente || r['valor recorrente'] || r.mensalidade_atual || r['mensalidade atual']),
         comissao_pct: n(r.comissao_pct || r.comissao),
-        cpf_cnpj: cpf, cep: s(r.cep),
-        fonte: s(r.fonte) || 'Importação CSV/XLSX',
-        vencimento: dateBR(r.vencimento),
-        obs: s(r.obs || r.observacoes),
+        comissao_valor: n(r['comissao_valor'] || r['valor comissao']),
+        cpf_cnpj: cpf,
+        cep: s(r.cep),
+        fonte: s(r.fonte) || s(r.origem) || 'Importação CSV/XLSX',
+        fonte_origem: s(r.origem),
+        campanha: s(r.campanha),
+        empresa: s(r.empresa),
+        cargo_contato: s(r.cargo),
+        vencimento: dateBR(r.vencimento || r.previsao_fechamento || r['previsão de fechamento']),
+        previsao_fechamento: dateBR(r.previsao_fechamento || r['previsão de fechamento']),
+        data_primeiro_contato: combinaDataHora(r.data_primeiro_contato || r['data do primeiro contato'], r.hora_primeiro_contato || r['hora do primeiro contato']),
+        data_ultimo_contato:   combinaDataHora(r.data_ultimo_contato   || r['data do último contato'] || r['data do ultimo contato'], r.hora_ultimo_contato || r['hora do último contato']),
+        data_proxima_tarefa:   combinaDataHora(r.data_proxima_tarefa   || r['data da próxima tarefa'] || r['data da proxima tarefa'], r.hora_proxima_tarefa || r['hora da próxima tarefa']),
+        pausada: parseBoolOpt(r.pausada) ?? false,
+        anotacao_motivo_perda: s(r.anotacao_motivo_perda || r['anotação do motivo de perda']),
+        // Veículo
+        placa_veiculo:  s(r.placa),
+        modelo_veiculo: s(r.modelo || r['modelo do veículo'] || r['modelo do veiculo']),
+        rastreador:     s(r.rastreador),
+        // Saúde / plano
+        tipo_seguro: s(r['tipo do seguro'] || r.tipo_seguro),
+        operadora:   s(r.operadora),
+        tipo_cnpj:   s(r['tipo de cnpj'] || r.tipo_cnpj),
+        funcionario_clt: s(r['funcionario clt'] || r['funcionário clt'] || r.funcionario_clt),
+        particular:        parseBoolOpt(r.particular),
+        possui_plano:      parseBoolOpt(r['possui plano'] || r.possui_plano),
+        plano_atual:       s(r['plano atual'] || r.plano_atual),
+        motivo_troca_plano: s(r['motivo troca de plano'] || r.motivo_troca_plano),
+        mensalidade_atual: n(r['mensalidade atual'] || r.mensalidade_atual),
+        idade_beneficiarios: s(r['idade dos beneficiarios'] || r['idade dos beneficiários']),
+        possui_hospital_pref: parseBoolOpt(r['possui hospital de preferencia'] || r['possui hospital de preferência']),
+        qual_hospital: s(r['qual hospital']),
+        // Outros docs
+        cpf_2: s(r['cpf 2'] || r.cpf_2),
+        cep_negocio: s(r.cep),
+        email_negocio: s(r.email || r['e-mail'])?.toLowerCase() || null,
+        // Status
         status, data_fechamento: dataFech,
-        motivo_perda: status === 'perdido' ? (s(r.motivo_perda) || null) : null,
+        motivo_perda: status === 'perdido' ? (s(r.motivo_perda) || s(r.motivo) || null) : null,
+        qualificacao: qualifNum(r.qualificacao || r['qualificação']),
+        vendedor_id: vendedorId,
+        equipe_id: equipeId,
+        custom_fields: Object.keys(customFields).length ? customFields : null,
+        obs: s(r.obs || r.observacoes || r.observacao || r['observações']),
       })
     } catch (e: any) {
       stats.qtd_erros++
