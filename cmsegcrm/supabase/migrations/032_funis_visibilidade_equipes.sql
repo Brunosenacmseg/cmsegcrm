@@ -25,24 +25,8 @@
 -- Idempotente: pode rodar mais de uma vez.
 -- ═════════════════════════════════════════════════════════════════════
 
--- 1) Garante que as equipes existam (sem mexer em equipes já cadastradas).
-insert into public.equipes (nome)
-select x.nome
-from (values
-  ('EQUIPE VENDAS JUNDIAI'),
-  ('EQUIPE ADM'),
-  ('EQUIPE SP'),
-  ('EQUIPE LEAD JUNDIAI'),
-  ('EQUIPE COBRANÇA'),
-  ('EQUIPE RASTREADOR'),
-  ('EQUIPE SINISTRO'),
-  ('ADMINISTRADORES')
-) as x(nome)
-where not exists (
-  select 1 from public.equipes e where lower(e.nome) = lower(x.nome)
-);
-
--- 2) Aplica o mapeamento (funil_nome, equipe_nomes[]).
+-- Usa as equipes JÁ EXISTENTES no sistema. Nada é criado aqui.
+-- Aplica o mapeamento (funil_nome, equipe_nomes[]).
 --    Limpa as linhas atuais do funil e reinsere as corretas.
 do $$
 declare
