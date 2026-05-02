@@ -9,7 +9,9 @@
 insert into public.rd_responsaveis_alias (nome_planilha, email) values
   ('Dayvson Pimentel Tavares', 'dayvson.tavares@cmseguros.com.br'),
   ('Maria Luisa',              'marialuisa.duraes@cmseguros.com.br'),
-  ('Lilian Cruz',              'lilian.cruz@cmseguros.com.br')
+  ('Lilian Cruz',              'lilian.cruz@cmseguros.com.br'),
+  ('Rosangela',                'bruno@cmseguros.com.br'),
+  ('Christhyan Vieira',        'bruno@cmseguros.com.br')
 on conflict (lower(nome_planilha)) do update set
   email = excluded.email,
   ativo = true;
