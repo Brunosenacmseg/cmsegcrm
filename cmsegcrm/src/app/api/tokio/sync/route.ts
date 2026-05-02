@@ -95,6 +95,27 @@ function getBlocks(xml: string, aliases: string[]): string[] {
   return blocks
 }
 
+// Fatia o XML em pedaços usando uma tag como âncora: cada pedaço
+// começa em uma ocorrência da âncora e vai até a próxima (ou EOF).
+// Útil quando vários registros estão concatenados sem um wrapper
+// repetido — cada registro é a sequência DadosSegurado+DadosSeguro
+// +Cobranca+Item.
+function splitByAnchor(xml: string, aliases: string[]): string[] {
+  for (const a of aliases) {
+    const re = new RegExp(`<(?:[A-Za-z0-9_]+:)?${a}\\b`, 'gi')
+    const positions: number[] = []
+    let m
+    while ((m = re.exec(xml)) !== null) positions.push(m.index)
+    if (positions.length <= 1) continue
+    const pieces: string[] = []
+    for (let i = 0; i < positions.length; i++) {
+      pieces.push(xml.slice(positions[i], positions[i+1] ?? xml.length))
+    }
+    return pieces
+  }
+  return [xml]
+}
+
 function num(s: string): number | null {
   if (!s) return null
   const t = s.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
@@ -251,17 +272,10 @@ function extrairApolice(bloco: string) {
 // inserimos em public.endossos. Cancelamentos com qtdeParcelas=0
 // têm valores zerados.
 async function processarApolices(xml: string) {
-  // Preferimos blocos por <Item> (cada item = uma apólice/endosso completo).
-  // Caso o arquivo tenha somente um, usamos o XML inteiro.
-  const wrappers = getBlocks(xml, ['DadosSeguro'])
-  const lista = wrappers.length ? wrappers.map(w => {
-    // Para cada DadosSeguro, ancoramos o "bloco completo" no XML
-    // pegando uma janela ao redor — mas como nossos getTag/getBlocks
-    // já são tolerantes, processar o XML inteiro por ocorrência basta
-    // se houver uma única apólice. Para múltiplas, processamos cada
-    // wrapper individualmente.
-    return w
-  }) : [xml]
+  // Cada registro completo é a sequência DadosSegurado +
+  // DadosSeguro + Cobranca + Comissao + Item. A âncora confiável
+  // é <DadosSegurado>, que sempre marca o início de uma apólice.
+  const lista = splitByAnchor(xml, ['DadosSegurado', 'DadosSeguro'])
 
   let importados = 0, erros = 0
   const msgs: string[] = []
@@ -279,12 +293,24 @@ async function processarApolices(xml: string) {
       }
 
       const tel = c.ddd && c.numTel ? `${c.ddd}${c.numTel}` : ''
-      const clienteId = await obterOuCriarCliente({
+      let clienteId = await obterOuCriarCliente({
         cpfCnpj: c.cpfCnpj, nome: c.nome,
         tipo: c.tpPessoa === 'J' ? 'PJ' : 'PF',
         email: c.email, telefone: tel,
         dadosBrutos,
       })
+      // Apolices.cliente_id é NOT NULL — se o XML não tem segurado
+      // identificável, criamos placeholder pra não quebrar o insert.
+      if (!clienteId) {
+        clienteId = await obterOuCriarCliente({
+          nome: `Apólice Tokio ${numero} (sem segurado identificado)`,
+          dadosBrutos,
+        })
+      }
+      if (!clienteId) {
+        msgs.push(`${numero}: não foi possível criar cliente`)
+        erros++; continue
+      }
 
       // ── ENDOSSO DE CANCELAMENTO: zera valores ──
       const cancelamento = ehEndossoCancelamento(c.tpComplemento, c.qtdParc)
