@@ -373,12 +373,16 @@ function FunisPage() {
     setContagemPorFunil(out)
   }
 
-  // Carrega so os negocios do funil ativo, com select slim, paginando.
+  // Carrega negocios do funil ativo de forma progressiva: cada lote já
+  // popula o kanban (não precisa esperar o fim para ver os primeiros cards).
   async function carregarNegocios() {
     if (!funilAtivo) { setNegocios([]); return }
+    setNegocios([])
+    const PRIMEIRA = 200
     const PAGE = 1000
-    const todos: any[] = []
-    for (let offset = 0; ; offset += PAGE) {
+    let offset = 0
+    while (true) {
+      const tamanho = offset === 0 ? PRIMEIRA : PAGE
       const { data, error } = await supabase.from('negocios').select(`
         id, titulo, etapa, status, qualificacao, premio, vencimento,
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
@@ -388,13 +392,13 @@ function FunisPage() {
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
         .order('created_at', { ascending: false })
-        .range(offset, offset + PAGE - 1)
+        .range(offset, offset + tamanho - 1)
       if (error || !data || data.length === 0) break
-      todos.push(...data)
-      if (data.length < PAGE) break
-      if (todos.length >= 50_000) break
+      setNegocios(prev => [...prev, ...data])
+      if (data.length < tamanho) break
+      offset += tamanho
+      if (offset >= 50_000) break
     }
-    setNegocios(todos)
   }
 
   async function buscarClientes(q: string, setter: (v:any[])=>void) {
