@@ -345,7 +345,13 @@ export default function DashboardPage() {
               <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                 <div style={{width:8,height:8,borderRadius:'50%',background:'var(--red)',flexShrink:0}}/>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:13,fontWeight:500}}>{r.clientes?.nome}</div>
+                  <div
+                    onClick={()=>router.push(`/dashboard/funis?card=${r.id}`)}
+                    style={{fontSize:13,fontWeight:500,cursor:'pointer',color:'var(--gold)',textDecoration:'underline',textUnderlineOffset:2}}
+                    title="Abrir card da negociação"
+                  >
+                    {r.clientes?.nome}
+                  </div>
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>{r.produto}</div>
                 </div>
                 <div style={{fontSize:12,color:'var(--gold)',fontWeight:600}}>

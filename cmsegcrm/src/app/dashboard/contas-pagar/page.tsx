@@ -25,10 +25,12 @@ export default function ContasPagarPage() {
   const [categorias, setCategorias] = useState<any[]>([])
 
   const [modal, setModal] = useState(false)
-  const empty = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', file:null as File|null }
+  const empty = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', categoria_id:'', file:null as File|null }
   const [form, setForm] = useState<any>(empty)
   const [salvando, setSalvando] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [criandoCat, setCriandoCat] = useState(false)
+  const [novaCat, setNovaCat] = useState({ codigo:'', nome:'' })
 
   // Modal de pagar (admin escolhe categoria + forma)
   const [modalPagar, setModalPagar] = useState<any>(null)
@@ -84,6 +86,7 @@ export default function ContasPagarPage() {
         vencimento: form.vencimento,
         descricao: form.descricao || null,
         fornecedor: form.fornecedor || null,
+        categoria_id: form.categoria_id || null,
         anexo_id: anexoId,
         criado_por: profile.id,
       })
@@ -282,9 +285,55 @@ export default function ContasPagarPage() {
             </div>
 
             <div style={{marginBottom:14}}>
-              <label style={lbl}>Nome *</label>
+              <label style={lbl}>Categoria *</label>
+              {!criandoCat ? (
+                <select
+                  value={form.categoria_id}
+                  onChange={e=>{
+                    const v = e.target.value
+                    if (v === '__nova__') { setCriandoCat(true); setNovaCat({ codigo:'', nome:'' }); return }
+                    const cat = categorias.find(c => c.id === v)
+                    setForm((f:any)=>({
+                      ...f,
+                      categoria_id: v,
+                      nome: cat ? `${cat.codigo} ${cat.nome}` : f.nome,
+                    }))
+                  }}
+                  style={{...inp,background:'#0e2040'}}>
+                  <option value="" style={{background:'#0e2040'}}>— selecionar —</option>
+                  {categorias.map(c => (
+                    <option key={c.id} value={c.id} style={{background:'#0e2040'}}>{c.codigo} {c.nome}</option>
+                  ))}
+                  <option value="__nova__" style={{background:'#0e2040'}}>+ Criar nova categoria…</option>
+                </select>
+              ) : (
+                <div style={{display:'grid',gridTemplateColumns:'120px 1fr auto auto',gap:8,alignItems:'center'}}>
+                  <input value={novaCat.codigo} onChange={e=>setNovaCat(n=>({...n,codigo:e.target.value}))}
+                    placeholder="Código (ex: 4.3.30)" style={inp} />
+                  <input value={novaCat.nome} onChange={e=>setNovaCat(n=>({...n,nome:e.target.value}))}
+                    placeholder="Nome da categoria" style={inp} />
+                  <button className="btn-primary" style={{padding:'7px 14px',fontSize:12}}
+                    disabled={!novaCat.codigo.trim() || !novaCat.nome.trim()}
+                    onClick={async()=>{
+                      const { data, error } = await supabase
+                        .from('financeiro_categorias')
+                        .insert({ codigo: novaCat.codigo.trim(), nome: novaCat.nome.trim(), tipo:'despesa' })
+                        .select().single()
+                      if (error) { alert('Erro ao criar categoria: '+error.message); return }
+                      setCategorias(cs => [...cs, data].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))))
+                      setForm((f:any)=>({...f, categoria_id: data.id, nome:`${data.codigo} ${data.nome}`}))
+                      setCriandoCat(false)
+                    }}>Criar</button>
+                  <button className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}
+                    onClick={()=>setCriandoCat(false)}>Cancelar</button>
+                </div>
+              )}
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Nome / referência *</label>
               <input value={form.nome} onChange={e=>setForm((f:any)=>({...f,nome:e.target.value}))}
-                placeholder='Ex: "Aluguel matriz - março/26"' style={inp} autoFocus />
+                placeholder='Ex: "Aluguel matriz - março/26"' style={inp} />
             </div>
 
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>

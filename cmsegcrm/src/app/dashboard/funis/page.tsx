@@ -1,12 +1,21 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getVisibleUserIds } from '@/lib/auth'
 
-export default function FunisPage() {
+export default function FunisPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>}>
+      <FunisPage />
+    </Suspense>
+  )
+}
+
+function FunisPage() {
   const supabase = createClient()
   const router   = useRouter()
+  const searchParams = useSearchParams()
 
   const [profile, setProfile]     = useState<any>(null)
   const [funis, setFunis]         = useState<any[]>([])
@@ -17,6 +26,8 @@ export default function FunisPage() {
   const [funilAtivo, setFunilAtivo] = useState<string|null>(null)
   const [seletorAberto, setSeletorAberto] = useState(false)
   const kanbanRef = useRef<HTMLDivElement>(null)
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const [kanbanWidth, setKanbanWidth] = useState(0)
 
   // Motivos de perda (admin cadastra em /dashboard/configuracoes)
   const [motivosPerda, setMotivosPerda] = useState<any[]>([])
@@ -85,6 +96,34 @@ export default function FunisPage() {
 
   useEffect(() => { init() }, [])
   useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, visibleIds])
+
+  // Sincroniza a barra de rolagem horizontal de cima com o kanban
+  useEffect(() => {
+    const k = kanbanRef.current
+    const t = topScrollRef.current
+    if (!k || !t) return
+    let lock = false
+    const onK = () => { if (lock) return; lock = true; t.scrollLeft = k.scrollLeft; lock = false }
+    const onT = () => { if (lock) return; lock = true; k.scrollLeft = t.scrollLeft; lock = false }
+    k.addEventListener('scroll', onK)
+    t.addEventListener('scroll', onT)
+    const update = () => setKanbanWidth(k.scrollWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(k)
+    return () => { k.removeEventListener('scroll', onK); t.removeEventListener('scroll', onT); ro.disconnect() }
+  }, [funilAtivo, negocios.length])
+
+  // Abre o card automaticamente quando navegado via ?card=<negocio_id>
+  useEffect(() => {
+    const cardId = searchParams?.get('card')
+    if (!cardId || !negocios.length) return
+    const neg = negocios.find(n => n.id === cardId)
+    if (!neg) return
+    if (neg.funil_id) setFunilAtivo(neg.funil_id)
+    setCardAtivo(neg)
+    setModalCard(true)
+  }, [searchParams, negocios])
   useEffect(() => {
     supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
@@ -344,12 +383,16 @@ export default function FunisPage() {
     setContagemPorFunil(out)
   }
 
-  // Carrega so os negocios do funil ativo, com select slim, paginando.
+  // Carrega negocios do funil ativo de forma progressiva: cada lote já
+  // popula o kanban (não precisa esperar o fim para ver os primeiros cards).
   async function carregarNegocios() {
     if (!funilAtivo) { setNegocios([]); return }
+    setNegocios([])
+    const PRIMEIRA = 200
     const PAGE = 1000
-    const todos: any[] = []
-    for (let offset = 0; ; offset += PAGE) {
+    let offset = 0
+    while (true) {
+      const tamanho = offset === 0 ? PRIMEIRA : PAGE
       let q = supabase.from('negocios').select(`
         id, titulo, etapa, status, qualificacao, premio, vencimento,
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
@@ -362,13 +405,13 @@ export default function FunisPage() {
       else if (visibleIds) q = q.in('vendedor_id', visibleIds)
       const { data, error } = await q
         .order('created_at', { ascending: false })
-        .range(offset, offset + PAGE - 1)
+        .range(offset, offset + tamanho - 1)
       if (error || !data || data.length === 0) break
-      todos.push(...data)
-      if (data.length < PAGE) break
-      if (todos.length >= 50_000) break
+      setNegocios(prev => [...prev, ...data])
+      if (data.length < tamanho) break
+      offset += tamanho
+      if (offset >= 50_000) break
     }
-    setNegocios(todos)
   }
 
   async function buscarClientes(q: string, setter: (v:any[])=>void) {
@@ -723,6 +766,11 @@ export default function FunisPage() {
       {/* Kanban */}
       {funiAtual && (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+          {/* Barra de rolagem horizontal sincronizada no topo */}
+          <div className="kanban-scroll kanban-scroll-top" ref={topScrollRef}
+            style={{overflowX:'auto',overflowY:'hidden',height:18,flexShrink:0,margin:'0 20px'}}>
+            <div style={{width:kanbanWidth,height:1}} />
+          </div>
           <div className="kanban-scroll" ref={kanbanRef}
             style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px 60px 20px 20px',scrollBehavior:'smooth'}}>
             <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
