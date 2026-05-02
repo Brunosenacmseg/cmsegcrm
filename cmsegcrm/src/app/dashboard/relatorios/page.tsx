@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getVisibleUserIds } from '@/lib/auth'
 
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
@@ -10,7 +11,50 @@ export default function RelatoriosPage() {
   const [periodo, setPeriodo] = useState('mes')  // mes | trimestre | ano
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { carregar() }, [periodo])
+  // Visibilidade
+  const [profile, setProfile]             = useState<any>(null)
+  const [usuarios, setUsuarios]           = useState<any[]>([])
+  const [equipes, setEquipes]             = useState<any[]>([])
+  const [equipeMembros, setEquipeMembros] = useState<Record<string, string[]>>({})
+  const [visibleIds, setVisibleIds]       = useState<string[] | null>(null)
+  const [filtroEquipe, setFiltroEquipe]   = useState<string>('todos')
+  const [filtroUsuario, setFiltroUsuario] = useState<string>('todos')
+  const [iniciado, setIniciado]           = useState(false)
+
+  useEffect(() => { init() }, [])
+  useEffect(() => { if (iniciado) carregar() }, [periodo, filtroEquipe, filtroUsuario, iniciado])
+
+  async function init() {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: prof } = await supabase.from('users').select('id,nome,role').eq('id', user?.id || '').single()
+    setProfile(prof)
+    const ids = await getVisibleUserIds()
+    setVisibleIds(ids)
+    if (prof?.role !== 'corretor') {
+      let q = supabase.from('users').select('id,nome,role').order('nome')
+      if (ids) q = q.in('id', ids)
+      const { data: usrs } = await q
+      setUsuarios(usrs || [])
+    }
+    if (prof?.role === 'admin') {
+      const { data: eq } = await supabase.from('equipes').select('id,nome').order('nome')
+      setEquipes(eq || [])
+      const { data: em } = await supabase.from('equipe_membros').select('equipe_id,user_id')
+      const map: Record<string, string[]> = {}
+      ;(em || []).forEach(r => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
+      setEquipeMembros(map)
+    }
+    setIniciado(true)
+  }
+
+  // Resolve a lista de user_ids a aplicar no filtro de negócios.
+  // Se retornar null = sem filtro (admin com filtro 'todos').
+  function userIdsParaFiltro(): string[] | null {
+    if (profile?.role === 'corretor') return [profile.id]
+    if (filtroUsuario !== 'todos') return [filtroUsuario]
+    if (filtroEquipe !== 'todos') return equipeMembros[filtroEquipe] || []
+    return visibleIds // null para admin = sem filtro; lista pra líder
+  }
 
   async function carregar() {
     setLoading(true)
@@ -20,9 +64,24 @@ export default function RelatoriosPage() {
     else if (periodo === 'trimestre') dataInicio = new Date(hoje.getFullYear(), hoje.getMonth()-2, 1).toISOString()
     else                         dataInicio = new Date(hoje.getFullYear(), 0, 1).toISOString()
 
+    const ids = userIdsParaFiltro()
+
+    let qNeg = supabase.from('negocios').select('*, funis(tipo,nome,emoji), clientes(nome)')
+    let qCli = supabase.from('clientes').select('id, created_at, vendedor_id')
+    if (ids) {
+      if (ids.length === 0) {
+        // Filtro selecionado mas sem usuários (ex: equipe vazia) — força resultado vazio
+        qNeg = qNeg.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+        qCli = qCli.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+      } else {
+        qNeg = qNeg.in('vendedor_id', ids)
+        qCli = qCli.in('vendedor_id', ids)
+      }
+    }
+
     const [{ data: negs }, { data: clientes }, { data: hist }] = await Promise.all([
-      supabase.from('negocios').select('*, funis(tipo,nome,emoji), clientes(nome)'),
-      supabase.from('clientes').select('id, created_at'),
+      qNeg,
+      qCli,
       supabase.from('historico').select('created_at, tipo').gte('created_at', dataInicio),
     ])
 
@@ -85,8 +144,8 @@ export default function RelatoriosPage() {
 
   return (
     <PageShell title="Relatórios">
-      {/* Filtro de período */}
-      <div style={{display:'flex',gap:6,marginBottom:24}}>
+      {/* Filtro de período + escopo */}
+      <div style={{display:'flex',gap:6,marginBottom:24,flexWrap:'wrap',alignItems:'center'}}>
         {[['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano']].map(([k,l])=>(
           <button key={k} onClick={()=>setPeriodo(k)} style={{
             padding:'7px 18px',borderRadius:20,fontSize:12,fontWeight:periodo===k?700:400,
@@ -95,6 +154,28 @@ export default function RelatoriosPage() {
             color:periodo===k?'var(--navy)':'var(--text-muted)',transition:'all 0.16s'
           }}>{l}</button>
         ))}
+
+        {profile && profile.role !== 'corretor' && (
+          <>
+            <div style={{width:1,height:24,background:'var(--border)',margin:'0 6px'}}/>
+            {profile.role === 'admin' && equipes.length > 0 && (
+              <select value={filtroEquipe} onChange={e => { setFiltroEquipe(e.target.value); setFiltroUsuario('todos') }}
+                title="Filtrar por equipe"
+                style={{padding:'7px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroEquipe!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroEquipe!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                <option value="todos">🏢 Todas as equipes</option>
+                {equipes.map(eq => <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
+              </select>
+            )}
+            <select value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)}
+              title="Filtrar por usuário"
+              style={{padding:'7px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroUsuario!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroUsuario!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+              <option value="todos">👥 {profile.role === 'admin' ? 'Todos usuários' : 'Toda a equipe'}</option>
+              {usuarios
+                .filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id))
+                .map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          </>
+        )}
       </div>
 
       {/* KPIs */}

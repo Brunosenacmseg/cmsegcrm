@@ -7,7 +7,7 @@ import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 import { registrarLog } from '@/lib/logs'
 
-const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean }> = [
+const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
   { href:'/dashboard/funis',        icon:'🏗', label:'Funis' },
   { href:'/dashboard/cotacoes',     icon:'🔍', label:'Cotações', adminOnly:true },
@@ -21,20 +21,20 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/metas',        icon:'🎯', label:'Metas' },
   { href:'/dashboard/renovacoes',   icon:'🔄', label:'Renovações' },
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
-  { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique' },
+  { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique', equipePosVenda:true },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
-  { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE' },
-  { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar' },
-  { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing' },
+  { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE', adminOnly:true },
+  { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar', adminOnly:true },
+  { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing', adminOnly:true },
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', adminOnly:true },
   { href:'/dashboard/integracoes/meta', icon:'🔗', label:'Conectar Meta', adminOnly:true },
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
   { href:'/dashboard/automacoes',   icon:'⚡', label:'Automações', adminOnly:true },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
-  { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
+  { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', adminOnly:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
-  { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config' },
+  { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
   { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', adminOnly:true },
   { href:'/dashboard/configuracoes',icon:'⚙️', label:'Configurações', section:'Config', adminOnly:true },
 ]
@@ -51,6 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [showNotif, setShowNotif]         = useState(false)
   const [profile, setProfile]             = useState<any>(null)
   const [temAcessoFin, setTemAcessoFin]   = useState(false)
+  const [ehPosVenda, setEhPosVenda]       = useState(false)
   // Seções recolhidas — começa com Marketing/Integrações/Empresa/Config
   // recolhidos para reduzir densidade visual. Persiste em localStorage.
   const [secoesRecolhidas, setSecoesRecolhidas] = useState<Record<string,boolean>>(() => {
@@ -92,17 +93,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => clearInterval(interval)
   }, [user])
 
-  // Bloqueia acesso direto via URL para rotas adminOnly. Precisa estar
-  // ANTES de qualquer early return para respeitar as Rules of Hooks
-  // (caso contrário gera React error #310 — hooks chamados condicionalmente).
+  // Bloqueia acesso direto via URL para rotas adminOnly e equipe-only.
+  // Precisa estar ANTES de qualquer early return para respeitar as Rules of
+  // Hooks (caso contrário gera React error #310).
   useEffect(() => {
     if (!profile) return
     const isAdminUser = profile.role === 'admin' || profile.role === 'financeiro'
     const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
     if (rotaAdmin && !isAdminUser) {
       router.replace('/dashboard')
+      return
     }
-  }, [profile, pathname, router])
+    const rotaPosVenda = NAV.find(item => item.equipePosVenda && (pathname === item.href || pathname.startsWith(item.href + '/')))
+    if (rotaPosVenda && !isAdminUser && !ehPosVenda) {
+      router.replace('/dashboard')
+    }
+  }, [profile, ehPosVenda, pathname, router])
 
   // Registra navegação do usuário (auditoria). Usa o label do NAV quando
   // possível para que o log fique legível no painel de admin.
@@ -126,6 +132,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const { data: ac } = await supabase.from('financeiro_acessos').select('user_id').eq('user_id', userId).maybeSingle()
       setTemAcessoFin(!!ac)
     }
+    // Pertence à EQUIPE PÓS VENDA? (libera Autentique)
+    const { data: eq } = await supabase
+      .from('equipe_membros')
+      .select('equipes!inner(nome)')
+      .eq('user_id', userId)
+    const nomes = (eq || []).map((r: any) => (r.equipes?.nome || '').toString().toUpperCase().trim())
+    setEhPosVenda(nomes.some(n => n === 'EQUIPE PÓS VENDA' || n === 'EQUIPE POS VENDA'))
   }
 
   async function carregarBadges(userId: string) {
@@ -186,7 +199,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isAdmin = profile?.role === 'admin' || profile?.role === 'financeiro'
   const navVisible = NAV.filter(item => {
     if (item.adminOnly && !isAdmin) return false
-    // Financeiro só pra quem tem permissão
+    // Autentique: só admin ou membro da EQUIPE PÓS VENDA
+    if (item.equipePosVenda && !isAdmin && !ehPosVenda) return false
+    // Financeiro / DRE: agora é adminOnly (já filtrado acima); o flag
+    // temAcessoFin permanece como no-op para compat.
     if (item.href === '/dashboard/financeiro' && !temAcessoFin) return false
     return true
   })
