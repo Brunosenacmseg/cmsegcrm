@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function FunisPage() {
   const supabase = createClient()
   const router   = useRouter()
+  const searchParams = useSearchParams()
 
   const [profile, setProfile]     = useState<any>(null)
   const [funis, setFunis]         = useState<any[]>([])
@@ -78,6 +79,17 @@ export default function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
+
+  // Abre o card automaticamente quando navegado via ?card=<negocio_id>
+  useEffect(() => {
+    const cardId = searchParams?.get('card')
+    if (!cardId || !negocios.length) return
+    const neg = negocios.find(n => n.id === cardId)
+    if (!neg) return
+    if (neg.funil_id) setFunilAtivo(neg.funil_id)
+    setCardAtivo(neg)
+    setModalCard(true)
+  }, [searchParams, negocios])
   useEffect(() => {
     supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
