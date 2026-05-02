@@ -36,6 +36,8 @@ function FunisPage() {
   const [etapaHover, setEtapaHover] = useState<string | null>(null)
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
+  const [modoVisao, setModoVisao] = useState<'kanban'|'lista'>('kanban')
+  const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'>('recentes')
   // Filtro por data (criação ou fechamento) com período opcional
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
@@ -630,7 +632,19 @@ function FunisPage() {
     n.funil_id === funilAtivo &&
     (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus) &&
     passaFiltroData(n)
-  )
+  ).slice().sort((a,b) => {
+    if (ordenacao === 'recentes')   return String(b.created_at||'').localeCompare(String(a.created_at||''))
+    if (ordenacao === 'antigos')    return String(a.created_at||'').localeCompare(String(b.created_at||''))
+    if (ordenacao === 'az')         return String(a.titulo||'').localeCompare(String(b.titulo||''), 'pt-BR', { sensitivity:'base' })
+    /* za */                         return String(b.titulo||'').localeCompare(String(a.titulo||''), 'pt-BR', { sensitivity:'base' })
+  })
+
+  async function trocarVendedorNeg(negId: string, novoVendedor: string) {
+    if (!(profile?.role === 'admin' || profile?.role === 'lider')) return
+    const { error } = await supabase.from('negocios').update({ vendedor_id: novoVendedor || null }).eq('id', negId)
+    if (error) { alert('Erro ao trocar responsável: ' + error.message); return }
+    setNegocios(prev => prev.map(n => n.id === negId ? { ...n, vendedor_id: novoVendedor || null, users: usuarios.find(u => u.id === novoVendedor) || null } : n))
+  }
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
@@ -700,6 +714,28 @@ function FunisPage() {
           </>
         )}
         <div style={{flex:1}}/>
+
+        {/* Modo de visão: Kanban / Negociações */}
+        <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:2}}>
+          {([['kanban','🗂 Kanban'],['lista','📋 Negociações']] as const).map(([v,l]) => (
+            <button key={v} onClick={()=>setModoVisao(v as any)}
+              style={{padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,
+                background: modoVisao===v ? 'rgba(201,168,76,0.18)' : 'transparent',
+                color: modoVisao===v ? 'var(--gold)' : 'var(--text-muted)',
+                fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>{l}</button>
+          ))}
+        </div>
+
+        {/* Ordenação */}
+        <select value={ordenacao} onChange={e=>setOrdenacao(e.target.value as any)}
+          title="Ordenar por"
+          style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
+          <option value="recentes">🆕 Mais recentes</option>
+          <option value="antigos">📜 Mais antigos</option>
+          <option value="az">🔤 A-Z</option>
+          <option value="za">🔡 Z-A</option>
+        </select>
+
         {/* Filtro por status */}
         <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:2}}>
           {([
@@ -764,7 +800,7 @@ function FunisPage() {
       </div>
 
       {/* Kanban */}
-      {funiAtual && (
+      {funiAtual && modoVisao==='kanban' && (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
           {/* Barra de rolagem horizontal sincronizada no topo */}
           <div className="kanban-scroll kanban-scroll-top" ref={topScrollRef}
@@ -891,6 +927,68 @@ function FunisPage() {
             onMouseLeave={e=>(e.currentTarget.style.background='#ffffff')}>
             ›
           </button>
+        </div>
+      )}
+
+      {/* Visão lista de negociações */}
+      {funiAtual && modoVisao==='lista' && (
+        <div style={{flex:1,overflow:'auto',padding:'16px 20px'}}>
+          {negociosFunil.length === 0 && (
+            <div style={{textAlign:'center',color:'var(--text-muted)',padding:40,fontSize:13}}>
+              Nenhuma negociação encontrada com os filtros atuais.
+            </div>
+          )}
+          {negociosFunil.length > 0 && (
+            <div style={{background:'var(--card-bg)',border:'1px solid var(--border-soft)',borderRadius:12,overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1.4fr 1fr 1fr 1.2fr 1.4fr 60px',gap:0,padding:'10px 14px',background:'rgba(255,255,255,0.04)',borderBottom:'1px solid var(--border)',fontSize:11,fontWeight:600,letterSpacing:'0.5px',textTransform:'uppercase',color:'var(--text-muted)'}}>
+                <div>Título</div>
+                <div>Cliente</div>
+                <div>Etapa</div>
+                <div>Prêmio</div>
+                <div>Criado em</div>
+                <div>Responsável</div>
+                <div></div>
+              </div>
+              {negociosFunil.map(neg => {
+                const podeTrocar = profile?.role === 'admin' || profile?.role === 'lider'
+                return (
+                  <div key={neg.id} style={{display:'grid',gridTemplateColumns:'2fr 1.4fr 1fr 1fr 1.2fr 1.4fr 60px',gap:0,padding:'10px 14px',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,alignItems:'center'}}>
+                    <div onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
+                      style={{cursor:'pointer',color:'var(--gold)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8}}
+                      title="Abrir card">
+                      {neg.titulo}
+                    </div>
+                    <div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8}}>
+                      {neg.clientes?.nome || <span style={{color:'var(--text-muted)'}}>—</span>}
+                    </div>
+                    <div style={{color:'var(--text-muted)'}}>{neg.etapa}</div>
+                    <div style={{color:neg.premio?'var(--teal)':'var(--text-muted)',fontWeight:neg.premio?600:400}}>
+                      {neg.premio ? `R$ ${Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
+                    </div>
+                    <div style={{color:'var(--text-muted)',fontSize:11}}>
+                      {neg.created_at ? new Date(neg.created_at).toLocaleDateString('pt-BR') : '—'}
+                    </div>
+                    <div onClick={e=>e.stopPropagation()}>
+                      {podeTrocar ? (
+                        <select value={neg.vendedor_id || ''} onChange={e=>trocarVendedorNeg(neg.id, e.target.value)}
+                          style={{...inp,padding:'5px 8px',fontSize:11,background:'rgba(255,255,255,0.04)'}}>
+                          <option value="">— sem responsável —</option>
+                          {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                        </select>
+                      ) : (
+                        <span style={{color:'var(--text-muted)'}}>{neg.users?.nome || '—'}</span>
+                      )}
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <button onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
+                        title="Abrir card"
+                        style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'4px 8px',color:'var(--text-muted)',cursor:'pointer',fontSize:11}}>↗</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
