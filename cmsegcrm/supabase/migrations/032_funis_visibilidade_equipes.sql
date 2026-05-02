@@ -7,20 +7,20 @@
 --   - Com linhas               → só admin + membros das equipes listadas.
 --
 -- Mapeamento (conforme decisão de produto):
---   VENDA                            → Vendas Jundiaí, ADM
---   META + MULTICANAL                → SEP, Líder Jundiaí
---   FUNIL RECICLADO - VIDA           → Administradores
---   SAUDE                            → Administradores
---   RENOVAÇÕES                       → Vendas Jundiaí, ADM
---   ENDOSSO B2B                      → todos (sem linhas)
---   CONSÓRCIO                        → todos (sem linhas)
---   CONTA PORTO BANK                 → Administradores
---   CARTÃO PORTO                     → Administradores
---   FINANCIAMENTO E REFINANCIAMENTO  → todos (sem linhas)
---   FUNIL COBRANÇA                   → Cobrança
---   FUNIL RASTREADOR                 → ADM
---   ASSISTÊNCIA 24HRS                → ADM
---   SINISTRO                         → Sinistro
+--   VENDA                            → EQUIPE VENDAS JUNDIAI, EQUIPE ADM
+--   META + MULTICANAL                → EQUIPE SP, EQUIPE LEAD JUNDIAI
+--   FUNIL RECICLADO - VIDA           → ADMINISTRADORES
+--   SAUDE                            → ADMINISTRADORES
+--   RENOVAÇÕES                       → EQUIPE VENDAS JUNDIAI, EQUIPE ADM
+--   ENDOSSO B2B                      → ADMINISTRADORES
+--   CONSÓRCIO                        → ADMINISTRADORES
+--   CONTA PORTO BANK                 → ADMINISTRADORES
+--   CARTÃO PORTO                     → ADMINISTRADORES
+--   FINANCIAMENTO E REFINANCIAMENTO  → ADMINISTRADORES
+--   FUNIL COBRANÇA                   → EQUIPE COBRANÇA
+--   FUNIL RASTREADOR                 → EQUIPE RASTREADOR
+--   ASSISTÊNCIA 24HRS                → EQUIPE RASTREADOR
+--   SINISTRO                         → EQUIPE SINISTRO
 --
 -- Idempotente: pode rodar mais de uma vez.
 -- ═════════════════════════════════════════════════════════════════════
@@ -29,35 +29,39 @@
 insert into public.equipes (nome)
 select x.nome
 from (values
-  ('Vendas Jundiaí'),
-  ('ADM'),
-  ('SEP'),
-  ('Líder Jundiaí'),
-  ('Cobrança'),
-  ('Sinistro'),
-  ('Administradores')
+  ('EQUIPE VENDAS JUNDIAI'),
+  ('EQUIPE ADM'),
+  ('EQUIPE SP'),
+  ('EQUIPE LEAD JUNDIAI'),
+  ('EQUIPE COBRANÇA'),
+  ('EQUIPE RASTREADOR'),
+  ('EQUIPE SINISTRO'),
+  ('ADMINISTRADORES')
 ) as x(nome)
 where not exists (
   select 1 from public.equipes e where lower(e.nome) = lower(x.nome)
 );
 
--- 2) Helper local: aplica o mapeamento (funil_nome, equipe_nomes[]).
+-- 2) Aplica o mapeamento (funil_nome, equipe_nomes[]).
 --    Limpa as linhas atuais do funil e reinsere as corretas.
 do $$
 declare
   v_map jsonb := $json$
   [
-    {"funil":"VENDA",                            "equipes":["Vendas Jundiaí","ADM"]},
-    {"funil":"META + MULTICANAL",                "equipes":["SEP","Líder Jundiaí"]},
-    {"funil":"FUNIL RECICLADO - VIDA",           "equipes":["Administradores"]},
-    {"funil":"SAUDE",                            "equipes":["Administradores"]},
-    {"funil":"RENOVAÇÕES",                       "equipes":["Vendas Jundiaí","ADM"]},
-    {"funil":"CONTA PORTO BANK",                 "equipes":["Administradores"]},
-    {"funil":"CARTÃO PORTO",                     "equipes":["Administradores"]},
-    {"funil":"FUNIL COBRANÇA",                   "equipes":["Cobrança"]},
-    {"funil":"FUNIL RASTREADOR",                 "equipes":["ADM"]},
-    {"funil":"ASSISTÊNCIA 24HRS",                "equipes":["ADM"]},
-    {"funil":"SINISTRO",                         "equipes":["Sinistro"]}
+    {"funil":"VENDA",                            "equipes":["EQUIPE VENDAS JUNDIAI","EQUIPE ADM"]},
+    {"funil":"META + MULTICANAL",                "equipes":["EQUIPE SP","EQUIPE LEAD JUNDIAI"]},
+    {"funil":"FUNIL RECICLADO - VIDA",           "equipes":["ADMINISTRADORES"]},
+    {"funil":"SAUDE",                            "equipes":["ADMINISTRADORES"]},
+    {"funil":"RENOVAÇÕES",                       "equipes":["EQUIPE VENDAS JUNDIAI","EQUIPE ADM"]},
+    {"funil":"ENDOSSO B2B",                      "equipes":["ADMINISTRADORES"]},
+    {"funil":"CONSÓRCIO",                        "equipes":["ADMINISTRADORES"]},
+    {"funil":"CONTA PORTO BANK",                 "equipes":["ADMINISTRADORES"]},
+    {"funil":"CARTÃO PORTO",                     "equipes":["ADMINISTRADORES"]},
+    {"funil":"FINANCIAMENTO E REFINANCIAMENTO",  "equipes":["ADMINISTRADORES"]},
+    {"funil":"FUNIL COBRANÇA",                   "equipes":["EQUIPE COBRANÇA"]},
+    {"funil":"FUNIL RASTREADOR",                 "equipes":["EQUIPE RASTREADOR"]},
+    {"funil":"ASSISTÊNCIA 24HRS",                "equipes":["EQUIPE RASTREADOR"]},
+    {"funil":"SINISTRO",                         "equipes":["EQUIPE SINISTRO"]}
   ]
   $json$::jsonb;
   v_item     jsonb;
@@ -99,18 +103,6 @@ begin
     end loop;
   end loop;
 end$$;
-
--- 3) Funis que devem ficar "todos têm acesso" (ENDOSSO B2B, CONSÓRCIO,
---    FINANCIAMENTO E REFINANCIAMENTO): garantem zero linhas em funis_equipes.
-delete from public.funis_equipes
-where funil_id in (
-  select id from public.funis
-  where lower(nome) in (
-    'endosso b2b',
-    'consórcio',
-    'financiamento e refinanciamento'
-  )
-);
 
 -- Conferência (rode após aplicar):
 -- select f.nome, coalesce(string_agg(e.nome, ', '), '— TODOS —') as equipes
