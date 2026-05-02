@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 declare global {
   interface Window { XLSX: any; JSZip: any }
@@ -221,6 +222,7 @@ export default function AllianzPage() {
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',background:'var(--bg-soft)',position:'sticky',top:0,zIndex:5}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>🛡️ Integração Allianz</div>
+        <Link href="/dashboard/integracoes/allianz/dados" className="btn-secondary" style={{textDecoration:'none',marginRight:8}}>📊 Ver dados importados</Link>
         {arquivos.length > 0 && (
           <button className="btn-secondary" onClick={limpar} disabled={importandoTudo}>Limpar tudo</button>
         )}
