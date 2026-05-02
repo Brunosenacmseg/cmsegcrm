@@ -236,7 +236,7 @@ export default function TelefonePage() {
           </select>
         )}
         <div style={{display:'flex',gap:4}}>
-          {(['discador','andamento','historico'] as const).map(a=>(
+          {(['discador','andamento','historico'] as const).filter(a => !(a==='andamento' && profile?.role === 'corretor')).map(a=>(
             <button key={a} onClick={()=>setAba(a)} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:aba===a?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:aba===a?'var(--gold)':'var(--text-muted)',borderColor:aba===a?'var(--gold)':'var(--border)',position:'relative'}}>
               {a==='discador'?'📱 Discador':a==='andamento'?'🔴 Em andamento':'📋 Histórico'}
               {a==='andamento'&&emAndamento.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'var(--red)',color:'#fff',fontSize:9,fontWeight:700,borderRadius:10,padding:'1px 5px'}}>{emAndamento.length}</span>}
@@ -374,8 +374,8 @@ export default function TelefonePage() {
           </div>
         )}
 
-        {/* EM ANDAMENTO */}
-        {aba==='andamento' && (
+        {/* EM ANDAMENTO — restrito a admin/líder */}
+        {aba==='andamento' && profile?.role !== 'corretor' && (
           <div style={{maxWidth:700}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:20}}>🔴 Ligações em andamento</div>
             {emAndamento.length===0 ? (
