@@ -15,6 +15,7 @@ const log      = require('./lib/log')
 const browser  = require('./lib/browser')
 const consulta = require('./lib/consulta')
 const cotacao  = require('./lib/cotacao')
+const suhai    = require('./lib/suhai')
 const supa     = require('./lib/supa')
 
 const app  = express()
@@ -214,6 +215,34 @@ async function capturarPagina(page) {
   })
 }
 
+// DEBUG: abre http://suhai.link/rk6s e devolve a estrutura dos campos.
+// Usado pra mapear os seletores reais antes de implementar a cotação Suhai.
+app.post('/debug-suhai', async (req, res) => {
+  const url = (req.body && req.body.url) || 'http://suhai.link/rk6s'
+  let session = null
+  try {
+    session = await browser.newSession()
+    const page = session.page
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.waitForTimeout(2500)
+
+    const info = await capturarPagina(page)
+
+    // Tira screenshot pra inspeção visual
+    const dir = process.env.LOG_DIR || './logs'
+    fs.mkdirSync(dir, { recursive: true })
+    const screenshotPath = path.join(dir, `debug-suhai-${Date.now()}.png`)
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {})
+
+    res.json({ ok: true, screenshot_path: screenshotPath, ...info })
+  } catch (err) {
+    log.error('Erro em /debug-suhai', { erro: err.message })
+    res.status(500).json({ ok: false, erro: err.message })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
 // Consulta rápida por CPF (usado pelo CRM para auto-preencher cotação)
 app.post('/consultar-cpf', async (req, res) => {
   const { cpf } = req.body || {}
@@ -337,7 +366,7 @@ app.post(['/','/cotacao'], async (req, res) => {
   const { produto, dados } = req.body || {}
   if (!dados) return res.status(400).json({ ok: false, erro: 'Dados obrigatórios' })
 
-  if (produto && produto !== 'carro' && produto !== 'auto') {
+  if (produto && !['carro','auto','suhai'].includes(produto)) {
     return res.status(400).json({ ok: false, erro: `Produto '${produto}' não suportado` })
   }
 
@@ -345,7 +374,9 @@ app.post(['/','/cotacao'], async (req, res) => {
   const ag = require('./lib/aggilizador')
   try {
     session = await browser.newSession()
-    const r = await cotacao.cotacaoAuto(session.page, dados)
+    const r = produto === 'suhai'
+      ? await suhai.cotacaoSuhai(session.page, dados)
+      : await cotacao.cotacaoAuto(session.page, dados)
     res.json(r)
   } catch (err) {
     log.error('Erro em /cotacao', { erro: err.message })
@@ -368,7 +399,7 @@ app.post('/cotacao-async', async (req, res) => {
   const { cotacao_id, produto, dados } = req.body || {}
   if (!cotacao_id) return res.status(400).json({ ok: false, erro: 'cotacao_id obrigatório' })
   if (!dados)      return res.status(400).json({ ok: false, erro: 'dados obrigatórios' })
-  if (produto && produto !== 'carro' && produto !== 'auto') {
+  if (produto && !['carro','auto','suhai'].includes(produto)) {
     return res.status(400).json({ ok: false, erro: `Produto '${produto}' não suportado` })
   }
   if (!supa.configurado()) {
@@ -379,19 +410,21 @@ app.post('/cotacao-async', async (req, res) => {
   res.status(202).json({ ok: true, status: 'iniciado', cotacao_id })
 
   // Processa em background sem bloquear a resposta.
-  setImmediate(() => processarCotacaoAsync(cotacao_id, dados).catch(err => {
+  setImmediate(() => processarCotacaoAsync(cotacao_id, dados, produto).catch(err => {
     log.error('Erro fatal em processarCotacaoAsync', { erro: err.message, cotacao_id })
   }))
 })
 
-async function processarCotacaoAsync(cotacao_id, dados) {
+async function processarCotacaoAsync(cotacao_id, dados, produto) {
   const sb = supa.get()
   const ag = require('./lib/aggilizador')
   let session = null
   log.info('Iniciando cotação async', { cotacao_id })
   try {
     session = await browser.newSession()
-    const resultado = await cotacao.cotacaoAuto(session.page, dados)
+    const resultado = produto === 'suhai'
+      ? await suhai.cotacaoSuhai(session.page, dados)
+      : await cotacao.cotacaoAuto(session.page, dados)
 
     // Upload do screenshot pro storage do Supabase (se vier)
     let screenshotUrl = null
