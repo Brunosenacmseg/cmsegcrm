@@ -10,6 +10,66 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
+// ─── Webservice Tokio Marine ─────────────────────────────────
+// Documentação: dois endpoints — Login (gera token) + recursos.
+// Credenciais default vêm do .env; podemos sobrescrever via ENV.
+const TOKIO_BASE        = 'https://servicos.tokiomarine.com.br/wscorretor/rest/Corretor'
+const TOKIO_USER        = process.env.TOKIO_USER        || ''
+const TOKIO_PASSWORD    = process.env.TOKIO_PASSWORD    || ''
+const TOKIO_SERVICE_KEY = process.env.TOKIO_SERVICE_KEY || ''
+
+// Cache simples do token (vive por instância da Lambda)
+let tokenCache: { token: string; exp: number } | null = null
+
+async function tokioLogin(force = false): Promise<string> {
+  if (!force && tokenCache && tokenCache.exp > Date.now()) return tokenCache.token
+  if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
+    throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
+  }
+  const r = await fetch(`${TOKIO_BASE}/Login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({
+      user: TOKIO_USER,
+      password: TOKIO_PASSWORD,
+      serviceKey: TOKIO_SERVICE_KEY,
+    }),
+    signal: AbortSignal.timeout(25000),
+  })
+  if (!r.ok) throw new Error(`Tokio Login HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
+  const txt = await r.text()
+  // Resposta pode ser JSON {"token":"..."} ou string crua
+  let token = ''
+  try {
+    const j = JSON.parse(txt)
+    token = j.token || j.access_token || j.accessToken || j.Token || ''
+  } catch {
+    token = txt.replace(/^"|"$/g, '').trim()
+  }
+  if (!token) throw new Error(`Tokio Login: token não encontrado na resposta: ${txt.slice(0,200)}`)
+  tokenCache = { token, exp: Date.now() + 25 * 60 * 1000 }   // 25 min de validade
+  return token
+}
+
+async function tokioGet(servico: string, params: Record<string,string|number> = {}): Promise<string> {
+  let token = await tokioLogin()
+  const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
+  const url = `${TOKIO_BASE}/${servico}${qs ? `?${qs}` : ''}`
+  const headers = (t: string) => ({
+    'Accept': 'application/xml, application/json, text/xml',
+    'Authorization': `Bearer ${t}`,
+    'token': t,
+  })
+  let r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
+  if (r.status === 401) {
+    // Token expirou — refaz login uma vez
+    token = await tokioLogin(true)
+    r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
+  }
+  if (!r.ok) throw new Error(`Tokio ${servico} HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
+  return await r.text()
+}
+
 // ─── Helpers de XML ──────────────────────────────────────────
 // Parser leve (regex) — aceita namespaces, CDATA e atributos.
 // Os nomes de tag são case-insensitive porque a documentação da
@@ -522,12 +582,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         seguradora: 'Tokio Marine',
-        modo: 'Upload manual de XML',
+        modo: 'Upload XML + Webservice REST',
         tipos_aceitos: ['APOLICES (inclui endossos)', 'PARCELAS', 'COMISSOES'],
         supabase_url:  process.env.NEXT_PUBLIC_SUPABASE_URL ? 'configurado' : 'FALTA',
         supabase_role: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configurado' : 'FALTA',
+        ws_user:        TOKIO_USER ? `sim (${TOKIO_USER.slice(0,8)}…)` : 'NÃO CONFIGURADO',
+        ws_password:    TOKIO_PASSWORD ? 'sim' : 'NÃO CONFIGURADA',
+        ws_service_key: TOKIO_SERVICE_KEY ? `sim (${TOKIO_SERVICE_KEY.length} chars)` : 'NÃO CONFIGURADA',
         endossos_cancelamento: 'desconsidera valores quando qtdeParcelas=0 e tpComplemento for de cancelamento',
       })
+    }
+
+    if (action === 'testar_login') {
+      try {
+        const token = await tokioLogin(true)
+        return NextResponse.json({ ok: true, token_preview: token.slice(0,20) + '…', expira_em: '~25min' })
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 })
+      }
+    }
+
+    // Busca dados via webservice. params: { servico: 'getApolice'|'getParcela'|'getExtrato', ...filtros }
+    if (action === 'sincronizar') {
+      const servicoMap: Record<string, { endpoint: string; tipo: string }> = {
+        APOLICES:  { endpoint: 'getApolice',   tipo: 'APOLICES'  },
+        PARCELAS:  { endpoint: 'getParcela',   tipo: 'PARCELAS'  },
+        COMISSOES: { endpoint: 'getExtrato',   tipo: 'COMISSOES' },
+        SINISTRO:  { endpoint: 'getSinistro',  tipo: 'OUTRO'     },
+        RENOVACAO: { endpoint: 'getRenovacao', tipo: 'OUTRO'     },
+        PENDENCIA: { endpoint: 'getPendencia', tipo: 'OUTRO'     },
+        RECUSA:    { endpoint: 'getRecusa',    tipo: 'APOLICES'  },
+      }
+      const cfg = servicoMap[String(params.servico||'').toUpperCase()]
+      if (!cfg) return NextResponse.json({ error: 'parametro `servico` invalido. Use APOLICES|PARCELAS|COMISSOES|SINISTRO|RENOVACAO|PENDENCIA|RECUSA' }, { status: 400 })
+
+      const filtros: Record<string,string> = {}
+      if (params.dataInicio) filtros.dataInicio = String(params.dataInicio)
+      if (params.dataFim)    filtros.dataFim    = String(params.dataFim)
+      if (params.numApolice) filtros.numApolice = String(params.numApolice)
+
+      try {
+        const xml = await tokioGet(cfg.endpoint, filtros)
+        const nome = `tokio-${cfg.endpoint}-${Date.now()}.xml`
+        // Se o servico nao tem parser dedicado, apenas devolve o conteúdo para inspecao
+        if (cfg.tipo === 'OUTRO') {
+          return NextResponse.json({ ok: true, servico: cfg.endpoint, tamanho: xml.length, preview: xml.slice(0,1200) })
+        }
+        const resultado = await processarArquivo(nome, xml, cfg.tipo)
+        return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, ...resultado })
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 })
+      }
     }
 
     if (action === 'processar_upload') {

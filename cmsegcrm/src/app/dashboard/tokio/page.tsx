@@ -70,6 +70,32 @@ export default function TokioPage() {
     }
   }
 
+  async function sincronizarWS(servico: string) {
+    setProcessando(true); setResultado(null)
+    try {
+      const r = await fetch('/api/tokio/sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sincronizar', servico }),
+      })
+      const d = await r.json()
+      if (!r.ok || d.error) setResultado({ erro: d.error || `HTTP ${r.status}` })
+      else setResultado({ ok: true, ...d })
+      await carregarHistorico()
+    } catch (err: any) {
+      setResultado({ erro: err.message || 'Erro inesperado' })
+    } finally { setProcessando(false) }
+  }
+
+  async function testarLogin() {
+    const r = await fetch('/api/tokio/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'testar_login' }),
+    })
+    const d = await r.json()
+    if (!r.ok || d.error) setResultado({ erro: d.error })
+    else setResultado({ ok: true, mensagem: `Login OK · token ${d.token_preview}` })
+  }
+
   async function testarConfig() {
     const r = await fetch('/api/tokio/sync', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -97,9 +123,14 @@ export default function TokioPage() {
           ))}
         </div>
         {isAdmin && (
-          <button onClick={testarConfig} style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
-            🔍 Testar Config
-          </button>
+          <>
+            <button onClick={testarLogin} disabled={processando} style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+              🔐 Testar Login WS
+            </button>
+            <button onClick={testarConfig} style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+              🔍 Testar Config
+            </button>
+          </>
         )}
       </div>
 
@@ -134,6 +165,31 @@ export default function TokioPage() {
 
         {aba === 'upload' && (
           <>
+            {isAdmin && (
+              <div className="card" style={{marginBottom:20}}>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:6}}>🌐 Sincronizar via Webservice</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14, lineHeight:1.6}}>
+                  Busca os dados direto da API REST da Tokio Marine — autentica e processa automaticamente.
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10}}>
+                  {[
+                    { key:'APOLICES',  icon:'📋', label:'Apólices/Endossos' },
+                    { key:'PARCELAS',  icon:'💳', label:'Parcelas' },
+                    { key:'COMISSOES', icon:'💰', label:'Extrato Comissões' },
+                    { key:'SINISTRO',  icon:'🚨', label:'Sinistros' },
+                    { key:'RENOVACAO', icon:'🔄', label:'Renovações' },
+                    { key:'PENDENCIA', icon:'⚠️', label:'Pendências' },
+                    { key:'RECUSA',    icon:'❌', label:'Recusas' },
+                  ].map(s => (
+                    <button key={s.key} disabled={processando} onClick={()=>sincronizarWS(s.key)}
+                      style={{padding:'10px',borderRadius:10,fontSize:12,cursor:'pointer',border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.06)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif'}}>
+                      {s.icon} {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="card" style={{marginBottom:20}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:6}}>📤 Importar arquivo XML</div>
               <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14, lineHeight:1.6}}>
