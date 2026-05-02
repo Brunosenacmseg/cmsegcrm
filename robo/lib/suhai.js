@@ -347,8 +347,15 @@ async function cotacaoSuhai(page, dados) {
   log.info('Suhai: estado pre-Cotar', preCotar)
 
   // ── Cotar ───────────────────────────────────────────────────────────
-  if (!await clicarBotao(page, '#btnCalcular')) {
-    if (!await clicarBotao(page, 'Cotar')) {
+  // Click nativo Playwright (mais confiável pra ng-click do que .click() em evaluate)
+  let cotarOk = false
+  try {
+    await page.click('#btnCalcular', { timeout: 5000 })
+    cotarOk = true
+  } catch {
+    cotarOk = await clicarBotao(page, '#btnCalcular') || await clicarBotao(page, 'Cotar')
+  }
+  if (!cotarOk) {
       // Dump do estado da página pra debug
       const estado = await page.evaluate(() => {
         const visivel = e => {
@@ -367,16 +374,21 @@ async function cotacaoSuhai(page, dados) {
       })
       log.warn('Suhai: estado no momento da falha', estado)
       throw new Error('Suhai: botão "Cotar" não encontrado (ver logs/estado)')
-    }
   }
 
-  // Aguarda resultado: prêmio em R$ aparecer ou tela de resultado.
+  // Aguarda resultado: tela muda da pergunta "principal condutor?" pra resultado.
   await page.waitForFunction(
-    () => /R\$\s*[\d\.,]+/.test(document.body.innerText) &&
-          document.body.innerText.toLowerCase().includes('pr'),
+    () => {
+      const t = document.body.innerText
+      // Mudou da pergunta final E tem R$
+      return !/principal\s+condutor\?\s*\n\s*sim/i.test(t) && /R\$\s*[\d\.,]+/.test(t)
+    },
     { timeout: 90000 }
   ).catch(() => {})
-  await page.waitForTimeout(2000)
+  await page.waitForTimeout(2500)
+  // Log pós-click pra debug
+  const posCotar = await page.evaluate(() => ({ url: location.href, texto: document.body.innerText.slice(0, 800) }))
+  log.info('Suhai: estado pos-Cotar', posCotar)
 
   const resultado = await page.evaluate(() => {
     const txt = document.body.innerText
