@@ -2186,6 +2186,73 @@ create trigger contas_pagar_atualizado before update on public.contas_pagar
   for each row execute procedure public.contas_pagar_set_atualizado();
 
 -- ═════════════════════════════════════════════════════════════════════
+-- 26. CLIENTE - CAMPOS EXTRAS (de 028)
+-- ═════════════════════════════════════════════════════════════════════
+
+alter table public.clientes
+  add column if not exists aniversario      text,
+  add column if not exists cliente_desde    date,
+  add column if not exists vencimento_cnh   date,
+  add column if not exists ativo            boolean default true,
+  add column if not exists receber_email    boolean default true,
+  add column if not exists profissao        text,
+  add column if not exists ramo             text,
+  add column if not exists renda_mensal     numeric(12,2),
+  add column if not exists estipulantes     text,
+  add column if not exists filial           text,
+  add column if not exists parentesco       text,
+  add column if not exists pasta_cliente    text;
+
+create index if not exists idx_clientes_ativo on public.clientes(ativo) where ativo = true;
+create index if not exists idx_clientes_venc_cnh on public.clientes(vencimento_cnh) where vencimento_cnh is not null;
+create index if not exists idx_clientes_cliente_desde on public.clientes(cliente_desde);
+
+-- ═════════════════════════════════════════════════════════════════════
+-- 27. NEGOCIOS - CAMPOS EXTRAS RD/CRM (de 029)
+-- ═════════════════════════════════════════════════════════════════════
+
+alter table public.negocios
+  add column if not exists valor_unico            numeric(12,2),
+  add column if not exists valor_recorrente       numeric(12,2),
+  add column if not exists empresa                text,
+  add column if not exists cargo_contato          text,
+  add column if not exists campanha               text,
+  add column if not exists fonte_origem           text,
+  add column if not exists data_primeiro_contato  timestamptz,
+  add column if not exists data_ultimo_contato    timestamptz,
+  add column if not exists previsao_fechamento    date,
+  add column if not exists data_proxima_tarefa    timestamptz,
+  add column if not exists pausada                boolean default false,
+  add column if not exists anotacao_motivo_perda  text,
+  add column if not exists seguradora_atual       text,
+  add column if not exists vigencia_seguro_ini    date,
+  add column if not exists vigencia_seguro_fim    date,
+  add column if not exists tipo_seguro            text,
+  add column if not exists operadora              text,
+  add column if not exists placa_veiculo          text,
+  add column if not exists modelo_veiculo         text,
+  add column if not exists rastreador             text,
+  add column if not exists tipo_cnpj              text,
+  add column if not exists funcionario_clt        text,
+  add column if not exists particular             boolean,
+  add column if not exists possui_plano           boolean,
+  add column if not exists plano_atual            text,
+  add column if not exists motivo_troca_plano     text,
+  add column if not exists mensalidade_atual      numeric(12,2),
+  add column if not exists idade_beneficiarios    text,
+  add column if not exists possui_hospital_pref   boolean,
+  add column if not exists qual_hospital          text,
+  add column if not exists cpf_2                  text,
+  add column if not exists cep_negocio            text,
+  add column if not exists email_negocio          text,
+  add column if not exists comissao_valor         numeric(12,2);
+
+create index if not exists idx_negocios_empresa     on public.negocios(empresa)     where empresa is not null;
+create index if not exists idx_negocios_placa       on public.negocios(placa_veiculo) where placa_veiculo is not null;
+create index if not exists idx_negocios_pausada     on public.negocios(pausada)     where pausada = true;
+create index if not exists idx_negocios_data_prox_t on public.negocios(data_proxima_tarefa) where data_proxima_tarefa is not null;
+
+-- ═════════════════════════════════════════════════════════════════════
 -- FIM. Para limpar dados (clientes, funis, negociações) antes de
 -- reimportar do RD Station / Meta, use o arquivo:
 --   supabase/sql_helpers/limpar_dados.sql

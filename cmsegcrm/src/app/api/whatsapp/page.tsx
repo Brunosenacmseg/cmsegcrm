@@ -211,7 +211,7 @@ export default function WhatsAppPage() {
         <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
           <div className="card" style={{textAlign:'center',padding:'50px 40px',maxWidth:440}}>
             <div style={{fontSize:56,marginBottom:16}}>💬</div>
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM.segCRM</div>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM Seguros</div>
             <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:28,lineHeight:1.6}}>
               Conecte seu número do WhatsApp para enviar e receber mensagens diretamente do CRM, vinculadas aos seus clientes.
             </div>

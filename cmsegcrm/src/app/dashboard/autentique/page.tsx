@@ -181,9 +181,9 @@ export default function AutentiquePage() {
       </div>
 
       {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModal(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:600,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:600,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>+ Enviar documento para assinatura</div>
 
             <div style={{marginBottom:14}}>
@@ -201,14 +201,14 @@ export default function AutentiquePage() {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
               <div>
                 <label style={lbl}>Vincular a negócio (opcional)</label>
-                <select value={form.negocio_id} onChange={e=>setForm(f=>({...f,negocio_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={form.negocio_id} onChange={e=>setForm(f=>({...f,negocio_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="">— nenhum —</option>
                   {negocios.map(n => <option key={n.id} value={n.id}>{n.titulo} {n.clientes?.nome ? `· ${n.clientes.nome}` : ''}</option>)}
                 </select>
               </div>
               <div>
                 <label style={lbl}>Vincular a cliente (opcional)</label>
-                <select value={form.cliente_id} onChange={e=>setForm(f=>({...f,cliente_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={form.cliente_id} onChange={e=>setForm(f=>({...f,cliente_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="">— nenhum —</option>
                   {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>

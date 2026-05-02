@@ -252,7 +252,7 @@ export default function MensagensPage() {
                   return (
                     <div key={m.id} style={{display:'flex',justifyContent:minha?'flex-end':'flex-start',alignItems:'flex-end',gap:8}}>
                       {!minha && <Avatar nome={autor?.nome||conversa.nome} avatarUrl={autor?.avatar_url||conversa.avatar_url||undefined} role={autor?.role||conversa.role||undefined} size={28} />}
-                      <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:minha?'12px 12px 4px 12px':'12px 12px 12px 4px',background:minha?'rgba(201,168,76,0.15)':'rgba(255,255,255,0.06)',border:`1px solid ${minha?'rgba(201,168,76,0.25)':'rgba(255,255,255,0.08)'}`}}>
+                      <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:minha?'12px 12px 4px 12px':'12px 12px 12px 4px',background:minha?'#dcf8c6':'#ffffff',color:'#1a1a2e',border:`1px solid ${minha?'#bcdc99':'#e5e7eb'}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)'}}>
                         {/* Em grupo, mostra nome do autor pra mensagens dos outros */}
                         {!minha && conversa.tipo === 'grupo' && autor?.nome && (
                           <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',marginBottom:2}}>{autor.nome}</div>
@@ -290,9 +290,9 @@ export default function MensagensPage() {
 
       {/* Modal: criar novo grupo */}
       {modalGrupo && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalGrupo(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>➕ Novo grupo</div>
 
             <div style={{marginBottom:16}}>

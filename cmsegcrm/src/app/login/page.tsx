@@ -48,10 +48,10 @@ export default function LoginPage() {
       <div className="fade-up" style={{width:'100%', maxWidth:420, padding:'0 20px'}}>
         <div style={{textAlign:'center', marginBottom:36}}>
           <div style={{fontFamily:'DM Serif Display, serif', fontSize:32, color:'var(--gold)', marginBottom:4}}>
-            CM.segCRM
+            CM Seguros
           </div>
-          <div style={{fontSize:12, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase'}}>
-            Corretora de Seguros
+          <div style={{fontSize:12, color:'var(--text-muted)', letterSpacing:1, textTransform:'uppercase', fontWeight:700}}>
+            Transformando vidas através do seguro
           </div>
         </div>
 

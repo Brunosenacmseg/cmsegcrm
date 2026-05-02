@@ -332,13 +332,13 @@ export default function ConfiguracoesPage() {
                 Campos extras que aparecem no card da negociação. Texto, número, data, lista (select), checkbox ou textarea.
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 2fr 1fr 1fr 1fr auto',gap:8}}>
-                <select value={novoCampo.entidade} onChange={e=>setNovoCampo((n:any)=>({...n,entidade:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={novoCampo.entidade} onChange={e=>setNovoCampo((n:any)=>({...n,entidade:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="negocio">Negócio</option>
                   <option value="cliente">Cliente</option>
                 </select>
                 <input value={novoCampo.nome} onChange={e=>setNovoCampo((n:any)=>({...n,nome:e.target.value,chave:slugify(e.target.value)}))} placeholder='Nome do campo (ex: "Modelo do veículo")' style={inp} />
                 <input value={novoCampo.chave} onChange={e=>setNovoCampo((n:any)=>({...n,chave:slugify(e.target.value)}))} placeholder="chave_slug" style={{...inp,fontFamily:'monospace',fontSize:11}} />
-                <select value={novoCampo.tipo} onChange={e=>setNovoCampo((n:any)=>({...n,tipo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={novoCampo.tipo} onChange={e=>setNovoCampo((n:any)=>({...n,tipo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="texto">Texto</option>
                   <option value="textarea">Texto longo</option>
                   <option value="numero">Número</option>
@@ -374,7 +374,7 @@ export default function ConfiguracoesPage() {
                             <td style={{padding:'6px 4px'}}><input value={editCampo.nome} onChange={e=>setEditCampo((p:any)=>({...p,nome:e.target.value}))} style={inp} /></td>
                             <td style={{padding:'6px 4px',fontFamily:'monospace',fontSize:11}}>{c.chave}</td>
                             <td style={{padding:'6px 4px'}}>
-                              <select value={editCampo.tipo} onChange={e=>setEditCampo((p:any)=>({...p,tipo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                              <select value={editCampo.tipo} onChange={e=>setEditCampo((p:any)=>({...p,tipo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                                 <option value="texto">Texto</option><option value="textarea">Texto longo</option>
                                 <option value="numero">Número</option><option value="data">Data</option>
                                 <option value="select">Lista</option><option value="boolean">Sim/Não</option>
@@ -466,9 +466,9 @@ export default function ConfiguracoesPage() {
       </div>
 
       {modalTemplate && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalTemplate(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>
               {editTemplate ? '✎ Editar template' : '+ Novo template de email'}
             </div>
@@ -480,7 +480,7 @@ export default function ConfiguracoesPage() {
               </div>
               <div>
                 <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Categoria</label>
-                <select value={formTemplate.categoria} onChange={e=>setFormTemplate((f:any)=>({...f,categoria:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={formTemplate.categoria} onChange={e=>setFormTemplate((f:any)=>({...f,categoria:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   <option value="assinatura">Assinatura</option>
                   <option value="renovacao">Renovação</option>
                   <option value="cobranca">Cobrança</option>

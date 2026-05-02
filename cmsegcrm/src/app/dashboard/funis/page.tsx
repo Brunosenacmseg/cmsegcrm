@@ -23,6 +23,8 @@ export default function FunisPage() {
   const [etapaHover, setEtapaHover] = useState<string | null>(null)
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
+  // Filtro por data (criação ou fechamento) com período opcional
+  const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
 
   // Campos personalizados (definição do admin)
   const [camposPers, setCamposPers] = useState<any[]>([])
@@ -522,9 +524,27 @@ export default function FunisPage() {
   }
 
   const funiAtual = funis.find(f => f.id === funilAtivo)
+
+  // Filtro por data (de/ate) sobre criacao ou fechamento.
+  // Ate inclui o dia inteiro (23:59:59).
+  function passaFiltroData(n: any): boolean {
+    if (filtroData.campo === 'sem') return true
+    const fonte = filtroData.campo === 'criacao' ? n.created_at : n.data_fechamento
+    if (!fonte) return false
+    const ts = new Date(fonte).getTime()
+    if (filtroData.de) {
+      if (ts < new Date(filtroData.de + 'T00:00:00').getTime()) return false
+    }
+    if (filtroData.ate) {
+      if (ts > new Date(filtroData.ate + 'T23:59:59').getTime()) return false
+    }
+    return true
+  }
+
   const negociosFunil = negocios.filter(n =>
     n.funil_id === funilAtivo &&
-    (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus)
+    (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus) &&
+    passaFiltroData(n)
   )
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
@@ -555,7 +575,7 @@ export default function FunisPage() {
           {seletorAberto && (
             <>
               <div onClick={()=>setSeletorAberto(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
-              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,right:0,zIndex:50,background:'#0e2040',border:'1px solid var(--border)',borderRadius:10,boxShadow:'var(--shadow-lg)',maxHeight:'70vh',overflow:'auto',padding:6}}>
+              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,right:0,zIndex:50,background:'#ffffff',border:'1px solid var(--border)',borderRadius:10,boxShadow:'var(--shadow-lg)',maxHeight:'70vh',overflow:'auto',padding:6}}>
                 {funis.length === 0 && (
                   <div style={{padding:20,textAlign:'center',color:'var(--text-muted)',fontSize:12}}>
                     Nenhum funil disponível pra você. {profile?.role==='admin' ? 'Crie em ⚙ Configurar funis.' : 'Peça ao admin pra liberar.'}
@@ -612,6 +632,30 @@ export default function FunisPage() {
             </button>
           ))}
         </div>
+
+        {/* Filtro por data — campo + período */}
+        <div style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:'2px 4px'}}>
+          <select value={filtroData.campo} onChange={e=>setFiltroData(f=>({...f,campo:e.target.value as any}))}
+            style={{border:'none',background:'transparent',color:filtroData.campo==='sem'?'var(--text-muted)':'var(--gold)',fontSize:11,fontWeight:600,padding:'4px 6px',cursor:'pointer',outline:'none'}}>
+            <option value="sem">📅 Sem filtro de data</option>
+            <option value="criacao">🆕 Por criação</option>
+            <option value="fechamento">🏁 Por fechamento</option>
+          </select>
+          {filtroData.campo !== 'sem' && (
+            <>
+              <input type="date" value={filtroData.de} onChange={e=>setFiltroData(f=>({...f,de:e.target.value}))}
+                title="De" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
+              <span style={{fontSize:10,color:'var(--text-muted)'}}>até</span>
+              <input type="date" value={filtroData.ate} onChange={e=>setFiltroData(f=>({...f,ate:e.target.value}))}
+                title="Até" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
+              {(filtroData.de || filtroData.ate) && (
+                <button onClick={()=>setFiltroData({campo:'sem',de:'',ate:''})}
+                  title="Limpar filtro" style={{border:'none',background:'transparent',color:'var(--red)',cursor:'pointer',fontSize:14,padding:'0 4px'}}>×</button>
+              )}
+            </>
+          )}
+        </div>
+
         {profile?.role === 'admin' && (
           <button onClick={()=>router.push('/dashboard/funis/configurar')}
             style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
@@ -704,6 +748,15 @@ export default function FunisPage() {
                         {neg.premio ? <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span> : <span/>}
                         {neg.produto && <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 6px',borderRadius:8}}>{neg.produto}</span>}
                       </div>
+
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6,gap:6,fontSize:9,color:'var(--text-muted)',borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:5}}>
+                        {neg.created_at && (
+                          <span title="Data de criação">🆕 {new Date(neg.created_at).toLocaleDateString('pt-BR')}</span>
+                        )}
+                        {neg.data_fechamento && (
+                          <span title="Data de fechamento" style={{color:isGanho?'var(--teal)':isPerdido?'var(--red)':'var(--text-muted)'}}>🏁 {new Date(neg.data_fechamento).toLocaleDateString('pt-BR')}</span>
+                        )}
+                      </div>
                     </div>
                     )
                   })}
@@ -743,9 +796,9 @@ export default function FunisPage() {
 
       {/* Modal Novo Negócio */}
       {modalNovo && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalNovo(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:20}}>+ Novo Card — {funilModal?.nome}</div>
 
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Título *</label>
@@ -764,7 +817,7 @@ export default function FunisPage() {
                 <>
                   <input value={clienteBusca} onChange={e=>{setClienteBusca(e.target.value);buscarClientes(e.target.value,setClientesRes)}} placeholder="🔍 Buscar cliente..." style={inp} />
                   {clientesRes.length > 0 && (
-                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,zIndex:10,maxHeight:160,overflow:'auto'}}>
+                    <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,zIndex:10,maxHeight:160,overflow:'auto'}}>
                       {clientesRes.map(c=>(
                         <div key={c.id} onClick={()=>{setClienteSel(c);setClienteBusca(c.nome);setClientesRes([])}}
                           style={{padding:'8px 14px',cursor:'pointer',fontSize:13}}
@@ -787,14 +840,14 @@ export default function FunisPage() {
             </div>
 
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Etapa</label>
-              <select value={formNovo.etapa} onChange={e=>setFormNovo(f=>({...f,etapa:e.target.value}))} style={{...inp,background:'#0e2040'}}>
-                {(funilModal?.etapas||[]).map((e:string)=><option key={e} value={e} style={{background:'#0e2040'}}>{e}</option>)}
+              <select value={formNovo.etapa} onChange={e=>setFormNovo(f=>({...f,etapa:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                {(funilModal?.etapas||[]).map((e:string)=><option key={e} value={e} style={{background:'#ffffff'}}>{e}</option>)}
               </select>
             </div>
 
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Responsável</label>
-              <select value={formNovo.vendedor_id} onChange={e=>setFormNovo(f=>({...f,vendedor_id:e.target.value}))} style={{...inp,background:'#0e2040'}}>
-                {usuarios.map(u=><option key={u.id} value={u.id} style={{background:'#0e2040'}}>{u.nome}</option>)}
+              <select value={formNovo.vendedor_id} onChange={e=>setFormNovo(f=>({...f,vendedor_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                {usuarios.map(u=><option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>)}
               </select>
             </div>
 
@@ -813,9 +866,9 @@ export default function FunisPage() {
 
       {/* Modal Vincular Cliente */}
       {modalVincular && negocioVincular && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalVincular(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:460,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:460,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>👤 Vincular Cliente</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:20}}>Card: {negocioVincular.titulo}</div>
 
@@ -880,9 +933,9 @@ export default function FunisPage() {
 
       {/* Modal Detalhes do Card */}
       {modalCard && cardAtivo && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalCard(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>{cardAtivo.titulo}</div>
               <button onClick={()=>setModalCard(false)} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:20,marginLeft:12}}>✕</button>
@@ -914,6 +967,8 @@ export default function FunisPage() {
                 ['Produto', cardAtivo.produto||'—'],
                 ['Prêmio', cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'],
                 ['Responsável', cardAtivo.users?.nome||'—'],
+                ['🆕 Criado em', cardAtivo.created_at ? new Date(cardAtivo.created_at).toLocaleString('pt-BR') : '—'],
+                ['🏁 Fechado em', cardAtivo.data_fechamento ? new Date(cardAtivo.data_fechamento).toLocaleString('pt-BR') : '— (em andamento)'],
               ].map(([l,v])=>(
                 <div key={l}><div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
                   <div style={{fontSize:13}}>{v}</div></div>
@@ -997,7 +1052,7 @@ export default function FunisPage() {
                         {c.tipo === 'numero'   && <input type="number" value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
                         {c.tipo === 'data'     && <input type="date"   value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
                         {c.tipo === 'select'   && (
-                          <select value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={{...cmnInp,background:'#0e2040'}}>
+                          <select value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={{...cmnInp,background:'#ffffff'}}>
                             <option value="">—</option>
                             {(c.opcoes || []).map((op:string) => <option key={op} value={op}>{op}</option>)}
                           </select>
@@ -1019,7 +1074,7 @@ export default function FunisPage() {
             <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
               <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>📍 Origem do lead</div>
               <select value={cardAtivo.origem_id || ''} onChange={e=>setOrigemDoCard(e.target.value)}
-                style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                style={{width:'100%',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
                 <option value="">— sem origem —</option>
                 {origens.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
               </select>
@@ -1038,7 +1093,7 @@ export default function FunisPage() {
                 {tagsCard.length === 0 && <span style={{fontSize:11,color:'var(--text-muted)'}}>Nenhuma tag</span>}
               </div>
               <select value="" onChange={e=>{if(e.target.value){adicionarTag(tagsAll.find(t=>t.id===e.target.value)?.nome||'');(e.target as HTMLSelectElement).value=''}}}
-                style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',color:'var(--text)',fontSize:11,cursor:'pointer',marginBottom:6}}>
+                style={{width:'100%',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'6px 10px',color:'var(--text)',fontSize:11,cursor:'pointer',marginBottom:6}}>
                 <option value="">+ Adicionar tag existente...</option>
                 {tagsAll.filter(t => !tagsCard.find(tc => tc.id === t.id)).map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
               </select>
@@ -1075,7 +1130,7 @@ export default function FunisPage() {
                 <select value={novoProdNeg.produto_id} onChange={e=>{
                   const p = produtosAll.find(x => x.id === e.target.value)
                   setNovoProdNeg(s => ({ ...s, produto_id: e.target.value, valor_unit: p?.preco_base ? String(p.preco_base) : s.valor_unit }))
-                }} style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11}}>
+                }} style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11}}>
                   <option value="">Produto…</option>
                   {produtosAll.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
                 </select>
@@ -1218,9 +1273,9 @@ export default function FunisPage() {
 
       {/* Modal: Marcar negociação como Perdida */}
       {modalPerdido && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalPerdido(null)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6,color:'var(--red)'}}>
               ✕ Marcar como Perdido
             </div>
@@ -1234,7 +1289,7 @@ export default function FunisPage() {
               </label>
               {motivosPerda.length > 0 ? (
                 <select value={motivoSelecionado} onChange={e=>setMotivoSelecionado(e.target.value)}
-                  style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'10px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                  style={{width:'100%',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'10px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
                   <option value="">— selecione um motivo —</option>
                   {motivosPerda.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
                   <option value="__custom__">— Outro motivo (digitar) —</option>
@@ -1274,9 +1329,9 @@ export default function FunisPage() {
 
       {/* Modal: Enviar para assinatura eletrônica (Autentique) */}
       {modalAssinatura && cardAtivo && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalAssinatura(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:640,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>✍ Enviar para assinatura eletrônica</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>{cardAtivo.titulo}</div>
 
@@ -1293,7 +1348,7 @@ export default function FunisPage() {
                     mensagem: t ? substituirVars(t.mensagem || '', a?.nome_arquivo) : f.mensagem,
                     assunto:  t ? substituirVars(t.assunto || '',  a?.nome_arquivo) : f.assunto,
                   }))
-                }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                }} style={{width:'100%',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
                   {anexosCard.filter(a => /\.pdf$/i.test(a.nome_arquivo)).map(a => (
                     <option key={a.id} value={a.id}>{a.nome_arquivo}</option>
                   ))}
@@ -1307,7 +1362,7 @@ export default function FunisPage() {
                 <select value={formAssinatura.template_id} onChange={e=>{
                   const a = anexosCard.find(x => x.id === formAssinatura.anexo_id)
                   aplicarTemplateNoForm(e.target.value, a?.nome_arquivo)
-                }} style={{width:'100%',background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
+                }} style={{width:'100%',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none'}}>
                   <option value="">— escolha um template —</option>
                   {Array.from(new Set(templates.map(t => t.categoria))).map(cat => (
                     <optgroup key={cat} label={cat.toUpperCase()}>

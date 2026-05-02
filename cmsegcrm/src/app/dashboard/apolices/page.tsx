@@ -256,9 +256,9 @@ export default function ApolicesPage() {
 
       {/* Modal Lançar Comissão Recebida */}
       {comModal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setComModal(null)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>💵 Lançar comissão recebida</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>
               Apólice de <b style={{color:'var(--text)'}}>{comModal.clientes?.nome}</b> · {comModal.produto||'—'} · {comModal.seguradora||'—'}<br/>
