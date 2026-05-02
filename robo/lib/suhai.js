@@ -19,39 +19,57 @@ const log = require('./log')
 
 const SUHAI_URL = process.env.SUHAI_URL || 'http://suhai.link/rk6s'
 
-// Preenche um input/select pelo atributo name. Lida com o ciclo do Angular
+// Preenche um input/select/radio pelo atributo name. Lida com o ciclo do Angular
 // (ngModel só reage se o evento for despachado nativamente).
+// Retorna 'ok' / 'invisivel' / 'ja_preenchido' / 'sem_opcao' / 'inexistente'.
 async function setarCampoPorNome(page, name, valor) {
-  if (valor === undefined || valor === null || valor === '') return false
+  if (valor === undefined || valor === null || valor === '') return 'inexistente'
   const v = String(valor)
   return await page.evaluate(({ name, v }) => {
     const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
     const els = Array.from(document.querySelectorAll(`[name="${name}"]`))
-      .filter(e => e.offsetParent !== null)  // só visíveis
-    const el = els[0] || document.querySelector(`[name="${name}"]`)
-    if (!el) return false
+    if (!els.length) return 'inexistente'
+    const visiveis = els.filter(e => e.offsetParent !== null && !e.disabled)
+    if (!visiveis.length) return 'invisivel'
 
+    // Radios: várias entradas com mesmo name
+    if (visiveis.every(e => e.tagName === 'INPUT' && e.type === 'radio')) {
+      const alvo = visiveis.find(e => {
+        const lbl = e.closest('label') || (e.id ? document.querySelector(`label[for="${e.id}"]`) : null)
+        const txt = norm((lbl && lbl.textContent) || e.value)
+        return txt === norm(v) || txt.includes(norm(v))
+      })
+      if (!alvo) return 'sem_opcao'
+      if (alvo.checked) return 'ja_preenchido'
+      alvo.click()
+      alvo.dispatchEvent(new Event('change', { bubbles: true }))
+      return 'ok'
+    }
+
+    const el = visiveis[0]
     if (el.tagName === 'SELECT') {
       const opt = Array.from(el.options).find(o =>
         norm(o.text) === norm(v) || norm(o.value) === norm(v) ||
-        norm(o.text).includes(norm(v))
+        norm(o.text).startsWith(norm(v)) || norm(o.text).includes(norm(v))
       )
-      if (!opt) return false
+      if (!opt) return 'sem_opcao'
+      if (el.value === opt.value) return 'ja_preenchido'
       const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
       setter.call(el, opt.value)
       el.dispatchEvent(new Event('change', { bubbles: true }))
       el.dispatchEvent(new Event('input',  { bubbles: true }))
       el.dispatchEvent(new Event('blur',   { bubbles: true }))
-      return true
+      return 'ok'
     }
 
+    if (el.value === v) return 'ja_preenchido'
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
     const setter = Object.getOwnPropertyDescriptor(proto, 'value').set
     setter.call(el, v)
     el.dispatchEvent(new Event('input',  { bubbles: true }))
     el.dispatchEvent(new Event('change', { bubbles: true }))
     el.dispatchEvent(new Event('blur',   { bubbles: true }))
-    return true
+    return 'ok'
   }, { name, v })
 }
 
@@ -147,32 +165,68 @@ async function cotacaoSuhai(page, dados) {
     tEstadoCivilCondutor:    dados.estadoCivilCondutor || dados.estadoCivil,
   }
 
-  for (const [k, v] of Object.entries(todos)) {
-    if (v === undefined || v === null || v === '') continue
-    const ok = await setarCampoPorNome(page, k, v)
-    if (!ok) log.warn('Suhai: campo não preenchido', { campo: k })
-    await page.waitForTimeout(150)  // dá tempo do Angular reagir (cascata UF→cidade etc.)
-  }
+  // Loop iterativo: campos têm dependências em cascata (Angular ng-show/ng-if).
+  // A cada ciclo, preenche o que estiver visível, espera o Angular reagir,
+  // tenta clicar Continuar, e refaz. Para quando btnCalcular ficar visível
+  // ou quando ninguém mais aceita preenchimento.
+  const ordemPreferencial = [
+    'tCpf','tDataNascimento','tGenero','tEstadoCivil',
+    'tUtilizacao','tTipoSeguro','tBonus',
+    'tPlaca','tAnoFabricacao','tAnoModelo','tZeroKm','tModelo','tCep',
+    'tUf','tCor','tCombustivel',
+    'tTipoCondutor','tCpfCondutor','tNomeCondutor','tDataNascimentoCondutor',
+    'tGeneroCondutor','tEstadoCivilCondutor',
+  ]
+  const pendentes = new Set(ordemPreferencial.filter(k => todos[k] !== undefined && todos[k] !== null && todos[k] !== ''))
 
-  // Avança etapas intermediárias até chegar no botão "Cotar".
-  // Tenta clicar em "Continuar" até 5 vezes; se "Cotar" aparecer antes, sai do loop.
-  for (let i = 0; i < 6; i++) {
-    await page.waitForTimeout(800)
-    const cotarVisivel = await page.evaluate(() => {
+  let cotarPronto = false
+  for (let ciclo = 0; ciclo < 20 && !cotarPronto; ciclo++) {
+    let preencheuAlgum = false
+    for (const k of Array.from(pendentes)) {
+      const r = await setarCampoPorNome(page, k, todos[k])
+      if (r === 'ok' || r === 'ja_preenchido') {
+        pendentes.delete(k)
+        if (r === 'ok') { preencheuAlgum = true; await page.waitForTimeout(250) }
+      } else if (r === 'inexistente') {
+        pendentes.delete(k)  // desiste — campo não existe nessa cotação
+      }
+      // 'invisivel' / 'sem_opcao' → mantém na fila pra tentar depois
+    }
+    await page.waitForTimeout(600)
+
+    // Se Cotar já apareceu, sai
+    cotarPronto = await page.evaluate(() => {
       const b = document.getElementById('btnCalcular')
       return !!(b && b.offsetParent !== null && !b.disabled)
     })
-    if (cotarVisivel) break
+    if (cotarPronto) break
+
+    // Tenta avançar pra próxima etapa
     const continuou = await clicarBotao(page, '#btnContinuar')
       || await clicarBotao(page, 'Continuar')
-    if (!continuou) break
-    await page.waitForTimeout(1500)
+    if (continuou) {
+      await page.waitForTimeout(1500)
+      preencheuAlgum = true
+    }
+    if (!preencheuAlgum && !continuou) break  // travou
   }
+  if (pendentes.size) log.warn('Suhai: campos pendentes', { campos: Array.from(pendentes) })
 
   // ── Cotar ───────────────────────────────────────────────────────────
   if (!await clicarBotao(page, '#btnCalcular')) {
     if (!await clicarBotao(page, 'Cotar')) {
-      throw new Error('Suhai: botão "Cotar" não encontrado')
+      // Tira screenshot do estado pra debug e devolve erro detalhado
+      const snap = await page.screenshot({ fullPage: true }).then(b => b.toString('base64')).catch(() => null)
+      const estado = await page.evaluate(() => {
+        const visiveis = Array.from(document.querySelectorAll('input,select,button'))
+          .filter(e => e.offsetParent !== null)
+          .map(e => ({ tag: e.tagName.toLowerCase(), name: e.name, id: e.id, type: e.type, text: (e.innerText || e.value || '').slice(0, 40), disabled: e.disabled }))
+        return { url: location.href, texto: document.body.innerText.slice(0, 1500), visiveis: visiveis.slice(0, 60) }
+      })
+      const e = new Error('Suhai: botão "Cotar" não encontrado')
+      e.estado = estado
+      e.screenshot = snap
+      throw e
     }
   }
 
