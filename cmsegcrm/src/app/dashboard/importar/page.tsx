@@ -219,6 +219,11 @@ export default function ImportarPage() {
   const [resultado, setResultado] = useState<any>(null)
   const [historico, setHistorico] = useState<any[]>([])
 
+  // Sincronizacao de responsaveis (so atualiza vendedor_id de negocios existentes)
+  const [syncFile, setSyncFile] = useState<File | null>(null)
+  const [syncProcessando, setSyncProcessando] = useState(false)
+  const [syncResultado, setSyncResultado] = useState<any>(null)
+
   useEffect(() => { init() }, [])
 
   async function authHeaders() {
@@ -255,6 +260,63 @@ export default function ImportarPage() {
       setStep('mapear')
     } catch (e: any) {
       alert('Erro ao ler o arquivo: ' + (e?.message || ''))
+    }
+  }
+
+  // Sincroniza vendedor_id de negocios EXISTENTES a partir da planilha do RD.
+  // Le titulo + cpf_cnpj + responsavel; resolve via aliases; faz update.
+  async function sincronizarResponsaveis(dryRun: boolean) {
+    if (!syncFile) return
+    setSyncProcessando(true)
+    setSyncResultado(null)
+    try {
+      const { headers, rows } = await lerArquivo(syncFile)
+      // Detecta as colunas pelas dicas de nome
+      const norm2 = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
+      const findCol = (...hints: string[]) =>
+        headers.find(h => hints.some(x => norm2(h) === norm2(x))) ||
+        headers.find(h => hints.some(x => norm2(h).includes(norm2(x))))
+      const colTitulo = findCol('titulo','título','nome','negocio','negócio')
+      const colResp   = findCol('responsavel','responsável')
+      const colCpf    = findCol('cpf_cnpj','cpf','cnpj','documento')
+
+      if (!colTitulo || !colResp) {
+        setSyncResultado({ erro: `Nao encontrei colunas: ${!colTitulo?'TITULO ':''}${!colResp?'RESPONSAVEL':''}` })
+        setSyncProcessando(false); return
+      }
+
+      const linhas = rows.map(r => ({
+        titulo: r[colTitulo],
+        responsavel: r[colResp],
+        cpf_cnpj: colCpf ? r[colCpf] : null,
+      })).filter(r => r.titulo && r.responsavel)
+
+      // Manda em chunks de 1000 pra nao explodir o body
+      const TAM = 1000
+      const ag: any = { total: 0, sem_titulo: 0, sem_responsavel: 0, sem_match_negocio: 0, multiplos_match: 0, ja_correto: 0, a_atualizar: 0, aplicados: 0, erros: 0, aliases_faltando: new Set<string>() }
+      for (let i = 0; i < linhas.length; i += TAM) {
+        const chunk = linhas.slice(i, i + TAM)
+        setSyncResultado({ _progresso: `Lote ${Math.floor(i/TAM)+1}/${Math.ceil(linhas.length/TAM)} — ${i+chunk.length}/${linhas.length}` })
+        const r = await fetch('/api/rdstation/sync-responsaveis', {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify({ linhas: chunk, dry_run: dryRun }),
+        })
+        const j = await r.json()
+        if (j.error) { setSyncResultado({ erro: j.error }); setSyncProcessando(false); return }
+        const s = j.stats || {}
+        for (const k of ['total','sem_titulo','sem_responsavel','sem_match_negocio','multiplos_match','ja_correto','a_atualizar']) ag[k] += s[k] || 0
+        ag.aplicados += j.aplicados || 0
+        ag.erros     += j.erros     || 0
+        for (const a of (s.aliases_faltando||[])) ag.aliases_faltando.add(a)
+      }
+      ag.aliases_faltando = Array.from(ag.aliases_faltando).slice(0, 50)
+      ag._dryRun = dryRun
+      setSyncResultado(ag)
+    } catch (e: any) {
+      setSyncResultado({ erro: e.message })
+    } finally {
+      setSyncProcessando(false)
     }
   }
 
@@ -385,6 +447,52 @@ export default function ImportarPage() {
 
           {step === 'upload' && (
             <>
+              {/* Sincronizar responsaveis (so atualiza vendedor_id de negocios existentes) */}
+              <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--gold)'}}>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>🔄 Sincronizar responsáveis (sem reimportar)</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>
+                  Sobe a planilha do RD e atualiza o <b>vendedor</b> das negociações JÁ existentes (casa por título + CPF/CNPJ; resolve nomes via tabela de aliases).
+                </div>
+                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+                  <input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{setSyncFile(e.target.files?.[0]||null);setSyncResultado(null)}}
+                    style={{flex:1,minWidth:220,fontSize:12}} />
+                  <button className="btn-secondary" disabled={!syncFile||syncProcessando}
+                    onClick={()=>sincronizarResponsaveis(true)}>
+                    {syncProcessando?'Aguarde...':'Pré-visualizar'}
+                  </button>
+                  <button className="btn-primary" disabled={!syncFile||syncProcessando}
+                    onClick={()=>{ if (confirm('Confirma aplicar a atualização de vendedores?')) sincronizarResponsaveis(false) }}>
+                    Aplicar
+                  </button>
+                </div>
+                {syncResultado && (
+                  <div style={{marginTop:14,padding:12,background:'rgba(255,255,255,0.04)',borderRadius:8,fontSize:12,fontFamily:'monospace'}}>
+                    {syncResultado.erro && <div style={{color:'var(--red)'}}>Erro: {syncResultado.erro}</div>}
+                    {syncResultado._progresso && <div>{syncResultado._progresso}</div>}
+                    {!syncResultado.erro && !syncResultado._progresso && (
+                      <>
+                        <div>📊 Total lido: {syncResultado.total}</div>
+                        <div>✅ Já correto: {syncResultado.ja_correto}</div>
+                        <div>🔄 A atualizar: {syncResultado.a_atualizar}</div>
+                        {syncResultado._dryRun === false && <div>✓ Aplicados: {syncResultado.aplicados} | Erros: {syncResultado.erros}</div>}
+                        <div style={{color:'var(--text-muted)',marginTop:6}}>
+                          Sem título: {syncResultado.sem_titulo} · Sem responsável: {syncResultado.sem_responsavel} · Sem match: {syncResultado.sem_match_negocio} · Múltiplos: {syncResultado.multiplos_match}
+                        </div>
+                        {syncResultado.aliases_faltando?.length > 0 && (
+                          <div style={{marginTop:10,padding:10,background:'rgba(224,82,82,0.08)',border:'1px solid rgba(224,82,82,0.3)',borderRadius:6}}>
+                            <div style={{color:'var(--red)',fontWeight:600,marginBottom:4}}>⚠ Aliases faltando ({syncResultado.aliases_faltando.length}+):</div>
+                            <div style={{fontSize:11}}>{syncResultado.aliases_faltando.join(', ')}</div>
+                            <div style={{marginTop:6,color:'var(--text-muted)',fontSize:11}}>
+                              Cadastra em /dashboard/configuracoes/aliases-rd e roda de novo.
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))',gap:12,marginBottom:20}}>
                 {ENTIDADES_INFO.map(e => {
                   const ativo = entidade === e.key
