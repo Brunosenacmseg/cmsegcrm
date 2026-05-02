@@ -125,6 +125,63 @@ async function aguardarCampoVisivel(page, name, timeout = 15000) {
   } catch { return false }
 }
 
+// Preenche um input/select procurando pelo texto do label mais próximo.
+// Útil pra campos sem name= (ex: input de placa na etapa "Informe seu Veículo").
+async function preencherPorLabel(page, regexLabel, valor) {
+  if (valor === undefined || valor === null || valor === '') return 'inexistente'
+  const v = String(valor)
+  return await page.evaluate(({ regex, v }) => {
+    const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+    const re = new RegExp(regex, 'i')
+    const isVisivel = e => {
+      const r = e.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) return false
+      const cs = getComputedStyle(e)
+      return cs.display !== 'none' && cs.visibility !== 'hidden'
+    }
+    const labels = Array.from(document.querySelectorAll('label, span, div, p'))
+      .filter(l => isVisivel(l) && re.test(l.textContent || ''))
+    for (const lbl of labels) {
+      // Procura input/select irmão ou descendente do mesmo container
+      const cont = lbl.closest('div, fieldset, form-group, mat-form-field') || lbl.parentElement
+      if (!cont) continue
+      const candidatos = Array.from(cont.querySelectorAll('input, select, textarea'))
+        .filter(e => isVisivel(e) && !e.disabled && e.type !== 'hidden')
+      const el = candidatos[0]
+      if (!el) continue
+
+      if (el.tagName === 'SELECT') {
+        const opt = Array.from(el.options).find(o =>
+          norm(o.text) === norm(v) || norm(o.text).includes(norm(v))
+        )
+        if (!opt) continue
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+        setter.call(el, opt.value)
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        el.dispatchEvent(new Event('input',  { bubbles: true }))
+        el.dispatchEvent(new Event('blur',   { bubbles: true }))
+        return 'ok'
+      }
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set
+      setter.call(el, v)
+      el.dispatchEvent(new Event('input',  { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      el.dispatchEvent(new Event('blur',   { bubbles: true }))
+      return 'ok'
+    }
+    return 'invisivel'
+  }, { regex: regexLabel.source || regexLabel, v })
+}
+
+// Conjunto de campos sem name= que precisam de fallback por label.
+// Mapeia chave do nosso modelo → regex do label visível na página.
+const FALLBACK_LABELS = {
+  tPlaca:  /^placa[:\s*]*$/i,
+  tCep:    /^cep[:\s*]/i,
+  tModelo: /informe seu ve[íi]culo|marca\/modelo/i,
+}
+
 async function cotacaoSuhai(page, dados) {
   log.info('Suhai: iniciando cotação', { url: SUHAI_URL })
   await page.goto(SUHAI_URL, { waitUntil: 'domcontentloaded', timeout: 45000 })
@@ -203,7 +260,12 @@ async function cotacaoSuhai(page, dados) {
     let preencheuAlgum = false
     let aindaTemVisivel = false
     for (const k of Array.from(pendentes)) {
-      const r = await setarCampoPorNome(page, k, todos[k])
+      let r = await setarCampoPorNome(page, k, todos[k])
+      // Fallback por label se o campo não tem name= ou não foi achado
+      if ((r === 'inexistente' || r === 'invisivel') && FALLBACK_LABELS[k]) {
+        const r2 = await preencherPorLabel(page, FALLBACK_LABELS[k], todos[k])
+        if (r2 === 'ok') r = 'ok'
+      }
       if (r === 'ok' || r === 'ja_preenchido') {
         pendentes.delete(k)
         if (r === 'ok') { preencheuAlgum = true; await page.waitForTimeout(300) }
