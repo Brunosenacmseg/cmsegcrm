@@ -4,7 +4,7 @@
 -- Hash com bcrypt via pgcrypto. Apenas administradores podem ler/setar.
 -- ─────────────────────────────────────────────────────────────
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists public.financeiro_config (
   id          int primary key default 1 check (id = 1),
@@ -15,7 +15,7 @@ create table if not exists public.financeiro_config (
 
 -- Senha inicial = 170921. Trocada via UI/API depois.
 insert into public.financeiro_config (id, senha_hash)
-values (1, crypt('170921', gen_salt('bf')))
+values (1, extensions.crypt('170921', extensions.gen_salt('bf')))
 on conflict (id) do nothing;
 
 alter table public.financeiro_config enable row level security;
@@ -40,11 +40,11 @@ end $$;
 -- Função pública (security definer) que verifica a senha sem expor o hash.
 create or replace function public.verificar_senha_financeiro(senha text)
 returns boolean
-language sql security definer set search_path = public
+language sql security definer set search_path = public, extensions
 as $$
   select exists (
     select 1 from public.financeiro_config
-    where id = 1 and senha_hash = crypt(senha, senha_hash)
+    where id = 1 and senha_hash = extensions.crypt(senha, senha_hash)
   );
 $$;
 
@@ -54,10 +54,10 @@ grant execute on function public.verificar_senha_financeiro(text) to authenticat
 -- antes de chamar essa função (a função usa service role).
 create or replace function public.set_senha_financeiro(nova text)
 returns void
-language sql security definer set search_path = public
+language sql security definer set search_path = public, extensions
 as $$
   update public.financeiro_config
-     set senha_hash = crypt(nova, gen_salt('bf')),
+     set senha_hash = extensions.crypt(nova, extensions.gen_salt('bf')),
          updated_at = now()
    where id = 1;
 $$;
