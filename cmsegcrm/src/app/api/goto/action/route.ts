@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 
 const ACCOUNT_KEY = '1137037296556608637'
 const ORG_ID = '570e7213-a520-4573-8aa4-d41dd46a8477'
@@ -22,7 +28,7 @@ const EXTENSOES: Record<string, string> = {
 }
 
 async function getValidToken(userId: string) {
-  const { data } = await supabaseAdmin.from('goto_tokens').select('*').eq('user_id', userId).single()
+  const { data } = await supabaseAdmin().from('goto_tokens').select('*').eq('user_id', userId).single()
   if (!data) return null
   const now = new Date()
   const expiresAt = new Date(data.expires_at)
@@ -37,7 +43,7 @@ async function getValidToken(userId: string) {
       const newToken = await res.json()
       if (newToken.access_token) {
         const newExpires = new Date(Date.now() + (newToken.expires_in || 3600) * 1000)
-        await supabaseAdmin.from('goto_tokens').update({ access_token: newToken.access_token, refresh_token: newToken.refresh_token || data.refresh_token, expires_at: newExpires.toISOString() }).eq('user_id', userId)
+        await supabaseAdmin().from('goto_tokens').update({ access_token: newToken.access_token, refresh_token: newToken.refresh_token || data.refresh_token, expires_at: newExpires.toISOString() }).eq('user_id', userId)
         return { ...data, access_token: newToken.access_token }
       }
     } catch (e) { console.error('Refresh error:', e) }
@@ -65,25 +71,25 @@ export async function POST(request: NextRequest) {
 
     // Ações sem token
     if (action === 'status') {
-      const { data } = await supabaseAdmin.from('goto_tokens').select('account_key,expires_at').eq('user_id', user_id).single()
+      const { data } = await supabaseAdmin().from('goto_tokens').select('account_key,expires_at').eq('user_id', user_id).single()
       return NextResponse.json({ conectado: !!data, ...data })
     }
     if (action === 'listar_ligacoes') {
       // Permissões: admin vê tudo (com filtro opcional por usuário);
       // líder vê histórico do time todo; corretor só o próprio.
-      const { data: prof } = await supabaseAdmin.from('users').select('id,role').eq('id', user_id).single()
+      const { data: prof } = await supabaseAdmin().from('users').select('id,role').eq('id', user_id).single()
       const role = prof?.role || 'corretor'
-      let q = supabaseAdmin.from('ligacoes').select('*, clientes(nome), users(nome)')
+      let q = supabaseAdmin().from('ligacoes').select('*, clientes(nome), users(nome)')
       if (params.filtro_user_id) {
         q = q.eq('user_id', params.filtro_user_id)
       } else if (role === 'corretor') {
         q = q.eq('user_id', user_id)
       } else if (role === 'lider') {
-        const { data: equipes } = await supabaseAdmin.from('equipes').select('id').eq('lider_id', user_id)
+        const { data: equipes } = await supabaseAdmin().from('equipes').select('id').eq('lider_id', user_id)
         const equipeIds = (equipes || []).map(e => e.id)
         let ids = [user_id]
         if (equipeIds.length) {
-          const { data: membros } = await supabaseAdmin.from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
+          const { data: membros } = await supabaseAdmin().from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
           ids = [...new Set([user_id, ...((membros||[]).map(m => m.user_id))])]
         }
         q = q.in('user_id', ids)
@@ -93,17 +99,17 @@ export async function POST(request: NextRequest) {
     }
     if (action === 'ligacoes_em_andamento') {
       // Em andamento: admin vê tudo; líder vê do time; corretor só o próprio.
-      const { data: prof } = await supabaseAdmin.from('users').select('id,role').eq('id', user_id).single()
+      const { data: prof } = await supabaseAdmin().from('users').select('id,role').eq('id', user_id).single()
       const role = prof?.role || 'corretor'
-      let q = supabaseAdmin.from('ligacoes').select('*, clientes(nome)').in('status', ['iniciada', 'em_andamento'])
+      let q = supabaseAdmin().from('ligacoes').select('*, clientes(nome)').in('status', ['iniciada', 'em_andamento'])
       if (role === 'corretor') {
         q = q.eq('user_id', user_id)
       } else if (role === 'lider') {
-        const { data: equipes } = await supabaseAdmin.from('equipes').select('id').eq('lider_id', user_id)
+        const { data: equipes } = await supabaseAdmin().from('equipes').select('id').eq('lider_id', user_id)
         const equipeIds = (equipes || []).map(e => e.id)
         let ids = [user_id]
         if (equipeIds.length) {
-          const { data: membros } = await supabaseAdmin.from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
+          const { data: membros } = await supabaseAdmin().from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
           ids = [...new Set([user_id, ...((membros||[]).map(m => m.user_id))])]
         }
         q = q.in('user_id', ids)
@@ -112,12 +118,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ligacoes: data || [] })
     }
     if (action === 'encerrar_ligacao') {
-      await supabaseAdmin.from('ligacoes').update({ status: 'encerrada', fim: new Date().toISOString(), duracao_seg: params.duracao_seg || 0 }).eq('id', params.ligacao_id)
+      await supabaseAdmin().from('ligacoes').update({ status: 'encerrada', fim: new Date().toISOString(), duracao_seg: params.duracao_seg || 0 }).eq('id', params.ligacao_id)
       return NextResponse.json({ ok: true })
     }
     if (action === 'stats_ligacoes') {
       const hoje = new Date(); hoje.setHours(0,0,0,0)
-      const { data } = await supabaseAdmin.from('ligacoes').select('user_id, direcao, status, users(nome)').gte('criado_em', hoje.toISOString())
+      const { data } = await supabaseAdmin().from('ligacoes').select('user_id, direcao, status, users(nome)').gte('criado_em', hoje.toISOString())
       return NextResponse.json({ stats: data || [] })
     }
     if (action === 'listar_extensoes') {
@@ -140,7 +146,7 @@ export async function POST(request: NextRequest) {
       // Descobrir extensão do usuário
       let extId = extensao_id
       if (!extId) {
-        const { data: userData } = await supabaseAdmin.from('users').select('nome').eq('id', user_id).single()
+        const { data: userData } = await supabaseAdmin().from('users').select('nome').eq('id', user_id).single()
         const nomeUser = userData?.nome || ''
         // Verificar no mapa fixo
         for (const [nome, id] of Object.entries(EXTENSOES)) {

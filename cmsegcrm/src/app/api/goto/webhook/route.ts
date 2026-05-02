@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     if (stateType === 'STARTING') {
       // Verificar se já existe
-      const { data: existing } = await supabaseAdmin
+      const { data: existing } = await supabaseAdmin()
         .from('ligacoes')
         .select('id')
         .eq('goto_conversation_id', conversationId)
@@ -56,7 +62,7 @@ export async function POST(request: NextRequest) {
         let clienteId = null
         const numeroParaBusca = (direction === 'entrante' ? numeroOrigem : numeroDestino).replace(/\D/g, '').slice(-11)
         if (numeroParaBusca) {
-          const { data: cliente } = await supabaseAdmin
+          const { data: cliente } = await supabaseAdmin()
             .from('clientes')
             .select('id')
             .ilike('telefone', `%${numeroParaBusca}%`)
@@ -64,7 +70,7 @@ export async function POST(request: NextRequest) {
           if (cliente) clienteId = cliente.id
         }
 
-        await supabaseAdmin.from('ligacoes').insert({
+        await supabaseAdmin().from('ligacoes').insert({
           goto_conversation_id: conversationId,
           goto_call_id: state.id,
           direcao: direction,
@@ -79,13 +85,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (stateType === 'ACTIVE') {
-      await supabaseAdmin.from('ligacoes')
+      await supabaseAdmin().from('ligacoes')
         .update({ status: 'em_andamento' })
         .eq('goto_conversation_id', conversationId)
     }
 
     if (stateType === 'ENDING' || stateType === 'ENDED') {
-      const { data: ligacao } = await supabaseAdmin
+      const { data: ligacao } = await supabaseAdmin()
         .from('ligacoes')
         .select('inicio')
         .eq('goto_conversation_id', conversationId)
@@ -96,7 +102,7 @@ export async function POST(request: NextRequest) {
         duracaoSeg = Math.round((Date.now() - new Date(ligacao.inicio).getTime()) / 1000)
       }
 
-      await supabaseAdmin.from('ligacoes')
+      await supabaseAdmin().from('ligacoes')
         .update({
           status: stateType === 'ENDED' ? 'encerrada' : 'encerrando',
           fim: new Date().toISOString(),
