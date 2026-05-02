@@ -156,6 +156,24 @@ export default function ContasPagarPage() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function anexarNF(c: any, file: File) {
+    if (!profile?.id) return
+    const ts = Date.now()
+    const safe = file.name.replace(/[^\w.\-]/g,'_')
+    const path = `contas_pagar/${profile.id}/${ts}_${safe}`
+    const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, file)
+    if (errUp) { alert('Erro upload NF: '+errUp.message); return }
+    const { data: anx, error: errAnx } = await supabase.from('anexos').insert({
+      bucket:'cmsegcrm', path, nome_arquivo: file.name,
+      tipo_mime: file.type, tamanho_kb: Math.round(file.size/1024),
+      categoria: 'outro', user_id: profile.id,
+    }).select('id').single()
+    if (errAnx || !anx) { alert('Erro: '+(errAnx?.message||'')); return }
+    const { error } = await supabase.from('contas_pagar').update({ nf_anexo_id: anx.id }).eq('id', c.id)
+    if (error) { alert('Erro: '+error.message); return }
+    await carregar()
+  }
+
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
   const isAdmin = profile?.role === 'admin'
@@ -257,8 +275,14 @@ export default function ContasPagarPage() {
                     {c.anexo && (
                       <button onClick={()=>baixarAnexo(c.anexo)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>📄 Ver PDF</button>
                     )}
-                    {c.nf_anexo && (
+                    {c.nf_anexo ? (
                       <button onClick={()=>baixarAnexo(c.nf_anexo)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>📑 Ver NF</button>
+                    ) : (isAdmin || c.criado_por === profile?.id) && (
+                      <label style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px dashed rgba(28,181,160,0.4)',background:'transparent',color:'var(--teal)',cursor:'pointer'}}>
+                        📑 Anexar NF
+                        <input type="file" accept="application/pdf,application/xml,text/xml,image/*" style={{display:'none'}}
+                          onChange={e=>{const f=e.target.files?.[0]; if(f) anexarNF(c, f); e.target.value=''}} />
+                      </label>
                     )}
                     {isAdmin && c.status === 'pendente' && (
                       <>
