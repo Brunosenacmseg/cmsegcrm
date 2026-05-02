@@ -16,6 +16,8 @@ export default function FunisPage() {
   const [funilAtivo, setFunilAtivo] = useState<string|null>(null)
   const [seletorAberto, setSeletorAberto] = useState(false)
   const kanbanRef = useRef<HTMLDivElement>(null)
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const [kanbanWidth, setKanbanWidth] = useState(0)
 
   // Motivos de perda (admin cadastra em /dashboard/configuracoes)
   const [motivosPerda, setMotivosPerda] = useState<any[]>([])
@@ -79,6 +81,23 @@ export default function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
+
+  // Sincroniza a barra de rolagem horizontal de cima com o kanban
+  useEffect(() => {
+    const k = kanbanRef.current
+    const t = topScrollRef.current
+    if (!k || !t) return
+    let lock = false
+    const onK = () => { if (lock) return; lock = true; t.scrollLeft = k.scrollLeft; lock = false }
+    const onT = () => { if (lock) return; lock = true; k.scrollLeft = t.scrollLeft; lock = false }
+    k.addEventListener('scroll', onK)
+    t.addEventListener('scroll', onT)
+    const update = () => setKanbanWidth(k.scrollWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(k)
+    return () => { k.removeEventListener('scroll', onK); t.removeEventListener('scroll', onT); ro.disconnect() }
+  }, [funilAtivo, negocios.length])
 
   // Abre o card automaticamente quando navegado via ?card=<negocio_id>
   useEffect(() => {
@@ -639,6 +658,11 @@ export default function FunisPage() {
       {/* Kanban */}
       {funiAtual && (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+          {/* Barra de rolagem horizontal sincronizada no topo */}
+          <div className="kanban-scroll kanban-scroll-top" ref={topScrollRef}
+            style={{overflowX:'auto',overflowY:'hidden',height:18,flexShrink:0,margin:'0 20px'}}>
+            <div style={{width:kanbanWidth,height:1}} />
+          </div>
           <div className="kanban-scroll" ref={kanbanRef}
             style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px 60px 20px 20px',scrollBehavior:'smooth'}}>
             <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
