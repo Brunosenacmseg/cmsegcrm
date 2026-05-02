@@ -11,16 +11,21 @@
 // Body: { linhas: [{ ...row }] }
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 const s = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim()
 const n = (v: any) => {
   if (v === undefined || v === null || v === '') return null
@@ -87,9 +92,9 @@ async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: u } = await supabaseAdmin.auth.getUser(token)
+  const { data: u } = await supabaseAdmin().auth.getUser(token)
   if (!u?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: prof } = await supabaseAdmin.from('users').select('role').eq('id', u.user.id).single()
+  const { data: prof } = await supabaseAdmin().from('users').select('role').eq('id', u.user.id).single()
   if (prof?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const, userId: u.user.id }
 }
@@ -123,7 +128,7 @@ export async function POST(req: NextRequest) {
     const chunks: string[][] = []
     for (let i = 0; i < titulos.length; i += 500) chunks.push(titulos.slice(i, i+500))
     for (const ch of chunks) {
-      const { data } = await supabaseAdmin
+      const { data } = await supabaseAdmin()
         .from('negocios')
         .select('*')
         .in('titulo', ch as any)
@@ -138,8 +143,8 @@ export async function POST(req: NextRequest) {
 
   // 2. Pré-carrega aliases + users (resolve responsável em JS pra evitar
   //    chamar a função SQL linha a linha)
-  const { data: aliases } = await supabaseAdmin.from('rd_responsaveis_alias').select('nome_planilha, email').eq('ativo', true)
-  const { data: users }   = await supabaseAdmin.from('users').select('id, nome, email')
+  const { data: aliases } = await supabaseAdmin().from('rd_responsaveis_alias').select('nome_planilha, email').eq('ativo', true)
+  const { data: users }   = await supabaseAdmin().from('users').select('id, nome, email')
   const userPorEmail: Record<string,string> = {}
   const userPorNome:  Record<string,string> = {}
   for (const u of users || []) {
@@ -166,10 +171,10 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Pré-carrega motivos de perda + equipes
-  const { data: motivos } = await supabaseAdmin.from('motivos_perda').select('id, nome')
+  const { data: motivos } = await supabaseAdmin().from('motivos_perda').select('id, nome')
   const motivoPorNome: Record<string,string> = {}
   for (const m of motivos || []) motivoPorNome[m.nome.toLowerCase().trim()] = m.id
-  const { data: equipes } = await supabaseAdmin.from('equipes').select('id, nome')
+  const { data: equipes } = await supabaseAdmin().from('equipes').select('id, nome')
   const equipePorNome: Record<string,string> = {}
   for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
 
@@ -253,7 +258,7 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        const { error } = await supabaseAdmin.from('negocios').update(patch).eq('id', existing.id)
+        const { error } = await supabaseAdmin().from('negocios').update(patch).eq('id', existing.id)
         if (error) {
           stats.qtd_erros++
           if (stats.erros.length < 30) stats.erros.push(`${nome}: ${error.message?.slice(0,100)}`)

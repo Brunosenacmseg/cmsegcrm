@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { enviarEventoCRM } from '@/lib/meta-conversions'
 
 export const maxDuration = 30
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 async function autenticarUsuario(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return null
   return userData.user
 }
@@ -31,7 +36,7 @@ export async function POST(request: NextRequest) {
   if (!event_name) return NextResponse.json({ error: 'event_name obrigatório' }, { status: 400 })
 
   // Carrega config Meta
-  const { data: cfg } = await supabaseAdmin.from('meta_config').select('*').eq('id', 1).maybeSingle()
+  const { data: cfg } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
   const datasetId   = cfg?.dataset_id
   const accessToken = cfg?.conversions_token || cfg?.access_token
   if (!datasetId)   return NextResponse.json({ error: 'dataset_id não configurado em /dashboard/integracoes/meta' }, { status: 400 })
@@ -41,7 +46,7 @@ export async function POST(request: NextRequest) {
   let cliente: any = null
   let negocio: any = null
   if (negocio_id) {
-    const { data: neg } = await supabaseAdmin.from('negocios')
+    const { data: neg } = await supabaseAdmin().from('negocios')
       .select('id, cliente_id, meta_lead_id, etapa, funil_id, funis(nome)')
       .eq('id', negocio_id).maybeSingle()
     negocio = neg
@@ -58,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (neg?.cliente_id) {
-      const { data: cli } = await supabaseAdmin.from('clientes')
+      const { data: cli } = await supabaseAdmin().from('clientes')
         .select('id, email, telefone, nome, cpf_cnpj, cidade, estado, cep, meta_lead_id')
         .eq('id', neg.cliente_id).maybeSingle()
       cliente = cli
@@ -76,7 +81,7 @@ export async function POST(request: NextRequest) {
       testEventCode: test ? (process.env.META_TEST_EVENT_CODE || 'TEST_CODE') : undefined,
     })
 
-    await supabaseAdmin.from('meta_eventos_log').insert({
+    await supabaseAdmin().from('meta_eventos_log').insert({
       negocio_id: negocio?.id || null,
       cliente_id: cliente?.id || null,
       event_name,
@@ -89,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, resposta })
   } catch (e: any) {
-    await supabaseAdmin.from('meta_eventos_log').insert({
+    await supabaseAdmin().from('meta_eventos_log').insert({
       negocio_id: negocio?.id || null,
       cliente_id: cliente?.id || null,
       event_name,
@@ -106,6 +111,6 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const user = await autenticarUsuario(request)
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  const { data } = await supabaseAdmin.from('meta_eventos_log').select('*').order('enviado_em', { ascending: false }).limit(50)
+  const { data } = await supabaseAdmin().from('meta_eventos_log').select('*').order('enviado_em', { ascending: false }).limit(50)
   return NextResponse.json({ eventos: data || [] })
 }

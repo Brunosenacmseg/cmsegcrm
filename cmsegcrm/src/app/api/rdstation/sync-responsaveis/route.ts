@@ -5,23 +5,28 @@
 // Body: { linhas: [{ titulo, cpf_cnpj?, responsavel }], dry_run?: boolean }
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const }
 }
@@ -48,8 +53,8 @@ export async function POST(req: NextRequest) {
 
   // Pre-load usuarios + aliases
   const [{ data: usuarios }, { data: aliases }] = await Promise.all([
-    supabaseAdmin.from('users').select('id, nome, email'),
-    supabaseAdmin.from('user_aliases_rd').select('user_id, alias'),
+    supabaseAdmin().from('users').select('id, nome, email'),
+    supabaseAdmin().from('user_aliases_rd').select('user_id, alias'),
   ])
   const userPorNome:  Record<string, string> = {}
   const userPorEmail: Record<string, string> = {}
@@ -76,7 +81,7 @@ export async function POST(req: NextRequest) {
   // Busca em chunks de 200 pra nao explodir url
   for (let i = 0; i < titulos.length; i += 200) {
     const chunk = titulos.slice(i, i + 200)
-    const { data } = await supabaseAdmin
+    const { data } = await supabaseAdmin()
       .from('negocios')
       .select('id, titulo, cpf_cnpj, vendedor_id')
       .in('titulo', chunk)
@@ -139,7 +144,7 @@ export async function POST(req: NextRequest) {
     const chunk = updates.slice(i, i + 500)
     // Faz updates 1 a 1 — Supabase nao tem bulk update por id em uma chamada
     await Promise.all(chunk.map(async u => {
-      const { error } = await supabaseAdmin
+      const { error } = await supabaseAdmin()
         .from('negocios')
         .update({ vendedor_id: u.vendedor_id })
         .eq('id', u.id)

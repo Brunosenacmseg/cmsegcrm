@@ -6,24 +6,29 @@
 // Admin only.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
 async function checarAdmin(req: NextRequest): Promise<{ ok: boolean; userId?: string; erro?: string }> {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false, erro: 'Não autenticado' }
-  const { data: userData, error } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData, error } = await supabaseAdmin().auth.getUser(token)
   if (error || !userData?.user) return { ok: false, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false, erro: 'Apenas admin' }
   return { ok: true, userId: userData.user.id }
 }
@@ -32,7 +37,7 @@ export async function GET(req: NextRequest) {
   const auth = await checarAdmin(req)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
-  const { data } = await supabaseAdmin.from('meta_config').select('*').eq('id', 1).maybeSingle()
+  const { data } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
   // Não devolve secrets crus, só status
   return NextResponse.json({
     ok: true,
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Salva config (upsert na linha id=1)
-  const { error: errSave } = await supabaseAdmin.from('meta_config').upsert({
+  const { error: errSave } = await supabaseAdmin().from('meta_config').upsert({
     id: 1,
     access_token,
     ad_account_id:     ad_account_id || null,
@@ -121,7 +126,7 @@ export async function POST(req: NextRequest) {
     } catch (e: any) {
       webhook_erro = e.message
     }
-    await supabaseAdmin.from('meta_config').update({ webhook_subscribed }).eq('id', 1)
+    await supabaseAdmin().from('meta_config').update({ webhook_subscribed }).eq('id', 1)
   }
 
   return NextResponse.json({
@@ -135,6 +140,6 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await checarAdmin(req)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
-  await supabaseAdmin.from('meta_config').delete().eq('id', 1)
+  await supabaseAdmin().from('meta_config').delete().eq('id', 1)
   return NextResponse.json({ ok: true })
 }

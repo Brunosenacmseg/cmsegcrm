@@ -6,24 +6,29 @@
 // DELETE?form_id=... → remove mapeamento
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _admin: SupabaseClient | null = null
+function admin() {
+  if (!_admin) {
+    _admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _admin
+}
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData, error } = await admin.auth.getUser(token)
+  const { data: userData, error } = await admin().auth.getUser(token)
   if (error || !userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await admin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await admin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const, userId: userData.user.id }
 }
@@ -41,7 +46,7 @@ export async function GET(req: NextRequest) {
   const a = await checarAdmin(req)
   if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 401 })
 
-  const { data: cfg } = await admin.from('meta_config')
+  const { data: cfg } = await admin().from('meta_config')
     .select('access_token, page_id').eq('id', 1).maybeSingle()
   if (!cfg?.access_token || !cfg?.page_id) {
     return NextResponse.json({ error: 'Configure access_token e page_id em /dashboard/integracoes/meta primeiro' }, { status: 400 })
@@ -58,7 +63,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Falha buscando forms: ' + e.message }, { status: 500 })
   }
 
-  const { data: mapeamentos } = await admin.from('meta_form_mapeamento').select('*')
+  const { data: mapeamentos } = await admin().from('meta_form_mapeamento').select('*')
   const map = new Map<string, any>((mapeamentos || []).map(m => [m.form_id, m]))
 
   const out = forms.map(f => ({
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
   const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, ativo, criar_negocio, observacoes } = body
   if (!form_id) return NextResponse.json({ error: 'form_id obrigatório' }, { status: 400 })
 
-  const { error } = await admin.from('meta_form_mapeamento').upsert({
+  const { error } = await admin().from('meta_form_mapeamento').upsert({
     form_id: String(form_id),
     form_nome:    form_nome || null,
     page_id:      page_id || null,
@@ -103,6 +108,6 @@ export async function DELETE(req: NextRequest) {
   if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 401 })
   const formId = req.nextUrl.searchParams.get('form_id')
   if (!formId) return NextResponse.json({ error: 'form_id obrigatório' }, { status: 400 })
-  await admin.from('meta_form_mapeamento').delete().eq('form_id', formId)
+  await admin().from('meta_form_mapeamento').delete().eq('form_id', formId)
   return NextResponse.json({ ok: true })
 }

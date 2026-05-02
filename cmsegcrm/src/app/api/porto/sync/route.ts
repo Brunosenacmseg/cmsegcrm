@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { gunzipSync, inflateRawSync } from 'zlib'
 
 // Vercel: estender o tempo limite. Plano Hobby max 60s, Pro/Enterprise até 300s.
@@ -8,11 +8,16 @@ export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
 export const maxDuration = 300
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 const PORTO_URL   = 'https://wwws.portoseguro.com.br/CentralDownloadsIntegrationService/Proxy_Services/ArquivoRetornoIntegrationService'
 const PORTO_SUSEP = process.env.PORTO_SUSEP || 'J8FXUJ'
 const PORTO_LOGIN = process.env.PORTO_LOGIN || ''
@@ -26,24 +31,24 @@ const FUNIL_SINISTRO_ETAPA = 'Novo Sinistro'
 // achar pelo nome, cai no `tipo` antigo como fallback.
 async function buscarFunilPorNome(nomes: string[], tipoFallback?: 'cobranca' | 'posVenda') {
   for (const nome of nomes) {
-    const { data } = await supabaseAdmin.from('funis').select('id, etapas, nome').ilike('nome', nome).limit(1).maybeSingle()
+    const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome').ilike('nome', nome).limit(1).maybeSingle()
     if (data?.id) return data
   }
   if (tipoFallback) {
-    const { data } = await supabaseAdmin.from('funis').select('id, etapas, nome').eq('tipo', tipoFallback).limit(1).maybeSingle()
+    const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome').eq('tipo', tipoFallback).limit(1).maybeSingle()
     return data
   }
   return null
 }
 
 async function buscarEquipeId(nome: string): Promise<string | null> {
-  const { data } = await supabaseAdmin.from('equipes').select('id').ilike('nome', nome).limit(1).maybeSingle()
+  const { data } = await supabaseAdmin().from('equipes').select('id').ilike('nome', nome).limit(1).maybeSingle()
   return data?.id || null
 }
 
 // Funis são buscados dinamicamente pelo `tipo` para evitar UUIDs hardcoded
 async function buscarFunilId(tipo: 'cobranca' | 'posVenda'): Promise<string | null> {
-  const { data } = await supabaseAdmin.from('funis').select('id').eq('tipo', tipo).limit(1).maybeSingle()
+  const { data } = await supabaseAdmin().from('funis').select('id').eq('tipo', tipo).limit(1).maybeSingle()
   return data?.id || null
 }
 
@@ -206,7 +211,7 @@ async function recuperarTexto(idArquivo: string): Promise<{ texto: string, nome:
 
 async function buscarApolice(num: string) {
   const limpo = num.replace(/^0+/, '')
-  const { data } = await supabaseAdmin.from('apolices').select('id,cliente_id,vendedor_id,numero,produto')
+  const { data } = await supabaseAdmin().from('apolices').select('id,cliente_id,vendedor_id,numero,produto')
     .or(`numero.eq.${num},numero.eq.${limpo},numero.ilike.%${limpo}%`).maybeSingle()
   return data
 }
@@ -348,12 +353,12 @@ async function obterOuCriarCliente(c: CamposPorto, dadosBrutos?: any): Promise<s
 
   // 1) Match por CPF/CNPJ
   if (cpfCnpj) {
-    const { data: existente } = await supabaseAdmin.from('clientes')
+    const { data: existente } = await supabaseAdmin().from('clientes')
       .select('id, nome, fonte').or(`cpf_cnpj.eq.${cpfCnpj}`).maybeSingle()
     if (existente) {
       // Atualiza nome se estava vazio e agora temos
       if (c.nome && (!existente.nome || existente.nome === 'Sem nome')) {
-        await supabaseAdmin.from('clientes').update({ nome: c.nome }).eq('id', existente.id)
+        await supabaseAdmin().from('clientes').update({ nome: c.nome }).eq('id', existente.id)
       }
       return existente.id
     }
@@ -361,7 +366,7 @@ async function obterOuCriarCliente(c: CamposPorto, dadosBrutos?: any): Promise<s
 
   // 2) Match por nome + sem CPF (fallback fraco — só se não tem CPF nenhum)
   if (!cpfCnpj && c.nome) {
-    const { data: existente } = await supabaseAdmin.from('clientes')
+    const { data: existente } = await supabaseAdmin().from('clientes')
       .select('id').ilike('nome', c.nome).maybeSingle()
     if (existente) return existente.id
   }
@@ -375,7 +380,7 @@ async function obterOuCriarCliente(c: CamposPorto, dadosBrutos?: any): Promise<s
     fonte:    'Porto Seguro',
   }
   if (dadosBrutos) payload.dados_porto = dadosBrutos
-  const { data: novo, error } = await supabaseAdmin.from('clientes').insert(payload).select('id').single()
+  const { data: novo, error } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
   if (error) {
     console.warn('[Porto] erro criando cliente:', error.message, payload)
     return null
@@ -391,26 +396,26 @@ async function criarNegocio(opts: {
   const { funilId, etapa, titulo, produto, premio, obs, clienteId, cpfCnpj, equipeId } = opts
   // Se tem cliente, verificar se já existe negócio aberto
   if (clienteId) {
-    const { data: existing } = await supabaseAdmin.from('negocios').select('id')
+    const { data: existing } = await supabaseAdmin().from('negocios').select('id')
       .eq('cliente_id', clienteId).eq('funil_id', funilId)
       .not('etapa', 'in', '("Pago","Cancelado","Concluído","Negado","Fechado Ganho","Fechado Perdido")')
       .maybeSingle()
     if (existing?.id) {
-      await supabaseAdmin.from('negocios').update({ etapa, obs, equipe_id: equipeId || null }).eq('id', existing.id)
+      await supabaseAdmin().from('negocios').update({ etapa, obs, equipe_id: equipeId || null }).eq('id', existing.id)
       return existing.id
     }
   } else if (cpfCnpj) {
-    const { data: existing } = await supabaseAdmin.from('negocios').select('id')
+    const { data: existing } = await supabaseAdmin().from('negocios').select('id')
       .eq('cpf_cnpj', cpfCnpj).eq('funil_id', funilId)
       .not('etapa', 'in', '("Pago","Cancelado","Concluído","Negado","Fechado Ganho","Fechado Perdido")')
       .maybeSingle()
     if (existing?.id) {
-      await supabaseAdmin.from('negocios').update({ etapa, obs, equipe_id: equipeId || null }).eq('id', existing.id)
+      await supabaseAdmin().from('negocios').update({ etapa, obs, equipe_id: equipeId || null }).eq('id', existing.id)
       return existing.id
     }
   }
 
-  const { data } = await supabaseAdmin.from('negocios').insert({
+  const { data } = await supabaseAdmin().from('negocios').insert({
     titulo, funil_id: funilId, etapa, produto, premio, obs,
     cliente_id: clienteId || null,
     cpf_cnpj:   cpfCnpj   || null,
@@ -447,7 +452,7 @@ async function processarSAP(arquivo: any, texto: string) {
       const cpfRaw = (reg.cpf_cliente||'').replace(/\D/g,'') || camposExtra.cpf_cnpj || ''
       let clienteId: string | null = null
       if (cpfRaw.length >= 8) {
-        const { data: cli } = await supabaseAdmin.from('clientes').select('id')
+        const { data: cli } = await supabaseAdmin().from('clientes').select('id')
           .or(`cpf_cnpj.eq.${cpfRaw},cpf_cnpj.ilike.%${cpfRaw}%`).maybeSingle()
         clienteId = cli?.id || null
       }
@@ -463,7 +468,7 @@ async function processarSAP(arquivo: any, texto: string) {
 
       // Criar apólice se não existe
       if (!apolice) {
-        const { data: nova } = await supabaseAdmin.from('apolices').upsert({
+        const { data: nova } = await supabaseAdmin().from('apolices').upsert({
           numero: reg.numero_apolice, seguradora: 'Porto Seguro', fonte: 'Porto Seguro',
           produto: arquivo.produto || '', cliente_id: clienteId, status: 'ativo',
           nome_segurado: camposExtra.nome || null,
@@ -472,7 +477,7 @@ async function processarSAP(arquivo: any, texto: string) {
           .select('id,cliente_id,vendedor_id,numero,produto').single()
         apolice = nova
       } else if (!apolice.cliente_id && clienteId) {
-        await supabaseAdmin.from('apolices').update({ cliente_id: clienteId }).eq('id', apolice.id)
+        await supabaseAdmin().from('apolices').update({ cliente_id: clienteId }).eq('id', apolice.id)
         apolice = { ...apolice, cliente_id: clienteId }
       }
 
@@ -495,9 +500,9 @@ async function processarSAP(arquivo: any, texto: string) {
         })
 
         // Notificar gestores
-        const { data: gestores } = await supabaseAdmin.from('users').select('id').in('role', ['admin','lider'])
+        const { data: gestores } = await supabaseAdmin().from('users').select('id').in('role', ['admin','lider'])
         for (const g of gestores||[]) {
-          await supabaseAdmin.from('notificacoes').insert({
+          await supabaseAdmin().from('notificacoes').insert({
             user_id: g.id, tipo: 'vencimento',
             titulo: `⚠️ Inadimplência: Apólice ${reg.numero_apolice}`,
             descricao: `Parcela ${reg.parcela}/${reg.total_parcelas} | Venc: ${reg.vencimento} | R$ ${reg.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} | ${reg.dias_atraso}d`,
@@ -507,7 +512,7 @@ async function processarSAP(arquivo: any, texto: string) {
 
         // Tarefa para o responsável
         if (apolice?.vendedor_id && clienteFinal) {
-          await supabaseAdmin.from('tarefas').insert({
+          await supabaseAdmin().from('tarefas').insert({
             titulo: `📞 Parcela vencida: Apólice ${reg.numero_apolice}`,
             descricao: `Parcela ${reg.parcela}/${reg.total_parcelas} | R$ ${reg.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} | Venc: ${reg.vencimento} | ${reg.dias_atraso} dias`,
             tipo: 'ligacao', status: 'pendente',
@@ -566,7 +571,7 @@ async function processarAPP(arquivo: any, texto: string) {
         comissao_pct:     campos.comissao_pct || null,
         dados_porto:      dadosBrutos,
       }
-      const { data: apolice, error: errApol } = await supabaseAdmin.from('apolices').upsert(apolicePayload, {
+      const { data: apolice, error: errApol } = await supabaseAdmin().from('apolices').upsert(apolicePayload, {
         onConflict: 'numero', ignoreDuplicates: false,
       }).select('id, cliente_id, vendedor_id, premio, comissao_pct').single()
       if (errApol) {
@@ -576,12 +581,12 @@ async function processarAPP(arquivo: any, texto: string) {
 
       // 3) Espelha em negocios para aparecer no módulo /dashboard/apolices
       if (apolice) {
-        const { data: existing } = await supabaseAdmin.from('negocios').select('id')
+        const { data: existing } = await supabaseAdmin().from('negocios').select('id')
           .eq('produto', produto).eq('seguradora', 'Porto Seguro')
           .or(`titulo.ilike.%${num}%,obs.ilike.%${num}%`).maybeSingle()
 
         if (!existing) {
-          await supabaseAdmin.from('negocios').insert({
+          await supabaseAdmin().from('negocios').insert({
             titulo:       campos.nome ? `Apólice ${num} — ${campos.nome}` : `Apólice ${num}`,
             cliente_id:   clienteId || apolice.cliente_id || null,
             vendedor_id:  apolice.vendedor_id || null,
@@ -609,7 +614,7 @@ async function processarCOM(arquivo: any, texto: string) {
   for (const linha of texto.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('9'))) {
     try {
       const campos = linha.includes(';') ? linha.split(';').map(c=>c.trim()) : linha.trim().split(/\s{2,}/)
-      await supabaseAdmin.from('importacoes_comissao').insert({
+      await supabaseAdmin().from('importacoes_comissao').insert({
         nome_arquivo: arquivo.nomeArquivo,
         competencia:  arquivo.dataGeracao?.slice(0,7) || '',
         total_importado: parseFloat((campos[4]||campos[3]||'0').replace(/\./g,'').replace(',','.')) || 0,
@@ -638,7 +643,7 @@ async function processarSI2(arquivo: any, texto: string) {
 
       if (!num || num.length < 3) continue
 
-      const { data: apolice } = await supabaseAdmin.from('apolices')
+      const { data: apolice } = await supabaseAdmin().from('apolices')
         .select('id,cliente_id,vendedor_id,negocio_id').or(`numero.eq.${num},numero.ilike.%${num}%`).maybeSingle()
 
       // Se não existe apólice + temos nome/CPF, cria cliente novo
@@ -652,11 +657,11 @@ async function processarSI2(arquivo: any, texto: string) {
       //    fechado).
       let negocioExistenteId: string | null = null
       if (apolice?.negocio_id) {
-        const { data } = await supabaseAdmin.from('negocios').select('id').eq('id', apolice.negocio_id).maybeSingle()
+        const { data } = await supabaseAdmin().from('negocios').select('id').eq('id', apolice.negocio_id).maybeSingle()
         if (data?.id) negocioExistenteId = data.id
       }
       if (!negocioExistenteId && clienteSinistro) {
-        const { data } = await supabaseAdmin.from('negocios').select('id')
+        const { data } = await supabaseAdmin().from('negocios').select('id')
           .eq('cliente_id', clienteSinistro)
           .not('status', 'eq', 'perdido')
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -665,7 +670,7 @@ async function processarSI2(arquivo: any, texto: string) {
 
       let negId: string | null = null
       if (negocioExistenteId) {
-        await supabaseAdmin.from('negocios').update({
+        await supabaseAdmin().from('negocios').update({
           obs: `🚨 Sinistro recebido da Porto: Apólice ${num} | ${t.slice(0,200)}`,
         }).eq('id', negocioExistenteId)
         negId = negocioExistenteId
@@ -684,7 +689,7 @@ async function processarSI2(arquivo: any, texto: string) {
       }
 
       if (clienteSinistro) {
-        await supabaseAdmin.from('historico').insert({
+        await supabaseAdmin().from('historico').insert({
           cliente_id: clienteSinistro, tipo: 'red',
           titulo: `🚨 Sinistro Porto Seguro`,
           descricao: `Apólice ${num} | ${t.slice(0,100)}`,
@@ -692,7 +697,7 @@ async function processarSI2(arquivo: any, texto: string) {
         })
       }
       if (apolice?.vendedor_id) {
-        await supabaseAdmin.from('notificacoes').insert({
+        await supabaseAdmin().from('notificacoes').insert({
           user_id: apolice.vendedor_id, tipo: 'sistema',
           titulo: `🚨 Sinistro: Apólice ${num}`,
           descricao: t.slice(0,100), link: '/dashboard/funis',
@@ -719,7 +724,7 @@ function detectarTipo(produto: string, nomeArquivo: string): string {
 }
 
 async function processarArquivo(arquivo: any, texto: string, tipo: string) {
-  const { data: importacao } = await supabaseAdmin.from('importacoes_porto').insert({
+  const { data: importacao } = await supabaseAdmin().from('importacoes_porto').insert({
     tipo_arquivo: tipo, nome_arquivo: arquivo.nomeArquivo,
     produto: arquivo.produto, data_geracao: arquivo.dataGeracao,
     qtd_registros: texto.split('\n').length, status: 'processando',
@@ -733,7 +738,7 @@ async function processarArquivo(arquivo: any, texto: string, tipo: string) {
   else resultado = { importados: 0, erros: 0, msgs: ['Tipo não processado'] }
 
   if (importacao?.id) {
-    await supabaseAdmin.from('importacoes_porto').update({
+    await supabaseAdmin().from('importacoes_porto').update({
       status: resultado.erros === 0 ? 'concluido' : 'parcial',
       qtd_importados: resultado.importados, qtd_erros: resultado.erros,
       erros: resultado.msgs.slice(0,10), concluido_em: new Date().toISOString(),
@@ -851,7 +856,7 @@ export async function POST(request: NextRequest) {
         texto = conteudo
       } else if (typeof storage_path === 'string' && storage_path.length > 0) {
         // Baixa do Supabase Storage (bucket cmsegcrm)
-        const { data, error } = await supabaseAdmin.storage.from('cmsegcrm').download(storage_path)
+        const { data, error } = await supabaseAdmin().storage.from('cmsegcrm').download(storage_path)
         if (error || !data) {
           return NextResponse.json({ error: `Falha ao baixar do storage: ${error?.message || 'desconhecido'}` }, { status: 500 })
         }

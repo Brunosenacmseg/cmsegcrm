@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 // Extrai IP do request lidando com proxies (Vercel, Cloudflare, etc.)
 function getClientIp(req: NextRequest): string | null {
   const fwd = req.headers.get('x-forwarded-for')
@@ -47,7 +52,7 @@ export async function POST(request: NextRequest) {
     const user_agent = request.headers.get('user-agent')
     const geo = ip ? await geolocalizar(ip) : null
 
-    const { error } = await supabaseAdmin.from('login_logs').insert({
+    const { error } = await supabaseAdmin().from('login_logs').insert({
       user_id: user_id || null,
       user_email: user_email || null,
       user_nome: user_nome || null,

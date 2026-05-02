@@ -1,23 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const maxDuration = 30
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 async function autenticar(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data } = await supabaseAdmin.auth.getUser(token)
+  const { data } = await supabaseAdmin().auth.getUser(token)
   return data?.user || null
 }
 
 async function ehAdmin(userId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin.from('users').select('role').eq('id', userId).single()
+  const { data } = await supabaseAdmin().from('users').select('role').eq('id', userId).single()
   return data?.role === 'admin'
 }
 
@@ -35,19 +40,19 @@ export async function POST(request: NextRequest) {
   const { conta_id, acao, categoria_id, forma_pagto, data_pagamento, obs } = body
   if (!conta_id || !acao) return NextResponse.json({ error: 'conta_id e acao obrigatórios' }, { status: 400 })
 
-  const { data: conta } = await supabaseAdmin.from('contas_pagar').select('*').eq('id', conta_id).maybeSingle()
+  const { data: conta } = await supabaseAdmin().from('contas_pagar').select('*').eq('id', conta_id).maybeSingle()
   if (!conta) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
 
   if (acao === 'aprovar') {
     if (conta.status !== 'pendente') return NextResponse.json({ error: 'Já não está pendente' }, { status: 400 })
-    await supabaseAdmin.from('contas_pagar').update({
+    await supabaseAdmin().from('contas_pagar').update({
       status: 'aprovado', aprovado_por: user.id, obs_admin: obs || null,
     }).eq('id', conta_id)
     return NextResponse.json({ ok: true, status: 'aprovado' })
   }
 
   if (acao === 'recusar') {
-    await supabaseAdmin.from('contas_pagar').update({
+    await supabaseAdmin().from('contas_pagar').update({
       status: 'recusado', recusado_por: user.id, obs_admin: obs || null,
     }).eq('id', conta_id)
     return NextResponse.json({ ok: true, status: 'recusado' })
@@ -58,7 +63,7 @@ export async function POST(request: NextRequest) {
     const dataPgto = data_pagamento || new Date().toISOString().slice(0, 10)
 
     // Cria despesa para aparecer no DRE Real
-    const { data: despesa, error: errDesp } = await supabaseAdmin.from('financeiro_despesas').insert({
+    const { data: despesa, error: errDesp } = await supabaseAdmin().from('financeiro_despesas').insert({
       categoria_id:    categoria_id || conta.categoria_id || null,
       descricao:       conta.nome,
       valor:           conta.valor,
@@ -78,7 +83,7 @@ export async function POST(request: NextRequest) {
       console.warn('[contas_pagar] falha ao criar despesa:', errDesp.message)
     }
 
-    await supabaseAdmin.from('contas_pagar').update({
+    await supabaseAdmin().from('contas_pagar').update({
       status: 'pago', pago_por: user.id, data_pagamento: dataPgto,
       forma_pagto: forma_pagto || conta.forma_pagto || null,
       categoria_id: categoria_id || conta.categoria_id || null,
