@@ -395,7 +395,7 @@ export default function WhatsAppPage() {
         <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
           <div className="card" style={{textAlign:'center',padding:'50px 40px',maxWidth:440}}>
             <div style={{fontSize:56,marginBottom:16}}>💬</div>
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM.segCRM</div>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM Seguros</div>
             <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:28,lineHeight:1.6}}>Conecte seu número do WhatsApp para enviar e receber mensagens diretamente do CRM.</div>
             <button className="btn-primary" style={{padding:'12px 28px',fontSize:14}} onClick={()=>setModalConfig(true)}>⚙ Configurar WhatsApp</button>
           </div>
@@ -435,7 +435,7 @@ export default function WhatsAppPage() {
                 </label>
               </div>
               <select value={instancia.agente_id||''} onChange={e=>setAgenteWhats(e.target.value)}
-                style={{width:'100%',padding:'5px 8px',borderRadius:6,border:'1px solid var(--border)',background:'#0e2040',color:'var(--text)',fontSize:11,cursor:'pointer'}}>
+                style={{width:'100%',padding:'5px 8px',borderRadius:6,border:'1px solid var(--border)',background:'#ffffff',color:'var(--text)',fontSize:11,cursor:'pointer'}}>
                 <option value="">— selecione um agente —</option>
                 {agentesIA.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
               </select>
@@ -537,8 +537,11 @@ export default function WhatsAppPage() {
                 <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
                   {mensagens.map(m=>(
                     <div key={m.id} style={{display:'flex',justifyContent:m.direcao==='enviada'?'flex-end':'flex-start'}}>
-                      <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'rgba(201,168,76,0.15)':'rgba(255,255,255,0.06)',border:`1px solid ${m.direcao==='enviada'?'rgba(201,168,76,0.25)':'rgba(255,255,255,0.08)'}`}}>
-                        <div style={{fontSize:13,lineHeight:1.5}}>{m.conteudo}</div>
+                      <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'#dcf8c6':'#ffffff',color:'#1a1a2e',border:`1px solid ${m.direcao==='enviada'?'#bcdc99':'#e5e7eb'}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)'}}>
+                        <MidiaMensagem m={m} />
+                        {m.conteudo && (m.tipo==='text' || m.tipo==='sticker' || m.tipo==='document' || !['📷 Imagem','🎬 Vídeo','🎵 Áudio'].includes(m.conteudo)) && (
+                          <div style={{fontSize:13,lineHeight:1.5,marginTop:m.midia_url?6:0}}>{m.conteudo}</div>
+                        )}
                         <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,textAlign:'right'}}>
                           {new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
                           {m.direcao==='enviada'&&' ✓'}
@@ -627,15 +630,15 @@ export default function WhatsAppPage() {
 
       {/* Modal Nova Conversa */}
       {modalNovaConversa&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalNovaConversa(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:420,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:420,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:20}}>✉️ Nova Conversa</div>
             <div style={{marginBottom:14,position:'relative'}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Buscar cliente (opcional)</label>
               <input value={novaNomeBusca} onChange={e=>buscarClientesNovaConversa(e.target.value)} placeholder="🔍 Nome, CPF ou telefone..." style={inp} autoFocus />
               {clientesBusca.length>0&&(
-                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:180,overflow:'auto'}}>
+                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:180,overflow:'auto'}}>
                   {clientesBusca.map(c=>(
                     <div key={c.id} onClick={()=>selecionarClienteNovaConversa(c)} style={{padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.05)'}}
                       onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.08)')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
@@ -667,14 +670,14 @@ export default function WhatsAppPage() {
 
       {/* Modal Vincular */}
       {modalVincular&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalVincular(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:420,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:420,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:20}}>👤 Vincular ao Cliente</div>
             <div style={{marginBottom:16,position:'relative'}}>
               <input value={buscaVincular} onChange={e=>buscarParaVincular(e.target.value)} placeholder="🔍 Nome ou CPF..." style={inp} autoFocus />
               {resultVincular.length>0&&(
-                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:200,overflow:'auto'}}>
+                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,zIndex:10,marginTop:4,maxHeight:200,overflow:'auto'}}>
                   {resultVincular.map(c=>(
                     <div key={c.id} onClick={()=>vincularCliente(c)} style={{padding:'10px 14px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.05)'}}
                       onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.08)')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
@@ -694,7 +697,7 @@ export default function WhatsAppPage() {
       {modalConfig&&(
         <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalConfig(false)}>
-          <div style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:18,padding:'30px 32px',width:480,maxWidth:'95vw'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:18,padding:'30px 32px',width:480,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)',marginBottom:6}}>Configurar WhatsApp</div>
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:20}}>Informe os dados da Evolution API.</div>
             {[{label:'URL do VPS',key:'evo_url',ph:'http://SEU-IP:8080'},{label:'API Key',key:'api_key',ph:'sua-chave'},{label:'Nome da instância',key:'nome',ph:'corretor_bruno'}].map(({label,key,ph})=>(
@@ -714,6 +717,90 @@ export default function WhatsAppPage() {
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
     </Shell>
   )
+}
+
+// Renderiza a mídia da mensagem (imagem, vídeo, áudio, documento, sticker).
+// Resolve a signed URL do Storage sob demanda e mostra transcrição de áudio.
+function MidiaMensagem({ m }: { m: any }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [transcricao, setTranscricao] = useState<string | null>(m.transcricao || null)
+  const [transcrevendo, setTranscrevendo] = useState(false)
+
+  useEffect(() => {
+    if (!m.midia_url) return
+    let cancel = false
+    fetch(`/api/whatsapp/midia?path=${encodeURIComponent(m.midia_url)}`)
+      .then(r => r.json())
+      .then(d => { if (!cancel && d.url) setUrl(d.url) })
+    return () => { cancel = true }
+  }, [m.midia_url])
+
+  useEffect(() => { setTranscricao(m.transcricao || null) }, [m.transcricao])
+
+  async function transcreverAgora() {
+    setTranscrevendo(true)
+    try {
+      const r = await fetch('/api/whatsapp/midia', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ mensagem_id: m.id }),
+      })
+      const d = await r.json()
+      if (d.transcricao) setTranscricao(d.transcricao)
+      else alert('Não foi possível transcrever: ' + (d.error || 'erro desconhecido'))
+    } finally { setTranscrevendo(false) }
+  }
+
+  if (!m.midia_url) return null
+
+  if (m.tipo === 'image' || m.tipo === 'sticker') {
+    return url ? (
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt="" style={{maxWidth:260,maxHeight:280,borderRadius:8,display:'block'}} />
+      </a>
+    ) : <div style={{fontSize:11,color:'var(--text-muted)'}}>📷 carregando imagem...</div>
+  }
+
+  if (m.tipo === 'video') {
+    return url ? (
+      <video src={url} controls style={{maxWidth:280,borderRadius:8,display:'block'}} />
+    ) : <div style={{fontSize:11,color:'var(--text-muted)'}}>🎬 carregando vídeo...</div>
+  }
+
+  if (m.tipo === 'audio') {
+    return (
+      <div style={{minWidth:240}}>
+        {url
+          ? <audio src={url} controls style={{width:'100%'}} />
+          : <div style={{fontSize:11,color:'var(--text-muted)'}}>🎵 carregando áudio...</div>}
+        {transcricao ? (
+          <div style={{marginTop:6,padding:'6px 8px',background:'rgba(28,181,160,0.08)',border:'1px solid rgba(28,181,160,0.25)',borderRadius:6,fontSize:12,fontStyle:'italic',color:'var(--text)'}}>
+            <div style={{fontSize:10,color:'var(--teal)',fontWeight:600,marginBottom:2}}>📝 Transcrição</div>
+            {transcricao}
+          </div>
+        ) : (
+          <button onClick={transcreverAgora} disabled={transcrevendo}
+            style={{marginTop:6,fontSize:11,background:'rgba(255,255,255,0.06)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'4px 10px',cursor:'pointer'}}>
+            {transcrevendo ? 'Transcrevendo...' : '📝 Transcrever áudio'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (m.tipo === 'document') {
+    return url ? (
+      <a href={url} target="_blank" rel="noreferrer"
+        style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,textDecoration:'none',color:'var(--text)',minWidth:220}}>
+        <span style={{fontSize:24}}>📄</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.midia_nome || 'Documento'}</div>
+          <div style={{fontSize:10,color:'var(--text-muted)'}}>{m.midia_mimetype || 'arquivo'}</div>
+        </div>
+      </a>
+    ) : <div style={{fontSize:11,color:'var(--text-muted)'}}>📄 carregando arquivo...</div>
+  }
+
+  return null
 }
 
 function Shell({ children }: { children: React.ReactNode }) {

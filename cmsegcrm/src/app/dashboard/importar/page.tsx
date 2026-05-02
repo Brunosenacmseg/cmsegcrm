@@ -55,27 +55,107 @@ type Entidade = 'clientes' | 'negocios' | 'apolices' | 'propostas' | 'tarefas'
 
 const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hints: string[]; obrigatorio?: boolean }[]> = {
   clientes: [
-    { campo: 'nome',     label: 'Nome',     hints: ['nome','name','razao'], obrigatorio: true },
-    { campo: 'cpf_cnpj', label: 'CPF/CNPJ', hints: ['cpf','cnpj','documento'] },
-    { campo: 'email',    label: 'E-mail',   hints: ['email','e-mail'] },
-    { campo: 'telefone', label: 'Telefone', hints: ['telefone','fone','celular','whatsapp'] },
-    { campo: 'cep',      label: 'CEP',      hints: ['cep','codigo postal'] },
-    { campo: 'cidade',   label: 'Cidade',   hints: ['cidade','city'] },
-    { campo: 'estado',   label: 'Estado',   hints: ['estado','uf'] },
-    { campo: 'fonte',    label: 'Fonte',    hints: ['fonte','origem'] },
+    { campo: 'nome',     label: 'Nome',          hints: ['nome','name','razao'], obrigatorio: true },
+    { campo: 'cpf_cnpj', label: 'CPF/CNPJ',      hints: ['cpf','cnpj','documento'] },
+    { campo: 'tipo',     label: 'Tipo (PF/PJ)',  hints: ['tipo','tipo de pessoa','pf/pj'] },
+    // Contatos múltiplos
+    { campo: 'email',    label: 'E-mail 1',      hints: ['email 1','email1','e-mail','email'] },
+    { campo: 'email2',   label: 'E-mail 2',      hints: ['email 2','email2','email_2'] },
+    { campo: 'email3',   label: 'E-mail 3',      hints: ['email 3','email3','email_3'] },
+    { campo: 'telefone', label: 'Telefone 1',    hints: ['telefone 1','telefone1','telefone','fone','celular','whatsapp'] },
+    { campo: 'telefone2',label: 'Telefone 2',    hints: ['telefone 2','telefone2','fone2'] },
+    { campo: 'telefone3',label: 'Telefone 3',    hints: ['telefone 3','telefone3','fone3'] },
+    // Endereço
+    { campo: 'cep',          label: 'CEP',          hints: ['cep','codigo postal'] },
+    { campo: 'endereco',     label: 'Endereço',     hints: ['endereco','logradouro','rua'] },
+    { campo: 'numero',       label: 'Número',       hints: ['numero','número'] },
+    { campo: 'complemento',  label: 'Complemento',  hints: ['complemento','compl'] },
+    { campo: 'bairro',       label: 'Bairro',       hints: ['bairro'] },
+    { campo: 'cidade',       label: 'Cidade',       hints: ['cidade','city'] },
+    { campo: 'estado',       label: 'Estado/UF',    hints: ['estado','uf'] },
+    // Pessoais
+    { campo: 'rg',           label: 'RG',           hints: ['rg'] },
+    { campo: 'nascimento',   label: 'Nascimento',   hints: ['nascimento','data nasc'] },
+    { campo: 'aniversario',  label: 'Aniversário',  hints: ['aniversario','aniversário'] },
+    { campo: 'sexo',         label: 'Sexo',         hints: ['sexo','genero','gênero'] },
+    { campo: 'estado_civil', label: 'Estado Civil', hints: ['estado civil','civil'] },
+    // Profissional
+    { campo: 'profissao',    label: 'Profissão',    hints: ['profissao','profissão'] },
+    { campo: 'ramo',         label: 'Ramo',         hints: ['ramo'] },
+    { campo: 'renda_mensal', label: 'Renda Mensal', hints: ['renda','salario','salário'] },
+    { campo: 'estipulantes', label: 'Estipulantes', hints: ['estipulant'] },
+    { campo: 'filial',       label: 'Filial',       hints: ['filial','unidade'] },
+    { campo: 'parentesco',   label: 'Parentesco',   hints: ['parentesco','relacao'] },
+    { campo: 'pasta_cliente',label: 'Pasta Cliente',hints: ['pasta cliente','pasta','drive'] },
+    { campo: 'vencimento_cnh', label: 'Vencimento CNH', hints: ['vencimento cnh','cnh'] },
+    // Sistema
+    { campo: 'cliente_desde',label: 'Cliente Desde', hints: ['cliente desde','desde'] },
+    { campo: 'ativo',        label: 'Ativo (sim/não)', hints: ['ativo'] },
+    { campo: 'receber_email',label: 'Receber e-mail', hints: ['receber','newsletter','opt'] },
+    { campo: 'fonte',        label: 'Fonte',         hints: ['fonte','origem'] },
+    { campo: 'observacao',   label: 'Observação',    hints: ['observ','obs','notas'] },
   ],
   negocios: [
-    { campo: 'titulo',     label: 'Título',           hints: ['titulo','title'], obrigatorio: true },
+    { campo: 'titulo',     label: 'Nome / Título',    hints: ['titulo','nome','title'], obrigatorio: true },
+    { campo: 'empresa',    label: 'Empresa',          hints: ['empresa','company'] },
     { campo: 'cpf_cnpj',   label: 'CPF/CNPJ Cliente', hints: ['cpf','cnpj'] },
-    { campo: 'funil',      label: 'Funil (nome)',     hints: ['funil','pipeline'] },
+    { campo: 'funil',      label: 'Funil de vendas',  hints: ['funil','pipeline'] },
     { campo: 'etapa',      label: 'Etapa',            hints: ['etapa','stage'] },
-    { campo: 'produto',    label: 'Produto',          hints: ['produto','ramo'] },
-    { campo: 'seguradora', label: 'Seguradora',       hints: ['seguradora','cia'] },
-    { campo: 'premio',     label: 'Prêmio',           hints: ['premio','prêmio','valor'] },
-    { campo: 'comissao_pct', label: '% Comissão',     hints: ['%','perc','pct','comissao'] },
-    { campo: 'vencimento', label: 'Vencimento',       hints: ['vencimento','fim','vigencia'] },
-    { campo: 'fonte',      label: 'Fonte',            hints: ['fonte','origem'] },
-    { campo: 'obs',        label: 'Observações',      hints: ['obs','observ','notas'] },
+    { campo: 'estado',     label: 'Estado/Status',    hints: ['estado','status','situacao','situação'] },
+    { campo: 'qualificacao', label: 'Qualificação (estrelas 1-5)', hints: ['qualificacao','qualificação','rating','estrelas'] },
+    { campo: 'motivo_perda', label: 'Motivo de Perda',  hints: ['motivo perda','motivo_perda','razao'] },
+    { campo: 'anotacao_motivo_perda', label: 'Anotação do motivo de perda', hints: ['anotacao','anotação','motivo perda'] },
+    { campo: 'pausada',    label: 'Pausada (sim/não)', hints: ['pausada','pausa'] },
+    // Valores / financeiro
+    { campo: 'valor_unico',label: 'Valor Único',      hints: ['valor unico','valor único','premio','valor'] },
+    { campo: 'valor_recorrente', label: 'Valor Recorrente / Mensalidade', hints: ['valor recorrente','recorrente','mensalidade','mensal'] },
+    { campo: 'comissao_pct', label: '% Comissão',     hints: ['%','perc','pct','comissao','comissão'] },
+    // Datas
+    { campo: 'data_primeiro_contato', label: 'Data primeiro contato', hints: ['primeiro contato','data primeiro'] },
+    { campo: 'hora_primeiro_contato', label: 'Hora primeiro contato', hints: ['hora primeiro'] },
+    { campo: 'data_ultimo_contato',   label: 'Data último contato',  hints: ['ultimo contato','último contato','data ultimo'] },
+    { campo: 'hora_ultimo_contato',   label: 'Hora último contato',  hints: ['hora ultimo','hora último'] },
+    { campo: 'data_proxima_tarefa',   label: 'Data próxima tarefa',  hints: ['proxima tarefa','próxima tarefa'] },
+    { campo: 'hora_proxima_tarefa',   label: 'Hora próxima tarefa',  hints: ['hora proxima','hora próxima'] },
+    { campo: 'previsao_fechamento',   label: 'Previsão de fechamento', hints: ['previsao','previsão','fechamento previsto'] },
+    { campo: 'data_fechamento',       label: 'Data de fechamento',   hints: ['data fechamento'] },
+    { campo: 'hora_fechamento',       label: 'Hora de fechamento',   hints: ['hora fechamento'] },
+    // Marketing / time
+    { campo: 'fonte',         label: 'Fonte',         hints: ['fonte','origem'] },
+    { campo: 'campanha',      label: 'Campanha',      hints: ['campanha'] },
+    { campo: 'responsavel',   label: 'Responsável',   hints: ['responsavel','responsável','vendedor','owner'] },
+    { campo: 'equipe',        label: 'Equipe',        hints: ['equipe','equipes do responsavel','equipes do responsável','team'] },
+    // Produto / seguro
+    { campo: 'produto',       label: 'Produto',       hints: ['produto','produtos','ramo'] },
+    { campo: 'seguradora',    label: 'Seguradora',    hints: ['seguradora','cia'] },
+    { campo: 'tipo_seguro',   label: 'Tipo do seguro', hints: ['tipo do seguro','tipo seguro'] },
+    { campo: 'operadora',     label: 'Operadora',     hints: ['operadora'] },
+    { campo: 'vencimento',    label: 'Vigência / Vencimento', hints: ['vigencia','vigência','vencimento','fim'] },
+    // Auto / veículo
+    { campo: 'placa',         label: 'Placa',         hints: ['placa'] },
+    { campo: 'modelo',        label: 'Modelo do veículo', hints: ['modelo','modelo do veiculo','modelo do veículo'] },
+    { campo: 'rastreador',    label: 'Rastreador',    hints: ['rastreador'] },
+    // PJ / saúde
+    { campo: 'tipo_cnpj',     label: 'Tipo de CNPJ',  hints: ['tipo de cnpj','tipo cnpj'] },
+    { campo: 'funcionario_clt', label: 'Funcionário CLT', hints: ['funcionario clt','funcionário clt'] },
+    { campo: 'profissao',     label: 'Profissão',     hints: ['profissao','profissão'] },
+    { campo: 'particular',    label: 'Particular?',   hints: ['particular'] },
+    { campo: 'possui_plano',  label: 'Possui plano?', hints: ['possui plano'] },
+    { campo: 'plano_atual',   label: 'Plano atual',   hints: ['plano atual'] },
+    { campo: 'motivo_troca_plano', label: 'Motivo troca de plano', hints: ['motivo troca'] },
+    { campo: 'mensalidade_atual', label: 'Mensalidade atual', hints: ['mensalidade atual'] },
+    { campo: 'idade_beneficiarios', label: 'Idade dos beneficiários', hints: ['idade dos beneficiarios','idade dos beneficiários'] },
+    { campo: 'possui_hospital_preferencia', label: 'Possui hospital de preferência', hints: ['possui hospital'] },
+    { campo: 'qual_hospital', label: 'Qual hospital', hints: ['qual hospital'] },
+    // Endereço / docs adicionais
+    { campo: 'cep',           label: 'CEP',           hints: ['cep'] },
+    { campo: 'cidade',        label: 'Cidade',        hints: ['cidade'] },
+    { campo: 'cpf_2',         label: 'CPF 2',         hints: ['cpf 2','cpf_2'] },
+    { campo: 'email',         label: 'E-mail',        hints: ['email','e-mail'] },
+    { campo: 'telefone',      label: 'Telefone',      hints: ['telefone','fone','celular','whatsapp'] },
+    { campo: 'cargo',         label: 'Cargo (do contato)', hints: ['cargo'] },
+    // Observações
+    { campo: 'obs',           label: 'Observações',   hints: ['obs','observ','notas'] },
   ],
   apolices: [
     { campo: 'numero',       label: 'Número',          hints: ['numero','apolice','policy'], obrigatorio: true },
@@ -189,27 +269,89 @@ export default function ImportarPage() {
       return novo
     })
 
-    try {
-      const r = await fetch('/api/importar', {
-        method: 'POST',
-        headers: await authHeaders(),
-        body: JSON.stringify({ entidade, linhas, nome_arquivo: nomeArquivo, formato }),
-      })
-      const j = await r.json()
-      if (!r.ok) {
-        alert('Erro: ' + (j.error || 'falha'))
-        setImportando(false)
-        return
+    // Lote 200 pra reduzir total de requests (76k -> 380 lotes em vez de 1520).
+    // Backend faz batch insert + lookup unificado, entao 200 rodam em ~10-20s
+    // (folga confortavel sob o teto de 60s do Vercel Hobby).
+    const TAMANHO_LOTE = 200
+    const totalLotes = Math.ceil(linhas.length / TAMANHO_LOTE)
+    const acc = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+    let falhouTudo = false
+
+    async function getHeaders() {
+      // Refresh session se ja expirou (sessoes Supabase duram ~1h por padrao)
+      const { data: { session } } = await supabase.auth.getSession()
+      const expiresAt = (session?.expires_at || 0) * 1000
+      if (expiresAt && expiresAt - Date.now() < 60_000) {
+        await supabase.auth.refreshSession()
       }
-      setResultado(j.stats)
-      setStep('sucesso')
-      const { data: h } = await supabase.from('importacoes_dados').select('*').order('iniciado_em', { ascending: false }).limit(15)
-      setHistorico(h || [])
-    } catch (e: any) {
-      alert('Erro: ' + e.message)
-    } finally {
-      setImportando(false)
+      return await authHeaders()
     }
+
+    async function enviarLote(lote: any[], numLote: number, tentativa = 1): Promise<any> {
+      try {
+        const r = await fetch('/api/importar', {
+          method: 'POST',
+          headers: await getHeaders(),
+          body: JSON.stringify({ entidade, linhas: lote, nome_arquivo: nomeArquivo, formato }),
+        })
+        const txt = await r.text()
+        let j: any
+        try { j = JSON.parse(txt) }
+        catch {
+          if (tentativa < 3) {
+            await new Promise(res => setTimeout(res, 1500 * tentativa))
+            return enviarLote(lote, numLote, tentativa + 1)
+          }
+          const ehTimeout = /timeout|504|gateway|an error o/i.test(txt)
+          return { _erroFatal: ehTimeout
+            ? `Lote ${numLote}: timeout do servidor.`
+            : `Lote ${numLote}: resposta inválida (${txt.slice(0, 80)})` }
+        }
+        if (!r.ok) {
+          if ((r.status === 401 || r.status === 429 || r.status >= 500) && tentativa < 3) {
+            await new Promise(res => setTimeout(res, 1500 * tentativa))
+            return enviarLote(lote, numLote, tentativa + 1)
+          }
+          return { _erroFatal: `Lote ${numLote}: ${j.error || 'erro'}` }
+        }
+        return j
+      } catch (e: any) {
+        if (tentativa < 3) {
+          await new Promise(res => setTimeout(res, 1500 * tentativa))
+          return enviarLote(lote, numLote, tentativa + 1)
+        }
+        return { _erroFatal: `Lote ${numLote}: ${e.message}` }
+      }
+    }
+
+    for (let i = 0; i < linhas.length; i += TAMANHO_LOTE) {
+      const lote = linhas.slice(i, i + TAMANHO_LOTE)
+      const numLote = Math.floor(i / TAMANHO_LOTE) + 1
+      setResultado({ ...acc, _progresso: `Lote ${numLote}/${totalLotes} — ${i + lote.length}/${linhas.length} linhas` })
+      const j = await enviarLote(lote, numLote)
+      if (j._erroFatal) {
+        acc.qtd_erros += lote.length
+        acc.erros.push(j._erroFatal)
+        if (acc.erros.length > 30) acc.erros = acc.erros.slice(0, 30)
+        continue
+      }
+      const s = j.stats || {}
+      acc.qtd_lidos      += s.qtd_lidos      || lote.length
+      acc.qtd_criados    += s.qtd_criados    || 0
+      acc.qtd_atualizados+= s.qtd_atualizados|| 0
+      acc.qtd_erros      += s.qtd_erros      || 0
+      if (s.erros) acc.erros = [...acc.erros, ...s.erros].slice(0, 30)
+    }
+
+    setResultado(acc)
+    setStep('sucesso')
+    if (acc.qtd_criados + acc.qtd_atualizados === 0 && acc.qtd_erros === linhas.length) {
+      falhouTudo = true
+    }
+    if (falhouTudo) alert('Nenhuma linha foi importada. Veja a aba "Erros" pra detalhes.')
+    const { data: h } = await supabase.from('importacoes_dados').select('*').order('iniciado_em', { ascending: false }).limit(15)
+    setHistorico(h || [])
+    setImportando(false)
   }
 
   function novoImport() {
@@ -371,8 +513,16 @@ export default function ImportarPage() {
                 </table>
               </div>
               {excelData.rows.length > 10 && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>... e mais {excelData.rows.length-10} linhas</div>}
+              {importando && resultado?._progresso && (
+                <div style={{marginTop:16,padding:'12px 16px',background:'rgba(74,128,240,0.06)',border:'1px solid rgba(74,128,240,0.25)',borderRadius:8,fontSize:13}}>
+                  ⏳ {resultado._progresso}
+                  {' · '}
+                  <strong style={{color:'var(--success)'}}>{(resultado.qtd_criados||0) + (resultado.qtd_atualizados||0)} ok</strong>
+                  {(resultado.qtd_erros||0) > 0 && <> · <strong style={{color:'var(--danger)'}}>{resultado.qtd_erros} erros</strong></>}
+                </div>
+              )}
               <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
-                <button className="btn-secondary" onClick={()=>setStep('mapear')}>← Voltar</button>
+                <button className="btn-secondary" onClick={()=>setStep('mapear')} disabled={importando}>← Voltar</button>
                 <button className="btn-primary" onClick={confirmarImportacao} disabled={importando}>
                   {importando?'⏳ Importando...':'✅ Confirmar Importação'}
                 </button>

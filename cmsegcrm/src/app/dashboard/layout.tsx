@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
 import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
+import { registrarLog } from '@/lib/logs'
 
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
@@ -34,6 +35,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config' },
+  { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', adminOnly:true },
   { href:'/dashboard/configuracoes',icon:'⚙️', label:'Configurações', section:'Config', adminOnly:true },
 ]
 
@@ -102,6 +104,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [profile, pathname, router])
 
+  // Registra navegação do usuário (auditoria). Usa o label do NAV quando
+  // possível para que o log fique legível no painel de admin.
+  useEffect(() => {
+    if (!user || !pathname) return
+    const item = NAV.find(it => pathname === it.href || (it.href !== '/dashboard' && pathname.startsWith(it.href)))
+    registrarLog({
+      acao: 'page_view',
+      recurso: item?.label || pathname,
+      pathname,
+    })
+  }, [user, pathname])
+
   async function carregarProfile(userId: string) {
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
@@ -142,6 +156,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   async function logout() {
+    await registrarLog({ acao: 'logout' })
     await supabase.auth.signOut()
     window.location.replace('/login')
   }
@@ -182,8 +197,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <aside style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
         <div style={{padding:'26px 22px 20px',borderBottom:'1px solid var(--border)'}}>
-          <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM.segCRM</div>
-          <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:2,textTransform:'uppercase',marginTop:2}}>Corretora de Seguros</div>
+          <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM Seguros</div>
+          <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:1,textTransform:'uppercase',marginTop:2,lineHeight:1.4,fontWeight:700}}>Transformando vidas através do seguro</div>
         </div>
 
         <nav style={{flex:1,padding:'14px 0',overflowY:'auto'}}>
@@ -249,7 +264,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <main style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
         {/* Header com sino */}
-        <div style={{height:52,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'rgba(255,255,255,0.92)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
+        <div style={{height:48,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'#ffffff',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
           <div style={{flex:1}}/>
 
           <div style={{position:'relative'}}>

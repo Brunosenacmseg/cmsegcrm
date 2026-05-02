@@ -203,8 +203,8 @@ export default function UsuariosPage() {
                         <div style={{display:'flex',alignItems:'center',gap:6}}>
                           {salvando && <span style={{fontSize:11,color:'var(--text-muted)'}}>...</span>}
                           <select value={u.role||'corretor'} onChange={e=>alterarRole(u.id,e.target.value)} disabled={salvando}
-                            style={{background:'#0e2040',border:`1px solid ${r.cor}50`,borderRadius:6,padding:'4px 10px',color:r.cor,fontFamily:'DM Sans,sans-serif',fontSize:11,cursor:'pointer'}}>
-                            {ROLES.map(x=><option key={x.key} value={x.key} style={{background:'#0e2040'}}>{x.label}</option>)}
+                            style={{background:'#ffffff',border:`1px solid ${r.cor}50`,borderRadius:6,padding:'4px 10px',color:r.cor,fontFamily:'DM Sans,sans-serif',fontSize:11,cursor:'pointer'}}>
+                            {ROLES.map(x=><option key={x.key} value={x.key} style={{background:'#ffffff'}}>{x.label}</option>)}
                           </select>
                         </div>
                       ) : (
@@ -219,10 +219,10 @@ export default function UsuariosPage() {
                           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                             <span style={{fontSize:11,color:'var(--text-muted)',flexShrink:0}}>📞 Ramal:</span>
                             <select value={ramalTemp} onChange={e=>setRamalTemp(e.target.value)}
-                              style={{flex:1,minWidth:160,background:'#0e2040',border:'1px solid var(--gold)',borderRadius:6,padding:'5px 10px',color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none'}}>
+                              style={{flex:1,minWidth:160,background:'#ffffff',border:'1px solid var(--gold)',borderRadius:6,padding:'5px 10px',color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none'}}>
                               <option value="">— Sem ramal —</option>
                               {EXTENSOES_GOTO.map(e=>(
-                                <option key={e.numero} value={e.numero} style={{background:'#0e2040'}}>{e.numero} — {e.nome}</option>
+                                <option key={e.numero} value={e.numero} style={{background:'#ffffff'}}>{e.numero} — {e.nome}</option>
                               ))}
                             </select>
                             <button onClick={()=>salvarRamal(u.id)} disabled={salvandoRamal===u.id}
@@ -265,8 +265,8 @@ export default function UsuariosPage() {
                   <div style={{marginBottom:14}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Senha</label><input style={inp} type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} required minLength={6} placeholder="Mínimo 6 caracteres"/></div>
                   <div style={{marginBottom:20}}>
                     <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Nível</label>
-                    <select style={{...inp,background:'#0e2040'}} value={novoRole} onChange={e=>setNovoRole(e.target.value)}>
-                      {ROLES.map(r=><option key={r.key} value={r.key} style={{background:'#0e2040'}}>{r.label} — {r.desc}</option>)}
+                    <select style={{...inp,background:'#ffffff'}} value={novoRole} onChange={e=>setNovoRole(e.target.value)}>
+                      {ROLES.map(r=><option key={r.key} value={r.key} style={{background:'#ffffff'}}>{r.label} — {r.desc}</option>)}
                     </select>
                   </div>
                   {msg&&<div style={{background:msgType==='ok'?'rgba(28,181,160,0.1)':'rgba(224,82,82,0.1)',border:`1px solid ${msgType==='ok'?'rgba(28,181,160,0.3)':'rgba(224,82,82,0.3)'}`,borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:13,color:msgType==='ok'?'var(--teal)':'var(--red)'}}>{msg}</div>}
@@ -306,9 +306,9 @@ export default function UsuariosPage() {
                       <select defaultValue={eq.lider_id||''} onChange={e=>trocarLider(eq.id,e.target.value)}
                         style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:'pointer'}}
                         title="Mudar líder">
-                        <option value="" style={{background:'#0e2040'}}>— Sem líder —</option>
+                        <option value="" style={{background:'#ffffff'}}>— Sem líder —</option>
                         {usuarios.filter(u=>u.role==='lider'||u.role==='admin').map(u=>(
-                          <option key={u.id} value={u.id} style={{background:'#0e2040'}}>{u.nome}</option>
+                          <option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>
                         ))}
                       </select>
                       <button onClick={()=>renomearEquipe(eq.id,eq.nome)}
@@ -329,10 +329,10 @@ export default function UsuariosPage() {
                   {!(eq.equipe_membros?.length)&&<span style={{fontSize:12,color:'var(--text-muted)'}}>Nenhum membro</span>}
                 </div>
                 {isAdmin&&(
-                  <select style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer',outline:'none'}} defaultValue=""
+                  <select style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer',outline:'none'}} defaultValue=""
                     onChange={e=>{if(e.target.value){adicionarMembro(eq.id,e.target.value);(e.target as HTMLSelectElement).value=''}}}>
                     <option value="">+ Adicionar membro...</option>
-                    {usuarios.filter(u=>!(eq.equipe_membros||[]).some((m:any)=>m.user_id===u.id)).map(u=><option key={u.id} value={u.id} style={{background:'#0e2040'}}>{u.nome}</option>)}
+                    {usuarios.filter(u=>!(eq.equipe_membros||[]).some((m:any)=>m.user_id===u.id)).map(u=><option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>)}
                   </select>
                 )}
               </div>
@@ -342,15 +342,15 @@ export default function UsuariosPage() {
       </div>
 
       {modalEquipe&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.75)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}} onClick={e=>e.target===e.currentTarget&&setModalEquipe(false)}>
-          <div style={{background:'#0e2040',border:'1px solid var(--border)',borderRadius:18,padding:'30px 32px',width:420,maxWidth:'95vw'}}>
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.40)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}} onClick={e=>e.target===e.currentTarget&&setModalEquipe(false)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:18,padding:'30px 32px',width:420,maxWidth:'95vw'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)',marginBottom:20}}>Nova Equipe</div>
             <div style={{marginBottom:14}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Nome</label><input style={inp} placeholder="Ex: Equipe SP" value={novaEquipe.nome} onChange={e=>setNovaEquipe(n=>({...n,nome:e.target.value}))}/></div>
             <div style={{marginBottom:20}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Líder</label>
-              <select style={{...inp,background:'#0e2040'}} value={novaEquipe.lider_id} onChange={e=>setNovaEquipe(n=>({...n,lider_id:e.target.value}))}>
+              <select style={{...inp,background:'#ffffff'}} value={novaEquipe.lider_id} onChange={e=>setNovaEquipe(n=>({...n,lider_id:e.target.value}))}>
                 <option value="">Selecione...</option>
-                {usuarios.filter(u=>u.role==='lider'||u.role==='admin').map(u=><option key={u.id} value={u.id} style={{background:'#0e2040'}}>{u.nome}</option>)}
+                {usuarios.filter(u=>u.role==='lider'||u.role==='admin').map(u=><option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>)}
               </select>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>

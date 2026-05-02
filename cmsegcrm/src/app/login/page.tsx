@@ -11,6 +11,23 @@ export default function LoginPage() {
   const [modo, setModo]       = useState<'login'|'cadastro'>('login')
   const [nome, setNome]       = useState('')
 
+  async function registrarLoginLog(payload: {
+    user_id?: string | null
+    user_email?: string | null
+    user_nome?: string | null
+    sucesso: boolean
+    motivo?: string
+  }) {
+    try {
+      await fetch('/api/logs/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      })
+    } catch { /* logs nunca quebram a UX */ }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setErro('')
@@ -23,8 +40,17 @@ export default function LoginPage() {
       })
       if (error) { setErro(error.message); setLoading(false); return }
       // Após cadastro, tenta login direto
-      const { error: errLogin } = await supabase.auth.signInWithPassword({ email, password: senha })
-      if (!errLogin) { window.location.replace('/dashboard'); return }
+      const { data: dataCad, error: errLogin } = await supabase.auth.signInWithPassword({ email, password: senha })
+      if (!errLogin) {
+        await registrarLoginLog({
+          user_id: dataCad.user?.id ?? null,
+          user_email: email,
+          user_nome: nome,
+          sucesso: true,
+        })
+        window.location.replace('/dashboard')
+        return
+      }
       setErro('Verifique seu e-mail para confirmar o cadastro.')
       setLoading(false)
       return
@@ -32,10 +58,20 @@ export default function LoginPage() {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha })
     if (error || !data.session) {
+      await registrarLoginLog({
+        user_email: email,
+        sucesso: false,
+        motivo: error?.message || 'credenciais inválidas',
+      })
       setErro('E-mail ou senha incorretos.')
       setLoading(false)
       return
     }
+    await registrarLoginLog({
+      user_id: data.user?.id ?? null,
+      user_email: data.user?.email ?? email,
+      sucesso: true,
+    })
     window.location.replace('/dashboard')
   }
 
@@ -48,10 +84,10 @@ export default function LoginPage() {
       <div className="fade-up" style={{width:'100%', maxWidth:420, padding:'0 20px'}}>
         <div style={{textAlign:'center', marginBottom:36}}>
           <div style={{fontFamily:'DM Serif Display, serif', fontSize:32, color:'var(--gold)', marginBottom:4}}>
-            CM.segCRM
+            CM Seguros
           </div>
-          <div style={{fontSize:12, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase'}}>
-            Corretora de Seguros
+          <div style={{fontSize:12, color:'var(--text-muted)', letterSpacing:1, textTransform:'uppercase', fontWeight:700}}>
+            Transformando vidas através do seguro
           </div>
         </div>
 

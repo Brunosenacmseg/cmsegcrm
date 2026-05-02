@@ -114,5 +114,5 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   // Verificação do webhook pelo GoTo
-  return NextResponse.json({ status: 'ok', service: 'CM.segCRM GoTo Webhook' })
+  return NextResponse.json({ status: 'ok', service: 'CM Seguros GoTo Webhook' })
 }

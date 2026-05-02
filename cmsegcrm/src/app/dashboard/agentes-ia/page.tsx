@@ -179,9 +179,9 @@ export default function AgentesIAPage() {
       </div>
 
       {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModal(false)}>
-          <div style={{background:'#0a1628',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:680,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:680,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:18}}>
               {editando ? '✎ Editar agente' : '🤖 Novo agente de IA'}
             </div>
@@ -193,7 +193,7 @@ export default function AgentesIAPage() {
               </div>
               <div>
                 <label style={lbl}>Modelo *</label>
-                <select value={form.modelo} onChange={e=>setForm((f:any)=>({...f,modelo:e.target.value}))} style={{...inp,background:'#0e2040'}}>
+                <select value={form.modelo} onChange={e=>setForm((f:any)=>({...f,modelo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                   {MODELOS.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
                 </select>
               </div>

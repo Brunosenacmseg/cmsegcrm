@@ -74,7 +74,6 @@ export default function RDStationPage() {
   const [dataFim, setDataFim]       = useState(dataHoje())
   const [progresso, setProgresso]   = useState<{ atual: number, total: number, mes: string } | null>(null)
   const [incluirDetalhes, setIncluirDetalhes] = useState(false)
-  const [oauth, setOauth] = useState<{ conectado: boolean; expiraEm?: string; clientIdConfigurado: boolean } | null>(null)
 
   async function authHeaders(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession()
@@ -91,35 +90,8 @@ export default function RDStationPage() {
     } catch {}
   }
 
-  async function carregarOAuth() {
-    try {
-      const r = await fetch('/api/rdstation/oauth/status', { headers: await authHeaders() })
-      const j = await r.json()
-      if (!j.error) setOauth(j)
-    } catch {}
-  }
-
-  async function desconectarOAuth() {
-    if (!confirm('Desconectar a conta RD Station? Os webhooks no RD continuarão ativos, mas você precisará reconectar para criar novos.')) return
-    try {
-      await fetch('/api/rdstation/oauth/status', { method: 'DELETE', headers: await authHeaders() })
-      await carregarOAuth()
-    } catch {}
-  }
-
   useEffect(() => {
-    carregarHistorico(); carregarOAuth()
-    // Mensagens vindas do callback OAuth
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('oauth_ok')) {
-        setErro('✅ Conta RD Station conectada com sucesso!')
-        window.history.replaceState({}, '', window.location.pathname)
-      } else if (params.get('oauth_erro')) {
-        setErro('❌ Erro OAuth: ' + params.get('oauth_erro'))
-        window.history.replaceState({}, '', window.location.pathname)
-      }
-    }
+    carregarHistorico()
   }, [])
 
   async function chamarSync(action: string, from?: string, to?: string): Promise<any> {
@@ -282,61 +254,6 @@ export default function RDStationPage() {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '28px' }}>
         <div style={{ maxWidth: 980, margin: '0 auto' }}>
-
-          {/* OAuth — Conexão com RD Station v2 */}
-          <div className="card" style={{ marginBottom: 20, background: oauth?.conectado ? 'linear-gradient(135deg, rgba(28,181,160,0.10), rgba(28,181,160,0.04))' : 'linear-gradient(135deg, rgba(224,82,82,0.06), rgba(201,168,76,0.04))' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 280 }}>
-                <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 16, marginBottom: 4 }}>
-                  🔐 Conexão OAuth (API v2 do RD)
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  {oauth?.conectado ? (
-                    <>✅ Conta conectada · access_token válido até <strong>{oauth.expiraEm ? new Date(oauth.expiraEm).toLocaleString('pt-BR') : '?'}</strong> (renova sozinho)</>
-                  ) : !oauth?.clientIdConfigurado ? (
-                    <>⚠️ Configure as env vars <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>RDSTATION_OAUTH_CLIENT_ID</code> e <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>RDSTATION_OAUTH_CLIENT_SECRET</code> na Vercel (instruções abaixo)</>
-                  ) : (
-                    <>Necessário para criar/gerenciar webhooks da v2 e para acessar endpoints v2 da API.</>
-                  )}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {oauth?.conectado && (
-                  <button onClick={desconectarOAuth}
-                    style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontSize: 12 }}>
-                    Desconectar
-                  </button>
-                )}
-                {oauth?.clientIdConfigurado && (
-                  <a href="/api/rdstation/oauth/start"
-                    style={{ background: oauth?.conectado ? 'rgba(28,181,160,0.12)' : 'linear-gradient(135deg, var(--gold), var(--teal))', border: oauth?.conectado ? '1px solid rgba(28,181,160,0.4)' : 'none', borderRadius: 8, padding: '10px 18px', color: oauth?.conectado ? 'var(--teal)' : '#0a1628', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontSize: 13, fontWeight: 600, textDecoration: 'none', display: 'inline-block' }}>
-                    {oauth?.conectado ? '🔄 Reconectar' : '🔗 Conectar conta RD Station'}
-                  </a>
-                )}
-              </div>
-            </div>
-
-            <details style={{ marginTop: 14, fontSize: 12, color: 'var(--text-muted)' }}>
-              <summary style={{ cursor: 'pointer', color: 'var(--gold)' }}>Como configurar as credenciais OAuth (passo-a-passo)</summary>
-              <div style={{ marginTop: 12, lineHeight: 1.7 }}>
-                <strong style={{ color: 'var(--text)' }}>1.</strong> Acesse o portal de desenvolvedores: <a href="https://appstore.rdstation.com/pt-BR/publisher" target="_blank" rel="noopener" style={{ color: 'var(--teal)' }}>appstore.rdstation.com/pt-BR/publisher</a><br/>
-                <strong style={{ color: 'var(--text)' }}>2.</strong> Crie um novo aplicativo (tipo: Privado/Interno se for só pra você). Selecione <strong>RD Station CRM</strong> como produto.<br/>
-                <strong style={{ color: 'var(--text)' }}>3.</strong> Em <strong>Redirect URI</strong>, cole:
-                <div style={{ marginTop: 4, padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, fontFamily: 'monospace', fontSize: 11, color: 'var(--text)' }}>
-                  {typeof window !== 'undefined' ? `${window.location.origin}/api/rdstation/oauth/callback` : ''}
-                </div>
-                <strong style={{ color: 'var(--text)' }}>4.</strong> Salve e copie o <code>Client ID</code> e <code>Client Secret</code>.<br/>
-                <strong style={{ color: 'var(--text)' }}>5.</strong> Na Vercel (Settings → Environment Variables), adicione:
-                <div style={{ marginLeft: 16, marginTop: 4 }}>
-                  • <code>RDSTATION_OAUTH_CLIENT_ID</code> = (Client ID)<br/>
-                  • <code>RDSTATION_OAUTH_CLIENT_SECRET</code> = (Client Secret)
-                </div>
-                <strong style={{ color: 'var(--text)' }}>6.</strong> Faça <strong>Redeploy</strong> na Vercel para aplicar.<br/>
-                <strong style={{ color: 'var(--text)' }}>7.</strong> Volte aqui e clique em <strong>Conectar conta RD Station</strong> — vai abrir o RD Station pra autorizar.<br/>
-                <strong style={{ color: 'var(--text)' }}>8.</strong> Após autorizar, você volta automaticamente. Aí clique em <strong>✨ Criar 6 webhooks no RD automaticamente</strong> abaixo.
-              </div>
-            </details>
-          </div>
 
           {/* Webhook — sincronização em tempo real */}
           <div className="card" style={{ marginBottom: 20, background: 'linear-gradient(135deg, rgba(28,181,160,0.08), rgba(74,128,240,0.06))' }}>

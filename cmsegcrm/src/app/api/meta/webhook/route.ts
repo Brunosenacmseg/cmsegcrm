@@ -138,25 +138,45 @@ export async function POST(req: NextRequest) {
         }).eq('id', clienteId)
       }
 
-      // Cria negócio "Novo Lead" se houver funil de vendas configurado
+      // Mapeamento por formulário: define funil/etapa/vendedor.
+      // Se não houver mapeamento ativo, cai no funil padrão "venda".
+      let mapping: any = null
+      if (linha.form_id) {
+        const { data: m } = await supabaseAdmin.from('meta_form_mapeamento')
+          .select('*').eq('form_id', String(linha.form_id)).maybeSingle()
+        if (m && m.ativo !== false) mapping = m
+      }
+      let vendedorId: string | null = mapping?.vendedor_id || null
+
+      // Cria negócio se: temos cliente E (mapping permite OU não há mapping)
       let negocioId: string | null = null
-      if (clienteId) {
-        // Pega funil padrão de vendas
-        const { data: funil } = await supabaseAdmin.from('funis')
-          .select('id, etapas')
-          .eq('tipo', 'venda')
-          .order('ordem')
-          .limit(1)
-          .maybeSingle()
-        if (funil) {
-          const etapaInicial = (funil.etapas as string[])?.[0] || 'Novo'
+      const deveCriarNegocio = clienteId && (mapping ? mapping.criar_negocio !== false : true)
+      if (deveCriarNegocio) {
+        let funilId: string | null = mapping?.funil_id || null
+        let etapaInicial: string | null = mapping?.etapa || null
+
+        if (!funilId) {
+          const { data: funil } = await supabaseAdmin.from('funis')
+            .select('id, etapas').eq('tipo', 'venda').order('ordem').limit(1).maybeSingle()
+          if (funil) {
+            funilId = funil.id
+            etapaInicial = (funil.etapas as string[])?.[0] || 'Novo'
+          }
+        } else if (!etapaInicial) {
+          const { data: funil } = await supabaseAdmin.from('funis').select('etapas').eq('id', funilId).maybeSingle()
+          etapaInicial = (funil?.etapas as string[])?.[0] || 'Novo'
+        }
+
+        if (funilId) {
           const { data: neg } = await supabaseAdmin.from('negocios').insert({
             cliente_id:        clienteId,
-            funil_id:          funil.id,
-            etapa:             etapaInicial,
+            funil_id:          funilId,
+            etapa:             etapaInicial!,
             titulo:            `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
             fonte:             'Meta Ads',
             obs:               campos.length ? campos.map((c: any) => `${c.name}: ${(c.values || []).join(', ')}`).join('\n') : null,
+            corretor_id:       vendedorId,
+            vendedor_id:       vendedorId,
             meta_campaign_id:  linha.campanha_id || null,
             meta_ad_id:        linha.ad_id || null,
           }).select('id').single()
@@ -175,6 +195,7 @@ export async function POST(req: NextRequest) {
         campos:        linha.campos,
         cliente_id:    clienteId,
         negocio_id:    negocioId,
+        vendedor_id:   vendedorId,
         processado_em: new Date().toISOString(),
       })
 
