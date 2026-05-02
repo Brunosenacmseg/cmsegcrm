@@ -321,12 +321,21 @@ export default function FunisPage() {
   }
 
   async function carregarNegocios() {
-    const { data } = await supabase.from('negocios').select(`
-      *,
-      clientes(id,nome,cpf_cnpj,telefone),
-      users!negocios_vendedor_id_fkey(nome)
-    `).order('created_at', { ascending: false })
-    setNegocios(data||[])
+    // PostgREST corta em 1000 por padrao. Pagina ate trazer tudo.
+    const PAGE = 1000
+    const todos: any[] = []
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase.from('negocios').select(`
+        *,
+        clientes(id,nome,cpf_cnpj,telefone),
+        users!negocios_vendedor_id_fkey(nome)
+      `).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      todos.push(...data)
+      if (data.length < PAGE) break
+      if (todos.length >= 100_000) break // hard stop pra nao explodir o navegador
+    }
+    setNegocios(todos)
   }
 
   async function buscarClientes(q: string, setter: (v:any[])=>void) {
