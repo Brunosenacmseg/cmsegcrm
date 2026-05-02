@@ -21,6 +21,11 @@ create table if not exists public.financeiro_config (
   constraint financeiro_config_single_row check (id = 1)
 );
 
+-- Garante que senha_hash aceita NULL (caso tabela já tenha sido criada
+-- antes com NOT NULL).
+alter table public.financeiro_config
+  alter column senha_hash drop not null;
+
 insert into public.financeiro_config (id) values (1)
   on conflict (id) do nothing;
 
