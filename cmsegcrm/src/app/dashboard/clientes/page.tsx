@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { maskCpfCnpj, maskTelefone, maskCEP } from '@/lib/masks'
+import { getVisibleUserIds } from '@/lib/auth'
 
 const SEXOS         = ['Masculino','Feminino','Outro']
 const ESTADOS_CIVIS = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)','União Estável']
@@ -77,6 +78,8 @@ export default function ClientesPage() {
   const [clientes, setClientes]   = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
   const [busca, setBusca]         = useState('')
+  const [filtroUsuario, setFiltroUsuario] = useState<string>('')
+  const [visibleIds, setVisibleIds]       = useState<string[] | null>(null)
   const [modal, setModal]         = useState(false)
   const [salvando, setSalvando]   = useState(false)
   const [editando, setEditando]   = useState<any>(null)
@@ -105,21 +108,27 @@ export default function ClientesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
-    const { data: usrs } = await supabase.from('users').select('id,nome,role').order('nome')
+    const ids = await getVisibleUserIds()
+    setVisibleIds(ids)
+    let usrsQ = supabase.from('users').select('id,nome,role').order('nome')
+    if (ids) usrsQ = usrsQ.in('id', ids)
+    const { data: usrs } = await usrsQ
     setUsuarios(usrs || [])
-    await carregar()
+    await carregar(ids, '')
   }
 
-  async function carregar() {
+  async function carregar(ids: string[] | null = visibleIds, fu: string = filtroUsuario) {
     setLoading(true)
     let q = supabase.from('clientes').select('*, users!clientes_vendedor_id_fkey(nome)').order('nome')
     if (busca) q = q.or(`nome.ilike.%${busca}%,cpf_cnpj.ilike.%${busca}%,telefone.ilike.%${busca}%,email.ilike.%${busca}%`)
+    if (fu) q = q.eq('vendedor_id', fu)
+    else if (ids) q = q.in('vendedor_id', ids)
     const { data } = await q
     setClientes(data||[])
     setLoading(false)
   }
 
-  useEffect(() => { if (!loading) carregar() }, [busca])
+  useEffect(() => { if (!loading) carregar() }, [busca, filtroUsuario])
 
   async function buscarCep(cep: string, prefix: ''|'2'|'3') {
     const c = cep.replace(/\D/g,'')
@@ -236,6 +245,13 @@ export default function ClientesPage() {
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>👥 Clientes</div>
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar por nome, CPF, email, telefone..."
           style={{...inp, width:280, borderRadius:20}} />
+        {profile && profile.role !== 'corretor' && (
+          <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+            style={{...sel, width:200, borderRadius:20}} title="Filtrar por usuário">
+            <option value="">👥 {profile.role==='admin'?'Todos os usuários':'Toda a equipe'}</option>
+            {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        )}
         <button className="btn-primary" onClick={()=>{setEditando(null);setForm({...clienteVazio});setAbaModal('dados');setModal(true)}}>
           + Novo Cliente
         </button>

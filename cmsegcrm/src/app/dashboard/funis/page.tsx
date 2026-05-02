@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { getVisibleUserIds } from '@/lib/auth'
 
 export default function FunisPageWrapper() {
   return (
@@ -37,6 +38,8 @@ function FunisPage() {
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
   // Filtro por data (criação ou fechamento) com período opcional
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
+  const [filtroUsuario, setFiltroUsuario] = useState<string>('')
+  const [visibleIds, setVisibleIds] = useState<string[] | null>(null)
 
   // Campos personalizados (definição do admin)
   const [camposPers, setCamposPers] = useState<any[]>([])
@@ -92,7 +95,7 @@ function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
-  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo])
+  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, visibleIds])
 
   // Sincroniza a barra de rolagem horizontal de cima com o kanban
   useEffect(() => {
@@ -348,7 +351,11 @@ function FunisPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
-    const { data: usr } = await supabase.from('users').select('id,nome,role').order('nome')
+    const ids = await getVisibleUserIds()
+    setVisibleIds(ids)
+    let usrQ = supabase.from('users').select('id,nome,role').order('nome')
+    if (ids) usrQ = usrQ.in('id', ids)
+    const { data: usr } = await usrQ
     setUsuarios(usr||[])
     await carregarFunis()
     setLoading(false)
@@ -365,9 +372,12 @@ function FunisPage() {
   async function carregarContagens(fs: any[]) {
     const out: Record<string, number> = {}
     await Promise.all((fs || []).map(async (f) => {
-      const { count } = await supabase.from('negocios')
+      let q = supabase.from('negocios')
         .select('id', { count: 'exact', head: true })
         .eq('funil_id', f.id)
+      if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
+      else if (visibleIds) q = q.in('vendedor_id', visibleIds)
+      const { count } = await q
       out[f.id] = count || 0
     }))
     setContagemPorFunil(out)
@@ -383,7 +393,7 @@ function FunisPage() {
     let offset = 0
     while (true) {
       const tamanho = offset === 0 ? PRIMEIRA : PAGE
-      const { data, error } = await supabase.from('negocios').select(`
+      let q = supabase.from('negocios').select(`
         id, titulo, etapa, status, qualificacao, premio, vencimento,
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
         produto, seguradora, cpf_cnpj, motivo_perda, obs,
@@ -391,6 +401,9 @@ function FunisPage() {
         clientes(id,nome,cpf_cnpj,telefone),
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
+      if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
+      else if (visibleIds) q = q.in('vendedor_id', visibleIds)
+      const { data, error } = await q
         .order('created_at', { ascending: false })
         .range(offset, offset + tamanho - 1)
       if (error || !data || data.length === 0) break
@@ -704,6 +717,16 @@ function FunisPage() {
             </button>
           ))}
         </div>
+
+        {/* Filtro por usuário */}
+        {profile && profile.role !== 'corretor' && (
+          <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+            title="Filtrar por usuário"
+            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroUsuario?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
+            <option value="">👥 {profile.role==='admin'?'Todos':'Toda equipe'}</option>
+            {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        )}
 
         {/* Filtro por data — campo + período */}
         <div style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:'2px 4px'}}>

@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { getVisibleUserIds } from '@/lib/auth'
 
 // Emojis mais usados
 const EMOJIS = ['😀','😂','🥰','😎','🤔','👍','👏','🙏','❤️','🔥','✅','⚠️','📋','📞','💰','🚗','🏠','📅','⏰','✉️','🎉','💪','👋','😊','🤝']
@@ -98,7 +99,15 @@ export default function WhatsAppPage() {
   // Agentes IA disponíveis (admin cadastra em /dashboard/agentes-ia)
   const [agentesIA, setAgentesIA] = useState<any[]>([])
 
-  useEffect(() => { carregarInstancia() }, [])
+  // Visualização do WhatsApp de outro usuário (admin → todos; líder → time).
+  // Quando viewUserId !== meuUserId o envio é bloqueado (modo somente leitura).
+  const [meuUserId, setMeuUserId]               = useState<string>('')
+  const [profile, setProfile]                   = useState<any>(null)
+  const [usuariosVisiveis, setUsuariosVisiveis] = useState<any[]>([])
+  const [viewUserId, setViewUserId]             = useState<string>('')
+  const somenteLeitura = !!meuUserId && !!viewUserId && viewUserId !== meuUserId
+
+  useEffect(() => { carregarInstancia() }, [viewUserId])
   useEffect(() => {
     supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }) => setAgentesIA(data || []))
   }, [])
@@ -114,7 +123,29 @@ export default function WhatsAppPage() {
 
   async function carregarInstancia() {
     const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase.from('whatsapp_instancias').select('*').eq('user_id', user?.id).single()
+    const myId = user?.id || ''
+    setMeuUserId(myId)
+
+    // Carrega profile e lista de usuários visíveis (uma vez).
+    let alvoId = viewUserId || myId
+    if (!profile) {
+      const { data: prof } = await supabase.from('users').select('id,nome,role').eq('id', myId).single()
+      setProfile(prof)
+      if (prof?.role !== 'corretor') {
+        const ids = await getVisibleUserIds()
+        let q = supabase.from('users').select('id,nome,role').order('nome')
+        if (ids) q = q.in('id', ids)
+        const { data: usrs } = await q
+        setUsuariosVisiveis(usrs || [])
+      }
+      if (!viewUserId) { setViewUserId(myId); alvoId = myId }
+    }
+
+    // Reseta conversa ao trocar de usuário visualizado
+    setConversa(null)
+    setMensagens([])
+
+    const { data } = await supabase.from('whatsapp_instancias').select('*').eq('user_id', alvoId).single()
     setInstancia(data || null)
     if (data) await carregarConversas(data.id)
     setLoading(false)
@@ -226,6 +257,7 @@ export default function WhatsAppPage() {
 
   // Enviar texto
   async function enviarMensagem() {
+    if (somenteLeitura) return
     if (!textoEnvio.trim() || !conversa || !instancia) return
     setEnviando(true)
     setShowEmojis(false)
@@ -387,17 +419,39 @@ export default function WhatsAppPage() {
     </button>
   )
 
-  if (loading) return <Shell><div style={{padding:40,color:'var(--text-muted)'}}>Carregando...</div></Shell>
+  const seletorUsuario = profile && profile.role !== 'corretor' && usuariosVisiveis.length > 0 ? (
+    <div style={{display:'flex',alignItems:'center',gap:8}}>
+      <span style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>
+        {somenteLeitura ? '👁 Visualizando' : 'Caixa de'}
+      </span>
+      <select value={viewUserId} onChange={e=>setViewUserId(e.target.value)}
+        title="Selecionar WhatsApp de outro usuário"
+        style={{border:'1px solid var(--border)',background:somenteLeitura?'rgba(201,168,76,0.08)':'rgba(255,255,255,0.04)',color:somenteLeitura?'var(--gold)':'var(--text)',borderRadius:8,padding:'6px 10px',fontSize:12,fontWeight:600,cursor:'pointer',outline:'none'}}>
+        <option value={meuUserId}>👤 Meu WhatsApp</option>
+        {usuariosVisiveis.filter(u=>u.id!==meuUserId).map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+      </select>
+    </div>
+  ) : null
+
+  if (loading) return <Shell topRight={seletorUsuario}><div style={{padding:40,color:'var(--text-muted)'}}>Carregando...</div></Shell>
 
   return (
-    <Shell>
-      {!instancia && (
+    <Shell topRight={seletorUsuario}>
+      {!instancia && !somenteLeitura && (
         <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
           <div className="card" style={{textAlign:'center',padding:'50px 40px',maxWidth:440}}>
             <div style={{fontSize:56,marginBottom:16}}>💬</div>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM Seguros</div>
             <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:28,lineHeight:1.6}}>Conecte seu número do WhatsApp para enviar e receber mensagens diretamente do CRM.</div>
             <button className="btn-primary" style={{padding:'12px 28px',fontSize:14}} onClick={()=>setModalConfig(true)}>⚙ Configurar WhatsApp</button>
+          </div>
+        </div>
+      )}
+      {!instancia && somenteLeitura && (
+        <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div className="card" style={{textAlign:'center',padding:'40px',maxWidth:440,color:'var(--text-muted)'}}>
+            <div style={{fontSize:40,marginBottom:12}}>📭</div>
+            <div style={{fontSize:14}}>Este usuário ainda não configurou o WhatsApp.</div>
           </div>
         </div>
       )}
@@ -581,6 +635,11 @@ export default function WhatsAppPage() {
                 )}
 
                 {/* Input área */}
+                {somenteLeitura ? (
+                  <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',background:'rgba(201,168,76,0.06)',display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--gold)',justifyContent:'center'}}>
+                    👁 Modo somente leitura — você está visualizando o WhatsApp de outro usuário.
+                  </div>
+                ) : (
                 <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',background:'var(--bg-soft)'}}>
                   {gravandoAudio ? (
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
@@ -619,6 +678,8 @@ export default function WhatsAppPage() {
                     </div>
                   )}
                 </div>
+
+                )}
 
                 {/* Input oculto arquivo */}
                 <input ref={fileRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" style={{display:'none'}} onChange={enviarArquivo} />
@@ -803,11 +864,12 @@ function MidiaMensagem({ m }: { m: any }) {
   return null
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, topRight }: { children: React.ReactNode; topRight?: React.ReactNode }) {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>💬 WhatsApp</div>
+        {topRight}
       </div>
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>{children}</div>
     </div>

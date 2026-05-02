@@ -10,7 +10,7 @@ import { registrarLog } from '@/lib/logs'
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
   { href:'/dashboard/funis',        icon:'🏗', label:'Funis' },
-  { href:'/dashboard/cotacoes',     icon:'🔍', label:'Cotações' },
+  { href:'/dashboard/cotacoes',     icon:'🔍', label:'Cotações', adminOnly:true },
   { href:'/dashboard/telefone',     icon:'📞', label:'Telefone' },
   { href:'/dashboard/whatsapp',     icon:'💬', label:'WhatsApp' },
   { href:'/dashboard/mensagens',    icon:'✉️', label:'Mensagens', badge:'mensagens' },
