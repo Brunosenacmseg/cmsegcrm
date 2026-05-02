@@ -180,35 +180,51 @@ async function cotacaoSuhai(page, dados) {
   const pendentes = new Set(ordemPreferencial.filter(k => todos[k] !== undefined && todos[k] !== null && todos[k] !== ''))
 
   let cotarPronto = false
-  for (let ciclo = 0; ciclo < 20 && !cotarPronto; ciclo++) {
+  let semProgresso = 0
+  for (let ciclo = 0; ciclo < 25 && !cotarPronto; ciclo++) {
+    // Espera o Angular renderizar a etapa atual antes do primeiro pass
+    if (ciclo === 0) await page.waitForTimeout(1500)
+
     let preencheuAlgum = false
+    let aindaTemVisivel = false
     for (const k of Array.from(pendentes)) {
       const r = await setarCampoPorNome(page, k, todos[k])
       if (r === 'ok' || r === 'ja_preenchido') {
         pendentes.delete(k)
-        if (r === 'ok') { preencheuAlgum = true; await page.waitForTimeout(250) }
+        if (r === 'ok') { preencheuAlgum = true; await page.waitForTimeout(300) }
       } else if (r === 'inexistente') {
-        pendentes.delete(k)  // desiste — campo não existe nessa cotação
+        pendentes.delete(k)
+      } else if (r === 'invisivel') {
+        // mantém — talvez apareça depois
+      } else if (r === 'sem_opcao') {
+        aindaTemVisivel = true
+        log.warn('Suhai: opção não casa com nenhuma do select', { campo: k, valor: todos[k] })
+        pendentes.delete(k)  // não vai resolver mesmo, segue
       }
-      // 'invisivel' / 'sem_opcao' → mantém na fila pra tentar depois
     }
-    await page.waitForTimeout(600)
+    await page.waitForTimeout(700)
 
-    // Se Cotar já apareceu, sai
     cotarPronto = await page.evaluate(() => {
       const b = document.getElementById('btnCalcular')
       return !!(b && b.offsetParent !== null && !b.disabled)
     })
     if (cotarPronto) break
 
-    // Tenta avançar pra próxima etapa
-    const continuou = await clicarBotao(page, '#btnContinuar')
-      || await clicarBotao(page, 'Continuar')
-    if (continuou) {
-      await page.waitForTimeout(1500)
-      preencheuAlgum = true
+    // Só clica Continuar se todos os campos visíveis da etapa atual estão preenchidos.
+    // Heurística: se neste ciclo não preenchemos nada, é hora de tentar avançar.
+    if (!preencheuAlgum) {
+      const continuou = await clicarBotao(page, '#btnContinuar')
+        || await clicarBotao(page, 'Continuar')
+      if (continuou) {
+        await page.waitForTimeout(2000)  // espera nova etapa renderizar
+        semProgresso = 0
+      } else {
+        semProgresso++
+        if (semProgresso >= 2) break
+      }
+    } else {
+      semProgresso = 0
     }
-    if (!preencheuAlgum && !continuou) break  // travou
   }
   if (pendentes.size) log.warn('Suhai: campos pendentes', { campos: Array.from(pendentes) })
 
