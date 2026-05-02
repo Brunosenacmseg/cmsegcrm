@@ -62,6 +62,9 @@ export default function UsuariosPage() {
   const [modalEquipe, setModalEquipe] = useState(false)
   const [salvandoRole, setSalvandoRole]   = useState<string|null>(null)
   const [editandoRamal, setEditandoRamal] = useState<string|null>(null)
+  const [editandoNome, setEditandoNome]   = useState<string|null>(null)
+  const [nomeTemp, setNomeTemp]           = useState('')
+  const [salvandoNome, setSalvandoNome]   = useState<string|null>(null)
   const [ramalTemp, setRamalTemp]         = useState('')
   const [salvandoRamal, setSalvandoRamal] = useState<string|null>(null)
   const [msgRamal, setMsgRamal]           = useState<Record<string,string>>({})
@@ -94,6 +97,20 @@ export default function UsuariosPage() {
     setMsg(`✅ ${novoNome} cadastrado!`); setMsgType('ok')
     setNovoEmail(''); setNovoNome(''); setNovaSenha(''); setNovoRole('corretor')
     setTimeout(carregar, 2500)
+  }
+
+  async function salvarNome(userId: string) {
+    if (profile?.role !== 'admin') return
+    if (!nomeTemp.trim()) { alert('Nome não pode ser vazio'); return }
+    setSalvandoNome(userId)
+    const res = await fetch('/api/admin/set-role', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ userId, nome: nomeTemp.trim() }),
+    })
+    const data = await res.json()
+    if (data.ok) { setEditandoNome(null); await carregar() }
+    else alert('Erro ao alterar nome: ' + data.error)
+    setSalvandoNome(null)
   }
 
   async function alterarRole(userId: string, role: string) {
@@ -196,7 +213,28 @@ export default function UsuariosPage() {
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
                       <Avatar nome={u.nome||u.email} avatarUrl={u.avatar_url} role={u.role} size={38} />
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nome}</div>
+                        {editandoNome === u.id ? (
+                          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                            <input value={nomeTemp} onChange={e=>setNomeTemp(e.target.value)} autoFocus
+                              onKeyDown={e=>{ if(e.key==='Enter') salvarNome(u.id); if(e.key==='Escape') setEditandoNome(null) }}
+                              style={{flex:1,fontSize:13,fontWeight:500,padding:'3px 8px',border:'1px solid var(--gold)',borderRadius:6,background:'rgba(255,255,255,0.05)',color:'var(--text)',outline:'none'}} />
+                            <button onClick={()=>salvarNome(u.id)} disabled={salvandoNome===u.id}
+                              style={{fontSize:11,padding:'3px 8px',border:'1px solid var(--teal)',borderRadius:6,background:'rgba(28,181,160,0.1)',color:'var(--teal)',cursor:'pointer'}}>
+                              {salvandoNome===u.id?'...':'✓'}
+                            </button>
+                            <button onClick={()=>setEditandoNome(null)}
+                              style={{fontSize:11,padding:'3px 8px',border:'1px solid var(--border)',borderRadius:6,background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>✕</button>
+                          </div>
+                        ) : (
+                          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                            <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nome}</div>
+                            {isAdmin && (
+                              <button onClick={()=>{setEditandoNome(u.id); setNomeTemp(u.nome||'')}}
+                                title="Editar nome"
+                                style={{fontSize:11,padding:'2px 6px',border:'none',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>✎</button>
+                            )}
+                          </div>
+                        )}
                         <div style={{fontSize:11,color:'var(--text-muted)'}}>{u.email}</div>
                       </div>
                       {isAdmin ? (
