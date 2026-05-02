@@ -454,7 +454,7 @@ function FunisPage() {
     setSalvando(true)
     const funil = funilModal
     const etapa = formNovo.etapa || funil?.etapas?.[0] || ''
-    await supabase.from('negocios').insert({
+    const { data: novo } = await supabase.from('negocios').insert({
       titulo:      formNovo.titulo,
       produto:     formNovo.produto || null,
       premio:      formNovo.premio ? parseFloat(formNovo.premio) : null,
@@ -463,7 +463,8 @@ function FunisPage() {
       funil_id:    funil.id,
       cliente_id:  clienteSel?.id || null,
       vendedor_id: formNovo.vendedor_id || profile?.id,
-    })
+    }).select('id').single()
+    if (novo?.id) pushParaRD('criar', novo.id)
     setModalNovo(false)
     setFormNovo({ titulo:'', produto:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
     setClienteSel(null); setClienteBusca('')
@@ -488,6 +489,19 @@ function FunisPage() {
     } catch (e) { /* silencioso — automação falhou não bloqueia o usuário */ }
   }
 
+  // Sync CRM → RD: empurra a mudança local pra RD em background.
+  // Falha não bloqueia o usuário — fica registrada em rdstation_syncs
+  // (status=erro) e aparece no painel "Falhas RD" do /dashboard/rdstation.
+  async function pushParaRD(acao: 'criar'|'mover'|'ganho'|'perdido'|'reabrir', negocioId: string) {
+    try {
+      await fetch('/api/rdstation/push-deal', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ acao, negocio_id: negocioId }),
+      })
+    } catch (e) { /* não-bloqueante: log já foi gravado pelo endpoint */ }
+  }
+
   async function setQualificacao(negocioId: string, estrelas: number) {
     setNegocios(prev => prev.map(n => n.id === negocioId ? { ...n, qualificacao: estrelas } : n))
     await supabase.from('negocios').update({ qualificacao: estrelas }).eq('id', negocioId)
@@ -503,6 +517,7 @@ function FunisPage() {
       await carregarNegocios()
     } else {
       disparaAutomacao('etapa_alterada', negocioId)
+      pushParaRD('mover', negocioId)
     }
   }
 
@@ -522,6 +537,11 @@ function FunisPage() {
       }
     }
     await supabase.from('negocios').update(patch).eq('id', negocioId)
+
+    // Sync CRM → RD
+    if (status === 'ganho')        pushParaRD('ganho',   negocioId)
+    if (status === 'perdido')      pushParaRD('perdido', negocioId)
+    if (status === 'em_andamento') pushParaRD('reabrir', negocioId)
 
     // Dispara automações vinculadas ao trigger
     if (status === 'ganho')   disparaAutomacao('status_ganho',   negocioId)

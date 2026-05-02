@@ -23,6 +23,24 @@ interface Sync {
   concluido_em?: string | null
 }
 
+interface Falha {
+  id: string
+  iniciado_em: string
+  tipo: 'push'|'webhook'|'sync'
+  acao: string
+  status: string
+  mensagem: string
+  negocio_id: string | null
+  negocio: {
+    titulo: string
+    etapa: string
+    status: string
+    rd_id: string | null
+    funil_nome: string | null
+    funil_rd_id: string | null
+  } | null
+}
+
 const RECURSOS: { key: string; label: string; emoji: string; descricao: string }[] = [
   { key: 'usuarios',   label: 'Usuários',   emoji: '👥', descricao: 'Vincula usuários do RD por e-mail aos corretores existentes' },
   { key: 'funis',      label: 'Funis',      emoji: '📊', descricao: 'Replica os funis e etapas do RD Station (nomes idênticos)' },
@@ -74,6 +92,7 @@ export default function RDStationPage() {
   const [dataFim, setDataFim]       = useState(dataHoje())
   const [progresso, setProgresso]   = useState<{ atual: number, total: number, mes: string } | null>(null)
   const [incluirDetalhes, setIncluirDetalhes] = useState(false)
+  const [falhas, setFalhas]         = useState<Falha[]>([])
 
   async function authHeaders(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession()
@@ -90,8 +109,20 @@ export default function RDStationPage() {
     } catch {}
   }
 
+  async function carregarFalhas() {
+    try {
+      const r = await fetch('/api/rdstation/falhas?limit=30')
+      const j = await r.json()
+      if (Array.isArray(j.falhas)) setFalhas(j.falhas)
+    } catch {}
+  }
+
   useEffect(() => {
     carregarHistorico()
+    carregarFalhas()
+    // Re-busca falhas a cada 30s pra surfar erros novos quase em tempo real
+    const t = setInterval(carregarFalhas, 30000)
+    return () => clearInterval(t)
   }, [])
 
   async function chamarSync(action: string, from?: string, to?: string): Promise<any> {
@@ -322,6 +353,74 @@ export default function RDStationPage() {
           {erro && (
             <div className="card" style={{ marginBottom: 20, borderColor: erro.startsWith('✅') ? 'rgba(28,181,160,0.4)' : 'rgba(224,82,82,0.4)', color: erro.startsWith('✅') ? 'var(--teal)' : 'var(--red)', fontSize: 13 }}>
               {erro}
+            </div>
+          )}
+
+          {/* Falhas RD recentes — sync bidirecional CRM ↔ RD */}
+          {falhas.length > 0 && (
+            <div className="card" style={{ marginBottom: 20, borderColor: 'rgba(224,82,82,0.4)' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 10 }}>
+                <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 16, color: 'var(--red)' }}>
+                  🚨 Falhas de sincronização ({falhas.length})
+                </div>
+                <button onClick={carregarFalhas}
+                  style={{ background:'transparent', border:'1px solid var(--border)', borderRadius:8, padding:'4px 12px', color:'var(--text-muted)', fontSize:11, cursor:'pointer' }}>
+                  ↻ Atualizar
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+                Erros recentes no sync entre seu CRM e o RD Station. <strong style={{color:'var(--text)'}}>↑</strong> = CRM → RD (push de mudança local).
+                <strong style={{color:'var(--text)'}}> ↓</strong> = RD → CRM (webhook ou pull). Clique no card pra abrir o negócio.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflow: 'auto' }}>
+                {falhas.map(f => {
+                  const direcao = f.tipo === 'push' ? '↑ CRM → RD' : (f.tipo === 'webhook' ? '↓ RD → CRM' : 'sync')
+                  const corDirecao = f.tipo === 'push' ? 'var(--gold)' : 'var(--teal)'
+                  const link = f.negocio_id ? `/dashboard/funis?card=${f.negocio_id}` : null
+                  return (
+                    <div key={f.id} style={{ padding: 10, background: 'rgba(224,82,82,0.05)', border: '1px solid rgba(224,82,82,0.2)', borderRadius: 8 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, marginBottom:6, fontSize:11 }}>
+                        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+                          <span style={{ color: corDirecao, fontWeight: 600 }}>{direcao}</span>
+                          <span style={{ color:'var(--text-muted)' }}>·</span>
+                          <span style={{ color:'var(--text)', fontWeight:500 }}>{f.acao}</span>
+                          {f.negocio && (
+                            <>
+                              <span style={{ color:'var(--text-muted)' }}>·</span>
+                              {link ? (
+                                <a href={link} style={{ color:'var(--gold)', textDecoration:'none' }}>
+                                  📋 {f.negocio.titulo}
+                                </a>
+                              ) : (
+                                <span style={{ color:'var(--text)' }}>📋 {f.negocio.titulo}</span>
+                              )}
+                              {f.negocio.funil_nome && (
+                                <span style={{ color:'var(--text-muted)' }}>· funil: {f.negocio.funil_nome}</span>
+                              )}
+                              {f.negocio.etapa && (
+                                <span style={{ color:'var(--text-muted)' }}>· etapa: {f.negocio.etapa}</span>
+                              )}
+                            </>
+                          )}
+                          {!f.negocio && f.negocio_id && (
+                            <span style={{ color:'var(--text-muted)' }}>· negócio {f.negocio_id.slice(0,8)} (apagado?)</span>
+                          )}
+                        </div>
+                        <span style={{ color:'var(--text-muted)' }}>{tempoAtras(f.iniciado_em)}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--red)', lineHeight: 1.5 }}>
+                        {f.mensagem}
+                      </div>
+                      {(f.negocio?.rd_id || f.negocio_id) && (
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, fontFamily:'monospace' }}>
+                          {f.negocio?.rd_id && <span>rd_id: {f.negocio.rd_id} · </span>}
+                          {f.negocio_id && <span>negocio_id: {f.negocio_id}</span>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 

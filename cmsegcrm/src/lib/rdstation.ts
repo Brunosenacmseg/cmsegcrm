@@ -241,3 +241,108 @@ export async function buscarDealDetalhe(id: string, token: string): Promise<RDDe
 export function norm(s?: string | null): string {
   return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
 }
+
+// ═════════════════════════════════════════════════════════════
+// Escrita (CRM → RD): criar/atualizar/mover/ganhar/perder deal
+// API v1 (crm.rdstation.com): token vai na query string em todos
+// os métodos. Escolhas explícitas pra não usar throttling adaptativo
+// (writes não devem ficar em fila — falham rápido).
+// ═════════════════════════════════════════════════════════════
+
+async function rdMutate<T = any>(
+  method: 'POST' | 'PUT',
+  path: string,
+  token: string,
+  body: any,
+): Promise<T> {
+  const url = `${BASE}${path}?token=${encodeURIComponent(token)}`
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  })
+  if (res.status === 429) {
+    registrarRateLimit()
+    const txt = await res.text().catch(() => '')
+    throw new Error(`RD 429 em ${method} ${path}: rate limited — ${txt.slice(0, 120)}`)
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '')
+    throw new Error(`RD ${res.status} em ${method} ${path}: ${txt.slice(0, 220)}`)
+  }
+  registrarSucesso()
+  return res.json() as Promise<T>
+}
+
+// Cria um deal na RD. Retorna o deal criado (com _id).
+export async function criarDealRD(
+  payload: {
+    name: string
+    deal_stage_id?: string
+    deal_pipeline_id?: string
+    user_id?: string
+    contacts?: { id?: string; _id?: string; name?: string; emails?: { email: string }[]; phones?: { phone: string }[] }[]
+    amount_total?: number
+    amount_unique?: number
+    prediction_date?: string
+    rating?: number
+  },
+  token: string,
+): Promise<RDDeal> {
+  return rdMutate<RDDeal>('POST', '/deals', token, { deal: payload })
+}
+
+// Atualiza fields gerais (etapa, ganho/perdido, valores, motivo, etc).
+export async function atualizarDealRD(
+  id: string,
+  patch: Partial<{
+    name: string
+    deal_stage_id: string
+    deal_lost_reason_id: string
+    win: boolean | null
+    hold: string | null
+    amount_total: number
+    amount_unique: number
+    prediction_date: string
+    user_id: string
+    rating: number
+  }>,
+  token: string,
+): Promise<RDDeal> {
+  return rdMutate<RDDeal>('PUT', `/deals/${id}`, token, { deal: patch })
+}
+
+export const moverDealEtapaRD = (id: string, stageId: string, token: string) =>
+  atualizarDealRD(id, { deal_stage_id: stageId }, token)
+
+export const marcarDealGanhoRD = (id: string, token: string) =>
+  atualizarDealRD(id, { win: true }, token)
+
+export const marcarDealPerdidoRD = (id: string, motivoId: string | undefined, token: string) =>
+  atualizarDealRD(id, motivoId ? { win: false, deal_lost_reason_id: motivoId } : { win: false }, token)
+
+export const reabrirDealRD = (id: string, token: string) =>
+  atualizarDealRD(id, { win: null, hold: null }, token)
+
+// Resolve o stage_id da RD para uma etapa local (case-insensitive, sem acentos).
+// Retorna null se não achar — caller deve logar erro com nomes esperados x reais.
+export async function buscarStageIdPorNome(
+  pipelineRdId: string,
+  nomeEtapa: string,
+  token: string,
+): Promise<{ stageId: string | null; etapasRd: string[] }> {
+  for (const path of [`/deal_pipelines/${pipelineRdId}`, `/pipelines/${pipelineRdId}`]) {
+    try {
+      const data = await rdFetchThrottled<any>(path, token)
+      const stages: RDStage[] = data?.deal_stages || data?.stages || []
+      const target = norm(nomeEtapa)
+      const match = stages.find(s => norm(s.name || '') === target)
+      const etapasRd = stages.map(s => s.name || '').filter(Boolean)
+      if (match) return { stageId: rdId(match), etapasRd }
+      // Achou pipeline mas não achou etapa — devolve nomes pra log
+      if (etapasRd.length) return { stageId: null, etapasRd }
+    } catch { /* tenta próximo path */ }
+  }
+  return { stageId: null, etapasRd: [] }
+}
