@@ -158,16 +158,59 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'obs',           label: 'Observações',   hints: ['obs','observ','notas'] },
   ],
   apolices: [
-    { campo: 'numero',       label: 'Número',          hints: ['numero','apolice','policy'], obrigatorio: true },
-    { campo: 'cpf_cnpj',     label: 'CPF/CNPJ',        hints: ['cpf','cnpj'] },
-    { campo: 'nome',         label: 'Nome Segurado',   hints: ['nome','segurado'] },
-    { campo: 'produto',      label: 'Produto',         hints: ['produto','ramo'] },
-    { campo: 'seguradora',   label: 'Seguradora',      hints: ['seguradora','cia'] },
-    { campo: 'premio',       label: 'Prêmio',          hints: ['premio','valor'] },
-    { campo: 'comissao_pct', label: '% Comissão',      hints: ['comiss','%','pct'] },
-    { campo: 'vigencia_ini', label: 'Início Vigência', hints: ['inicio','ini'] },
-    { campo: 'vigencia_fim', label: 'Fim Vigência',    hints: ['fim','vencimento'] },
-    { campo: 'placa',        label: 'Placa',           hints: ['placa'] },
+    // Identificação
+    { campo: 'numero',             label: 'APÓLICE',               hints: ['apolice','numero','policy'], obrigatorio: true },
+    { campo: 'proposta_endosso',   label: 'PROPOSTA ENDOSSO',      hints: ['proposta endosso'] },
+    { campo: 'proposta_assinada',  label: 'PROPOSTA ASSINADA',     hints: ['proposta assinada'] },
+    { campo: 'proposta',           label: 'PROPOSTA',              hints: ['proposta'] },
+    { campo: 'endosso',            label: 'ENDOSSO',               hints: ['endosso'] },
+    // Cliente
+    { campo: 'nome',               label: 'CLIENTE',               hints: ['cliente','segurado','nome'] },
+    { campo: 'cpf_cnpj',           label: 'DOCUMENTO DO CLIENTE',  hints: ['documento','cpf','cnpj'] },
+    { campo: 'tipo_documento',     label: 'TIPO DOCUMENTO',        hints: ['tipo documento','tipo doc'] },
+    { campo: 'tipo_pessoa',        label: 'TIPO PESSOA',           hints: ['tipo pessoa','pf/pj','pf','pj'] },
+    { campo: 'estipulante',        label: 'ESTIPULANTE',           hints: ['estipulante'] },
+    { campo: 'emails',             label: 'EMAILS',                hints: ['emails','email','e-mail'] },
+    { campo: 'telefones',          label: 'TELEFONES',             hints: ['telefones','telefone','celular','fone'] },
+    // Produto
+    { campo: 'ramo',               label: 'RAMO',                  hints: ['ramo'] },
+    { campo: 'produto',            label: 'PRODUTO',               hints: ['produto'] },
+    { campo: 'seguradora',         label: 'SEGURADORA',            hints: ['seguradora','cia'] },
+    { campo: 'item',               label: 'ITEM',                  hints: ['item'] },
+    // Vigências
+    { campo: 'vigencia_ini',       label: 'VIGÊNCIA INICIAL',      hints: ['vigencia inicial','vigência inicial','inicio vigencia','vigencia ini','inicio'] },
+    { campo: 'vigencia_fim',       label: 'VIGÊNCIA FINAL',        hints: ['vigencia final','vigência final','fim vigencia','vigencia fim','vencimento','fim'] },
+    { campo: 'emissao',            label: 'EMISSÃO',               hints: ['emissao','emissão'] },
+    { campo: 'data_controle',      label: 'DATA CONTROLE',         hints: ['data controle'] },
+    { campo: 'data_cadastro',      label: 'DATA DE CADASTRO',      hints: ['data de cadastro','cadastro'] },
+    // Valores
+    { campo: 'premio_liquido',     label: 'PRÊMIO LÍQUIDO',        hints: ['premio liquido','prêmio líquido','liquido'] },
+    { campo: 'premio',             label: 'PRÊMIO TOTAL',          hints: ['premio total','prêmio total','premio','valor'] },
+    { campo: 'comissao_gerada',    label: 'COMISSÃO GERADA',       hints: ['comissao gerada','comissão gerada'] },
+    { campo: 'comissao_pct',       label: 'COMISSÃO',              hints: ['comissao','comissão','comiss','%','pct'] },
+    { campo: 'repasse_vendedor_pct', label: 'REPASSE VENDEDOR (%)', hints: ['repasse'] },
+    // Pagamento
+    { campo: 'qtd_parcelas',       label: 'QUANTIDADE PARCELAS',   hints: ['parcelas','quantidade parcelas'] },
+    { campo: 'tipo_pagamento',     label: 'TIPO PAGAMENTO',        hints: ['tipo pagamento','pagamento'] },
+    { campo: 'banco',              label: 'BANCO',                 hints: ['banco'] },
+    { campo: 'agencia',            label: 'AGÊNCIA',               hints: ['agencia','agência'] },
+    { campo: 'conta',              label: 'CONTA',                 hints: ['conta'] },
+    // Vendedor
+    { campo: 'todos_vendedores',   label: 'TODOS VENDEDORES',      hints: ['todos vendedores'] },
+    { campo: 'tipo_vendedores',    label: 'TIPO VENDEDORES',       hints: ['tipo vendedores'] },
+    { campo: 'vendedor',           label: 'VENDEDOR',              hints: ['vendedor'] },
+    // Organização interna
+    { campo: 'negocio_corretora',  label: 'NEGÓCIO CORRETORA',     hints: ['negocio corretora','negócio corretora'] },
+    { campo: 'filial',             label: 'FILIAL',                hints: ['filial'] },
+    { campo: 'pasta_cliente',      label: 'PASTA CLIENTE',         hints: ['pasta cliente'] },
+    { campo: 'pasta',              label: 'PASTA',                 hints: ['pasta'] },
+    // Status
+    { campo: 'status',             label: 'STATUS APÓLICE',        hints: ['status apolice','status apólice','status'] },
+    { campo: 'apolice_conferida',  label: 'APÓLICE CONFERIDA',     hints: ['apolice conferida','conferida'] },
+    { campo: 'status_assinatura',  label: 'STATUS ASSINATURA',     hints: ['status assinatura'] },
+    { campo: 'transmissao',        label: 'TRANSMISSÃO',           hints: ['transmissao','transmissão'] },
+    // Veículo
+    { campo: 'placa',              label: 'PLACA',                 hints: ['placa'] },
   ],
   propostas: [
     { campo: 'titulo',     label: 'Título',     hints: ['titulo','proposta'], obrigatorio: true },
@@ -195,11 +238,25 @@ const ENTIDADES_INFO: { key: Entidade; emoji: string; label: string; descricao: 
 ]
 
 function autoMapear(headers: string[], entidade: Entidade) {
-  const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
-  return CAMPOS_POR_ENTIDADE[entidade].map(c => ({
-    ...c,
-    coluna: headers.find(h => c.hints.some(hint => norm(h).includes(hint))) || ''
-  }))
+  const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'').trim()
+  const campos = CAMPOS_POR_ENTIDADE[entidade]
+  const claimed = new Set<string>()
+  const result = campos.map(c => ({ ...c, coluna: '' as string }))
+
+  // Passada 1: match EXATO (normalizado) — header == hint OU header == label
+  for (const c of result) {
+    if (c.coluna) continue
+    const candidatos = [...c.hints, c.label]
+    const hit = headers.find(h => !claimed.has(h) && candidatos.some(x => norm(h) === norm(x)))
+    if (hit) { c.coluna = hit; claimed.add(hit) }
+  }
+  // Passada 2: substring (includes) — apenas em headers ainda não reservados
+  for (const c of result) {
+    if (c.coluna) continue
+    const hit = headers.find(h => !claimed.has(h) && c.hints.some(hint => norm(h).includes(norm(hint))))
+    if (hit) { c.coluna = hit; claimed.add(hit) }
+  }
+  return result
 }
 
 export default function ImportarPage() {
@@ -224,6 +281,11 @@ export default function ImportarPage() {
   const [syncProcessando, setSyncProcessando] = useState(false)
   const [syncResultado, setSyncResultado] = useState<any>(null)
 
+  // Sincronizacao COMPLETA da planilha do RD (preenche todos os campos vazios)
+  const [mergeFile, setMergeFile] = useState<File | null>(null)
+  const [mergeProcessando, setMergeProcessando] = useState(false)
+  const [mergeResultado, setMergeResultado] = useState<any>(null)
+
   useEffect(() => { init() }, [])
 
   async function authHeaders() {
@@ -243,6 +305,50 @@ export default function ImportarPage() {
       setHistorico(h || [])
     }
     setLoading(false)
+  }
+
+  // Sync completo da planilha RD: atualiza negocios existentes (match por
+  // titulo) preenchendo apenas campos vazios + custom_fields faltantes.
+  async function sincronizarPlanilhaCompleta() {
+    if (!mergeFile) return
+    setMergeProcessando(true)
+    setMergeResultado(null)
+    try {
+      const { rows } = await lerArquivo(mergeFile)
+      if (!rows.length) { setMergeResultado({ erro: 'Planilha vazia' }); setMergeProcessando(false); return }
+
+      const TAM = 500
+      const ag: any = {
+        qtd_lidos: 0, qtd_atualizados: 0, qtd_sem_match: 0,
+        qtd_sem_alteracao: 0, qtd_erros: 0,
+        nomes_sem_match: new Set<string>(),
+        responsaveis_nao_resolvidos: new Set<string>(),
+        erros: [] as string[],
+      }
+      for (let i = 0; i < rows.length; i += TAM) {
+        const chunk = rows.slice(i, i + TAM)
+        setMergeResultado({ _progresso: `Lote ${Math.floor(i/TAM)+1}/${Math.ceil(rows.length/TAM)} — ${i+chunk.length}/${rows.length}` })
+        const r = await fetch('/api/importar/negocios-merge', {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify({ linhas: chunk }),
+        })
+        const j = await r.json()
+        if (j.erro) { setMergeResultado({ erro: j.erro }); setMergeProcessando(false); return }
+        const s = j.stats || {}
+        for (const k of ['qtd_lidos','qtd_atualizados','qtd_sem_match','qtd_sem_alteracao','qtd_erros']) ag[k] += s[k] || 0
+        for (const n of (s.nomes_sem_match||[])) ag.nomes_sem_match.add(n)
+        for (const n of (s.responsaveis_nao_resolvidos||[])) ag.responsaveis_nao_resolvidos.add(n)
+        for (const e of (s.erros||[])) if (ag.erros.length < 30) ag.erros.push(e)
+      }
+      ag.nomes_sem_match = Array.from(ag.nomes_sem_match).slice(0, 50)
+      ag.responsaveis_nao_resolvidos = Array.from(ag.responsaveis_nao_resolvidos)
+      setMergeResultado(ag)
+    } catch (e: any) {
+      setMergeResultado({ erro: e.message })
+    } finally {
+      setMergeProcessando(false)
+    }
   }
 
   async function handleFile(file: File) {
@@ -485,6 +591,55 @@ export default function ImportarPage() {
                             <div style={{marginTop:6,color:'var(--text-muted)',fontSize:11}}>
                               Cadastra em /dashboard/configuracoes/aliases-rd e roda de novo.
                             </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Sincronizar planilha COMPLETA: preenche todos os campos vazios + custom_fields */}
+              <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--teal)'}}>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>📋 Sincronizar planilha completa do RD CRM</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>
+                  Sobe a planilha exportada do RD e atualiza as negociações existentes (match por <b>Nome</b>) preenchendo apenas os campos que estão <b>vazios</b> no seu CRM. Inclui os 25 campos personalizados, responsável (via aliases) e dados gerais. Não sobrescreve nada já preenchido.
+                </div>
+                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+                  <input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{setMergeFile(e.target.files?.[0]||null);setMergeResultado(null)}}
+                    style={{flex:1,minWidth:220,fontSize:12}} />
+                  <button className="btn-primary" disabled={!mergeFile||mergeProcessando}
+                    onClick={()=>{ if (confirm('Aplicar sync? Vai preencher os campos vazios das negociações existentes.')) sincronizarPlanilhaCompleta() }}>
+                    {mergeProcessando?'Sincronizando...':'Aplicar sync'}
+                  </button>
+                </div>
+                {mergeResultado && (
+                  <div style={{marginTop:14,padding:12,background:'rgba(255,255,255,0.04)',borderRadius:8,fontSize:12,fontFamily:'monospace'}}>
+                    {mergeResultado.erro && <div style={{color:'var(--red)'}}>Erro: {mergeResultado.erro}</div>}
+                    {mergeResultado._progresso && <div>{mergeResultado._progresso}</div>}
+                    {!mergeResultado.erro && !mergeResultado._progresso && (
+                      <>
+                        <div>📊 Total lido: {mergeResultado.qtd_lidos}</div>
+                        <div style={{color:'var(--teal)'}}>✓ Atualizados: {mergeResultado.qtd_atualizados}</div>
+                        <div>= Sem alteração (já estavam preenchidos): {mergeResultado.qtd_sem_alteracao}</div>
+                        <div style={{color:'var(--text-muted)'}}>✗ Sem match no CRM: {mergeResultado.qtd_sem_match}</div>
+                        {mergeResultado.qtd_erros>0 && <div style={{color:'var(--red)'}}>⚠ Erros: {mergeResultado.qtd_erros}</div>}
+                        {mergeResultado.responsaveis_nao_resolvidos?.length > 0 && (
+                          <div style={{marginTop:10,padding:10,background:'rgba(224,82,82,0.08)',border:'1px solid rgba(224,82,82,0.3)',borderRadius:6}}>
+                            <div style={{color:'var(--red)',fontWeight:600,marginBottom:4}}>⚠ Responsáveis sem alias ({mergeResultado.responsaveis_nao_resolvidos.length}) — caíram no fallback (Bruno):</div>
+                            <div style={{fontSize:11}}>{mergeResultado.responsaveis_nao_resolvidos.join(', ')}</div>
+                          </div>
+                        )}
+                        {mergeResultado.nomes_sem_match?.length > 0 && (
+                          <div style={{marginTop:10,padding:10,background:'rgba(255,255,255,0.04)',borderRadius:6}}>
+                            <div style={{fontWeight:600,marginBottom:4}}>Negociações sem match no CRM (primeiras 50):</div>
+                            <div style={{fontSize:11,color:'var(--text-muted)'}}>{mergeResultado.nomes_sem_match.join(' · ')}</div>
+                          </div>
+                        )}
+                        {mergeResultado.erros?.length > 0 && (
+                          <div style={{marginTop:10,padding:10,background:'rgba(224,82,82,0.05)',borderRadius:6}}>
+                            <div style={{fontWeight:600,marginBottom:4,color:'var(--red)'}}>Erros:</div>
+                            <div style={{fontSize:11}}>{mergeResultado.erros.map((e:string,i:number)=><div key={i}>{e}</div>)}</div>
                           </div>
                         )}
                       </>
