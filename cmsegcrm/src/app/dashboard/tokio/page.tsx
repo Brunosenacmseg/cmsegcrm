@@ -3,10 +3,9 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 const TIPOS = [
-  { key:'APOLICES',  label:'Propostas / Apólices',     icon:'📋', desc:'Importa apólices e propostas emitidas' },
-  { key:'PARCELAS',  label:'Parcelas a Pagar',          icon:'💳', desc:'Cria contas a pagar a partir do XML' },
-  { key:'COMISSOES', label:'Extrato de Comissões',      icon:'💰', desc:'Lança comissões pagas no financeiro' },
-  { key:'ENDOSSOS',  label:'Endossos',                  icon:'📝', desc:'Importa endossos vinculados às apólices' },
+  { key:'APOLICES',  label:'Propostas / Apólices / Endossos', icon:'📋', desc:'Importa apólices, propostas e endossos (mesmo XML)' },
+  { key:'PARCELAS',  label:'Parcelas Pagas / a Pagar',         icon:'💳', desc:'Atualiza contas a pagar (vlrPremioParcela)' },
+  { key:'COMISSOES', label:'Extrato de Comissões Pagas',       icon:'💰', desc:'Lança comissões do extrato Tokio Marine' },
 ]
 
 export default function TokioPage() {
