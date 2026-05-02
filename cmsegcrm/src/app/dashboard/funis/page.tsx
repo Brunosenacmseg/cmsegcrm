@@ -41,6 +41,9 @@ function FunisPage() {
   // Filtro por data (criação ou fechamento) com período opcional
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
+  const [filtroEquipe, setFiltroEquipe]   = useState<string>('')
+  const [equipes, setEquipes]             = useState<any[]>([])
+  const [equipeMembros, setEquipeMembros] = useState<Record<string,string[]>>({})
   const [visibleIds, setVisibleIds] = useState<string[] | null>(null)
 
   // Campos personalizados (definição do admin)
@@ -97,7 +100,8 @@ function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
-  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, visibleIds])
+  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros])
+  useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros])
 
   // Sincroniza a barra de rolagem horizontal de cima com o kanban
   useEffect(() => {
@@ -359,6 +363,21 @@ function FunisPage() {
     if (ids) usrQ = usrQ.in('id', ids)
     const { data: usr } = await usrQ
     setUsuarios(usr||[])
+
+    // Equipes + membros (para filtro por equipe)
+    const [{ data: eqs }, { data: mems }] = await Promise.all([
+      supabase.from('equipes').select('id, nome').order('nome'),
+      supabase.from('equipe_membros').select('equipe_id, user_id'),
+    ])
+    setEquipes(eqs || [])
+    const mapa: Record<string,string[]> = {}
+    for (const m of (mems||[])) {
+      const eid = (m as any).equipe_id; const uid = (m as any).user_id
+      if (!mapa[eid]) mapa[eid] = []
+      mapa[eid].push(uid)
+    }
+    setEquipeMembros(mapa)
+
     await carregarFunis()
     setLoading(false)
   }
@@ -370,15 +389,19 @@ function FunisPage() {
     await carregarContagens(fs || [])
   }
 
-  // Conta cards por funil sem trazer linhas (HEAD request).
+  // Conta negociações em andamento por funil (HEAD request) já respeitando
+  // filtros de usuário e equipe — para o balãozinho do dropdown.
   async function carregarContagens(fs: any[]) {
     const out: Record<string, number> = {}
+    const idsEquipe = filtroEquipe ? (equipeMembros[filtroEquipe] || []) : null
     await Promise.all((fs || []).map(async (f) => {
       let q = supabase.from('negocios')
         .select('id', { count: 'exact', head: true })
         .eq('funil_id', f.id)
-      if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
-      else if (visibleIds) q = q.in('vendedor_id', visibleIds)
+        .or('status.is.null,status.eq.em_andamento')
+      if (filtroUsuario)        q = q.eq('vendedor_id', filtroUsuario)
+      else if (idsEquipe)       q = idsEquipe.length ? q.in('vendedor_id', idsEquipe) : q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+      else if (visibleIds)      q = q.in('vendedor_id', visibleIds)
       const { count } = await q
       out[f.id] = count || 0
     }))
@@ -404,6 +427,10 @@ function FunisPage() {
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
       if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
+      else if (filtroEquipe) {
+        const ids = equipeMembros[filtroEquipe] || []
+        q = ids.length ? q.in('vendedor_id', ids) : q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+      }
       else if (visibleIds) q = q.in('vendedor_id', visibleIds)
       const { data, error } = await q
         .order('created_at', { ascending: false })
@@ -756,11 +783,21 @@ function FunisPage() {
 
         {/* Filtro por usuário */}
         {profile && profile.role !== 'corretor' && (
-          <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+          <select value={filtroUsuario} onChange={e=>{setFiltroUsuario(e.target.value); if (e.target.value) setFiltroEquipe('')}}
             title="Filtrar por usuário"
             style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroUsuario?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
             <option value="">👥 {profile.role==='admin'?'Todos':'Toda equipe'}</option>
             {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        )}
+
+        {/* Filtro por equipe */}
+        {profile && profile.role !== 'corretor' && equipes.length > 0 && (
+          <select value={filtroEquipe} onChange={e=>{setFiltroEquipe(e.target.value); if (e.target.value) setFiltroUsuario('')}}
+            title="Filtrar por equipe"
+            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroEquipe?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
+            <option value="">🏢 Todas equipes</option>
+            {equipes.map(e=><option key={e.id} value={e.id}>{e.nome}</option>)}
           </select>
         )}
 
