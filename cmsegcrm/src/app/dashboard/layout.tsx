@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
 import MetaPixel from '@/components/MetaPixel'
@@ -32,6 +33,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
   { href:'/dashboard/automacoes',   icon:'⚡', label:'Automações', adminOnly:true },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
+  { href:'/dashboard/rh',           icon:'🧑‍💼', label:'RH', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', adminOnly:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
@@ -246,10 +248,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                 )}
                 {!recolhida && (
-                  <div onClick={() => router.push(item.href)}
-                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'var(--gold-soft)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?600:400,transition:'all 0.18s'}}
-                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLDivElement).style.color = 'var(--text)' }}
-                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLDivElement).style.color = 'var(--text-muted)' }}>
+                  <Link href={item.href} prefetch={false}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'var(--gold-soft)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?600:400,transition:'all 0.18s',textDecoration:'none'}}
+                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text)' }}
+                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-muted)' }}>
                     <span style={{fontSize:15,width:20,textAlign:'center'}}>{item.icon}</span>
                     {item.label}
                     {badgeCount > 0 && (
@@ -257,7 +259,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         {badgeCount}
                       </span>
                     )}
-                  </div>
+                  </Link>
                 )}
               </div>
             )
