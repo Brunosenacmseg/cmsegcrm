@@ -30,6 +30,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
   { href:'/dashboard/integracoes/allianz', icon:'🛡️', label:'Allianz - Importar', section:'Integrações', adminOnly:true },
   { href:'/dashboard/integracoes/allianz/dados', icon:'📊', label:'Allianz - Dados', section:'Integrações', adminOnly:true },
+  { href:'/dashboard/tokio',        icon:'🌊', label:'Tokio Marine', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', adminOnly:true },
   { href:'/dashboard/integracoes/meta', icon:'🔗', label:'Conectar Meta', adminOnly:true },
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
