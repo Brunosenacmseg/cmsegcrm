@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getVisibleUserIds } from '@/lib/auth'
 
 const TIPOS_META = [
   { key:'premio',   label:'Prêmio (R$)',    icon:'💰', desc:'Total em prêmios fechados' },
@@ -35,6 +36,9 @@ export default function MetasPage() {
   const [modalAberto, setModalAberto] = useState(false)
   const [salvando, setSalvando]       = useState(false)
   const [filtroUser, setFiltroUser]   = useState('todos')
+  const [filtroEquipe, setFiltroEquipe] = useState('todos')
+  const [equipes, setEquipes]         = useState<any[]>([])
+  const [visibleIds, setVisibleIds]   = useState<string[] | null>(null)
   const [editando, setEditando]       = useState<any>(null)
 
   const hoje = new Date()
@@ -52,18 +56,33 @@ export default function MetasPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id || '').single()
     setProfile(prof)
-    const { data: usr } = await supabase.from('users').select('id,nome,role').order('nome')
+    const ids = await getVisibleUserIds()
+    setVisibleIds(ids)
+    let q = supabase.from('users').select('id,nome,role').order('nome')
+    if (ids) q = q.in('id', ids)
+    const { data: usr } = await q
     setUsuarios(usr || [])
-    await carregarMetas()
+    if (prof?.role === 'admin') {
+      const { data: eq } = await supabase.from('equipes').select('id,nome').order('nome')
+      setEquipes(eq || [])
+    }
+    await carregarMetas(prof, ids)
     setLoading(false)
   }
 
-  async function carregarMetas() {
-    const { data } = await supabase
+  async function carregarMetas(prof = profile, ids: string[] | null = visibleIds) {
+    let q = supabase
       .from('metas')
       .select('*, users!metas_user_id_fkey(id,nome,role), users!metas_criado_por_fkey(id,nome)')
       .eq('status', 'ativa')
       .order('periodo_fim', { ascending: true })
+    // Corretor: só as próprias. Líder: só do time. Admin: todas.
+    if (prof?.role === 'corretor') {
+      q = q.eq('user_id', prof.id)
+    } else if (ids) {
+      q = q.in('user_id', ids)
+    }
+    const { data } = await q
     setMetas(data || [])
   }
 
@@ -133,7 +152,27 @@ export default function MetasPage() {
   }
 
   const isAdminOrLider = profile?.role === 'admin' || profile?.role === 'lider'
-  const metasFiltradas = metas.filter(m => filtroUser === 'todos' || m.user_id === filtroUser)
+  const [equipeMembros, setEquipeMembros] = useState<Record<string, string[]>>({})
+
+  useEffect(() => {
+    // Carrega membros das equipes (apenas admin precisa para o filtro).
+    if (profile?.role !== 'admin' || equipes.length === 0) return
+    ;(async () => {
+      const { data } = await supabase.from('equipe_membros').select('equipe_id,user_id')
+      const map: Record<string, string[]> = {}
+      ;(data || []).forEach(r => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
+      setEquipeMembros(map)
+    })()
+  }, [profile, equipes])
+
+  const metasFiltradas = metas.filter(m => {
+    if (filtroEquipe !== 'todos') {
+      const membros = equipeMembros[filtroEquipe] || []
+      if (!membros.includes(m.user_id)) return false
+    }
+    if (filtroUser !== 'todos' && m.user_id !== filtroUser) return false
+    return true
+  })
   const roleCor: Record<string, string> = { admin: 'var(--red)', lider: 'var(--gold)', corretor: 'var(--teal)' }
 
   const ranking = usuarios.map(u => {
@@ -158,9 +197,18 @@ export default function MetasPage() {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
         {isAdminOrLider && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-            <button onClick={() => setFiltroUser('todos')} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'DM Sans,sans-serif', background: filtroUser === 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === 'todos' ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === 'todos' ? 'var(--gold)' : 'var(--border)' }}>Toda equipe</button>
-            {usuarios.map(u => (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+            {profile?.role === 'admin' && equipes.length > 0 && (
+              <select value={filtroEquipe} onChange={e => setFiltroEquipe(e.target.value)}
+                style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: filtroEquipe !== 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroEquipe !== 'todos' ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'DM Sans,sans-serif', outline: 'none' }}>
+                <option value="todos">🏢 Todas as equipes</option>
+                {equipes.map(eq => <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
+              </select>
+            )}
+            <button onClick={() => setFiltroUser('todos')} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'DM Sans,sans-serif', background: filtroUser === 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === 'todos' ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === 'todos' ? 'var(--gold)' : 'var(--border)' }}>{profile?.role === 'admin' ? 'Todos' : 'Toda equipe'}</button>
+            {usuarios
+              .filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id))
+              .map(u => (
               <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'DM Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{u.nome.split(' ')[0]}</button>
             ))}
           </div>

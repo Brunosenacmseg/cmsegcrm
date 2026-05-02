@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { getVisibleUserIds } from '@/lib/auth'
 
 export default function RenovacoesPage() {
   const supabase = createClient()
@@ -9,18 +10,58 @@ export default function RenovacoesPage() {
   const [renovacoes, setRenovacoes] = useState<any[]>([])
   const [loading, setLoading]       = useState(true)
   const [filtro, setFiltro]         = useState('todos') // todos | hoje | 7d | 30d | vencidos
+  const [profile, setProfile]       = useState<any>(null)
+  const [usuarios, setUsuarios]     = useState<any[]>([])
+  const [filtroUsuario, setFiltroUsuario] = useState<string>('')
 
-  useEffect(() => { carregar() }, [])
+  useEffect(() => { init() }, [])
 
-  async function carregar() {
+  async function init() {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: prof } = await supabase.from('users').select('id,nome,role').eq('id', user?.id || '').single()
+    setProfile(prof)
+    const ids = await getVisibleUserIds()
+    if (prof?.role !== 'corretor') {
+      let q = supabase.from('users').select('id,nome,role').order('nome')
+      if (ids) q = q.in('id', ids)
+      const { data: usrs } = await q
+      setUsuarios(usrs || [])
+    }
+    await carregar(prof, ids)
+  }
+
+  async function carregar(prof = profile, ids: string[] | null = null) {
     setLoading(true)
-    const { data } = await supabase
+    let q = supabase
       .from('negocios')
-      .select('*, clientes(id, nome, email, telefone), funis(tipo,nome,emoji)')
+      .select('*, clientes(id, nome, email, telefone), funis(tipo,nome,emoji), users!negocios_vendedor_id_fkey(id,nome)')
       .not('vencimento', 'is', null)
       .order('vencimento', { ascending: true })
+    if (prof?.role === 'corretor') {
+      q = q.eq('vendedor_id', prof.id)
+    } else if (ids) {
+      q = q.in('vendedor_id', ids)
+    }
+    const { data } = await q
     setRenovacoes(data || [])
     setLoading(false)
+  }
+
+  // Admin / líder: atribui (distribui) uma renovação a um usuário.
+  async function atribuirRenovacao(negId: string, userId: string) {
+    if (!userId) return
+    await supabase.from('negocios').update({ vendedor_id: userId }).eq('id', negId)
+    // Notifica o vendedor escolhido
+    const neg = renovacoes.find(r => r.id === negId)
+    if (neg && userId !== profile?.id) {
+      await supabase.from('notificacoes').insert({
+        user_id: userId, tipo: 'renovacao',
+        titulo: `${profile?.nome} atribuiu uma renovação para você`,
+        descricao: `${neg.clientes?.nome || ''} — vence ${new Date(neg.vencimento).toLocaleDateString('pt-BR')}`,
+        link: '/dashboard/renovacoes',
+      })
+    }
+    await carregar()
   }
 
   async function marcarRenovado(negId: string, clienteId: string) {
@@ -50,6 +91,11 @@ export default function RenovacoesPage() {
   const em30d   = new Date(hoje.getTime() + 30*24*60*60*1000)
 
   const filtradas = renovacoes.filter((n:any) => {
+    if (filtroUsuario === '__sem') {
+      if (n.vendedor_id) return false
+    } else if (filtroUsuario && n.vendedor_id !== filtroUsuario) {
+      return false
+    }
     const venc = new Date(n.vencimento)
     venc.setHours(0,0,0,0)
     const diffDias = Math.ceil((venc.getTime()-hoje.getTime())/(1000*60*60*24))
@@ -70,10 +116,19 @@ export default function RenovacoesPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',
+      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12,
         padding:'0 28px',background:'var(--bg-soft)',backdropFilter:'blur(8px)',
         position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Renovações</div>
+        {profile && profile.role !== 'corretor' && usuarios.length > 0 && (
+          <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+            title="Filtrar por responsável"
+            style={{border:'1px solid var(--border)',background:filtroUsuario?'rgba(201,168,76,0.10)':'rgba(255,255,255,0.04)',color:filtroUsuario?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:12,fontWeight:600,cursor:'pointer',outline:'none'}}>
+            <option value="">👥 {profile.role === 'admin' ? 'Todos' : 'Toda equipe'}</option>
+            <option value="__sem">— Sem responsável —</option>
+            {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        )}
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'28px 28px 40px'}}>
@@ -116,7 +171,7 @@ export default function RenovacoesPage() {
           {loading ? <div style={{color:'var(--text-muted)',padding:20}}>Carregando...</div> : (
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead>
-              <tr>{['Cliente','Produto','Seguradora','Prêmio','Vencimento','Funil','Ações'].map(h=>(
+              <tr>{['Cliente','Produto','Seguradora','Prêmio','Vencimento','Funil','Responsável','Ações'].map(h=>(
                 <th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',
                   color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>
               ))}</tr>
@@ -155,6 +210,17 @@ export default function RenovacoesPage() {
                       </span>
                     </td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                      {profile && profile.role !== 'corretor' ? (
+                        <select value={n.vendedor_id || ''} onChange={e => atribuirRenovacao(n.id, e.target.value)}
+                          style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:n.vendedor_id?'var(--gold)':'var(--text-muted)',outline:'none',cursor:'pointer',maxWidth:140}}>
+                          <option value="">— Atribuir —</option>
+                          {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                        </select>
+                      ) : (
+                        <span style={{fontSize:11,color:'var(--gold)'}}>{n.users?.nome?.split(' ')[0] || '—'}</span>
+                      )}
+                    </td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                         <button onClick={()=>registrarContato(n.id,n.clientes?.id)} style={{
                           fontSize:11,background:'rgba(74,128,240,0.1)',border:'1px solid rgba(74,128,240,0.3)',
@@ -172,7 +238,7 @@ export default function RenovacoesPage() {
                 )
               })}
               {filtradas.length===0 && (
-                <tr><td colSpan={7} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>
+                <tr><td colSpan={8} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>
                   Nenhuma renovação neste período. ✅
                 </td></tr>
               )}
