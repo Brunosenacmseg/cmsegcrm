@@ -65,6 +65,62 @@ export default function FinanceiroPage() {
 
   const [aba, setAba] = useState<'dre'|'despesas'|'recorrentes'|'categorias'>('dre')
 
+  // Gate de senha (sessão de 8h em sessionStorage)
+  const SESSAO_MS = 8 * 60 * 60 * 1000
+  const [senhaOk, setSenhaOk] = useState(false)
+  const [senhaInput, setSenhaInput] = useState('')
+  const [senhaErro, setSenhaErro] = useState('')
+  const [verificandoSenha, setVerificandoSenha] = useState(false)
+  const [modalTrocarSenha, setModalTrocarSenha] = useState(false)
+  const [trocaSenha, setTrocaSenha] = useState({ atual:'', nova:'', nova2:'' })
+
+  useEffect(() => {
+    const at = Number(sessionStorage.getItem('financeiro_auth_at') || 0)
+    if (at && Date.now() - at < SESSAO_MS) setSenhaOk(true)
+  }, [])
+
+  async function verificarSenha() {
+    setVerificandoSenha(true); setSenhaErro('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/financeiro/auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ senha: senhaInput }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        sessionStorage.setItem('financeiro_auth_at', String(Date.now()))
+        setSenhaOk(true); setSenhaInput('')
+      } else {
+        setSenhaErro('Senha incorreta')
+      }
+    } finally { setVerificandoSenha(false) }
+  }
+
+  async function trocarSenha() {
+    if (trocaSenha.nova !== trocaSenha.nova2) { alert('Confirmação não confere'); return }
+    if (trocaSenha.nova.length < 4) { alert('Nova senha muito curta'); return }
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/financeiro/auth?set=1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ senha_atual: trocaSenha.atual, nova: trocaSenha.nova }),
+    })
+    const json = await res.json()
+    if (json.ok) {
+      alert('Senha alterada')
+      setModalTrocarSenha(false); setTrocaSenha({ atual:'', nova:'', nova2:'' })
+    } else {
+      alert('Erro: ' + (json.erro || 'falhou'))
+    }
+  }
+
+  function bloquearAgora() {
+    sessionStorage.removeItem('financeiro_auth_at')
+    setSenhaOk(false)
+  }
+
   useEffect(()=>{ init() }, [])
   useEffect(()=>{ if (temAcesso) carregarDados() }, [competencia, temAcesso, modo])
 
@@ -252,6 +308,26 @@ export default function FinanceiroPage() {
     </div>
   )
 
+  if (!senhaOk) return (
+    <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{background:'var(--bg-elev)',border:'1px solid var(--border)',borderRadius:12,padding:32,width:380,maxWidth:'92vw'}}>
+        <div style={{fontSize:36,textAlign:'center',marginBottom:8}}>🔐</div>
+        <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,color:'var(--text)',textAlign:'center',marginBottom:6}}>Módulo Financeiro</div>
+        <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',marginBottom:20}}>Digite a senha para acessar (sessão de 8h)</div>
+        <input type="password" autoFocus value={senhaInput}
+          onChange={e=>{setSenhaInput(e.target.value);setSenhaErro('')}}
+          onKeyDown={e=>{ if (e.key==='Enter') verificarSenha() }}
+          placeholder="Senha"
+          style={{width:'100%',padding:'10px 14px',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text)',fontSize:14,boxSizing:'border-box',marginBottom:10}} />
+        {senhaErro && <div style={{color:'var(--red)',fontSize:12,marginBottom:10}}>{senhaErro}</div>}
+        <button onClick={verificarSenha} disabled={verificandoSenha||!senhaInput} className="btn-primary"
+          style={{width:'100%',padding:'10px',fontSize:13}}>
+          {verificandoSenha?'Verificando…':'Entrar'}
+        </button>
+      </div>
+    </div>
+  )
+
   const isAdmin = profile?.role === 'admin'
   const fmt = (n: number) => Number(n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'DM Sans,sans-serif' }
@@ -299,10 +375,18 @@ export default function FinanceiroPage() {
         </select>
 
         {isAdmin && (
-          <button onClick={()=>setModalAcessos(true)} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
-            👥 Acessos
-          </button>
+          <>
+            <button onClick={()=>setModalAcessos(true)} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
+              👥 Acessos
+            </button>
+            <button onClick={()=>setModalTrocarSenha(true)} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
+              🔑 Trocar senha
+            </button>
+          </>
         )}
+        <button onClick={bloquearAgora} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}} title="Bloquear módulo (pede senha de novo)">
+          🔒
+        </button>
         {isAdmin && <ImportarPlanilhaButton onSuccess={()=>carregarDados()} />}
         <button onClick={()=>{setEditandoDespesa(null);setFormDespesa(emptyDespesa);setModalDespesa(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>
           + Lançar despesa
@@ -799,6 +883,24 @@ export default function FinanceiroPage() {
       )}
 
       {/* Modal: gerenciar acessos */}
+      {modalTrocarSenha && isAdmin && (
+        <div onClick={()=>setModalTrocarSenha(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'var(--bg-elev)',border:'1px solid var(--border)',borderRadius:12,padding:24,width:400,maxWidth:'92vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--text)',marginBottom:16}}>Trocar senha do módulo</div>
+            <label style={lbl}>Senha atual</label>
+            <input type="password" value={trocaSenha.atual} onChange={e=>setTrocaSenha({...trocaSenha,atual:e.target.value})} style={{...inp,marginBottom:10}} />
+            <label style={lbl}>Nova senha</label>
+            <input type="password" value={trocaSenha.nova} onChange={e=>setTrocaSenha({...trocaSenha,nova:e.target.value})} style={{...inp,marginBottom:10}} />
+            <label style={lbl}>Confirmar nova senha</label>
+            <input type="password" value={trocaSenha.nova2} onChange={e=>setTrocaSenha({...trocaSenha,nova2:e.target.value})} style={{...inp,marginBottom:16}} />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalTrocarSenha(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={trocarSenha} disabled={!trocaSenha.atual||!trocaSenha.nova}>✓ Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalAcessos && isAdmin && (
         <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalAcessos(false)}>
