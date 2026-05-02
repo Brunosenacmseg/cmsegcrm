@@ -406,38 +406,77 @@ async function importarNegocios(linhas: any[]) {
 
 async function importarApolices(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  // BULK: pré-carrega clientes (por CPF) e apólices existentes (por número)
-  const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
-  const numerosLote = Array.from(new Set(linhas.map(r => s(r.numero || r.apolice)).filter(Boolean))) as string[]
-  const clientePorCpf: Record<string, string> = {}
-  const apolicePorNum: Record<string, string> = {}
-  if (cpfsLote.length) {
-    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
-    for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+
+  // Helpers
+  const onlyDigits = (v: any) => (v ? String(v).replace(/\D/g, '') : '')
+  const nomeKey = (v: any) => (v ? String(v).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim() : '')
+  const intN = (v: any) => {
+    const x = n(v); return x === null ? null : Math.round(x)
   }
-  if (numerosLote.length) {
-    const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', numerosLote)
+
+  // Coleta chaves de busca: documento (CPF/CNPJ), nome do cliente, número da apólice/proposta
+  const cpfsLote = new Set<string>()
+  const nomesLote = new Set<string>()
+  const numerosLote = new Set<string>()
+  for (const r of linhas) {
+    const doc = onlyDigits(r.cpf_cnpj || r.cpf || r.documento_cliente || r['documento do cliente'])
+    if (doc) cpfsLote.add(doc)
+    const nome = nomeKey(r.cliente || r.nome || r.segurado)
+    if (nome) nomesLote.add(nome)
+    const num = s(r.apolice || r.numero || r['apólice'] || r.proposta)
+    if (num) numerosLote.add(num)
+  }
+
+  // BULK: carrega todos os clientes (ate 50k) e indexa por dígitos do documento
+  // e por nome normalizado. Mais robusto que filtros .or com ilike — o banco
+  // pode ter CPF formatado, sem formatação ou parcial.
+  const clientePorDoc: Record<string, string> = {}
+  const clientePorNome: Record<string, string> = {}
+  {
+    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj, nome').limit(50000)
+    for (const c of data || []) {
+      const d = onlyDigits(c.cpf_cnpj); if (d) clientePorDoc[d] = c.id
+      const k = nomeKey(c.nome);        if (k && !clientePorNome[k]) clientePorNome[k] = c.id
+    }
+  }
+
+  // Apólices existentes (pra upsert por numero)
+  const apolicePorNum: Record<string, string> = {}
+  if (numerosLote.size) {
+    const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', Array.from(numerosLote))
     for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
   }
 
-  // Pre-cria clientes que não existem (em batch)
+  // Cria clientes faltantes a partir do nome+documento da planilha
   const novosClientes: any[] = []
+  const vistos = new Set<string>()
   for (const r of linhas) {
-    const cpf = s(r.cpf_cnpj || r.cpf)
-    if (cpf && !clientePorCpf[cpf]) {
-      const nome = s(r.nome) || s(r.segurado) || s(r.cliente)
-      if (nome && !novosClientes.find(c => c.cpf_cnpj === cpf)) {
-        novosClientes.push({
-          nome, cpf_cnpj: cpf,
-          tipo: cpf.replace(/\D/g,'').length > 11 ? 'PJ' : 'PF',
-          fonte: 'Importação Apólices',
-        })
-      }
-    }
+    const doc = onlyDigits(r.cpf_cnpj || r.cpf || r.documento_cliente || r['documento do cliente'])
+    const nomeRaw = s(r.cliente || r.nome || r.segurado)
+    const nk = nomeKey(nomeRaw)
+    if (!nomeRaw) continue
+    const jaTemPorDoc = doc && clientePorDoc[doc]
+    const jaTemPorNome = nk && clientePorNome[nk]
+    if (jaTemPorDoc || jaTemPorNome) continue
+    const chave = doc || nk
+    if (vistos.has(chave)) continue
+    vistos.add(chave)
+    const tipoPessoa = s(r.tipo_pessoa || r['tipo pessoa']) || (doc.length > 11 ? 'PJ' : 'PF')
+    novosClientes.push({
+      nome: nomeRaw,
+      cpf_cnpj: doc || null,
+      email: s(r.emails)?.split(/[;,]/)[0]?.toLowerCase() || null,
+      telefone: s(r.telefones)?.split(/[;,]/)[0] || null,
+      tipo: /pj|jur/i.test(tipoPessoa || '') ? 'PJ' : 'PF',
+      fonte: 'Importação Apólices',
+    })
   }
   if (novosClientes.length) {
-    const { data: criados } = await supabaseAdmin.from('clientes').insert(novosClientes).select('id, cpf_cnpj')
-    for (const c of criados || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+    const { data: criados } = await supabaseAdmin.from('clientes').insert(novosClientes).select('id, cpf_cnpj, nome')
+    for (const c of criados || []) {
+      const d = onlyDigits(c.cpf_cnpj); if (d) clientePorDoc[d] = c.id
+      const k = nomeKey(c.nome); if (k) clientePorNome[k] = c.id
+    }
   }
 
   // Monta payloads + separa novos vs updates
@@ -445,22 +484,68 @@ async function importarApolices(linhas: any[]) {
   const updates: { id: string; payload: any }[] = []
   for (const r of linhas) {
     try {
-      const numero = s(r.numero || r.apolice)
+      const numero = s(r.apolice || r.numero || r['apólice']) || s(r.proposta)
       if (!numero) { stats.qtd_erros++; continue }
-      const cpf = s(r.cpf_cnpj || r.cpf)
-      const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
-      if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente`); continue }
+      const doc = onlyDigits(r.cpf_cnpj || r.cpf || r.documento_cliente || r['documento do cliente'])
+      const nk = nomeKey(r.cliente || r.nome || r.segurado)
+      const clienteId = (doc && clientePorDoc[doc]) || (nk && clientePorNome[nk]) || null
+      if (!clienteId) {
+        stats.qtd_erros++
+        if (stats.erros.length < 20) stats.erros.push(`${numero}: cliente "${s(r.cliente || r.nome) || doc || '?'}" não encontrado`)
+        continue
+      }
+
+      // Status livre — mantém o que veio da planilha (vigente, cancelado, não ativo, etc)
+      const statusRaw = s(r.status_apolice || r['status apólice'] || r.status) || null
+      const statusNorm = statusRaw ? statusRaw.toLowerCase() : null
 
       const payload: any = {
         cliente_id: clienteId,
         numero,
-        produto: s(r.produto),
-        seguradora: s(r.seguradora),
-        premio: nClamp(r.premio, MAX_VALOR),
-        comissao_pct: nClamp(r.comissao_pct, MAX_PCT),
-        vigencia_ini: dateBR(r.vigencia_ini || r.inicio),
-        vigencia_fim: dateBR(r.vigencia_fim || r.fim || r.vencimento),
-        placa: s(r.placa),
+        tipo_documento:    s(r.tipo_documento || r['tipo documento']),
+        produto:           s(r.produto),
+        ramo:              s(r.ramo),
+        seguradora:        s(r.seguradora),
+        premio:            nClamp(r.premio || r.premio_total || r['prêmio total'] || r.premio_liquido || r['prêmio líquido'], MAX_VALOR),
+        premio_liquido:    nClamp(r.premio_liquido || r['prêmio líquido'], MAX_VALOR),
+        premio_total:      nClamp(r.premio_total || r['prêmio total'], MAX_VALOR),
+        comissao_pct:      nClamp(r.comissao_pct, MAX_PCT),
+        comissao_valor:    nClamp(r.comissao || r.comissao_valor, MAX_VALOR),
+        comissao_gerada:   nClamp(r.comissao_gerada || r['comissão gerada'], MAX_VALOR),
+        quantidade_parcelas: intN(r.quantidade_parcelas || r['quantidade parcelas'] || r.parcelas),
+        tipo_pagamento:    s(r.tipo_pagamento || r['tipo pagamento']),
+        vigencia_ini:      dateBR(r.vigencia_ini || r['vigência inicial'] || r['vigencia inicial'] || r.inicio),
+        vigencia_fim:      dateBR(r.vigencia_fim || r['vigência final'] || r['vigencia final'] || r.fim || r.vencimento),
+        emissao:           dateBR(r.emissao || r['emissão']),
+        data_controle:     dateBR(r.data_controle || r['data controle']),
+        data_cadastro:     dateBR(r.data_cadastro || r['data de cadastro'] || r['data cadastro']),
+        status:            statusNorm,
+        status_apolice:    s(r.status_apolice || r['status apólice']),
+        status_assinatura: s(r.status_assinatura || r['status assinatura']),
+        negocio_corretora: s(r.negocio_corretora || r['negócio corretora'] || r['negocio corretora']),
+        item:              s(r.item),
+        todos_vendedores:  s(r.todos_vendedores || r['todos vendedores']),
+        vendedor:          s(r.vendedor),
+        tipo_vendedores:   s(r.tipo_vendedores || r['tipo vendedores']),
+        repasse_vendedor:  nClamp(r.repasse_vendedor || r['repasse vendedor'], MAX_VALOR),
+        proposta:          s(r.proposta),
+        proposta_endosso:  s(r.proposta_endosso || r['proposta endosso']),
+        proposta_assinada: s(r.proposta_assinada || r['proposta assinada']),
+        endosso:           s(r.endosso),
+        agencia:           s(r.agencia || r['agência']),
+        conta:             s(r.conta),
+        banco:             s(r.banco),
+        apolice_conferida: s(r.apolice_conferida || r['apólice conferida']),
+        transmissao:       s(r.transmissao || r['transmissão']),
+        estipulante:       s(r.estipulante),
+        filial:            s(r.filial),
+        pasta:             s(r.pasta),
+        pasta_cliente:     s(r.pasta_cliente || r['pasta cliente']),
+        tipo_pessoa:       s(r.tipo_pessoa || r['tipo pessoa']),
+        emails:            s(r.emails),
+        telefones:         s(r.telefones),
+        documento_cliente: s(r.documento_cliente || r['documento do cliente'] || r.cpf_cnpj || r.cpf),
+        placa:             s(r.placa),
       }
       const existId = apolicePorNum[numero]
       if (existId) updates.push({ id: existId, payload })
