@@ -8,6 +8,7 @@ export default function ApolicesPage() {
   const router   = useRouter()
   const [negocios, setNegocios]   = useState<any[]>([])
   const [usuarios, setUsuarios]   = useState<any[]>([])
+  const [vendedoresLegado, setVendedoresLegado] = useState<any[]>([])
   const [profile, setProfile]     = useState<any>(null)
   const [loading, setLoading]     = useState(true)
   const [busca, setBusca]         = useState('')
@@ -44,23 +45,29 @@ export default function ApolicesPage() {
 
     let query = supabase
       .from('negocios')
-      .select('*, clientes(id,nome,tipo), users!negocios_vendedor_id_fkey(id,nome)')
+      .select('*, clientes(id,nome,tipo), users!negocios_vendedor_id_fkey(id,nome), vendedores_legado(id,nome)')
       .gt('premio', 0)
       .order('vencimento', { ascending: true })
 
     if (visibleIds) query = (query as any).in('vendedor_id', visibleIds)
 
-    const [{ data }, { data: usr }] = await Promise.all([
+    const [{ data }, { data: usr }, { data: vleg }] = await Promise.all([
       query,
       supabase.from('users').select('id, nome').order('nome'),
+      supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
     ])
     setNegocios(data || [])
     setUsuarios(usr || [])
+    setVendedoresLegado(vleg || [])
     setLoading(false)
   }
 
-  async function salvarVendedor(negocioId: string, vendedorId: string) {
-    await supabase.from('negocios').update({ vendedor_id: vendedorId||null }).eq('id', negocioId)
+  async function salvarVendedor(negocioId: string, valor: string) {
+    // valor pode ser '', 'user:<uuid>' ou 'legado:<uuid>'
+    const patch: any = { vendedor_id: null, vendedor_legado_id: null }
+    if (valor.startsWith('user:'))   patch.vendedor_id        = valor.slice(5)
+    if (valor.startsWith('legado:')) patch.vendedor_legado_id = valor.slice(7)
+    await supabase.from('negocios').update(patch).eq('id', negocioId)
     setEditandoVendedor(null)
     carregar()
   }
@@ -206,16 +213,23 @@ export default function ApolicesPage() {
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}} onClick={()=>router.push(`/dashboard/clientes/${n.clientes?.id}`)}>{n.seguradora||'—'}</td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
                       {editandoVendedor===n.id?(
-                        <select autoFocus defaultValue={n.vendedor_id||''} onBlur={e=>salvarVendedor(n.id,e.target.value)}
+                        <select autoFocus
+                          defaultValue={n.vendedor_id?`user:${n.vendedor_id}`:n.vendedor_legado_id?`legado:${n.vendedor_legado_id}`:''}
+                          onBlur={e=>salvarVendedor(n.id,e.target.value)}
                           onChange={e=>salvarVendedor(n.id,e.target.value)}
                           style={{background:'rgba(255,255,255,0.08)',border:'1px solid var(--gold)',borderRadius:6,padding:'4px 8px',color:'var(--text)',fontSize:11,fontFamily:'DM Sans,sans-serif'}}>
                           <option value="">Sem vendedor</option>
-                          {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+                          <optgroup label="Vendedores ativos">
+                            {usuarios.map(u=><option key={u.id} value={`user:${u.id}`}>{u.nome}</option>)}
+                          </optgroup>
+                          <optgroup label="Vendedores antigos (histórico)">
+                            {vendedoresLegado.map(v=><option key={v.id} value={`legado:${v.id}`}>{v.nome}</option>)}
+                          </optgroup>
                         </select>
                       ):(
-                        <span style={{color:n.users?.nome?'var(--text)':'var(--text-muted)',cursor:isAdmin||isLider?'pointer':'default',borderRadius:6,padding:'2px 6px',border:isAdmin||isLider?'1px dashed var(--border)':'none'}}
+                        <span style={{color:(n.users?.nome||n.vendedores_legado?.nome)?'var(--text)':'var(--text-muted)',cursor:isAdmin||isLider?'pointer':'default',borderRadius:6,padding:'2px 6px',border:isAdmin||isLider?'1px dashed var(--border)':'none'}}
                           onClick={()=>(isAdmin||isLider)&&setEditandoVendedor(n.id)}>
-                          {n.users?.nome||'—'}
+                          {n.users?.nome || (n.vendedores_legado?.nome ? `${n.vendedores_legado.nome} (legado)` : '—')}
                         </span>
                       )}
                     </td>
