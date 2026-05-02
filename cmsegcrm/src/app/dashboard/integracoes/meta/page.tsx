@@ -105,7 +105,15 @@ export default function ConectarMetaPage() {
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12}}>
         <button onClick={()=>router.push('/dashboard/campanhas')} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:13}}>← Campanhas</button>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18}}>🔗 Conectar Meta Ads</div>
-        {status?.conectado && <span style={{marginLeft:'auto',fontSize:11,color:'var(--teal)',fontWeight:600,padding:'4px 10px',borderRadius:5,border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.1)'}}>● Conectado</span>}
+        <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
+          {status?.conectado && (
+            <button onClick={()=>router.push('/dashboard/integracoes/meta/formularios')}
+              style={{padding:'6px 12px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontSize:12,fontWeight:600}}>
+              📋 Formulários e mapeamento →
+            </button>
+          )}
+          {status?.conectado && <span style={{fontSize:11,color:'var(--teal)',fontWeight:600,padding:'4px 10px',borderRadius:5,border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.1)'}}>● Conectado</span>}
+        </div>
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
