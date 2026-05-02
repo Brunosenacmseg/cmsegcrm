@@ -243,6 +243,80 @@ app.post('/debug-suhai', async (req, res) => {
   }
 })
 
+// Captura só os campos VISÍVEIS no momento (mais útil pra mapear etapas).
+async function capturarVisiveis(page) {
+  return await page.evaluate(() => {
+    const visivel = e => e.offsetParent !== null
+    const inputs = Array.from(document.querySelectorAll('input,textarea')).filter(visivel)
+      .map(e => ({ tag: e.tagName.toLowerCase(), type: e.type, name: e.name, id: e.id, placeholder: e.placeholder, value: (e.value || '').slice(0, 30), disabled: e.disabled }))
+    const selects = Array.from(document.querySelectorAll('select')).filter(visivel)
+      .map(e => ({ name: e.name, id: e.id, disabled: e.disabled, opcoes: Array.from(e.options).slice(0, 8).map(o => o.text).filter(Boolean) }))
+    const labels = Array.from(document.querySelectorAll('label')).filter(visivel)
+      .map(l => (l.innerText || '').trim().slice(0, 80)).filter(Boolean).slice(0, 60)
+    const buttons = Array.from(document.querySelectorAll('button')).filter(visivel)
+      .map(b => ({ id: b.id, text: (b.innerText || '').trim().slice(0, 40), disabled: b.disabled }))
+    return { url: location.href, inputs, selects, labels, buttons, texto: document.body.innerText.slice(0, 800) }
+  })
+}
+
+// Debug step-by-step: preenche etapa 1, clica "Inicie sua cotação" e dumpa
+// a estrutura da etapa 2. Body opcional: { contato: {nome,email,telefone} }
+app.post('/debug-suhai-etapas', async (req, res) => {
+  const url = (req.body && req.body.url) || 'http://suhai.link/rk6s'
+  const contato = (req.body && req.body.contato) || { nome: 'Bruno Teste', email: 'teste@cmseguros.com.br', telefone: '11999999999' }
+  let session = null
+  try {
+    session = await browser.newSession()
+    const page = session.page
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 })
+    await page.waitForTimeout(2500)
+    const etapa1 = await capturarVisiveis(page)
+
+    // Preenche tNome/tEmail/tFone e clica "Inicie sua cotação"
+    await page.evaluate(({ nome, email, fone }) => {
+      const set = (n, v) => {
+        const el = document.querySelector(`[name="${n}"]`)
+        if (!el) return
+        const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        el.dispatchEvent(new Event('blur', { bubbles: true }))
+      }
+      set('tNome', nome); set('tEmail', email); set('tFone', fone)
+      const btn = Array.from(document.querySelectorAll('button')).find(b => /inicie sua cota/i.test(b.innerText || ''))
+      if (btn) btn.click()
+    }, { nome: contato.nome, email: contato.email, fone: contato.telefone })
+
+    await page.waitForTimeout(3500)
+    const etapa2 = await capturarVisiveis(page)
+
+    // Tenta clicar Continuar e captura etapa 3 também (se aparecer)
+    let etapa3 = null
+    const continuou = await page.evaluate(() => {
+      const b = document.getElementById('btnContinuar')
+        || Array.from(document.querySelectorAll('button')).find(x => /continuar/i.test(x.innerText || '') && x.offsetParent !== null && !x.disabled)
+      if (b) { b.click(); return true } else return false
+    })
+    if (continuou) {
+      await page.waitForTimeout(2500)
+      etapa3 = await capturarVisiveis(page)
+    }
+
+    const dir = process.env.LOG_DIR || './logs'
+    fs.mkdirSync(dir, { recursive: true })
+    const shot = path.join(dir, `debug-suhai-etapas-${Date.now()}.png`)
+    await page.screenshot({ path: shot, fullPage: true }).catch(() => {})
+
+    res.json({ ok: true, screenshot_path: shot, etapa1, etapa2, etapa3 })
+  } catch (err) {
+    log.error('Erro em /debug-suhai-etapas', { erro: err.message })
+    res.status(500).json({ ok: false, erro: err.message })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
 // Consulta rápida por CPF (usado pelo CRM para auto-preencher cotação)
 app.post('/consultar-cpf', async (req, res) => {
   const { cpf } = req.body || {}
