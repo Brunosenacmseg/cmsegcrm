@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, role, ramal } = await request.json()
+    const { userId, role, ramal, nome } = await request.json()
 
     if (!userId) {
       return NextResponse.json({ error: 'userId obrigatório' }, { status: 400 })
@@ -16,8 +16,13 @@ export async function POST(request: NextRequest) {
 
     const update: Record<string, any> = {}
 
-    if (role !== undefined) update.role = role
+    if (role !== undefined)  update.role = role
     if (ramal !== undefined) update.ramal_goto = ramal || null
+    if (nome !== undefined) {
+      const limpo = String(nome).trim()
+      if (!limpo) return NextResponse.json({ error: 'Nome não pode ser vazio' }, { status: 400 })
+      update.nome = limpo
+    }
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: 'Nada para atualizar' }, { status: 400 })
