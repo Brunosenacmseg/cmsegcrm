@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import ImportarPlanilhaButton from './ImportarPlanilhaButton'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const FORMAS_PGTO = ['PIX','BOLETO','TED','CARTÃO DE CRÉDITO','DÉBITO COMISSÃO','DINHEIRO']
@@ -302,6 +303,7 @@ export default function FinanceiroPage() {
             👥 Acessos
           </button>
         )}
+        {isAdmin && <ImportarPlanilhaButton onSuccess={()=>carregarDados()} />}
         <button onClick={()=>{setEditandoDespesa(null);setFormDespesa(emptyDespesa);setModalDespesa(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>
           + Lançar despesa
         </button>
