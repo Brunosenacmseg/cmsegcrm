@@ -451,7 +451,11 @@ export default function WhatsAppPage() {
             <div style={{fontSize:56,marginBottom:16}}>💬</div>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM Seguros</div>
             <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:28,lineHeight:1.6}}>Conecte seu número do WhatsApp para enviar e receber mensagens diretamente do CRM.</div>
-            <button className="btn-primary" style={{padding:'12px 28px',fontSize:14}} onClick={()=>setModalConfig(true)}>⚙ Configurar WhatsApp</button>
+            <button className="btn-primary" style={{padding:'12px 28px',fontSize:14}} onClick={()=>{
+              const sug = (profile?.nome||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/\s+/).filter(Boolean)[0]
+              if (sug) setConfig(c=>({...c, nome: c.nome || `corretor_${sug}`}))
+              setModalConfig(true)
+            }}>⚙ Configurar WhatsApp</button>
           </div>
         </div>
       )}
@@ -478,7 +482,11 @@ export default function WhatsAppPage() {
               <div style={{display:'flex',gap:6}}>
                 {instancia.status!=='connected'&&<button onClick={gerarQRCode} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>{loadingQR?'...':'📱 Conectar'}</button>}
                 {instancia.status==='connected'&&<button onClick={desconectar} style={{flex:1,fontSize:11,background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Desconectar</button>}
-                <button onClick={()=>setModalConfig(true)} style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 8px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>⚙️</button>
+                <button onClick={()=>{
+                  const sug = (profile?.nome||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/\s+/).filter(Boolean)[0]
+                  if (sug) setConfig(c=>({...c, nome: c.nome || `corretor_${sug}`}))
+                  setModalConfig(true)
+                }} style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 8px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>⚙️</button>
               </div>
             </div>
 
