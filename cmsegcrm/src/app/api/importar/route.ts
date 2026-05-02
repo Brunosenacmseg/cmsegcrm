@@ -456,16 +456,58 @@ async function importarApolices(linhas: any[]) {
       const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
       if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente`); continue }
 
+      const parseBool = (v: any): boolean | null => {
+        if (v === undefined || v === null || v === '') return null
+        const t = String(v).toLowerCase().trim()
+        if (/^(sim|s|yes|y|true|1|verdadeiro|on|ativo|conferida|assinada)$/.test(t)) return true
+        if (/^(nao|não|no|false|0|inativo|off|pendente)$/.test(t)) return false
+        return null
+      }
+      const statusVal = (() => {
+        const v = (s(r.status) || '').toLowerCase()
+        if (/cancel/.test(v)) return 'cancelado'
+        if (/renov/.test(v))  return 'renovar'
+        if (/venc/.test(v))   return 'vencido'
+        if (v) return 'ativo'
+        return 'ativo'
+      })()
       const payload: any = {
         cliente_id: clienteId,
         numero,
-        produto: s(r.produto),
-        seguradora: s(r.seguradora),
-        premio: nClamp(r.premio, MAX_VALOR),
-        comissao_pct: nClamp(r.comissao_pct, MAX_PCT),
-        vigencia_ini: dateBR(r.vigencia_ini || r.inicio),
-        vigencia_fim: dateBR(r.vigencia_fim || r.fim || r.vencimento),
-        placa: s(r.placa),
+        proposta:           s(r.proposta),
+        endosso:            s(r.endosso),
+        proposta_endosso:   s(r.proposta_endosso),
+        tipo_documento:     s(r.tipo_documento),
+        // tipo_pessoa não existe na coluna; mapeia pra clientes.tipo se necessário (ignorado aqui)
+        estipulante:        s(r.estipulante),
+        ramo:               s(r.ramo),
+        produto:            s(r.produto),
+        seguradora:         s(r.seguradora),
+        item:               s(r.item),
+        vigencia_ini:       dateBR(r.vigencia_ini || r.inicio),
+        vigencia_fim:       dateBR(r.vigencia_fim || r.fim || r.vencimento),
+        emissao:            dateBR(r.emissao),
+        data_controle:      dateBR(r.data_controle),
+        premio:             nClamp(r.premio, MAX_VALOR),
+        premio_liquido:     nClamp(r.premio_liquido, MAX_VALOR),
+        comissao_pct:       nClamp(r.comissao_pct, MAX_PCT),
+        repasse_vendedor_pct: nClamp(r.repasse_vendedor_pct, MAX_PCT),
+        qtd_parcelas:       (() => { const x = n(r.qtd_parcelas); return x === null ? null : Math.round(x) })(),
+        tipo_pagamento:     s(r.tipo_pagamento),
+        banco:              s(r.banco),
+        agencia:            s(r.agencia),
+        conta:              s(r.conta),
+        tipo_vendedores:    s(r.tipo_vendedores),
+        negocio_corretora:  s(r.negocio_corretora),
+        filial:             s(r.filial),
+        pasta:              s(r.pasta),
+        pasta_cliente:      s(r.pasta_cliente),
+        apolice_conferida:  parseBool(r.apolice_conferida) ?? false,
+        proposta_assinada:  parseBool(r.proposta_assinada) ?? false,
+        status_assinatura:  s(r.status_assinatura),
+        transmissao:        s(r.transmissao),
+        placa:              s(r.placa),
+        status:             statusVal,
       }
       const existId = apolicePorNum[numero]
       if (existId) updates.push({ id: existId, payload })
