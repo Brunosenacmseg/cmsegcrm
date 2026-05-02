@@ -35,9 +35,28 @@ async function checarAdmin(req: NextRequest) {
 const s = (v: any) => v === undefined || v === null || v === '' ? null : String(v).trim()
 const n = (v: any) => {
   if (v === undefined || v === null || v === '') return null
-  const num = Number(String(v).replace(/[R$\s.]/g, '').replace(',', '.'))
+  let str = String(v).trim().replace(/[R$\s%]/g, '')
+  if (!str) return null
+  // pt-BR ("1.234,56") vs US ("1234.56"). Sem essa heurística, "1.003.110" virava 1003110.
+  if (str.includes(',')) {
+    str = str.replace(/\./g, '').replace(',', '.')
+  } else if ((str.match(/\./g) || []).length > 1) {
+    str = str.replace(/\./g, '')
+  } else if (/\.\d{3,}$/.test(str)) {
+    str = str.replace(/\./g, '')
+  }
+  const num = Number(str)
   return isFinite(num) ? num : null
 }
+// Clampa pra caber na precisao da coluna; se estourar, devolve null em vez de quebrar o lote.
+const nClamp = (v: any, max: number) => {
+  const x = n(v)
+  if (x === null) return null
+  return Math.abs(x) > max ? null : x
+}
+// numeric(12,2) -> 9_999_999_999.99 ; numeric(8,2) -> 999_999.99 ; numeric(5,2) -> 999.99
+const MAX_VALOR = 9_999_999_999.99
+const MAX_PCT   = 999_999.99
 const dateBR = (v: any) => {
   if (!v) return null
   const t = String(v).trim()
@@ -71,7 +90,7 @@ async function importarClientes(linhas: any[]) {
       if (!nome && !cpf && !email) { stats.qtd_erros++; continue }
 
       const renda = r.renda_mensal || r.renda
-      const rendaNum = renda ? n(renda) : null
+      const rendaNum = renda ? nClamp(renda, MAX_VALOR) : null
 
       const payload: any = {
         nome: nome || email || cpf,
@@ -286,11 +305,11 @@ async function importarNegocios(linhas: any[]) {
         produto: s(r.produto || r.ramo) || s(r['tipo do seguro']) || s(r['tipo_seguro']),
         seguradora: s(r.seguradora),
         seguradora_atual: s(r.seguradora) || s(r['seguradora atual']),
-        premio: n(r.premio || r.valor || r.valor_unico || r['valor único']),
-        valor_unico: n(r.valor_unico || r['valor único']),
-        valor_recorrente: n(r.valor_recorrente || r['valor recorrente'] || r.mensalidade_atual || r['mensalidade atual']),
-        comissao_pct: n(r.comissao_pct || r.comissao),
-        comissao_valor: n(r['comissao_valor'] || r['valor comissao']),
+        premio: nClamp(r.premio || r.valor || r.valor_unico || r['valor único'], MAX_VALOR),
+        valor_unico: nClamp(r.valor_unico || r['valor único'], MAX_VALOR),
+        valor_recorrente: nClamp(r.valor_recorrente || r['valor recorrente'] || r.mensalidade_atual || r['mensalidade atual'], MAX_VALOR),
+        comissao_pct: nClamp(r.comissao_pct || r.comissao, MAX_PCT),
+        comissao_valor: nClamp(r['comissao_valor'] || r['valor comissao'], MAX_VALOR),
         cpf_cnpj: cpf,
         cep: s(r.cep),
         fonte: s(r.fonte) || s(r.origem) || 'Importação CSV/XLSX',
@@ -318,7 +337,7 @@ async function importarNegocios(linhas: any[]) {
         possui_plano:      parseBoolOpt(r['possui plano'] || r.possui_plano),
         plano_atual:       s(r['plano atual'] || r.plano_atual),
         motivo_troca_plano: s(r['motivo troca de plano'] || r.motivo_troca_plano),
-        mensalidade_atual: n(r['mensalidade atual'] || r.mensalidade_atual),
+        mensalidade_atual: nClamp(r['mensalidade atual'] || r.mensalidade_atual, MAX_VALOR),
         idade_beneficiarios: s(r['idade dos beneficiarios'] || r['idade dos beneficiários']),
         possui_hospital_pref: parseBoolOpt(r['possui hospital de preferencia'] || r['possui hospital de preferência']),
         qual_hospital: s(r['qual hospital']),
@@ -409,8 +428,8 @@ async function importarApolices(linhas: any[]) {
         numero,
         produto: s(r.produto),
         seguradora: s(r.seguradora),
-        premio: n(r.premio),
-        comissao_pct: n(r.comissao_pct),
+        premio: nClamp(r.premio, MAX_VALOR),
+        comissao_pct: nClamp(r.comissao_pct, MAX_PCT),
         vigencia_ini: dateBR(r.vigencia_ini || r.inicio),
         vigencia_fim: dateBR(r.vigencia_fim || r.fim || r.vencimento),
         placa: s(r.placa),
