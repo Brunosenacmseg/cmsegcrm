@@ -208,6 +208,10 @@ async function importarNegocios(linhas: any[]) {
     if (u.nome)  userPorNome[u.nome.toLowerCase().trim()] = u.id
     if (u.email) userPorEmail[u.email.toLowerCase().trim()] = u.id
   }
+  // Aliases RD -> usuario (ex: "Bruce Cena" -> Bruno Sena)
+  const { data: aliases } = await supabaseAdmin.from('user_aliases_rd').select('user_id, alias')
+  const userPorAlias: Record<string, string> = {}
+  for (const a of aliases || []) if (a.alias) userPorAlias[a.alias.toLowerCase().trim()] = a.user_id
   const { data: equipes } = await supabaseAdmin.from('equipes').select('id, nome')
   const equipePorNome: Record<string, string> = {}
   for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
@@ -293,11 +297,12 @@ async function importarNegocios(linhas: any[]) {
       if (/vend|ganh|fechad|won/.test(estadoRaw))   { status = 'ganho';   if (!dataFech) dataFech = new Date().toISOString() }
       else if (/perd|cancel|lost/.test(estadoRaw))  { status = 'perdido'; if (!dataFech) dataFech = new Date().toISOString() }
 
-      // Responsavel: tenta nome, depois email
+      // Responsavel: tenta alias do RD (mais especifico), depois nome, depois email
       const respRaw = s(r.responsavel || r['responsável']) || ''
       let vendedorId: string | null = null
       if (respRaw) {
-        vendedorId = userPorNome[respRaw.toLowerCase()] || userPorEmail[respRaw.toLowerCase()] || null
+        const k = respRaw.toLowerCase().trim()
+        vendedorId = userPorAlias[k] || userPorNome[k] || userPorEmail[k] || null
       }
 
       // Equipe
