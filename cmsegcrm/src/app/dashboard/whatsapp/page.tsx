@@ -419,7 +419,7 @@ export default function WhatsAppPage() {
     </button>
   )
 
-  const seletorUsuario = profile && profile.role !== 'corretor' && usuariosVisiveis.length > 0 ? (
+  const seletorUsuario = profile && profile.role !== 'corretor' ? (
     <div style={{display:'flex',alignItems:'center',gap:8}}>
       <span style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>
         {somenteLeitura ? '👁 Visualizando' : 'Caixa de'}
