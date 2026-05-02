@@ -2,12 +2,13 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'treinamentos' | 'beneficios' | 'aniversariantes' | 'cargos' | 'desligamentos'
+type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'treinamentos' | 'beneficios' | 'aniversariantes' | 'cargos' | 'desligamentos' | 'documentos'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key:'funcionarios',     label:'Funcionários',     icon:'🧑' },
   { key:'aniversariantes',  label:'Aniversariantes',  icon:'🎂' },
   { key:'ferias',           label:'Férias',           icon:'🏖️' },
+  { key:'documentos',       label:'Documentos',       icon:'📁' },
   { key:'avaliacoes',       label:'Avaliações',       icon:'⭐' },
   { key:'treinamentos',     label:'Treinamentos',     icon:'🎓' },
   { key:'beneficios',       label:'Benefícios',       icon:'💼' },
@@ -35,7 +36,8 @@ export default function RHPage() {
     setLoading(false)
   })() }, [])
 
-  const isAdmin = profile?.role === 'admin'
+  // Líder e admin gerenciam o RH; demais usuários só leem o próprio.
+  const podeEditar = profile?.role === 'admin' || profile?.role === 'lider'
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -55,44 +57,45 @@ export default function RHPage() {
       <div style={{flex:1,overflow:'auto',padding:'24px 28px 40px'}}>
         {loading ? <div style={{color:'var(--text-muted)'}}>Carregando…</div> : (
           <>
-            {tab === 'funcionarios'    && <FuncionariosTab isAdmin={isAdmin} />}
+            {tab === 'funcionarios'    && <FuncionariosTab isAdmin={podeEditar} />}
             {tab === 'aniversariantes' && <AniversariantesTab />}
-            {tab === 'ferias'          && <FeriasTab isAdmin={isAdmin} />}
-            {tab === 'avaliacoes'      && <SimpleListTab table="rh_avaliacoes"  isAdmin={isAdmin} columns={[
+            {tab === 'ferias'          && <FeriasTab isAdmin={podeEditar} />}
+            {tab === 'avaliacoes'      && <SimpleListTab table="rh_avaliacoes"  isAdmin={podeEditar} columns={[
               {k:'periodo',label:'Período'},{k:'nota_geral',label:'Nota'},{k:'feedback',label:'Feedback'}
             ]} createFields={[
-              {k:'funcionario_id',label:'Funcionário (uuid)',type:'text'},{k:'periodo',label:'Período (ex: 2026-Q1)',type:'text'},
+              {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'periodo',label:'Período (ex: 2026-Q1)',type:'text'},
               {k:'nota_geral',label:'Nota geral (0-10)',type:'number'},{k:'pontos_fortes',label:'Pontos fortes',type:'textarea'},
               {k:'pontos_melhoria',label:'Pontos de melhoria',type:'textarea'},{k:'metas',label:'Metas',type:'textarea'},
               {k:'feedback',label:'Feedback geral',type:'textarea'}
             ]} />}
-            {tab === 'treinamentos'    && <SimpleListTab table="rh_treinamentos" isAdmin={isAdmin} columns={[
+            {tab === 'treinamentos'    && <SimpleListTab table="rh_treinamentos" isAdmin={podeEditar} columns={[
               {k:'titulo',label:'Título'},{k:'instituicao',label:'Instituição'},{k:'status',label:'Status'},{k:'data_inicio',label:'Início'}
             ]} createFields={[
-              {k:'funcionario_id',label:'Funcionário (uuid)',type:'text'},{k:'titulo',label:'Título',type:'text'},
+              {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'titulo',label:'Título',type:'text'},
               {k:'instituicao',label:'Instituição',type:'text'},{k:'carga_horaria',label:'Carga horária (h)',type:'number'},
               {k:'data_inicio',label:'Início',type:'date'},{k:'data_fim',label:'Fim',type:'date'},
               {k:'certificado_url',label:'URL do certificado',type:'text'}
             ]} />}
-            {tab === 'beneficios'      && <SimpleListTab table="rh_beneficios" isAdmin={isAdmin} columns={[
+            {tab === 'beneficios'      && <SimpleListTab table="rh_beneficios" isAdmin={podeEditar} columns={[
               {k:'tipo',label:'Tipo'},{k:'valor',label:'Valor'},{k:'inicio',label:'Início'}
             ]} createFields={[
-              {k:'funcionario_id',label:'Funcionário (uuid)',type:'text'},{k:'tipo',label:'Tipo (VR/VT/Plano…)',type:'text'},
+              {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'tipo',label:'Tipo (VR/VT/Plano…)',type:'text'},
               {k:'valor',label:'Valor R$',type:'number'},{k:'inicio',label:'Início',type:'date'},{k:'fim',label:'Fim',type:'date'}
             ]} />}
-            {tab === 'cargos'          && <SimpleListTab table="rh_cargos" isAdmin={isAdmin} columns={[
+            {tab === 'cargos'          && <SimpleListTab table="rh_cargos" isAdmin={podeEditar} columns={[
               {k:'nome',label:'Nome'},{k:'salario_base',label:'Salário base'},{k:'ativo',label:'Ativo'}
             ]} createFields={[
               {k:'nome',label:'Nome do cargo',type:'text'},{k:'descricao',label:'Descrição',type:'textarea'},
               {k:'salario_base',label:'Salário base R$',type:'number'}
             ]} />}
-            {tab === 'desligamentos'   && <SimpleListTab table="rh_desligamentos" isAdmin={isAdmin} columns={[
+            {tab === 'desligamentos'   && <SimpleListTab table="rh_desligamentos" isAdmin={podeEditar} columns={[
               {k:'data',label:'Data'},{k:'tipo',label:'Tipo'},{k:'motivo',label:'Motivo'}
             ]} createFields={[
-              {k:'funcionario_id',label:'Funcionário (uuid)',type:'text'},{k:'data',label:'Data',type:'date'},
+              {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'data',label:'Data',type:'date'},
               {k:'tipo',label:'Tipo (demissao_sem_justa_causa/justa_causa/pedido_demissao/acordo/aposentadoria/fim_contrato)',type:'text'},
               {k:'motivo',label:'Motivo',type:'textarea'},{k:'acerto_valor',label:'Acerto R$',type:'number'}
             ]} />}
+            {tab === 'documentos'      && <DocumentosTab isAdmin={podeEditar} />}
           </>
         )}
       </div>
@@ -365,6 +368,8 @@ function SimpleListTab({ table, columns, createFields, isAdmin }: {
                   <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>{f.label}</label>
                   {f.type === 'textarea' ?
                     <textarea value={novo[f.k]??''} onChange={e=>setNovo((s:any)=>({...s,[f.k]:e.target.value}))} rows={3} style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} /> :
+                  f.type === 'funcionario' ?
+                    <FuncionarioPicker value={novo[f.k]||null} onChange={(id)=>setNovo((s:any)=>({...s,[f.k]:id}))} /> :
                     <input type={f.type} value={novo[f.k]??''} onChange={e=>setNovo((s:any)=>({...s,[f.k]:e.target.value}))} style={inputStyle} />
                   }
                 </div>
@@ -377,6 +382,153 @@ function SimpleListTab({ table, columns, createFields, isAdmin }: {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ────────── Picker de funcionário (autocomplete) ──────────
+function FuncionarioPicker({ value, onChange }: { value: string|null, onChange: (id:string|null)=>void }) {
+  const supabase = createClient()
+  const [funcs, setFuncs] = useState<any[]>([])
+  const [busca, setBusca] = useState('')
+  const [aberto, setAberto] = useState(false)
+  const selecionado = funcs.find(f => f.id === value)
+  useEffect(() => { (async () => {
+    const { data } = await supabase.from('rh_funcionarios').select('id, nome').order('nome').limit(500)
+    setFuncs(data || [])
+  })() }, [])
+  const filtrados = busca
+    ? funcs.filter(f => f.nome.toLowerCase().includes(busca.toLowerCase())).slice(0, 30)
+    : funcs.slice(0, 30)
+  return (
+    <div style={{position:'relative'}}>
+      <input
+        value={aberto ? busca : (selecionado?.nome || '')}
+        placeholder="Digite para buscar…"
+        onFocus={()=>{ setAberto(true); setBusca('') }}
+        onBlur={()=>setTimeout(()=>setAberto(false), 200)}
+        onChange={e=>{ setBusca(e.target.value); setAberto(true) }}
+        style={inputStyle}
+      />
+      {aberto && filtrados.length > 0 && (
+        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:'1px solid var(--border)',borderRadius:6,marginTop:2,maxHeight:220,overflow:'auto',zIndex:300,boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}}>
+          {filtrados.map(f => (
+            <div key={f.id} onClick={()=>{ onChange(f.id); setBusca(''); setAberto(false) }}
+              style={{padding:'8px 10px',fontSize:12,cursor:'pointer',borderBottom:'1px solid rgba(0,0,0,0.05)',color:'#000'}}
+              onMouseEnter={e=>(e.currentTarget as HTMLDivElement).style.background='rgba(201,168,76,0.08)'}
+              onMouseLeave={e=>(e.currentTarget as HTMLDivElement).style.background='transparent'}>
+              {f.nome}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ────────── Documentos ──────────
+function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
+  const supabase = createClient()
+  const [funcId, setFuncId] = useState<string|null>(null)
+  const [docs, setDocs] = useState<any[]>([])
+  const [tipo, setTipo] = useState('RG')
+  const [validade, setValidade] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  async function carregar() {
+    if (!funcId) { setDocs([]); return }
+    const { data } = await supabase.from('rh_documentos').select('*').eq('funcionario_id', funcId).order('enviado_em', { ascending: false })
+    setDocs(data || [])
+  }
+  useEffect(() => { carregar() }, [funcId])
+
+  async function upload(file: File) {
+    if (!funcId) { alert('Escolha um funcionário antes.'); return }
+    setEnviando(true)
+    try {
+      const safe = file.name.replace(/[^\w.-]/g, '_')
+      const path = `${funcId}/${Date.now()}_${safe}`
+      const { error: upErr } = await supabase.storage.from('rh-documentos').upload(path, file, { upsert: false })
+      if (upErr) throw upErr
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error: insErr } = await supabase.from('rh_documentos').insert({
+        funcionario_id: funcId, tipo, arquivo_url: path, arquivo_nome: file.name,
+        validade: validade || null, enviado_por: user?.id || null,
+      })
+      if (insErr) throw insErr
+      setValidade('')
+      await carregar()
+    } catch (e: any) {
+      alert('Erro no upload: ' + (e?.message || ''))
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function abrir(arquivo_url: string) {
+    const { data, error } = await supabase.storage.from('rh-documentos').createSignedUrl(arquivo_url, 60)
+    if (error) { alert('Erro ao gerar link: '+error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
+  async function excluir(d: any) {
+    if (!confirm('Excluir documento?')) return
+    await supabase.storage.from('rh-documentos').remove([d.arquivo_url])
+    await supabase.from('rh_documentos').delete().eq('id', d.id)
+    carregar()
+  }
+
+  return (
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:12,marginBottom:16,alignItems:'end'}}>
+        <div>
+          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Funcionário</label>
+          <FuncionarioPicker value={funcId} onChange={setFuncId} />
+        </div>
+        <div>
+          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Tipo</label>
+          <select value={tipo} onChange={e=>setTipo(e.target.value)} style={inputStyle}>
+            {['RG','CPF','CTPS','Contrato','Comprovante de residência','Foto 3x4','Atestado','Certificado','Outro'].map(t=><option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Validade (opc)</label>
+          <input type="date" value={validade} onChange={e=>setValidade(e.target.value)} style={inputStyle} />
+        </div>
+      </div>
+
+      {isAdmin && funcId && (
+        <div style={{marginBottom:16}}>
+          <label style={{display:'inline-block',padding:'8px 14px',borderRadius:8,background:'var(--gold-soft)',color:'var(--gold)',cursor:enviando?'wait':'pointer',fontSize:12,fontWeight:600,border:'1px solid var(--gold)'}}>
+            {enviando ? '⏳ Enviando…' : '📤 Enviar arquivo'}
+            <input type="file" style={{display:'none'}} disabled={enviando}
+              onChange={e=>{ const f = e.target.files?.[0]; if (f) upload(f); e.target.value='' }} />
+          </label>
+        </div>
+      )}
+
+      <div className="card">
+        {!funcId ? <div style={{padding:20,color:'var(--text-muted)',textAlign:'center'}}>Selecione um funcionário para ver os documentos.</div> :
+          docs.length === 0 ? <div style={{padding:20,color:'var(--text-muted)',textAlign:'center'}}>Nenhum documento ainda.</div> :
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Tipo','Arquivo','Validade','Enviado em','Ações'].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {docs.map(d => (
+                <tr key={d.id}>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,fontWeight:500}}>{d.tipo}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{d.arquivo_nome || d.arquivo_url}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{d.validade ? new Date(d.validade).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{new Date(d.enviado_em).toLocaleDateString('pt-BR')}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                    <button onClick={()=>abrir(d.arquivo_url)} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--text)',cursor:'pointer',marginRight:4}}>Abrir</button>
+                    {isAdmin && <button onClick={()=>excluir(d)} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.05)',color:'var(--red)',cursor:'pointer'}}>Excluir</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        }
+      </div>
     </div>
   )
 }
