@@ -6,16 +6,21 @@
 // painel do app: https://SEU-DOMINIO/api/meta/oauth/callback
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { randomBytes } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _admin: SupabaseClient | null = null
+function admin() {
+  if (!_admin) {
+    _admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _admin
+}
 const SCOPES = [
   'public_profile',
   'email',
@@ -29,7 +34,7 @@ const SCOPES = [
 ].join(',')
 
 export async function GET(req: NextRequest) {
-  const { data: cfg } = await admin.from('meta_config').select('app_id').eq('id', 1).maybeSingle()
+  const { data: cfg } = await admin().from('meta_config').select('app_id').eq('id', 1).maybeSingle()
   const appId = cfg?.app_id || process.env.META_APP_ID
   if (!appId) {
     return NextResponse.json({ error: 'app_id não configurado em meta_config' }, { status: 400 })

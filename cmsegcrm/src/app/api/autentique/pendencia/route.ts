@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const maxDuration = 30
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 // Funis em que ganhar gera/atualiza pendência de assinatura.
 // Comparação case-insensitive sem acento.
 const FUNIS_COM_PENDENCIA = ['venda', 'renovacoes', 'renovacao', 'meta + multicanal', 'meta+multicanal']
@@ -20,7 +25,7 @@ async function autenticar(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data } = await supabaseAdmin.auth.getUser(token)
+  const { data } = await supabaseAdmin().auth.getUser(token)
   return data?.user || null
 }
 
@@ -43,7 +48,7 @@ export async function POST(request: NextRequest) {
   if (!negocioId) return NextResponse.json({ error: 'negocio_id obrigatório' }, { status: 400 })
 
   // Carrega negócio com nome do funil
-  const { data: neg } = await supabaseAdmin.from('negocios')
+  const { data: neg } = await supabaseAdmin().from('negocios')
     .select('id, titulo, cliente_id, funil_id, funis(nome)')
     .eq('id', negocioId).maybeSingle()
   if (!neg) return NextResponse.json({ error: 'negócio não encontrado' }, { status: 404 })
@@ -53,7 +58,7 @@ export async function POST(request: NextRequest) {
   if (!aplica) return NextResponse.json({ ok: true, ignorado: true, motivo: `Funil "${(neg as any).funis?.nome}" não está na lista de funis com pendência` })
 
   // Já existe alguma assinatura pra esse negócio?
-  const { data: existentes } = await supabaseAdmin.from('assinaturas')
+  const { data: existentes } = await supabaseAdmin().from('assinaturas')
     .select('id, status, autentique_id').eq('negocio_id', negocioId)
     .order('criado_em', { ascending: false })
 
@@ -61,7 +66,7 @@ export async function POST(request: NextRequest) {
   // ainda está marcada como 'pendente', sobe para 'enviado'.
   const enviadaMasPendente = (existentes || []).find(a => a.autentique_id && a.status === 'pendente')
   if (enviadaMasPendente) {
-    await supabaseAdmin.from('assinaturas').update({ status: 'enviado' }).eq('id', enviadaMasPendente.id)
+    await supabaseAdmin().from('assinaturas').update({ status: 'enviado' }).eq('id', enviadaMasPendente.id)
     return NextResponse.json({ ok: true, atualizada: enviadaMasPendente.id, novo_status: 'enviado' })
   }
 
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
   if (ativa) return NextResponse.json({ ok: true, ja_existente: ativa.id, status: ativa.status })
 
   // Cria placeholder pendente
-  const { data: nova, error } = await supabaseAdmin.from('assinaturas').insert({
+  const { data: nova, error } = await supabaseAdmin().from('assinaturas').insert({
     nome_documento:    `Pendente — ${neg.titulo || 'Contrato'}`,
     arquivo_nome:      null,
     autentique_id:     null,

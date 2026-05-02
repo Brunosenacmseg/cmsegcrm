@@ -5,15 +5,20 @@
 //   4) Salva tudo em meta_config e tenta subscrever a Page no leadgen
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _admin: SupabaseClient | null = null
+function admin() {
+  if (!_admin) {
+    _admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _admin
+}
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
 function html(msg: string, ok = true) {
@@ -39,7 +44,7 @@ export async function GET(req: NextRequest) {
     return html('State OAuth inválido (possível CSRF).', false)
   }
 
-  const { data: cfg } = await admin.from('meta_config')
+  const { data: cfg } = await admin().from('meta_config')
     .select('app_id, app_secret').eq('id', 1).maybeSingle()
   const appId = cfg?.app_id || process.env.META_APP_ID
   const appSecret = cfg?.app_secret || process.env.META_APP_SECRET
@@ -84,13 +89,13 @@ export async function GET(req: NextRequest) {
   try {
     const r = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(longToken)}`)
     const j = await r.json()
-    const existente = (await admin.from('meta_config').select('page_id').eq('id', 1).maybeSingle()).data?.page_id
+    const existente = (await admin().from('meta_config').select('page_id').eq('id', 1).maybeSingle()).data?.page_id
     const page = (j?.data || []).find((p: any) => existente && String(p.id) === String(existente)) || (j?.data || [])[0]
     if (page) { pageId = String(page.id); pageNome = page.name }
   } catch {}
 
   // 4) Salva
-  await admin.from('meta_config').upsert({
+  await admin().from('meta_config').upsert({
     id: 1,
     access_token: longToken,
     page_id: pageId,
@@ -111,7 +116,7 @@ export async function GET(req: NextRequest) {
         webhookOk = !!js.success
       }
     } catch {}
-    await admin.from('meta_config').update({ webhook_subscribed: webhookOk }).eq('id', 1)
+    await admin().from('meta_config').update({ webhook_subscribed: webhookOk }).eq('id', 1)
   }
 
   const res = html(

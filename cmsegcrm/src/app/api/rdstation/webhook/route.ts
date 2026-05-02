@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { rdId, RDDeal, RDContact } from '@/lib/rdstation'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 function soDigitos(v?: string | null): string | null {
   if (!v) return null
   const d = String(v).replace(/\D/g, '')
@@ -24,12 +29,12 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
   let funil: any = null
   const pipelineId = rdId(d.deal_pipeline) || (d.deal_stage as any)?.deal_pipeline_id
   if (pipelineId) {
-    const { data } = await supabaseAdmin.from('funis').select('id, etapas, nome, tipo').eq('rd_id', pipelineId).maybeSingle()
+    const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome, tipo').eq('rd_id', pipelineId).maybeSingle()
     funil = data
   }
   if (!funil) {
     // Procura qualquer funil de venda como fallback
-    const { data } = await supabaseAdmin.from('funis').select('id, etapas, nome, tipo').eq('tipo', 'venda').limit(1).maybeSingle()
+    const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome, tipo').eq('tipo', 'venda').limit(1).maybeSingle()
     funil = data
   }
   if (!funil) return { ok: false, motivo: 'Nenhum funil disponível' }
@@ -58,7 +63,7 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
   if (primeiro) {
     const cid = rdId(primeiro)
     if (cid) {
-      const { data } = await supabaseAdmin.from('clientes').select('id').eq('rd_id', cid).maybeSingle()
+      const { data } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', cid).maybeSingle()
       clienteId = data?.id || null
     }
   }
@@ -88,11 +93,11 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
   }
   if (clienteId) payload.cliente_id = clienteId
 
-  const { data: existente } = await supabaseAdmin.from('negocios').select('id, etapa').eq('rd_id', id).maybeSingle()
+  const { data: existente } = await supabaseAdmin().from('negocios').select('id, etapa').eq('rd_id', id).maybeSingle()
   if (existente) {
-    await supabaseAdmin.from('negocios').update(payload).eq('id', existente.id)
+    await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
     if (existente.etapa !== etapa) {
-      await supabaseAdmin.from('historico').insert({
+      await supabaseAdmin().from('historico').insert({
         negocio_id: existente.id, cliente_id: clienteId, tipo: 'blue',
         titulo: `🔄 Etapa atualizada via RD Station`,
         descricao: `${existente.etapa} → ${etapa}`,
@@ -101,7 +106,7 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     return { ok: true, action: 'updated', id: existente.id }
   } else {
     if (!payload.cliente_id) {
-      const { data: ph } = await supabaseAdmin.from('clientes').insert({
+      const { data: ph } = await supabaseAdmin().from('clientes').insert({
         nome: d.organization?.name || d.name || 'Sem cliente (RD)',
         tipo: d.organization?.name ? 'PJ' : 'PF',
         fonte: 'RD Station CRM',
@@ -109,7 +114,7 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
       payload.cliente_id = ph?.id
     }
     if (!payload.cliente_id) return { ok: false, motivo: 'Não foi possível criar cliente' }
-    const { data: novo } = await supabaseAdmin.from('negocios').insert(payload).select('id').single()
+    const { data: novo } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
     return { ok: true, action: 'created', id: novo?.id }
   }
 }
@@ -133,12 +138,12 @@ async function aplicarContact(c: RDContact) {
     fonte: c.source?.name || 'RD Station CRM',
   }
 
-  const { data: existente } = await supabaseAdmin.from('clientes').select('id').eq('rd_id', id).maybeSingle()
+  const { data: existente } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', id).maybeSingle()
   if (existente) {
-    await supabaseAdmin.from('clientes').update(payload).eq('id', existente.id)
+    await supabaseAdmin().from('clientes').update(payload).eq('id', existente.id)
     return { ok: true, action: 'updated', id: existente.id }
   } else {
-    const { data: novo } = await supabaseAdmin.from('clientes').insert(payload).select('id').single()
+    const { data: novo } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
     return { ok: true, action: 'created', id: novo?.id }
   }
 }
@@ -195,7 +200,7 @@ export async function POST(request: NextRequest) {
   const evento = detectarEvento(body)
 
   // Logar payload para debug (limitado)
-  await supabaseAdmin.from('rdstation_syncs').insert({
+  await supabaseAdmin().from('rdstation_syncs').insert({
     recurso: `webhook:${evento}`,
     status: 'processando',
     qtd_lidos: 1,
@@ -211,9 +216,9 @@ export async function POST(request: NextRequest) {
         const doc = extrairDocumento(body)
         const id = doc?._id || doc?.id || body?.deal?._id || body?.deal?.id
         if (id) {
-          const { data: existe } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', id).maybeSingle()
+          const { data: existe } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
           if (existe) {
-            await supabaseAdmin.from('negocios').delete().eq('id', existe.id)
+            await supabaseAdmin().from('negocios').delete().eq('id', existe.id)
             resultado = { ok: true, action: 'deleted', id: existe.id }
           }
         }
@@ -221,9 +226,9 @@ export async function POST(request: NextRequest) {
         const doc = extrairDocumento(body)
         const id = doc?._id || doc?.id
         if (id) {
-          const { data: existe } = await supabaseAdmin.from('clientes').select('id').eq('rd_id', id).maybeSingle()
+          const { data: existe } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', id).maybeSingle()
           if (existe) {
-            await supabaseAdmin.from('clientes').delete().eq('id', existe.id)
+            await supabaseAdmin().from('clientes').delete().eq('id', existe.id)
             resultado = { ok: true, action: 'deleted', id: existe.id }
           }
         }
@@ -235,7 +240,7 @@ export async function POST(request: NextRequest) {
         resultado = { ok: false, motivo: 'Tipo de evento não suportado' }
       }
 
-      await supabaseAdmin.from('rdstation_syncs').update({
+      await supabaseAdmin().from('rdstation_syncs').update({
         status: resultado?.ok ? 'concluido' : 'erro',
         qtd_criados: resultado?.action === 'created' ? 1 : 0,
         qtd_atualizados: resultado?.action === 'updated' ? 1 : 0,
@@ -244,7 +249,7 @@ export async function POST(request: NextRequest) {
         concluido_em: new Date().toISOString(),
       }).eq('id', data.id)
     } catch (err: any) {
-      await supabaseAdmin.from('rdstation_syncs').update({
+      await supabaseAdmin().from('rdstation_syncs').update({
         status: 'erro', qtd_erros: 1,
         erros: [err?.message?.slice(0, 200) || 'erro'],
         concluido_em: new Date().toISOString(),

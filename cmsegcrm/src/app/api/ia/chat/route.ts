@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 export async function POST(request: NextRequest) {
   try {
     const { mensagens, user_id } = await request.json()
@@ -18,12 +23,12 @@ export async function POST(request: NextRequest) {
       { data: clientesRaw },
       { count: totalClientes },
     ] = await Promise.all([
-      supabaseAdmin.from('users').select('nome,role').eq('id', user_id).single(),
-      supabaseAdmin.from('negocios').select('etapa,produto,premio,clientes(nome)').eq('vendedor_id', user_id).not('etapa', 'in', '("Fechado Ganho","Fechado Perdido")').limit(10),
-      supabaseAdmin.from('tarefas').select('titulo,prazo,status').eq('responsavel_id', user_id).eq('status', 'pendente').order('prazo', { ascending: true }).limit(5),
-      supabaseAdmin.from('metas').select('titulo,tipo,valor_meta,valor_atual,periodo_fim').eq('user_id', user_id).eq('status', 'ativa'),
-      supabaseAdmin.from('clientes').select('nome,tipo').eq('vendedor_id', user_id).order('created_at', { ascending: false }).limit(5),
-      supabaseAdmin.from('clientes').select('*', { count: 'exact', head: true }).eq('vendedor_id', user_id),
+      supabaseAdmin().from('users').select('nome,role').eq('id', user_id).single(),
+      supabaseAdmin().from('negocios').select('etapa,produto,premio,clientes(nome)').eq('vendedor_id', user_id).not('etapa', 'in', '("Fechado Ganho","Fechado Perdido")').limit(10),
+      supabaseAdmin().from('tarefas').select('titulo,prazo,status').eq('responsavel_id', user_id).eq('status', 'pendente').order('prazo', { ascending: true }).limit(5),
+      supabaseAdmin().from('metas').select('titulo,tipo,valor_meta,valor_atual,periodo_fim').eq('user_id', user_id).eq('status', 'ativa'),
+      supabaseAdmin().from('clientes').select('nome,tipo').eq('vendedor_id', user_id).order('created_at', { ascending: false }).limit(5),
+      supabaseAdmin().from('clientes').select('*', { count: 'exact', head: true }).eq('vendedor_id', user_id),
     ])
 
     const negocios = (negociosRaw || []) as any[]

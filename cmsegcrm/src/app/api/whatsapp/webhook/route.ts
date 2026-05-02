@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { chamarClaude } from '@/lib/claude'
 
 export const maxDuration = 60
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabase: SupabaseClient | null = null
+function supabase() {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 const BUCKET = 'cmsegcrm'
 
 // Envia uma resposta via Evolution API (mesma que o módulo /whatsapp usa).
@@ -209,7 +214,7 @@ async function salvarMidiaStorage(
     const buffer = Buffer.from(base64, 'base64')
     const ext = extensaoDeMime(mimetype)
     const path = `whatsapp/${instanciaId}/${Date.now()}_${evolutionId}.${ext}`
-    const { error } = await supabase.storage.from(BUCKET).upload(path, buffer, {
+    const { error } = await supabase().storage.from(BUCKET).upload(path, buffer, {
       contentType: mimetype,
       upsert: true,
     })
@@ -239,7 +244,7 @@ export async function POST(request: NextRequest) {
                          || ''
       const pushName = (data.pushName && String(data.pushName).trim()) || null
 
-      const { data: instRow } = await supabase
+      const { data: instRow } = await supabase()
         .from('whatsapp_instancias')
         .select('id, evolution_url, api_key, nome, agente_id, agente_ativo')
         .eq('nome', instance)
@@ -253,7 +258,7 @@ export async function POST(request: NextRequest) {
       if (inst) {
         let clienteId: string | null = null
         if (remotoNumero && remotoNumero.length >= 8) {
-          const { data: cliente } = await supabase
+          const { data: cliente } = await supabase()
             .from('clientes')
             .select('id')
             .ilike('telefone', `%${remotoNumero.slice(-8)}%`)
@@ -285,7 +290,7 @@ export async function POST(request: NextRequest) {
         }
         const conteudoFinal = conteudoTexto || rotuloMidia[meta.tipo] || '[mídia]'
 
-        await supabase.from('whatsapp_mensagens').insert({
+        await supabase().from('whatsapp_mensagens').insert({
           instancia_id:   inst.id,
           cliente_id:     clienteId,
           remoto_jid:     remotoJid,
@@ -308,9 +313,9 @@ export async function POST(request: NextRequest) {
         const entradaIA = transcricao || conteudoTexto
         if (inst.agente_ativo && inst.agente_id && remotoJid && entradaIA) {
           try {
-            const { data: agente } = await supabase.from('ai_agentes').select('*').eq('id', inst.agente_id).maybeSingle()
+            const { data: agente } = await supabase().from('ai_agentes').select('*').eq('id', inst.agente_id).maybeSingle()
             if (agente?.ativo) {
-              const { data: hist } = await supabase.from('whatsapp_mensagens')
+              const { data: hist } = await supabase().from('whatsapp_mensagens')
                 .select('conteudo, transcricao, direcao').eq('instancia_id', inst.id).eq('remoto_jid', remotoJid)
                 .order('created_at', { ascending: false }).limit(10)
               const historico = (hist || []).reverse().slice(0, -1).map(m => ({
@@ -327,7 +332,7 @@ export async function POST(request: NextRequest) {
               })
               if (resposta) {
                 await enviarRespostaEvo(inst.evolution_url, inst.api_key, inst.nome, remotoJid, resposta)
-                await supabase.from('whatsapp_mensagens').insert({
+                await supabase().from('whatsapp_mensagens').insert({
                   instancia_id: inst.id, cliente_id: clienteId,
                   remoto_jid: remotoJid, remoto_numero: remotoNumero || null,
                   remoto_nome: pushName, conteudo: resposta, tipo: 'text',
@@ -347,7 +352,7 @@ export async function POST(request: NextRequest) {
       const status = data?.state === 'open' ? 'connected'
                    : data?.state === 'close' ? 'disconnected'
                    : 'connecting'
-      await supabase
+      await supabase()
         .from('whatsapp_instancias')
         .update({ status, updated_at: new Date().toISOString() })
         .eq('nome', instance)
@@ -355,7 +360,7 @@ export async function POST(request: NextRequest) {
 
     // ── QR CODE ───────────────────────────────
     if (event === 'qrcode.updated') {
-      await supabase
+      await supabase()
         .from('whatsapp_instancias')
         .update({ qrcode: data?.qrcode?.base64, status: 'qrcode', updated_at: new Date().toISOString() })
         .eq('nome', instance)

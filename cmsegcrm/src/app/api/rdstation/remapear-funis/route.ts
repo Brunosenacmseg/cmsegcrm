@@ -1,21 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { listarTodos, rdId, norm, RDPipeline, RDDeal, RDStage } from '@/lib/rdstation'
 
 export const maxDuration = 300
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 async function checarAdmin(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return null
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return null
   return userData.user
 }
@@ -64,7 +69,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 3) Funis locais — auto-vincula rd_id por nome
-  const { data: funisLocais } = await supabaseAdmin.from('funis').select('id, rd_id, nome, etapas, tipo')
+  const { data: funisLocais } = await supabaseAdmin().from('funis').select('id, rd_id, nome, etapas, tipo')
   const funilPorRd:   Record<string, any> = {}
   const funilPorNome: Record<string, any> = {}
   for (const f of funisLocais || []) {
@@ -76,14 +81,14 @@ export async function POST(request: NextRequest) {
     if (funilPorRd[pid]) continue
     const local = funilPorNome[norm(p.name)]
     if (local && !local.rd_id) {
-      await supabaseAdmin.from('funis').update({ rd_id: pid }).eq('id', local.id)
+      await supabaseAdmin().from('funis').update({ rd_id: pid }).eq('id', local.id)
       local.rd_id = pid
       funilPorRd[pid] = local
     }
   }
 
   // 4) Negociações que vieram do RD
-  const { data: negocios } = await supabaseAdmin.from('negocios')
+  const { data: negocios } = await supabaseAdmin().from('negocios')
     .select('id, rd_id, funil_id, etapa, status, titulo')
     .not('rd_id', 'is', null)
   stats.lidos = negocios?.length || 0
@@ -114,7 +119,7 @@ export async function POST(request: NextRequest) {
         const stagesRD: any[] = (pipelineRD?.deal_stages || pipelineRD?.stages || [])
           .slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
         const etapas = stagesRD.map((s: any) => s.name || 'Etapa').filter(Boolean)
-        const { data: novo } = await supabaseAdmin.from('funis').insert({
+        const { data: novo } = await supabaseAdmin().from('funis').insert({
           rd_id: pipelineId || null, nome: pipeNome.trim(),
           tipo: 'venda', emoji: '📊', cor: '#1cb5a0',
           etapas: etapas.length ? etapas : ['Novo','Em andamento','Ganho','Perdido'],
@@ -144,7 +149,7 @@ export async function POST(request: NextRequest) {
         neg.status   !== status
 
       if (precisaAtualizar) {
-        await supabaseAdmin.from('negocios').update({
+        await supabaseAdmin().from('negocios').update({
           funil_id: funil.id, etapa: etapaMatch, status,
         }).eq('id', neg.id)
         stats.atualizados++

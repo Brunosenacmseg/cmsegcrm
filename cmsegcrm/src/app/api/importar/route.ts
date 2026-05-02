@@ -10,23 +10,28 @@
 // }
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const, userId: userData.user.id }
 }
@@ -143,11 +148,11 @@ async function importarClientes(linhas: any[]) {
   const existentesPorCpf:   Record<string, string> = {}
   const existentesPorEmail: Record<string, string> = {}
   if (cpfs.length) {
-    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfs)
+    const { data } = await supabaseAdmin().from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfs)
     for (const c of data || []) if (c.cpf_cnpj) existentesPorCpf[c.cpf_cnpj] = c.id
   }
   if (emails.length) {
-    const { data } = await supabaseAdmin.from('clientes').select('id, email').in('email', emails)
+    const { data } = await supabaseAdmin().from('clientes').select('id, email').in('email', emails)
     for (const c of data || []) if (c.email) existentesPorEmail[c.email] = c.id
   }
 
@@ -162,12 +167,12 @@ async function importarClientes(linhas: any[]) {
 
   // 4. Insert em batch (1 query pra centenas de linhas)
   if (novos.length) {
-    const { error } = await supabaseAdmin.from('clientes').insert(novos)
+    const { error } = await supabaseAdmin().from('clientes').insert(novos)
     if (error) {
       // Se o batch falha por um registro ruim, faz fallback row-by-row pra
       // identificar quais linhas tem problema sem perder o resto.
       for (const p of novos) {
-        const { error: e2 } = await supabaseAdmin.from('clientes').insert(p)
+        const { error: e2 } = await supabaseAdmin().from('clientes').insert(p)
         if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.nome}: ${e2.message?.slice(0,80)}`) }
         else stats.qtd_criados++
       }
@@ -178,7 +183,7 @@ async function importarClientes(linhas: any[]) {
 
   // 5. Updates: ainda sequencial mas só pros que existem (geralmente <10)
   for (const u of updates) {
-    const { error } = await supabaseAdmin.from('clientes').update(u.payload).eq('id', u.id)
+    const { error } = await supabaseAdmin().from('clientes').update(u.payload).eq('id', u.id)
     if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${u.payload.nome}: ${error.message?.slice(0,80)}`) }
     else stats.qtd_atualizados++
   }
@@ -188,7 +193,7 @@ async function importarClientes(linhas: any[]) {
 
 async function importarNegocios(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  const { data: funis } = await supabaseAdmin.from('funis').select('id, nome, etapas, tipo').order('ordem')
+  const { data: funis } = await supabaseAdmin().from('funis').select('id, nome, etapas, tipo').order('ordem')
   const funilDefault = (funis || []).find((f:any) => f.tipo === 'venda') || funis?.[0]
   if (!funilDefault) {
     return { ...stats, qtd_erros: linhas.length, erros: ['Nenhum funil cadastrado. Crie um funil antes de importar negócios.'] }
@@ -198,10 +203,10 @@ async function importarNegocios(linhas: any[]) {
   const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf || r.CPF)).filter(Boolean))) as string[]
   const clientePorCpf: Record<string, string> = {}
   if (cpfsLote.length) {
-    const { data: cls } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
+    const { data: cls } = await supabaseAdmin().from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
     for (const c of cls || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
-  const { data: usuarios } = await supabaseAdmin.from('users').select('id, nome, email')
+  const { data: usuarios } = await supabaseAdmin().from('users').select('id, nome, email')
   const userPorNome:  Record<string, string> = {}
   const userPorEmail: Record<string, string> = {}
   for (const u of usuarios || []) {
@@ -209,10 +214,10 @@ async function importarNegocios(linhas: any[]) {
     if (u.email) userPorEmail[u.email.toLowerCase().trim()] = u.id
   }
   // Aliases RD -> usuario (ex: "Bruce Cena" -> Bruno Sena)
-  const { data: aliases } = await supabaseAdmin.from('user_aliases_rd').select('user_id, alias')
+  const { data: aliases } = await supabaseAdmin().from('user_aliases_rd').select('user_id, alias')
   const userPorAlias: Record<string, string> = {}
   for (const a of aliases || []) if (a.alias) userPorAlias[a.alias.toLowerCase().trim()] = a.user_id
-  const { data: equipes } = await supabaseAdmin.from('equipes').select('id, nome')
+  const { data: equipes } = await supabaseAdmin().from('equipes').select('id, nome')
   const equipePorNome: Record<string, string> = {}
   for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
 
@@ -390,15 +395,15 @@ async function importarNegocios(linhas: any[]) {
     for (const e of etapasNovasSet) {
       if (!merged.some(x => x.toLowerCase() === e.toLowerCase())) merged.push(e)
     }
-    await supabaseAdmin.from('funis').update({ etapas: merged }).eq('id', funilId)
+    await supabaseAdmin().from('funis').update({ etapas: merged }).eq('id', funilId)
     f.etapas = merged
   }
 
   if (novos.length) {
-    const { error } = await supabaseAdmin.from('negocios').insert(novos)
+    const { error } = await supabaseAdmin().from('negocios').insert(novos)
     if (error) {
       for (const p of novos) {
-        const { error: e2 } = await supabaseAdmin.from('negocios').insert(p)
+        const { error: e2 } = await supabaseAdmin().from('negocios').insert(p)
         if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.titulo}: ${e2.message?.slice(0,80)}`) }
         else stats.qtd_criados++
       }
@@ -417,11 +422,11 @@ async function importarApolices(linhas: any[]) {
   const clientePorCpf: Record<string, string> = {}
   const apolicePorNum: Record<string, string> = {}
   if (cpfsLote.length) {
-    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
+    const { data } = await supabaseAdmin().from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
     for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
   if (numerosLote.length) {
-    const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', numerosLote)
+    const { data } = await supabaseAdmin().from('apolices').select('id, numero').in('numero', numerosLote)
     for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
   }
 
@@ -441,7 +446,7 @@ async function importarApolices(linhas: any[]) {
     }
   }
   if (novosClientes.length) {
-    const { data: criados } = await supabaseAdmin.from('clientes').insert(novosClientes).select('id, cpf_cnpj')
+    const { data: criados } = await supabaseAdmin().from('clientes').insert(novosClientes).select('id, cpf_cnpj')
     for (const c of criados || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
 
@@ -519,10 +524,10 @@ async function importarApolices(linhas: any[]) {
   }
 
   if (novos.length) {
-    const { error } = await supabaseAdmin.from('apolices').insert(novos)
+    const { error } = await supabaseAdmin().from('apolices').insert(novos)
     if (error) {
       for (const p of novos) {
-        const { error: e2 } = await supabaseAdmin.from('apolices').insert(p)
+        const { error: e2 } = await supabaseAdmin().from('apolices').insert(p)
         if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.numero}: ${e2.message?.slice(0,80)}`) }
         else stats.qtd_criados++
       }
@@ -531,7 +536,7 @@ async function importarApolices(linhas: any[]) {
     }
   }
   for (const u of updates) {
-    const { error } = await supabaseAdmin.from('apolices').update(u.payload).eq('id', u.id)
+    const { error } = await supabaseAdmin().from('apolices').update(u.payload).eq('id', u.id)
     if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${u.payload.numero}: ${error.message?.slice(0,80)}`) }
     else stats.qtd_atualizados++
   }
@@ -551,7 +556,7 @@ async function importarTarefas(linhas: any[]) {
         status: s(r.status) || 'pendente',
         prazo: dateBR(r.prazo || r.data),
       }
-      await supabaseAdmin.from('tarefas').insert(payload)
+      await supabaseAdmin().from('tarefas').insert(payload)
       stats.qtd_criados++
     } catch (e: any) {
       stats.qtd_erros++
@@ -585,7 +590,7 @@ export async function POST(req: NextRequest) {
     else return NextResponse.json({ error: 'entidade inválida' }, { status: 400 })
 
     // Audit log
-    await supabaseAdmin.from('importacoes_dados').insert({
+    await supabaseAdmin().from('importacoes_dados').insert({
       entidade,
       nome_arquivo: body.nome_arquivo || null,
       formato: body.formato || null,

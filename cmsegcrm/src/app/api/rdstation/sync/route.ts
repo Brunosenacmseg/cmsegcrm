@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import {
   listarTodos, listarPorJanela, ping, rdId, norm, buscarDealDetalhe,
   RDContact, RDDeal, RDPipeline, RDActivity, RDUser, RDStage,
@@ -8,11 +8,16 @@ import {
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 function getToken(request: NextRequest): string | null {
   return request.headers.get('x-rd-token') || process.env.RDSTATION_CRM_TOKEN || null
 }
@@ -22,10 +27,10 @@ async function checarAdmin(request: NextRequest): Promise<{ ok: boolean; userId?
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false, erro: 'Não autenticado' }
 
-  const { data: userData, error } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData, error } = await supabaseAdmin().auth.getUser(token)
   if (error || !userData?.user) return { ok: false, erro: 'Sessão inválida' }
 
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false, erro: 'Apenas admin pode sincronizar' }
   return { ok: true, userId: userData.user.id }
 }
@@ -63,7 +68,7 @@ function clienteFromRD(c: RDContact) {
 }
 
 async function logSync(recurso: string, userId?: string) {
-  const { data } = await supabaseAdmin.from('rdstation_syncs').insert({
+  const { data } = await supabaseAdmin().from('rdstation_syncs').insert({
     recurso, status: 'processando', user_id: userId || null,
   }).select('id').single()
   return data?.id as string | undefined
@@ -72,7 +77,7 @@ async function logSync(recurso: string, userId?: string) {
 async function fecharLog(id: string | undefined, dados: { qtd_lidos: number; qtd_criados: number; qtd_atualizados: number; qtd_erros: number; erros: string[] }) {
   if (!id) return
   const status = dados.qtd_erros === 0 ? 'concluido' : (dados.qtd_criados + dados.qtd_atualizados > 0 ? 'parcial' : 'erro')
-  await supabaseAdmin.from('rdstation_syncs').update({
+  await supabaseAdmin().from('rdstation_syncs').update({
     status,
     qtd_lidos: dados.qtd_lidos,
     qtd_criados: dados.qtd_criados,
@@ -96,10 +101,10 @@ async function importarUsuarios(token: string) {
       const id = rdId(u)
       if (!id || !u.email) continue
       const email = u.email.toLowerCase().trim()
-      const { data: existente } = await supabaseAdmin.from('users').select('id, rd_id').eq('email', email).maybeSingle()
+      const { data: existente } = await supabaseAdmin().from('users').select('id, rd_id').eq('email', email).maybeSingle()
       if (existente) {
         if (existente.rd_id !== id) {
-          await supabaseAdmin.from('users').update({ rd_id: id }).eq('id', existente.id)
+          await supabaseAdmin().from('users').update({ rd_id: id }).eq('id', existente.id)
           stats.qtd_atualizados++
         }
       }
@@ -128,7 +133,7 @@ async function importarFunis(token: string) {
   stats.qtd_lidos = pipelines.length
 
   // Carrega funis existentes pra match por rd_id e por nome normalizado
-  const { data: locais } = await supabaseAdmin.from('funis').select('id, rd_id, nome')
+  const { data: locais } = await supabaseAdmin().from('funis').select('id, rd_id, nome')
   const porRdId: Record<string, string> = {}
   const porNome: Record<string, string> = {}
   for (const f of locais || []) {
@@ -150,10 +155,10 @@ async function importarFunis(token: string) {
 
       if (matchId) {
         // Atualiza: garante rd_id (caso match veio por nome) + sincroniza etapas/nome do RD
-        await supabaseAdmin.from('funis').update({ rd_id: id, nome, etapas }).eq('id', matchId)
+        await supabaseAdmin().from('funis').update({ rd_id: id, nome, etapas }).eq('id', matchId)
         stats.qtd_atualizados++
       } else {
-        await supabaseAdmin.from('funis').insert({
+        await supabaseAdmin().from('funis').insert({
           rd_id: id, nome, tipo: 'venda', emoji: '📊', cor: '#1cb5a0',
           etapas, ordem: idx + 1,
         })
@@ -180,7 +185,7 @@ async function importarContatos(token: string, from?: string, to?: string) {
 
   for (let i = 0; i < rdIds.length; i += 500) {
     const lote = rdIds.slice(i, i + 500)
-    const { data } = await supabaseAdmin.from('clientes').select('id, rd_id').in('rd_id', lote)
+    const { data } = await supabaseAdmin().from('clientes').select('id, rd_id').in('rd_id', lote)
     for (const c of data || []) if (c.rd_id) mapaExistentes[c.rd_id] = c.id
   }
 
@@ -203,10 +208,10 @@ async function importarContatos(token: string, from?: string, to?: string) {
   // Insert em lotes
   for (let i = 0; i < novos.length; i += 200) {
     const lote = novos.slice(i, i + 200)
-    const { error } = await supabaseAdmin.from('clientes').insert(lote)
+    const { error } = await supabaseAdmin().from('clientes').insert(lote)
     if (error) {
       for (const item of lote) {
-        const { error: e2 } = await supabaseAdmin.from('clientes').insert(item)
+        const { error: e2 } = await supabaseAdmin().from('clientes').insert(item)
         if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${item.nome}: ${e2.message?.slice(0, 80)}`) }
         else stats.qtd_criados++
       }
@@ -217,7 +222,7 @@ async function importarContatos(token: string, from?: string, to?: string) {
 
   // Update
   for (const { id, data } of updates) {
-    const { error } = await supabaseAdmin.from('clientes').update(data).eq('id', id)
+    const { error } = await supabaseAdmin().from('clientes').update(data).eq('id', id)
     if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${data.nome}: ${error.message?.slice(0, 80)}`) }
     else stats.qtd_atualizados++
   }
@@ -246,7 +251,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
   }
 
   // ─── FUNIS LOCAIS ─────────────────────────────────────────────
-  const { data: funis } = await supabaseAdmin.from('funis').select('id, rd_id, etapas, nome, tipo')
+  const { data: funis } = await supabaseAdmin().from('funis').select('id, rd_id, etapas, nome, tipo')
   const funilPorRd:   Record<string, any> = {}
   const funilPorNome: Record<string, any> = {}
   for (const f of funis || []) {
@@ -263,7 +268,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
     if (funilPorRd[pid]) continue
     const local = funilPorNome[norm(p.name)]
     if (local && !local.rd_id) {
-      await supabaseAdmin.from('funis').update({ rd_id: pid }).eq('id', local.id)
+      await supabaseAdmin().from('funis').update({ rd_id: pid }).eq('id', local.id)
       local.rd_id = pid
       funilPorRd[pid] = local
     }
@@ -274,7 +279,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
   // um funil dedicado "📥 RD: Importados" pra debugar facilmente.
   let funilFallback: any = (funis || []).find((f: any) => f.nome === 'RD: Importados')
   if (!funilFallback) {
-    const { data } = await supabaseAdmin.from('funis').insert({
+    const { data } = await supabaseAdmin().from('funis').insert({
       nome: 'RD: Importados', tipo: 'venda', emoji: '📥', cor: '#c9a84c',
       etapas: ['Novo', 'Em andamento', 'Ganho', 'Perdido'], ordem: 99,
     }).select('id, rd_id, etapas, nome, tipo').single()
@@ -290,7 +295,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
   }
 
   // Mapa users RD → users locais (vendedor)
-  const { data: usersLocais } = await supabaseAdmin.from('users').select('id, rd_id, email, nome')
+  const { data: usersLocais } = await supabaseAdmin().from('users').select('id, rd_id, email, nome')
   const userPorRd:    Record<string, string> = {}
   const userPorEmail: Record<string, string> = {}
   const userPorNome:  Record<string, string> = {}
@@ -312,7 +317,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
   const arr = Array.from(contactRds)
   for (let i = 0; i < arr.length; i += 500) {
     const lote = arr.slice(i, i + 500)
-    const { data } = await supabaseAdmin.from('clientes').select('id, rd_id').in('rd_id', lote)
+    const { data } = await supabaseAdmin().from('clientes').select('id, rd_id').in('rd_id', lote)
     for (const c of data || []) if (c.rd_id) clientePorRd[c.rd_id] = c.id
   }
 
@@ -353,7 +358,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         const stagesRD: RDStage[] = (pipelineRD?.deal_stages || pipelineRD?.stages || [])
           .slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
         const etapas = stagesRD.map((s: any) => s.name || 'Etapa').filter(Boolean)
-        const { data: novo } = await supabaseAdmin.from('funis').insert({
+        const { data: novo } = await supabaseAdmin().from('funis').insert({
           rd_id: pipelineId || null, nome: pipeNome.trim(),
           tipo: 'venda', emoji: '📊', cor: '#1cb5a0',
           etapas: etapas.length ? etapas : ['Novo','Em andamento','Ganho','Perdido'],
@@ -466,26 +471,26 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
       const dealSource = (dx as any).deal_source
       if (dealSource?.name) {
         const srcRdId = rdId(dealSource)
-        const { data: orig } = await supabaseAdmin.from('origens')
+        const { data: orig } = await supabaseAdmin().from('origens')
           .select('id').or(`rd_id.eq.${srcRdId || 'null'},nome.ilike.${dealSource.name.replace(/[,]/g,'')}`).maybeSingle()
         if (orig) {
           origemId = orig.id
-          if (srcRdId) await supabaseAdmin.from('origens').update({ rd_id: srcRdId, nome: dealSource.name }).eq('id', orig.id)
+          if (srcRdId) await supabaseAdmin().from('origens').update({ rd_id: srcRdId, nome: dealSource.name }).eq('id', orig.id)
         } else {
-          const { data: nova } = await supabaseAdmin.from('origens').insert({ rd_id: srcRdId || null, nome: dealSource.name }).select('id').single()
+          const { data: nova } = await supabaseAdmin().from('origens').insert({ rd_id: srcRdId || null, nome: dealSource.name }).select('id').single()
           origemId = nova?.id || null
         }
       }
       payload.origem_id = origemId
 
       let negocioId: string | null = null
-      const { data: existente } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', id).maybeSingle()
+      const { data: existente } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
       if (existente) {
-        await supabaseAdmin.from('negocios').update(payload).eq('id', existente.id)
+        await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
         negocioId = existente.id
         stats.qtd_atualizados++
       } else {
-        const { data: novo } = await supabaseAdmin.from('negocios').insert(payload).select('id').single()
+        const { data: novo } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
         negocioId = novo?.id || null
         stats.qtd_criados++
       }
@@ -497,29 +502,29 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
           if (!tagNome) continue
           const tagRd = rdId(t)
           let tagId: string | null = null
-          const { data: tagExist } = await supabaseAdmin.from('tags')
+          const { data: tagExist } = await supabaseAdmin().from('tags')
             .select('id').or(`rd_id.eq.${tagRd || 'null'},nome.ilike.${tagNome.replace(/[,]/g,'')}`).maybeSingle()
           if (tagExist) tagId = tagExist.id
           else {
-            const { data: nova } = await supabaseAdmin.from('tags').insert({ rd_id: tagRd || null, nome: tagNome }).select('id').single()
+            const { data: nova } = await supabaseAdmin().from('tags').insert({ rd_id: tagRd || null, nome: tagNome }).select('id').single()
             tagId = nova?.id || null
           }
           if (tagId) {
-            await supabaseAdmin.from('negocio_tags').upsert({ negocio_id: negocioId, tag_id: tagId })
+            await supabaseAdmin().from('negocio_tags').upsert({ negocio_id: negocioId, tag_id: tagId })
           }
         }
       }
 
       // Produtos do deal → negocio_produtos (idempotente: limpa antes de re-popular)
       if (negocioId && Array.isArray(dx.deal_products) && dx.deal_products.length) {
-        await supabaseAdmin.from('negocio_produtos').delete().eq('negocio_id', negocioId)
+        await supabaseAdmin().from('negocio_produtos').delete().eq('negocio_id', negocioId)
         const linhas = dx.deal_products.map((dp: any) => {
           const nomeProd = dp?.product?.name || dp?.name || dp?.description || 'Produto'
           const valor    = Number(dp?.price ?? dp?.base_price ?? dp?.amount ?? dp?.value) || 0
           const qtd      = Number(dp?.quantity ?? dp?.amount_quantity ?? 1) || 1
           return { negocio_id: negocioId, nome_snapshot: nomeProd, quantidade: qtd, valor_unit: valor }
         })
-        if (linhas.length) await supabaseAdmin.from('negocio_produtos').insert(linhas)
+        if (linhas.length) await supabaseAdmin().from('negocio_produtos').insert(linhas)
       }
     } catch (e: any) {
       stats.qtd_erros++
@@ -552,13 +557,13 @@ async function importarAtividades(token: string, from?: string, to?: string) {
       let clienteId: string | null = null
       const cid = rdId(a.contact)
       if (cid) {
-        const { data } = await supabaseAdmin.from('clientes').select('id').eq('rd_id', cid).maybeSingle()
+        const { data } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', cid).maybeSingle()
         clienteId = data?.id || null
       }
       let negocioId: string | null = null
       const did = rdId(a.deal)
       if (did) {
-        const { data } = await supabaseAdmin.from('negocios').select('id').eq('rd_id', did).maybeSingle()
+        const { data } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', did).maybeSingle()
         negocioId = data?.id || null
       }
 
@@ -573,12 +578,12 @@ async function importarAtividades(token: string, from?: string, to?: string) {
         negocio_id: negocioId,
       }
 
-      const { data: existente } = await supabaseAdmin.from('tarefas').select('id').eq('rd_id', id).maybeSingle()
+      const { data: existente } = await supabaseAdmin().from('tarefas').select('id').eq('rd_id', id).maybeSingle()
       if (existente) {
-        await supabaseAdmin.from('tarefas').update(payload).eq('id', existente.id)
+        await supabaseAdmin().from('tarefas').update(payload).eq('id', existente.id)
         stats.qtd_atualizados++
       } else {
-        await supabaseAdmin.from('tarefas').insert(payload)
+        await supabaseAdmin().from('tarefas').insert(payload)
         stats.qtd_criados++
       }
     } catch (e: any) {
@@ -610,13 +615,13 @@ async function importarMotivosPerda(token: string) {
       const nome = (m?.name || '').trim()
       if (!nome) continue
       // Match por rd_id, depois por nome
-      const { data: existente } = await supabaseAdmin.from('motivos_perda')
+      const { data: existente } = await supabaseAdmin().from('motivos_perda')
         .select('id, rd_id').or(`rd_id.eq.${id || 'null'},nome.ilike.${nome.replace(/[,]/g,'')}`).maybeSingle()
       if (existente) {
-        await supabaseAdmin.from('motivos_perda').update({ rd_id: id || existente.rd_id, nome }).eq('id', existente.id)
+        await supabaseAdmin().from('motivos_perda').update({ rd_id: id || existente.rd_id, nome }).eq('id', existente.id)
         stats.qtd_atualizados++
       } else {
-        await supabaseAdmin.from('motivos_perda').insert({ rd_id: id || null, nome })
+        await supabaseAdmin().from('motivos_perda').insert({ rd_id: id || null, nome })
         stats.qtd_criados++
       }
     } catch (e: any) {
@@ -652,13 +657,13 @@ async function importarProdutos(token: string) {
       // numérico encontrado.
       const camposPreco = [p?.base_price, p?.price, p?.amount, p?.value, p?.unit_price]
       const preco = camposPreco.map((v: any) => Number(v)).find((n: number) => Number.isFinite(n) && n > 0) ?? null
-      const { data: existente } = await supabaseAdmin.from('produtos')
+      const { data: existente } = await supabaseAdmin().from('produtos')
         .select('id, rd_id').or(`rd_id.eq.${id || 'null'},nome.ilike.${nome.replace(/[,]/g,'')}`).maybeSingle()
       if (existente) {
-        await supabaseAdmin.from('produtos').update({ rd_id: id || existente.rd_id, nome, preco_base: preco }).eq('id', existente.id)
+        await supabaseAdmin().from('produtos').update({ rd_id: id || existente.rd_id, nome, preco_base: preco }).eq('id', existente.id)
         stats.qtd_atualizados++
       } else {
-        await supabaseAdmin.from('produtos').insert({ rd_id: id || null, nome, preco_base: preco })
+        await supabaseAdmin().from('produtos').insert({ rd_id: id || null, nome, preco_base: preco })
         stats.qtd_criados++
       }
     } catch (e: any) {
@@ -728,6 +733,6 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const auth = await checarAdmin(request)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
-  const { data } = await supabaseAdmin.from('rdstation_syncs').select('*').order('iniciado_em', { ascending: false }).limit(50)
+  const { data } = await supabaseAdmin().from('rdstation_syncs').select('*').order('iniciado_em', { ascending: false }).limit(50)
   return NextResponse.json({ syncs: data || [] })
 }

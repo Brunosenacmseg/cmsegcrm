@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // Endpoint de consulta progressiva: recebe CPF (ou outros campos parciais) e
 // devolve dados pra preencher o formulário de cotação.
@@ -20,11 +20,16 @@ export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
 export const maxDuration = 60
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 // Mesma URL do robô; v2 expõe /consultar-cpf no mesmo serviço.
 // Mantém a possibilidade de override via COTACAO_CONSULTA_URL caso queira
 // usar um serviço de consulta diferente.
@@ -40,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1) Busca na base local
-    const { data: cli } = await supabaseAdmin
+    const { data: cli } = await supabaseAdmin()
       .from('clientes')
       .select('id, nome, cpf_cnpj, nascimento, sexo, estado_civil, telefone, telefone2, email, cep, endereco, numero, bairro, cidade, estado')
       .or(`cpf_cnpj.eq.${cpfLimpo},cpf_cnpj.ilike.%${cpfLimpo}%`)

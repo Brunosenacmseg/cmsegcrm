@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+let _supabaseAdmin: SupabaseClient | null = null
+function supabaseAdmin() {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabaseAdmin
+}
 const PORTO_URL   = 'https://wwws.portoseguro.com.br/CentralDownloadsIntegrationService/Proxy_Services/ArquivoRetornoIntegrationService'
 const PORTO_SUSEP = process.env.PORTO_SUSEP || 'J8FXUJ'
 const PORTO_LOGIN = process.env.PORTO_LOGIN || ''
@@ -106,12 +111,12 @@ export async function POST(request: NextRequest) {
 
     // Salvar no storage como arquivo original
     const storagePath = `porto_debug/${nome}`
-    await supabaseAdmin.storage.from('cmsegcrm').upload(storagePath, bytes, {
+    await supabaseAdmin().storage.from('cmsegcrm').upload(storagePath, bytes, {
       contentType: 'application/octet-stream',
       upsert: true,
     })
 
-    const { data: urlData } = supabaseAdmin.storage.from('cmsegcrm').getPublicUrl(storagePath)
+    const { data: urlData } = supabaseAdmin().storage.from('cmsegcrm').getPublicUrl(storagePath)
 
     // Também salvar uma versão decodificada com cada método
     const resultados: Record<string, any> = {
