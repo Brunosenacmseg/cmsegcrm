@@ -159,10 +159,11 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
   ],
   apolices: [
     // Identificação
-    { campo: 'numero',             label: 'APÓLICE (Nº)',          hints: ['apolice','numero','policy'], obrigatorio: true },
+    { campo: 'numero',             label: 'APÓLICE',               hints: ['apolice','numero','policy'], obrigatorio: true },
+    { campo: 'proposta_endosso',   label: 'PROPOSTA ENDOSSO',      hints: ['proposta endosso'] },
+    { campo: 'proposta_assinada',  label: 'PROPOSTA ASSINADA',     hints: ['proposta assinada'] },
     { campo: 'proposta',           label: 'PROPOSTA',              hints: ['proposta'] },
     { campo: 'endosso',            label: 'ENDOSSO',               hints: ['endosso'] },
-    { campo: 'proposta_endosso',   label: 'PROPOSTA ENDOSSO',      hints: ['proposta endosso'] },
     // Cliente
     { campo: 'nome',               label: 'CLIENTE',               hints: ['cliente','segurado','nome'] },
     { campo: 'cpf_cnpj',           label: 'DOCUMENTO DO CLIENTE',  hints: ['documento','cpf','cnpj'] },
@@ -177,16 +178,16 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'seguradora',         label: 'SEGURADORA',            hints: ['seguradora','cia'] },
     { campo: 'item',               label: 'ITEM',                  hints: ['item'] },
     // Vigências
-    { campo: 'vigencia_ini',       label: 'VIGÊNCIA INICIAL',      hints: ['vigencia inicial','vigência inicial','inicio','ini'] },
-    { campo: 'vigencia_fim',       label: 'VIGÊNCIA FINAL',        hints: ['vigencia final','vigência final','fim','vencimento'] },
+    { campo: 'vigencia_ini',       label: 'VIGÊNCIA INICIAL',      hints: ['vigencia inicial','vigência inicial','inicio vigencia','vigencia ini','inicio'] },
+    { campo: 'vigencia_fim',       label: 'VIGÊNCIA FINAL',        hints: ['vigencia final','vigência final','fim vigencia','vigencia fim','vencimento','fim'] },
     { campo: 'emissao',            label: 'EMISSÃO',               hints: ['emissao','emissão'] },
     { campo: 'data_controle',      label: 'DATA CONTROLE',         hints: ['data controle'] },
     { campo: 'data_cadastro',      label: 'DATA DE CADASTRO',      hints: ['data de cadastro','cadastro'] },
     // Valores
-    { campo: 'premio',             label: 'PRÊMIO TOTAL',          hints: ['premio total','prêmio total','premio','valor'] },
     { campo: 'premio_liquido',     label: 'PRÊMIO LÍQUIDO',        hints: ['premio liquido','prêmio líquido','liquido'] },
-    { campo: 'comissao_pct',       label: 'COMISSÃO (%)',          hints: ['comiss','%','pct'] },
+    { campo: 'premio',             label: 'PRÊMIO TOTAL',          hints: ['premio total','prêmio total','premio','valor'] },
     { campo: 'comissao_gerada',    label: 'COMISSÃO GERADA',       hints: ['comissao gerada','comissão gerada'] },
+    { campo: 'comissao_pct',       label: 'COMISSÃO',              hints: ['comissao','comissão','comiss','%','pct'] },
     { campo: 'repasse_vendedor_pct', label: 'REPASSE VENDEDOR (%)', hints: ['repasse'] },
     // Pagamento
     { campo: 'qtd_parcelas',       label: 'QUANTIDADE PARCELAS',   hints: ['parcelas','quantidade parcelas'] },
@@ -195,18 +196,17 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'agencia',            label: 'AGÊNCIA',               hints: ['agencia','agência'] },
     { campo: 'conta',              label: 'CONTA',                 hints: ['conta'] },
     // Vendedor
-    { campo: 'vendedor',           label: 'VENDEDOR',              hints: ['vendedor'] },
     { campo: 'todos_vendedores',   label: 'TODOS VENDEDORES',      hints: ['todos vendedores'] },
     { campo: 'tipo_vendedores',    label: 'TIPO VENDEDORES',       hints: ['tipo vendedores'] },
+    { campo: 'vendedor',           label: 'VENDEDOR',              hints: ['vendedor'] },
     // Organização interna
     { campo: 'negocio_corretora',  label: 'NEGÓCIO CORRETORA',     hints: ['negocio corretora','negócio corretora'] },
     { campo: 'filial',             label: 'FILIAL',                hints: ['filial'] },
-    { campo: 'pasta',              label: 'PASTA',                 hints: ['pasta'] },
     { campo: 'pasta_cliente',      label: 'PASTA CLIENTE',         hints: ['pasta cliente'] },
+    { campo: 'pasta',              label: 'PASTA',                 hints: ['pasta'] },
     // Status
-    { campo: 'status',             label: 'STATUS',                hints: ['status apolice','status apólice','status'] },
-    { campo: 'apolice_conferida',  label: 'APÓLICE CONFERIDA',     hints: ['conferida'] },
-    { campo: 'proposta_assinada',  label: 'PROPOSTA ASSINADA',     hints: ['proposta assinada'] },
+    { campo: 'status',             label: 'STATUS APÓLICE',        hints: ['status apolice','status apólice','status'] },
+    { campo: 'apolice_conferida',  label: 'APÓLICE CONFERIDA',     hints: ['apolice conferida','conferida'] },
     { campo: 'status_assinatura',  label: 'STATUS ASSINATURA',     hints: ['status assinatura'] },
     { campo: 'transmissao',        label: 'TRANSMISSÃO',           hints: ['transmissao','transmissão'] },
     // Veículo
@@ -238,11 +238,25 @@ const ENTIDADES_INFO: { key: Entidade; emoji: string; label: string; descricao: 
 ]
 
 function autoMapear(headers: string[], entidade: Entidade) {
-  const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
-  return CAMPOS_POR_ENTIDADE[entidade].map(c => ({
-    ...c,
-    coluna: headers.find(h => c.hints.some(hint => norm(h).includes(hint))) || ''
-  }))
+  const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'').trim()
+  const campos = CAMPOS_POR_ENTIDADE[entidade]
+  const claimed = new Set<string>()
+  const result = campos.map(c => ({ ...c, coluna: '' as string }))
+
+  // Passada 1: match EXATO (normalizado) — header == hint OU header == label
+  for (const c of result) {
+    if (c.coluna) continue
+    const candidatos = [...c.hints, c.label]
+    const hit = headers.find(h => !claimed.has(h) && candidatos.some(x => norm(h) === norm(x)))
+    if (hit) { c.coluna = hit; claimed.add(hit) }
+  }
+  // Passada 2: substring (includes) — apenas em headers ainda não reservados
+  for (const c of result) {
+    if (c.coluna) continue
+    const hit = headers.find(h => !claimed.has(h) && c.hints.some(hint => norm(h).includes(norm(hint))))
+    if (hit) { c.coluna = hit; claimed.add(hit) }
+  }
+  return result
 }
 
 export default function ImportarPage() {
