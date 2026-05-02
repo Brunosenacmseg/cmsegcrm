@@ -21,6 +21,8 @@
 --   FUNIL RASTREADOR                 → EQUIPE RASTREADOR
 --   ASSISTÊNCIA 24HRS                → EQUIPE RASTREADOR
 --   SINISTRO                         → EQUIPE SINISTRO
+--   RCO                              → EQUIPE RCO
+--   EMISSÃO E IMPLANTAÇÃO            → EQUIPE PÓS VENDA
 --
 -- Idempotente: pode rodar mais de uma vez.
 -- ═════════════════════════════════════════════════════════════════════
@@ -45,7 +47,9 @@ declare
     {"funil":"FUNIL COBRANÇA",                   "equipes":["EQUIPE COBRANÇA"]},
     {"funil":"FUNIL RASTREADOR",                 "equipes":["EQUIPE RASTREADOR"]},
     {"funil":"ASSISTÊNCIA 24HRS",                "equipes":["EQUIPE RASTREADOR"]},
-    {"funil":"SINISTRO",                         "equipes":["EQUIPE SINISTRO"]}
+    {"funil":"SINISTRO",                         "equipes":["EQUIPE SINISTRO"]},
+    {"funil":"RCO",                              "equipes":["EQUIPE RCO"]},
+    {"funil":"EMISSÃO E IMPLANTAÇÃO",            "equipes":["EQUIPE PÓS VENDA"]}
   ]
   $json$::jsonb;
   v_item     jsonb;
