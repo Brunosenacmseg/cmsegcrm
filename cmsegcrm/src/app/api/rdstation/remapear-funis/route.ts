@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { listarTodos, rdId, norm, RDPipeline, RDDeal, RDStage } from '@/lib/rdstation'
 
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 300
 
 const supabaseAdmin = createClient(

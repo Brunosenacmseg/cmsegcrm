@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { enviarEventoCRM } from '@/lib/meta-conversions'
 
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 30
 
 const supabaseAdmin = createClient(

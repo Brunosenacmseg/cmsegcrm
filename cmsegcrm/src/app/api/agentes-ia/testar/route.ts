@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chamarClaude } from '@/lib/claude'
 
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 const supabaseAdmin = createClient(
