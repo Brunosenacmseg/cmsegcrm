@@ -19,78 +19,62 @@ const log = require('./log')
 
 const SUHAI_URL = process.env.SUHAI_URL || 'http://suhai.link/rk6s'
 
-// Preenche um input/select/radio pelo atributo name. Usa primeiro a API
-// nativa do Playwright (auto-wait, focus, blur reais), com fallback DOM.
+// Preenche um input/select/radio pelo atributo name. Lida com o ciclo do Angular
+// (ngModel só reage se o evento for despachado nativamente).
+// Retorna 'ok' / 'invisivel' / 'ja_preenchido' / 'sem_opcao' / 'inexistente'.
 async function setarCampoPorNome(page, name, valor) {
   if (valor === undefined || valor === null || valor === '') return 'inexistente'
   const v = String(valor)
+  return await page.evaluate(({ name, v }) => {
+    const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+    const isVisivel = e => {
+      if (!e) return false
+      const r = e.getBoundingClientRect()
+      return r.width > 0 && r.height > 0
+    }
+    const els = Array.from(document.querySelectorAll(`[name="${name}"]`))
+    if (!els.length) return 'inexistente'
+    const visiveis = els.filter(e => isVisivel(e) && !e.disabled)
+    if (!visiveis.length) return 'invisivel'
 
-  // Tenta via Playwright (mais confiável pra Angular).
-  try {
-    const sel = `[name="${name}"]:visible`
-    const el = page.locator(sel).first()
-    const count = await page.locator(`[name="${name}"]`).count()
-    if (count === 0) return 'inexistente'
-
-    const tag = await el.evaluate(e => e.tagName).catch(() => null)
-    if (!tag) return 'invisivel'
-
-    if (tag === 'SELECT') {
-      // Tenta por label primeiro, depois por value
-      try {
-        await el.selectOption({ label: v }, { timeout: 3000 })
-        return 'ok'
-      } catch {}
-      try {
-        await el.selectOption({ value: v }, { timeout: 1000 })
-        return 'ok'
-      } catch {}
-      // Match parcial: pega texto da opção que contenha v
-      const opcoes = await el.locator('option').allTextContents().catch(() => [])
-      const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-      const match = opcoes.find(o => norm(o).includes(norm(v)))
-      if (match) {
-        try { await el.selectOption({ label: match }, { timeout: 2000 }); return 'ok' } catch {}
-      }
-      return 'sem_opcao'
+    if (visiveis.every(e => e.tagName === 'INPUT' && e.type === 'radio')) {
+      const alvo = visiveis.find(e => {
+        const lbl = e.closest('label') || (e.id ? document.querySelector(`label[for="${e.id}"]`) : null)
+        const txt = norm((lbl && lbl.textContent) || e.value)
+        return txt === norm(v) || txt.includes(norm(v))
+      })
+      if (!alvo) return 'sem_opcao'
+      if (alvo.checked) return 'ja_preenchido'
+      alvo.click()
+      alvo.dispatchEvent(new Event('change', { bubbles: true }))
+      return 'ok'
     }
 
-    if (tag === 'INPUT') {
-      const type = await el.evaluate(e => e.type).catch(() => 'text')
-      if (type === 'radio' || type === 'checkbox') {
-        // Encontra o radio com value/label correspondente
-        const radios = page.locator(`input[name="${name}"]`)
-        const n = await radios.count()
-        const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-        for (let i = 0; i < n; i++) {
-          const r = radios.nth(i)
-          const val = await r.getAttribute('value').catch(() => '')
-          const lbl = await r.evaluate(e => {
-            const l = e.closest('label') || (e.id && document.querySelector(`label[for="${e.id}"]`))
-            return l ? (l.innerText || l.textContent || '') : ''
-          }).catch(() => '')
-          if (norm(val) === norm(v) || norm(lbl).includes(norm(v))) {
-            await r.check({ force: true }).catch(() => r.click({ force: true }))
-            return 'ok'
-          }
-        }
-        return 'sem_opcao'
-      }
-      // Input de texto/tel/email
-      try {
-        await el.fill(v, { timeout: 3000 })
-        await el.dispatchEvent('change')
-        await el.dispatchEvent('blur')
-        return 'ok'
-      } catch {
-        return 'invisivel'
-      }
+    const el = visiveis[0]
+    if (el.tagName === 'SELECT') {
+      const opt = Array.from(el.options).find(o =>
+        norm(o.text) === norm(v) || norm(o.value) === norm(v) ||
+        norm(o.text).startsWith(norm(v)) || norm(o.text).includes(norm(v))
+      )
+      if (!opt) return 'sem_opcao'
+      if (el.value === opt.value) return 'ja_preenchido'
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+      setter.call(el, opt.value)
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      el.dispatchEvent(new Event('input',  { bubbles: true }))
+      el.dispatchEvent(new Event('blur',   { bubbles: true }))
+      return 'ok'
     }
 
-    return 'invisivel'
-  } catch (err) {
-    return 'invisivel'
-  }
+    if (el.value === v) return 'ja_preenchido'
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set
+    setter.call(el, v)
+    el.dispatchEvent(new Event('input',  { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+    el.dispatchEvent(new Event('blur',   { bubbles: true }))
+    return 'ok'
+  }, { name, v })
 }
 
 // Clica num botão por id, texto exato ou texto contido.
@@ -271,14 +255,19 @@ async function cotacaoSuhai(page, dados) {
         const r2 = await preencherPorLabel(page, FALLBACK_LABELS[k], todos[k])
         if (r2 === 'ok') r = 'ok'
       }
-      // Autocomplete: depois de setar tVeiculo, tenta clicar a 1ª sugestão.
-      if (r === 'ok' && k === 'tVeiculo') {
-        await page.waitForTimeout(1500)
-        await page.evaluate(() => {
-          const opt = document.querySelector('.uib-typeahead-match a, .dropdown-menu li a, [role="option"]')
-          if (opt) opt.click()
-        }).catch(() => {})
-        await page.waitForTimeout(500)
+      // Autocomplete tVeiculo: precisa digitar com teclado real e clicar a sugestão,
+      // senão o ngModel da Suhai fica vazio (mesmo com o input visualmente preenchido).
+      if (k === 'tVeiculo' && (r === 'ok' || r === 'ja_preenchido')) {
+        try {
+          const loc = page.locator('input[name="tVeiculo"]:visible').first()
+          await loc.click({ timeout: 3000 })
+          await loc.fill('', { timeout: 1500 })
+          await loc.type(String(todos[k]).slice(0, 12), { delay: 60, timeout: 5000 })
+          // Espera dropdown de sugestões aparecer e clica na primeira
+          const opt = page.locator('.uib-typeahead-match a, .dropdown-menu li a, [role="option"], .typeahead li a').first()
+          await opt.click({ timeout: 6000 })
+        } catch (e) { log.warn('Suhai: autocomplete veículo falhou', { erro: e.message }) }
+        await page.waitForTimeout(600)
       }
       if (r === 'ok' || r === 'ja_preenchido') {
         pendentes.delete(k)
