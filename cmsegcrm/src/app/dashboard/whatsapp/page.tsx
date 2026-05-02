@@ -232,11 +232,19 @@ export default function WhatsAppPage() {
 
   async function salvarConfig() {
     const { data: { user } } = await supabase.auth.getUser()
-    const nomeInst = config.nome || `corretor_${user?.id?.slice(0,8)}`
-    const { data: inst } = await supabase.from('whatsapp_instancias').upsert({ user_id:user?.id, nome:nomeInst, evolution_url:config.evo_url, api_key:config.api_key, status:'disconnected' }).select().single()
+    const nomeInst = (config.nome || `corretor_${user?.id?.slice(0,8)}`).trim()
+    // URL/API key vêm do servidor (env) — só envia se o admin tiver
+    // sobrescrito manualmente no formulário avançado.
+    const { data: inst } = await supabase.from('whatsapp_instancias').upsert({
+      user_id: user?.id,
+      nome: nomeInst,
+      evolution_url: config.evo_url || null,
+      api_key:       config.api_key || null,
+      status: 'disconnected',
+    }).select().single()
     setInstancia(inst)
     setModalConfig(false)
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'criar_instancia', evo_url:config.evo_url, api_key:config.api_key, instance:nomeInst }) })
+    const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'criar_instancia', evo_url:config.evo_url||undefined, api_key:config.api_key||undefined, instance:nomeInst }) })
     const data = await res.json()
     if (data?.qrcode?.base64) {
       await supabase.from('whatsapp_instancias').update({ qrcode:data.qrcode.base64, status:'qrcode' }).eq('id', inst.id)
@@ -759,17 +767,17 @@ export default function WhatsAppPage() {
         <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalConfig(false)}>
           <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:18,padding:'30px 32px',width:480,maxWidth:'95vw'}}>
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)',marginBottom:6}}>Configurar WhatsApp</div>
-            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:20}}>Informe os dados da Evolution API.</div>
-            {[{label:'URL do VPS',key:'evo_url',ph:'http://SEU-IP:8080'},{label:'API Key',key:'api_key',ph:'sua-chave'},{label:'Nome da instância',key:'nome',ph:'corretor_bruno'}].map(({label,key,ph})=>(
-              <div key={key} style={{marginBottom:14}}>
-                <label className="label">{label}</label>
-                <input className="input" placeholder={ph} value={(config as any)[key]} onChange={e=>setConfig(c=>({...c,[key]:e.target.value}))} />
-              </div>
-            ))}
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)',marginBottom:6}}>Conectar WhatsApp</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:20}}>Escolha um nome para sua instância e clique em Conectar para ler o QR Code.</div>
+            <div style={{marginBottom:14}}>
+              <label className="label">Nome da instância</label>
+              <input className="input" placeholder="ex: corretor_bruno"
+                value={config.nome}
+                onChange={e=>setConfig(c=>({...c,nome:e.target.value.replace(/\s+/g,'_').toLowerCase()}))} />
+            </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn-secondary" onClick={()=>setModalConfig(false)}>Cancelar</button>
-              <button className="btn-primary" onClick={salvarConfig} disabled={!config.evo_url||!config.api_key}>🔗 Salvar e Conectar</button>
+              <button className="btn-primary" onClick={salvarConfig} disabled={!config.nome.trim()}>🔗 Conectar</button>
             </div>
           </div>
         </div>
