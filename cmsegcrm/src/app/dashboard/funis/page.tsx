@@ -10,6 +10,7 @@ export default function FunisPage() {
   const [profile, setProfile]     = useState<any>(null)
   const [funis, setFunis]         = useState<any[]>([])
   const [negocios, setNegocios]   = useState<any[]>([])
+  const [contagemPorFunil, setContagemPorFunil] = useState<Record<string, number>>({})
   const [usuarios, setUsuarios]   = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
   const [funilAtivo, setFunilAtivo] = useState<string|null>(null)
@@ -80,6 +81,7 @@ export default function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
 
   useEffect(() => { init() }, [])
+  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo])
   useEffect(() => {
     supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
@@ -317,23 +319,41 @@ export default function FunisPage() {
     const { data: fs } = await supabase.from('funis').select('*').order('ordem')
     setFunis(fs||[])
     if (fs?.length && !funilAtivo) setFunilAtivo(fs[0].id)
-    await carregarNegocios()
+    await carregarContagens(fs || [])
   }
 
+  // Conta cards por funil sem trazer linhas (HEAD request).
+  async function carregarContagens(fs: any[]) {
+    const out: Record<string, number> = {}
+    await Promise.all((fs || []).map(async (f) => {
+      const { count } = await supabase.from('negocios')
+        .select('id', { count: 'exact', head: true })
+        .eq('funil_id', f.id)
+      out[f.id] = count || 0
+    }))
+    setContagemPorFunil(out)
+  }
+
+  // Carrega so os negocios do funil ativo, com select slim, paginando.
   async function carregarNegocios() {
-    // PostgREST corta em 1000 por padrao. Pagina ate trazer tudo.
+    if (!funilAtivo) { setNegocios([]); return }
     const PAGE = 1000
     const todos: any[] = []
     for (let offset = 0; ; offset += PAGE) {
       const { data, error } = await supabase.from('negocios').select(`
-        *,
+        id, titulo, etapa, status, qualificacao, premio, vencimento,
+        funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
+        produto, seguradora, cpf_cnpj, motivo_perda, obs,
+        custom_fields, created_at, data_fechamento,
         clientes(id,nome,cpf_cnpj,telefone),
         users!negocios_vendedor_id_fkey(nome)
-      `).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
+      `).eq('funil_id', funilAtivo)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE - 1)
       if (error || !data || data.length === 0) break
       todos.push(...data)
       if (data.length < PAGE) break
-      if (todos.length >= 100_000) break // hard stop pra nao explodir o navegador
+      if (todos.length >= 50_000) break
     }
     setNegocios(todos)
   }
@@ -509,7 +529,7 @@ export default function FunisPage() {
   }
 
   async function excluirFunil(f: any) {
-    const cards = negocios.filter(n => n.funil_id === f.id).length
+    const cards = contagemPorFunil[f.id] ?? 0
     const msg = cards > 0
       ? `O funil "${f.nome}" tem ${cards} card(s).\n\nIsto irá excluir o funil E todos os ${cards} card(s) dentro dele.\nEsta ação NÃO pode ser desfeita.\n\nConfirmar?`
       : `Excluir o funil "${f.nome}"?\n\nEsta ação não pode ser desfeita.`
@@ -574,7 +594,7 @@ export default function FunisPage() {
               </span>
               {funiAtual && (
                 <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10,marginLeft:6}}>
-                  {negocios.filter(n=>n.funil_id===funiAtual.id).length}
+                  {contagemPorFunil[funiAtual.id] ?? 0}
                 </span>
               )}
             </span>
@@ -592,7 +612,7 @@ export default function FunisPage() {
                 )}
                 {funis.map(f => {
                   const ativo = funilAtivo === f.id
-                  const cardCount = negocios.filter(n=>n.funil_id===f.id).length
+                  const cardCount = contagemPorFunil[f.id] ?? 0
                   return (
                     <div key={f.id}
                       onClick={()=>{ setFunilAtivo(f.id); setSeletorAberto(false) }}
