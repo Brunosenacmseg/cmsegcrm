@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { getVisibleUserIds } from '@/lib/auth'
 
 const GOTO_AUTH_URL = 'https://authentication.logmeininc.com/oauth/authorize'
 const GOTO_CLIENT_ID = process.env.NEXT_PUBLIC_GOTO_CLIENT_ID || '80293cbb-2cb4-44a2-92f5-1e69c02e6fca'
@@ -41,12 +42,15 @@ export default function TelefonePage() {
   const [clientesBusca, setClientesBusca] = useState<any[]>([])
   const [clienteSel, setClienteSel]       = useState<any>(null)
   const [aba, setAba]                     = useState<'discador'|'historico'|'andamento'>('discador')
+  const [usuariosVisiveis, setUsuariosVisiveis] = useState<any[]>([])
+  const [filtroUsuario, setFiltroUsuario] = useState<string>('')
   const [msg, setMsg]                     = useState('')
   const [tempoLigacao, setTempoLigacao]   = useState(0)
   const [ligacaoAtiva, setLigacaoAtiva]   = useState<any>(null)
   const timerRef = useRef<any>(null)
 
   useEffect(() => { init() }, [])
+  useEffect(() => { if (profile) carregarLigacoes(profile.id) }, [filtroUsuario])
 
   useEffect(() => {
     const c = searchParams.get('conectado')
@@ -59,6 +63,13 @@ export default function TelefonePage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
+    if (prof?.role !== 'corretor') {
+      const ids = await getVisibleUserIds()
+      let usrQ = supabase.from('users').select('id,nome,role').order('nome')
+      if (ids) usrQ = usrQ.in('id', ids)
+      const { data: usrs } = await usrQ
+      setUsuariosVisiveis(usrs || [])
+    }
     await verificarConexao(user?.id||'')
     await carregarLigacoes(user?.id||'')
     setLoading(false)
@@ -78,7 +89,7 @@ export default function TelefonePage() {
     const res = await fetch('/api/goto/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'listar_ligacoes', user_id: userId })
+      body: JSON.stringify({ action: 'listar_ligacoes', user_id: userId, filtro_user_id: filtroUsuario || undefined })
     })
     const data = await res.json()
     setLigacoes(data.ligacoes || [])
@@ -215,6 +226,14 @@ export default function TelefonePage() {
         </div>
         {!conectado && (
           <button onClick={conectarGoTo} className="btn-primary" style={{fontSize:12,padding:'7px 16px'}}>🔗 Conectar GoTo</button>
+        )}
+        {profile && profile.role !== 'corretor' && (
+          <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+            title="Filtrar histórico por usuário"
+            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroUsuario?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
+            <option value="">👥 {profile.role==='admin'?'Todos':'Toda equipe'}</option>
+            {usuariosVisiveis.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
         )}
         <div style={{display:'flex',gap:4}}>
           {(['discador','andamento','historico'] as const).map(a=>(

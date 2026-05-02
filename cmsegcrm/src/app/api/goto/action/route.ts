@@ -69,11 +69,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ conectado: !!data, ...data })
     }
     if (action === 'listar_ligacoes') {
-      const { data } = await supabaseAdmin.from('ligacoes').select('*, clientes(nome), users(nome)').eq('user_id', user_id).order('criado_em', { ascending: false }).limit(50)
+      // Permissões: admin vê tudo (com filtro opcional por usuário);
+      // líder vê histórico do time todo; corretor só o próprio.
+      const { data: prof } = await supabaseAdmin.from('users').select('id,role').eq('id', user_id).single()
+      const role = prof?.role || 'corretor'
+      let q = supabaseAdmin.from('ligacoes').select('*, clientes(nome), users(nome)')
+      if (params.filtro_user_id) {
+        q = q.eq('user_id', params.filtro_user_id)
+      } else if (role === 'corretor') {
+        q = q.eq('user_id', user_id)
+      } else if (role === 'lider') {
+        const { data: equipes } = await supabaseAdmin.from('equipes').select('id').eq('lider_id', user_id)
+        const equipeIds = (equipes || []).map(e => e.id)
+        let ids = [user_id]
+        if (equipeIds.length) {
+          const { data: membros } = await supabaseAdmin.from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
+          ids = [...new Set([user_id, ...((membros||[]).map(m => m.user_id))])]
+        }
+        q = q.in('user_id', ids)
+      }
+      const { data } = await q.order('criado_em', { ascending: false }).limit(50)
       return NextResponse.json({ ligacoes: data || [] })
     }
     if (action === 'ligacoes_em_andamento') {
-      const { data } = await supabaseAdmin.from('ligacoes').select('*, clientes(nome)').in('status', ['iniciada', 'em_andamento']).order('inicio', { ascending: false })
+      // Em andamento: admin vê tudo; líder vê do time; corretor só o próprio.
+      const { data: prof } = await supabaseAdmin.from('users').select('id,role').eq('id', user_id).single()
+      const role = prof?.role || 'corretor'
+      let q = supabaseAdmin.from('ligacoes').select('*, clientes(nome)').in('status', ['iniciada', 'em_andamento'])
+      if (role === 'corretor') {
+        q = q.eq('user_id', user_id)
+      } else if (role === 'lider') {
+        const { data: equipes } = await supabaseAdmin.from('equipes').select('id').eq('lider_id', user_id)
+        const equipeIds = (equipes || []).map(e => e.id)
+        let ids = [user_id]
+        if (equipeIds.length) {
+          const { data: membros } = await supabaseAdmin.from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
+          ids = [...new Set([user_id, ...((membros||[]).map(m => m.user_id))])]
+        }
+        q = q.in('user_id', ids)
+      }
+      const { data } = await q.order('inicio', { ascending: false })
       return NextResponse.json({ ligacoes: data || [] })
     }
     if (action === 'encerrar_ligacao') {

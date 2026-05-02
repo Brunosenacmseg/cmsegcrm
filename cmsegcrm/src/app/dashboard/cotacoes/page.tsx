@@ -399,6 +399,23 @@ export default function CotacoesPage() {
     setModal(true)
   }
 
+  if (!loading && profile && profile.role !== 'admin') {
+    return (
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',flexShrink:0}}>
+          <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>🔍 Cotações</div>
+        </div>
+        <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div className="card" style={{textAlign:'center',padding:40,maxWidth:480}}>
+            <div style={{fontSize:48,marginBottom:12}}>🔒</div>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:8}}>Acesso restrito</div>
+            <div style={{color:'var(--text-muted)',fontSize:13}}>O módulo de cotações está disponível apenas para administradores.</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
