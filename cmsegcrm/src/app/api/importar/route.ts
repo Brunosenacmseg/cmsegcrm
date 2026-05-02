@@ -222,8 +222,14 @@ async function importarNegocios(linhas: any[]) {
   }
   const combinaDataHora = (data: any, hora: any): string | null => {
     const d = dateBR(data); if (!d) return null
-    const h = s(hora) || '00:00'
-    return `${d}T${h.length === 5 ? h+':00' : h}`
+    const h = s(hora) || ''
+    // Aceita só HH:MM ou HH:MM:SS. Se vier lixo (ex: "03/12/2025" na coluna hora),
+    // ignora a hora e usa 00:00:00 — antes concatenava literal e o Postgres rejeitava.
+    const m = h.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+    const horaOk = m
+      ? `${m[1].padStart(2,'0')}:${m[2]}:${m[3] || '00'}`
+      : '00:00:00'
+    return `${d}T${horaOk}`
   }
   const qualifNum = (v: any): number => {
     if (!v) return 0
