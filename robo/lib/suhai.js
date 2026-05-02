@@ -314,6 +314,13 @@ async function cotacaoSuhai(page, dados) {
   }
   if (pendentes.size) log.warn('Suhai: campos pendentes', { campos: Array.from(pendentes) })
 
+  // ── Pass final: alguns campos reaparecem na última etapa (ex: tTipoCondutor
+  // pergunta "O segurado é o principal condutor?"). Re-seta antes de Cotar.
+  for (const k of ['tTipoCondutor','tGenero','tEstadoCivil','tDataNascimento']) {
+    if (todos[k]) await setarCampoPorNome(page, k, todos[k])
+  }
+  await page.waitForTimeout(800)
+
   // ── Cotar ───────────────────────────────────────────────────────────
   if (!await clicarBotao(page, '#btnCalcular')) {
     if (!await clicarBotao(page, 'Cotar')) {
