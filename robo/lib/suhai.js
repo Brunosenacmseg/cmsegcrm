@@ -319,7 +319,32 @@ async function cotacaoSuhai(page, dados) {
   for (const k of ['tTipoCondutor','tGenero','tEstadoCivil','tDataNascimento']) {
     if (todos[k]) await setarCampoPorNome(page, k, todos[k])
   }
+  // Tenta também por label "principal condutor" → clica Sim
+  await page.evaluate(() => {
+    const isVis = e => { const r = e.getBoundingClientRect(); return r.width>0&&r.height>0 && getComputedStyle(e).display!=='none' }
+    const rotulos = Array.from(document.querySelectorAll('label, span, div, p, h1, h2, h3, h4'))
+      .filter(e => isVis(e) && /principal\s+condutor/i.test(e.textContent || ''))
+    for (const lbl of rotulos) {
+      const cont = lbl.closest('div, fieldset, form-group') || lbl.parentElement
+      if (!cont) continue
+      const sim = Array.from(cont.querySelectorAll('button, label, input[type=radio], a'))
+        .find(b => isVis(b) && /^\s*sim\s*$/i.test((b.innerText || b.value || '').trim()))
+      if (sim) { sim.click(); return }
+    }
+  }).catch(() => {})
   await page.waitForTimeout(800)
+
+  // Log do estado pré-Cotar pra debug
+  const preCotar = await page.evaluate(() => {
+    const isVis = e => { const r = e.getBoundingClientRect(); return r.width>0&&r.height>0 && getComputedStyle(e).display!=='none' }
+    return {
+      inputs: Array.from(document.querySelectorAll('input,textarea')).filter(isVis).map(e => ({ type: e.type, name: e.name, value: (e.value||'').slice(0,30), checked: e.checked })),
+      selects: Array.from(document.querySelectorAll('select')).filter(isVis).map(e => ({ name: e.name, value: e.value })),
+      buttons: Array.from(document.querySelectorAll('button')).filter(isVis).map(e => ({ id: e.id, text: (e.innerText||'').trim().slice(0,30), disabled: e.disabled })),
+      texto: document.body.innerText.slice(-400),
+    }
+  })
+  log.info('Suhai: estado pre-Cotar', preCotar)
 
   // ── Cotar ───────────────────────────────────────────────────────────
   if (!await clicarBotao(page, '#btnCalcular')) {
