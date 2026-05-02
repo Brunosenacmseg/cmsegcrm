@@ -27,9 +27,24 @@ async function setarCampoPorNome(page, name, valor) {
   const v = String(valor)
   return await page.evaluate(({ name, v }) => {
     const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+    const isVisivel = e => {
+      if (!e) return false
+      const r = e.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) return false
+      const cs = getComputedStyle(e)
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false
+      // Sobe a árvore checando display:none nos pais (ng-hide aplica no container)
+      let p = e.parentElement
+      while (p) {
+        const pcs = getComputedStyle(p)
+        if (pcs.display === 'none' || pcs.visibility === 'hidden') return false
+        p = p.parentElement
+      }
+      return true
+    }
     const els = Array.from(document.querySelectorAll(`[name="${name}"]`))
     if (!els.length) return 'inexistente'
-    const visiveis = els.filter(e => e.offsetParent !== null && !e.disabled)
+    const visiveis = els.filter(e => isVisivel(e) && !e.disabled)
     if (!visiveis.length) return 'invisivel'
 
     // Radios: várias entradas com mesmo name
@@ -231,18 +246,24 @@ async function cotacaoSuhai(page, dados) {
   // ── Cotar ───────────────────────────────────────────────────────────
   if (!await clicarBotao(page, '#btnCalcular')) {
     if (!await clicarBotao(page, 'Cotar')) {
-      // Tira screenshot do estado pra debug e devolve erro detalhado
-      const snap = await page.screenshot({ fullPage: true }).then(b => b.toString('base64')).catch(() => null)
+      // Dump do estado da página pra debug
       const estado = await page.evaluate(() => {
-        const visiveis = Array.from(document.querySelectorAll('input,select,button'))
-          .filter(e => e.offsetParent !== null)
-          .map(e => ({ tag: e.tagName.toLowerCase(), name: e.name, id: e.id, type: e.type, text: (e.innerText || e.value || '').slice(0, 40), disabled: e.disabled }))
-        return { url: location.href, texto: document.body.innerText.slice(0, 1500), visiveis: visiveis.slice(0, 60) }
+        const visivel = e => {
+          const r = e.getBoundingClientRect()
+          if (r.width === 0 && r.height === 0) return false
+          const cs = getComputedStyle(e)
+          return cs.display !== 'none' && cs.visibility !== 'hidden'
+        }
+        const inputs = Array.from(document.querySelectorAll('input,textarea')).filter(visivel)
+          .map(e => ({ tag: e.tagName.toLowerCase(), type: e.type, name: e.name, value: (e.value || '').slice(0, 30), disabled: e.disabled }))
+        const selects = Array.from(document.querySelectorAll('select')).filter(visivel)
+          .map(e => ({ name: e.name, value: e.value, disabled: e.disabled }))
+        const buttons = Array.from(document.querySelectorAll('button')).filter(visivel)
+          .map(b => ({ id: b.id, text: (b.innerText || '').trim().slice(0, 30), disabled: b.disabled }))
+        return { url: location.href, inputs, selects, buttons, texto: document.body.innerText.slice(0, 600) }
       })
-      const e = new Error('Suhai: botão "Cotar" não encontrado')
-      e.estado = estado
-      e.screenshot = snap
-      throw e
+      log.warn('Suhai: estado no momento da falha', estado)
+      throw new Error('Suhai: botão "Cotar" não encontrado (ver logs/estado)')
     }
   }
 
