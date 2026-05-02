@@ -6,6 +6,7 @@ import Avatar from '@/components/Avatar'
 const ROLES = [
   { key:'admin',    label:'Admin',    cor:'var(--red)',  desc:'Acesso total' },
   { key:'lider',    label:'Líder',    cor:'var(--gold)', desc:'Vê próprio + equipe' },
+  { key:'financeiro', label:'Financeiro', cor:'#7c5cff', desc:'Acesso a todos os módulos' },
   { key:'corretor', label:'Corretor', cor:'var(--teal)', desc:'Vê só o próprio' },
 ]
 

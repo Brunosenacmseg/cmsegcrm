@@ -12,6 +12,7 @@ const ROLE_COR: Record<string,string> = {
   admin:    'var(--red)',
   lider:    'var(--gold)',
   corretor: 'var(--teal)',
+  financeiro: '#7c5cff',
 }
 
 export default function Avatar({ nome, avatarUrl, role, size = 36, fontSize }: AvatarProps) {

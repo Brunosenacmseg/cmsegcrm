@@ -95,7 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // (caso contrário gera React error #310 — hooks chamados condicionalmente).
   useEffect(() => {
     if (!profile) return
-    const isAdminUser = profile.role === 'admin'
+    const isAdminUser = profile.role === 'admin' || profile.role === 'financeiro'
     const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
     if (rotaAdmin && !isAdminUser) {
       router.replace('/dashboard')
@@ -106,7 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
     // Acesso ao módulo financeiro: admin sempre tem; demais via financeiro_acessos
-    if (data?.role === 'admin') {
+    if (data?.role === 'admin' || data?.role === 'financeiro') {
       setTemAcessoFin(true)
     } else {
       const { data: ac } = await supabase.from('financeiro_acessos').select('user_id').eq('user_id', userId).maybeSingle()
@@ -168,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   let lastSection = ''
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'financeiro'
   const navVisible = NAV.filter(item => {
     if (item.adminOnly && !isAdmin) return false
     // Financeiro só pra quem tem permissão
