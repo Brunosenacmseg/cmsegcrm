@@ -12,7 +12,13 @@ async function evoFetch(url: string, apiKey: string, path: string, method = 'GET
 
 export async function POST(request: NextRequest) {
   try {
-    const { action, evo_url, api_key, instance, ...params } = await request.json()
+    const body = await request.json()
+    const { action, instance, ...params } = body
+    const evo_url = body.evo_url || process.env.EVOLUTION_API_URL
+    const api_key = body.api_key || process.env.EVOLUTION_API_KEY
+    if (!evo_url || !api_key) {
+      return NextResponse.json({ error: 'Evolution API não configurada' }, { status: 500 })
+    }
 
     switch (action) {
 

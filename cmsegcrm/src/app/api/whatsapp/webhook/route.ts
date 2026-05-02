@@ -239,11 +239,16 @@ export async function POST(request: NextRequest) {
                          || ''
       const pushName = (data.pushName && String(data.pushName).trim()) || null
 
-      const { data: inst } = await supabase
+      const { data: instRow } = await supabase
         .from('whatsapp_instancias')
         .select('id, evolution_url, api_key, nome, agente_id, agente_ativo')
         .eq('nome', instance)
         .single()
+      const inst = instRow ? {
+        ...instRow,
+        evolution_url: instRow.evolution_url || process.env.EVOLUTION_API_URL,
+        api_key:       instRow.api_key       || process.env.EVOLUTION_API_KEY,
+      } : null
 
       if (inst) {
         let clienteId: string | null = null
