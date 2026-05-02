@@ -32,6 +32,8 @@ export default function ConfigurarFunisPage() {
   const [novaEtapa, setNovaEtapa] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string|null>(null)
+  const [dragIdx, setDragIdx] = useState<number|null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number|null>(null)
 
   useEffect(()=>{ init() }, [])
 
@@ -342,7 +344,23 @@ export default function ConfigurarFunisPage() {
                   <label style={lbl}>Etapas * <span style={{color:'var(--text-muted)',fontWeight:400}}>({form.etapas.length})</span></label>
                   <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:8}}>
                     {form.etapas.map((et, i)=>(
-                      <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8}}>
+                      <div key={i}
+                        draggable
+                        onDragStart={e=>{ setDragIdx(i); e.dataTransfer.effectAllowed='move' }}
+                        onDragOver={e=>{ e.preventDefault(); if (dragOverIdx!==i) setDragOverIdx(i) }}
+                        onDragLeave={()=>setDragOverIdx(prev=>prev===i?null:prev)}
+                        onDrop={e=>{
+                          e.preventDefault()
+                          if (dragIdx===null || dragIdx===i) { setDragIdx(null); setDragOverIdx(null); return }
+                          const novo=[...form.etapas]
+                          const [it]=novo.splice(dragIdx,1)
+                          novo.splice(i,0,it)
+                          setForm(f=>({...f,etapas:novo}))
+                          setDragIdx(null); setDragOverIdx(null)
+                        }}
+                        onDragEnd={()=>{ setDragIdx(null); setDragOverIdx(null) }}
+                        style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'rgba(255,255,255,0.04)',border:`1px solid ${dragOverIdx===i&&dragIdx!==i?'var(--gold)':'var(--border)'}`,borderRadius:8,opacity:dragIdx===i?0.4:1,cursor:'grab',transition:'border-color 0.12s'}}>
+                        <span title="Arraste para reordenar" style={{fontSize:14,color:'var(--text-muted)',cursor:'grab',userSelect:'none'}}>⋮⋮</span>
                         <span style={{fontSize:11,color:'var(--text-muted)',width:22}}>{i+1}.</span>
                         <input value={et} onChange={e=>{ const novo=[...form.etapas]; novo[i]=e.target.value; setForm(f=>({...f,etapas:novo})) }} style={{...inp,padding:'4px 8px',background:'transparent',border:'none'}} />
                         <button onClick={()=>moverEtapa(i,-1)} disabled={i===0} style={btnIcon}>↑</button>
