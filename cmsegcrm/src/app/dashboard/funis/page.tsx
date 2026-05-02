@@ -1,9 +1,17 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function FunisPage() {
+export default function FunisPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>}>
+      <FunisPage />
+    </Suspense>
+  )
+}
+
+function FunisPage() {
   const supabase = createClient()
   const router   = useRouter()
   const searchParams = useSearchParams()
