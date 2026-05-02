@@ -17,6 +17,11 @@ export default function ApolicesPage() {
   const [filtroVendedor, setFiltroVendedor] = useState('todos')
   const [editandoVendedor, setEditandoVendedor] = useState<string|null>(null)
 
+  // Modal "editar detalhes" (todos os campos da apólice)
+  const [detModal, setDetModal] = useState<any|null>(null)
+  const [detForm,  setDetForm]  = useState<any>({})
+  const [detSalvando, setDetSalvando] = useState(false)
+
   // Lançamento de comissão recebida (admin)
   const [comModal, setComModal] = useState<any|null>(null)
   const hojeIso = new Date().toISOString().slice(0,10)
@@ -69,6 +74,38 @@ export default function ApolicesPage() {
     if (valor.startsWith('legado:')) patch.vendedor_legado_id = valor.slice(7)
     await supabase.from('negocios').update(patch).eq('id', negocioId)
     setEditandoVendedor(null)
+    carregar()
+  }
+
+  async function abrirDetalhes(neg: any) {
+    // Busca (ou cria implicitamente) a apólice ligada ao negócio
+    const { data: apo } = await supabase.from('apolices').select('*').eq('negocio_id', neg.id).maybeSingle()
+    setDetForm(apo || {
+      negocio_id: neg.id, cliente_id: neg.clientes?.id, vendedor_id: neg.vendedor_id,
+      numero: neg.numero || null, produto: neg.produto || null, seguradora: neg.seguradora || null,
+      premio: neg.premio || null, comissao_pct: neg.comissao_pct || null,
+      vigencia_ini: null, vigencia_fim: neg.vencimento || null, placa: neg.placa || null,
+      status: 'ativo', vendedores_envolvidos: [],
+    })
+    setDetModal(neg)
+  }
+
+  async function salvarDetalhes() {
+    if (!detModal) return
+    setDetSalvando(true)
+    const payload: any = { ...detForm, negocio_id: detModal.id, cliente_id: detModal.clientes?.id }
+    // Limpa strings vazias para null em datas/numéricos
+    ;['vigencia_ini','vigencia_fim','emissao','data_controle'].forEach(k => { if (payload[k] === '') payload[k] = null })
+    ;['premio','premio_liquido','comissao_pct','repasse_vendedor_pct','qtd_parcelas','valor_iof'].forEach(k => {
+      if (payload[k] === '' || payload[k] === undefined) payload[k] = null
+      else if (payload[k] !== null) payload[k] = Number(String(payload[k]).replace(',','.'))
+    })
+    const { error } = payload.id
+      ? await supabase.from('apolices').update(payload).eq('id', payload.id)
+      : await supabase.from('apolices').insert(payload)
+    setDetSalvando(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    setDetModal(null)
     carregar()
   }
 
@@ -247,7 +284,12 @@ export default function ApolicesPage() {
                       <span style={{fontSize:11,fontWeight:600,borderRadius:20,padding:'3px 10px',background:'rgba(0,0,0,0.2)',color:st.cor,border:`1px solid ${st.cor}33`}}>{st.label}</span>
                     </td>
                     {isAdmin&&(
-                      <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                      <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:6}}>
+                        <button onClick={()=>abrirDetalhes(n)}
+                          title="Editar todos os campos da apólice"
+                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                          📝 Detalhes
+                        </button>
                         <button onClick={()=>abrirComissao(n)}
                           title={n.vendedor_id?'Lançar comissão recebida':'Atribua um vendedor antes'}
                           disabled={!n.vendedor_id}
@@ -267,6 +309,102 @@ export default function ApolicesPage() {
           )}
         </div>
       </div>
+
+      {/* Modal Editar Detalhes da Apólice */}
+      {detModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setDetModal(null)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'24px 28px',width:920,maxWidth:'96vw',maxHeight:'92vh',overflow:'auto'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:4}}>📝 Detalhes da apólice</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>
+              {detModal.clientes?.nome} · {detModal.produto||'—'} · {detModal.seguradora||'—'}
+            </div>
+
+            {(() => {
+              const F = (label:string, key:string, type:string='text', opts?:{options?:string[],span?:number}) => (
+                <div style={{gridColumn:`span ${opts?.span||1}`}}>
+                  <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>{label}</label>
+                  {type==='select' ? (
+                    <select value={detForm[key]??''} onChange={e=>setDetForm((f:any)=>({...f,[key]:e.target.value||null}))}
+                      style={inputStyle}>
+                      <option value="">—</option>
+                      {opts?.options?.map(o=><option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : type==='checkbox' ? (
+                    <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'var(--text)',padding:'8px 0'}}>
+                      <input type="checkbox" checked={!!detForm[key]} onChange={e=>setDetForm((f:any)=>({...f,[key]:e.target.checked}))} />
+                      {detForm[key]?'Sim':'Não'}
+                    </label>
+                  ) : type==='textarea' ? (
+                    <textarea value={detForm[key]??''} onChange={e=>setDetForm((f:any)=>({...f,[key]:e.target.value}))}
+                      rows={2} style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                  ) : (
+                    <input type={type} value={detForm[key]??''} onChange={e=>setDetForm((f:any)=>({...f,[key]:e.target.value}))}
+                      style={inputStyle} />
+                  )}
+                </div>
+              )
+              return (
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+                  {F('Apólice (nº)','numero')}
+                  {F('Proposta','proposta')}
+                  {F('Endosso','endosso')}
+                  {F('Proposta endosso','proposta_endosso')}
+
+                  {F('Tipo documento','tipo_documento','select',{options:['CPF','CNPJ','RG','Outro']})}
+                  {F('Documento do cliente','cpf_cnpj_segurado')}
+                  {F('Tipo pessoa','tipo_documento','select',{options:['PF','PJ']})}
+                  {F('Estipulante','estipulante')}
+
+                  {F('Ramo','ramo')}
+                  {F('Produto','produto')}
+                  {F('Seguradora','seguradora')}
+                  {F('Item','item')}
+
+                  {F('Vigência inicial','vigencia_ini','date')}
+                  {F('Vigência final','vigencia_fim','date')}
+                  {F('Emissão','emissao','date')}
+                  {F('Data controle','data_controle','date')}
+
+                  {F('Prêmio total (R$)','premio','number')}
+                  {F('Prêmio líquido (R$)','premio_liquido','number')}
+                  {F('Comissão (%)','comissao_pct','number')}
+                  {F('Repasse vendedor (%)','repasse_vendedor_pct','number')}
+
+                  {F('Qtd. parcelas','qtd_parcelas','number')}
+                  {F('Tipo pagamento','tipo_pagamento','select',{options:['Boleto','Débito automático','Cartão de crédito','PIX','Carnê','Outro']})}
+                  {F('Banco','banco')}
+                  {F('Agência','agencia')}
+
+                  {F('Conta','conta')}
+                  {F('Filial','filial')}
+                  {F('Pasta','pasta')}
+                  {F('Pasta cliente','pasta_cliente')}
+
+                  {F('Negócio corretora','negocio_corretora')}
+                  {F('Tipo vendedores','tipo_vendedores','select',{options:['Produção','Renovação','Particular','Outro']})}
+                  {F('Status','status','select',{options:['ativo','cancelado','renovar','vencido']})}
+                  {F('Status assinatura','status_assinatura','select',{options:['pendente','enviada','assinada','recusada']})}
+
+                  {F('Transmissão','transmissao')}
+                  {F('Apólice conferida','apolice_conferida','checkbox')}
+                  {F('Proposta assinada','proposta_assinada','checkbox')}
+                  <div />
+
+                  {F('Observações (Porto / extras)','dados_porto','textarea',{span:4})}
+                </div>
+              )
+            })()}
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20,paddingTop:16,borderTop:'1px solid var(--border)'}}>
+              <button className="btn-secondary" onClick={()=>setDetModal(null)} disabled={detSalvando}>Cancelar</button>
+              <button className="btn-primary" onClick={salvarDetalhes} disabled={detSalvando}>
+                {detSalvando?'Salvando...':'✓ Salvar detalhes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Lançar Comissão Recebida */}
       {comModal && (
@@ -331,3 +469,8 @@ export default function ApolicesPage() {
 
 function diasAte(v:string){const h=new Date();h.setHours(0,0,0,0);const d=new Date(v);d.setHours(0,0,0,0);return Math.ceil((d.getTime()-h.getTime())/(1000*60*60*24))}
 function fmt(n:number){return n>=1000?(n/1000).toFixed(1)+'k':n.toLocaleString('pt-BR')}
+
+const inputStyle: React.CSSProperties = {
+  width:'100%', background:'rgba(0,0,0,0.04)', border:'1px solid var(--border)',
+  borderRadius:6, padding:'7px 10px', color:'var(--text)', fontSize:12, outline:'none', boxSizing:'border-box'
+}
