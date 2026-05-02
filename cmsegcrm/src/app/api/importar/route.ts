@@ -268,12 +268,21 @@ async function importarNegocios(linhas: any[]) {
 
   // Monta payloads em memória
   const novos: any[] = []
+  // Coleta etapas novas por funil; ao final do lote, mescla nos arrays text[]
+  // de funis.etapas pra que os cards aparecam como colunas no kanban.
+  const etapasNovasPorFunil = new Map<string, Set<string>>()
   for (const r of linhas) {
     try {
       const titulo = s(r.titulo) || s(r.nome) || s(r.cliente) || s(r.empresa) || 'Negócio importado'
       const funilNome = s(r.funil) || s(r.pipeline)
       const f = funilNome ? (funis || []).find((x:any) => x.nome.toLowerCase() === funilNome.toLowerCase()) || funilDefault : funilDefault
       const etapa = s(r.etapa) || s(r.stage) || (f.etapas?.[0] || 'Novo')
+      // Se a etapa veio do import e ainda nao existe nas colunas do funil, marca pra criar.
+      const etapasFunil: string[] = Array.isArray(f.etapas) ? f.etapas : []
+      if (etapa && !etapasFunil.some((e: string) => e.toLowerCase() === etapa.toLowerCase())) {
+        if (!etapasNovasPorFunil.has(f.id)) etapasNovasPorFunil.set(f.id, new Set())
+        etapasNovasPorFunil.get(f.id)!.add(etapa)
+      }
       const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
       const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
 
@@ -367,6 +376,19 @@ async function importarNegocios(linhas: any[]) {
   }
 
   // INSERT batch (1 query pra todo o lote). Fallback row-by-row se falhar.
+  // Mescla etapas novas nos funis afetados antes de inserir os negocios.
+  for (const [funilId, etapasNovasSet] of etapasNovasPorFunil.entries()) {
+    const f = (funis || []).find((x:any) => x.id === funilId)
+    if (!f) continue
+    const atuais: string[] = Array.isArray(f.etapas) ? f.etapas : []
+    const merged = [...atuais]
+    for (const e of etapasNovasSet) {
+      if (!merged.some(x => x.toLowerCase() === e.toLowerCase())) merged.push(e)
+    }
+    await supabaseAdmin.from('funis').update({ etapas: merged }).eq('id', funilId)
+    f.etapas = merged
+  }
+
   if (novos.length) {
     const { error } = await supabaseAdmin.from('negocios').insert(novos)
     if (error) {
