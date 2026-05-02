@@ -223,8 +223,8 @@ async function cotacaoSuhai(page, dados) {
     tAnoFabricacao:          dados.anoFab || dados.anoFabricacao,
     tAnoModelo:              dados.anoMod || dados.anoModelo,
     tZeroKm:                 dados.zeroKm || 'Não',
-    tModelo:                 dados.modelo,
-    tCep:                    dados.cep,
+    tVeiculo:                dados.modelo || dados.veiculo,
+    tCepPernoite:            dados.cep,
     tUf:                     dados.uf,
     tCor:                    dados.cor,
     tCombustivel:            dados.combustivel,
@@ -244,7 +244,7 @@ async function cotacaoSuhai(page, dados) {
   const ordemPreferencial = [
     'tCpf','tDataNascimento','tGenero','tEstadoCivil',
     'tUtilizacao','tTipoSeguro','tBonus',
-    'tPlaca','tAnoFabricacao','tAnoModelo','tZeroKm','tModelo','tCep',
+    'tPlaca','tAnoFabricacao','tAnoModelo','tZeroKm','tVeiculo','tCepPernoite',
     'tUf','tCor','tCombustivel',
     'tTipoCondutor','tCpfCondutor','tNomeCondutor','tDataNascimentoCondutor',
     'tGeneroCondutor','tEstadoCivilCondutor',
@@ -265,6 +265,15 @@ async function cotacaoSuhai(page, dados) {
       if ((r === 'inexistente' || r === 'invisivel') && FALLBACK_LABELS[k]) {
         const r2 = await preencherPorLabel(page, FALLBACK_LABELS[k], todos[k])
         if (r2 === 'ok') r = 'ok'
+      }
+      // Autocomplete: depois de setar tVeiculo, tenta clicar a 1ª sugestão.
+      if (r === 'ok' && k === 'tVeiculo') {
+        await page.waitForTimeout(1500)
+        await page.evaluate(() => {
+          const opt = document.querySelector('.uib-typeahead-match a, .dropdown-menu li a, [role="option"]')
+          if (opt) opt.click()
+        }).catch(() => {})
+        await page.waitForTimeout(500)
       }
       if (r === 'ok' || r === 'ja_preenchido') {
         pendentes.delete(k)
