@@ -27,7 +27,12 @@ async function checarAdmin(req: NextRequest) {
 }
 
 const norm = (v: any) => (v == null ? '' : String(v).trim())
-const lower = (v: any) => norm(v).toLowerCase()
+// Normaliza pra match: lower + colapsa whitespace + remove acentos
+// Pega casos como "Lilian  Cruz" (espaço duplo), "lilian cruz", "Lílian Cruz" etc.
+const lower = (v: any) =>
+  norm(v).toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ')
 
 export async function POST(req: NextRequest) {
   const auth = await checarAdmin(req)
