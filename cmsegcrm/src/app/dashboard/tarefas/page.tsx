@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Avatar from '@/components/Avatar'
+import { getVisibleUserIds } from '@/lib/auth'
 
 const STATUS_CORES: Record<string,string> = { pendente:'var(--gold)', em_andamento:'var(--teal)', concluida:'var(--text-muted)', cancelada:'var(--red)' }
 const STATUS_LABELS: Record<string,string> = { pendente:'⏳ Pendente', em_andamento:'🔄 Em andamento', concluida:'✅ Concluída', cancelada:'❌ Cancelada' }
@@ -19,14 +20,22 @@ export default function TarefasPage() {
   const [modalAberto, setModalAberto] = useState(false)
   const [filtroStatus, setFiltroStatus] = useState('pendente')
   const [filtroResponsavel, setFiltroResponsavel] = useState('meus')
+  const [filtroEquipe, setFiltroEquipe]   = useState('todos')
+  const [filtroUsuario, setFiltroUsuario] = useState('todos')
+  const [equipes, setEquipes]             = useState<any[]>([])
+  const [equipeMembros, setEquipeMembros] = useState<Record<string, string[]>>({})
+  const [visibleIds, setVisibleIds]       = useState<string[] | null>(null)
   const [salvando, setSalvando]     = useState(false)
   const [buscaCliente, setBuscaCliente] = useState('')
   const [clientesBusca, setClientesBusca] = useState<any[]>([])
   const [clienteSel, setClienteSel] = useState<any>(null)
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    titulo: string; descricao: string; tipo: string; status: string;
+    prazo: string; responsaveis_ids: string[];
+  }>({
     titulo:'', descricao:'', tipo:'tarefa', status:'pendente',
-    prazo:'', responsavel_id:'',
+    prazo:'', responsaveis_ids: [],
   })
 
   useEffect(() => { init() }, [])
@@ -35,23 +44,44 @@ export default function TarefasPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('id,nome,role,avatar_url').eq('id', user?.id||'').single()
     setProfile(prof)
+    const ids = await getVisibleUserIds()
+    setVisibleIds(ids)
+    // Lista para criar tarefa: todos os usuários (qualquer pessoa pode atribuir
+    // pra qualquer outra). Filtro de visibilidade afeta só quem vejo no painel.
     const { data: usr } = await supabase.from('users').select('id,nome,role,avatar_url').order('nome')
     setUsuarios(usr||[])
-    await carregarTarefas()
+    if (prof?.role === 'admin') {
+      const { data: eq } = await supabase.from('equipes').select('id,nome').order('nome')
+      setEquipes(eq || [])
+      const { data: em } = await supabase.from('equipe_membros').select('equipe_id,user_id')
+      const map: Record<string, string[]> = {}
+      ;(em || []).forEach(r => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
+      setEquipeMembros(map)
+    }
+    await carregarTarefas(prof, ids)
     setLoading(false)
   }
 
-  async function carregarTarefas() {
-    const { data } = await supabase
+  async function carregarTarefas(prof = profile, ids: string[] | null = visibleIds) {
+    let q = supabase
       .from('tarefas')
       .select(`
         *,
         clientes(nome),
         responsavel:users!tarefas_responsavel_id_fkey(id,nome,role,avatar_url),
-        atribuidor:users!tarefas_atribuido_por_fkey(id,nome,role,avatar_url)
+        atribuidor:users!tarefas_atribuido_por_fkey(id,nome,role,avatar_url),
+        tarefa_responsaveis(user_id, users(id,nome,role,avatar_url))
       `)
       .order('prazo', { ascending: true, nullsFirst: false })
-    setTarefas(data||[])
+    // Visibilidade: corretor vê só onde ele é responsável (ou criador);
+    // líder vê apenas tarefas em que o responsável principal é do time.
+    if (prof?.role === 'corretor') {
+      q = q.or(`responsavel_id.eq.${prof.id},criado_por.eq.${prof.id}`)
+    } else if (ids) {
+      q = q.in('responsavel_id', ids)
+    }
+    const { data } = await q
+    setTarefas(data || [])
   }
 
   async function buscarClientes(q: string) {
@@ -64,27 +94,34 @@ export default function TarefasPage() {
   async function salvarTarefa() {
     if (!form.titulo.trim()) { alert('Informe o título'); return }
     setSalvando(true)
-    const responsavelId = form.responsavel_id || profile?.id
-    await supabase.from('tarefas').insert({
+    const ids = form.responsaveis_ids.length > 0 ? form.responsaveis_ids : [profile?.id]
+    const principalId = ids[0]
+    const { data: nova } = await supabase.from('tarefas').insert({
       titulo:         form.titulo,
       descricao:      form.descricao || null,
       tipo:           form.tipo,
       status:         form.status,
       prazo:          form.prazo ? new Date(form.prazo).toISOString() : null,
-      responsavel_id: responsavelId,
+      responsavel_id: principalId,
       cliente_id:     clienteSel?.id || null,
       criado_por:     profile?.id,
-      atribuido_por:  form.responsavel_id && form.responsavel_id !== profile?.id ? profile?.id : null,
-    })
-    if (form.responsavel_id && form.responsavel_id !== profile?.id) {
-      await supabase.from('notificacoes').insert({
-        user_id:   form.responsavel_id, tipo: 'tarefa',
-        titulo:    `${profile?.nome} atribuiu uma tarefa para você`,
+      atribuido_por:  principalId !== profile?.id ? profile?.id : null,
+    }).select('id').single()
+    if (nova?.id) {
+      const linhas = ids.map(uid => ({ tarefa_id: nova.id, user_id: uid }))
+      await supabase.from('tarefa_responsaveis').insert(linhas)
+    }
+    // Notifica todos os responsáveis (exceto o próprio criador)
+    const notificar = ids.filter(uid => uid && uid !== profile?.id)
+    if (notificar.length > 0) {
+      await supabase.from('notificacoes').insert(notificar.map(uid => ({
+        user_id: uid, tipo: 'tarefa',
+        titulo: `${profile?.nome} atribuiu uma tarefa para você`,
         descricao: form.titulo, link: '/dashboard/tarefas',
-      })
+      })))
     }
     setModalAberto(false)
-    setForm({ titulo:'', descricao:'', tipo:'tarefa', status:'pendente', prazo:'', responsavel_id:'' })
+    setForm({ titulo:'', descricao:'', tipo:'tarefa', status:'pendente', prazo:'', responsaveis_ids: [] })
     setClienteSel(null); setBuscaCliente('')
     setSalvando(false)
     await carregarTarefas()
@@ -95,18 +132,34 @@ export default function TarefasPage() {
     await carregarTarefas()
   }
 
+  function responsaveisDeTarefa(t: any): string[] {
+    const lista = Array.isArray(t.tarefa_responsaveis)
+      ? t.tarefa_responsaveis.map((r: any) => r.user_id).filter(Boolean)
+      : []
+    if (t.responsavel_id && !lista.includes(t.responsavel_id)) lista.push(t.responsavel_id)
+    return lista
+  }
+
   const tarefasFiltradas = tarefas.filter(t => {
     const statusOk = filtroStatus === 'todos' || t.status === filtroStatus
+    const responsaveis = responsaveisDeTarefa(t)
     const respOk = filtroResponsavel === 'todos'
-      || (filtroResponsavel === 'meus' && t.responsavel_id === profile?.id)
-      || (filtroResponsavel === 'atribuidas' && t.atribuido_por === profile?.id && t.responsavel_id !== profile?.id)
-    return statusOk && respOk
+      || (filtroResponsavel === 'meus' && responsaveis.includes(profile?.id))
+      || (filtroResponsavel === 'atribuidas' && t.atribuido_por === profile?.id && !responsaveis.includes(profile?.id))
+    if (!(statusOk && respOk)) return false
+    // Filtros admin: equipe + usuário
+    if (filtroEquipe !== 'todos') {
+      const membros = equipeMembros[filtroEquipe] || []
+      if (!responsaveis.some(r => membros.includes(r))) return false
+    }
+    if (filtroUsuario !== 'todos' && !responsaveis.includes(filtroUsuario)) return false
+    return true
   })
 
   const vencendo = tarefas.filter(t => {
     if (!t.prazo || t.status === 'concluida' || t.status === 'cancelada') return false
     const diff = new Date(t.prazo).getTime() - Date.now()
-    return diff > 0 && diff < 48*3600*1000 && t.responsavel_id === profile?.id
+    return diff > 0 && diff < 48*3600*1000 && responsaveisDeTarefa(t).includes(profile?.id)
   })
 
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
@@ -117,7 +170,7 @@ export default function TarefasPage() {
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>✅ Tarefas</div>
-        <button className="btn-primary" onClick={()=>{setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsavel_id:profile?.id||''})}}>
+        <button className="btn-primary" onClick={()=>{setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}>
           + Nova Tarefa
         </button>
       </div>
@@ -144,6 +197,23 @@ export default function TarefasPage() {
               {l}
             </button>
           ))}
+          {profile?.role === 'admin' && (
+            <>
+              <div style={{width:1,background:'var(--border)',margin:'0 4px'}}/>
+              {equipes.length > 0 && (
+                <select value={filtroEquipe} onChange={e=>setFiltroEquipe(e.target.value)}
+                  style={{padding:'6px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroEquipe!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroEquipe!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif'}}>
+                  <option value="todos">🏢 Todas as equipes</option>
+                  {equipes.map(eq => <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
+                </select>
+              )}
+              <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+                style={{padding:'6px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroUsuario!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroUsuario!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif'}}>
+                <option value="todos">👤 Todos usuários</option>
+                {usuarios.filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id)).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+            </>
+          )}
         </div>
 
         {tarefasFiltradas.length === 0 ? (
@@ -173,12 +243,23 @@ export default function TarefasPage() {
                         <span>📌 {t.tipo}</span>
                         {t.prazo && <span style={{color:atrasada?'var(--red)':vencendoEm48?'var(--gold)':'var(--text-muted)'}}>📅 {new Date(t.prazo).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>}
                         {t.clientes?.nome && <span style={{cursor:'pointer',color:'var(--gold)'}} onClick={()=>router.push(`/dashboard/clientes/${t.cliente_id}`)}>👤 {t.clientes.nome}</span>}
-                        {responsavel && (
-                          <div style={{display:'flex',alignItems:'center',gap:4}}>
-                            <Avatar nome={responsavel.nome} avatarUrl={responsavel.avatar_url} role={responsavel.role} size={18} />
-                            <span>{responsavel.nome?.split(' ')[0]}</span>
-                          </div>
-                        )}
+                        {(() => {
+                          const detalhes = (Array.isArray(t.tarefa_responsaveis) ? t.tarefa_responsaveis : [])
+                            .map((r: any) => r.users).filter(Boolean)
+                          if (detalhes.length === 0 && responsavel) detalhes.push(responsavel)
+                          return detalhes.length > 0 ? (
+                            <div style={{display:'flex',alignItems:'center',gap:4}}>
+                              {detalhes.slice(0, 4).map((u: any) => (
+                                <Avatar key={u.id} nome={u.nome} avatarUrl={u.avatar_url} role={u.role} size={18} />
+                              ))}
+                              <span>
+                                {detalhes.length === 1
+                                  ? detalhes[0].nome?.split(' ')[0]
+                                  : `${detalhes.length} responsáveis`}
+                              </span>
+                            </div>
+                          ) : null
+                        })()}
                         {atribuidor && t.responsavel_id !== t.atribuido_por && (
                           <span style={{color:'var(--teal)'}}>↑ {atribuidor.nome?.split(' ')[0]}</span>
                         )}
@@ -233,16 +314,37 @@ export default function TarefasPage() {
               </div>
             </div>
             <div style={{marginBottom:14}}>
-              <label style={{fontSize:12,color:'var(--gold)',display:'block',marginBottom:4}}>👤 Responsável</label>
-              <select value={form.responsavel_id} onChange={e=>setForm(f=>({...f,responsavel_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
-                <option value={profile?.id} style={{background:'#ffffff'}}>Eu mesmo ({profile?.nome})</option>
-                {usuarios.filter(u=>u.id!==profile?.id).map(u=>(
-                  <option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>
-                ))}
-              </select>
-              {form.responsavel_id && form.responsavel_id !== profile?.id && (
+              <label style={{fontSize:12,color:'var(--gold)',display:'block',marginBottom:6}}>👥 Responsáveis (1 ou mais)</label>
+              <div style={{maxHeight:180,overflowY:'auto',border:'1px solid var(--border)',borderRadius:8,padding:6,background:'#ffffff'}}>
+                {[profile, ...usuarios.filter(u => u.id !== profile?.id)].filter(Boolean).map((u: any) => {
+                  const sel = form.responsaveis_ids.includes(u.id)
+                  return (
+                    <div key={u.id}
+                      onClick={() => setForm(f => ({
+                        ...f,
+                        responsaveis_ids: sel
+                          ? f.responsaveis_ids.filter(x => x !== u.id)
+                          : [...f.responsaveis_ids, u.id],
+                      }))}
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',borderRadius:6,cursor:'pointer',background:sel?'rgba(201,168,76,0.10)':'transparent'}}>
+                      <div style={{width:18,height:18,borderRadius:4,border:'1px solid '+(sel?'var(--gold)':'var(--border)'),background:sel?'var(--gold)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:12,fontWeight:700}}>
+                        {sel ? '✓' : ''}
+                      </div>
+                      <Avatar nome={u.nome} avatarUrl={u.avatar_url} role={u.role} size={26} />
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:500}}>{u.nome}{u.id===profile?.id?' (eu)':''}</div>
+                        <div style={{fontSize:10,color:'var(--text-muted)'}}>{u.role}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {form.responsaveis_ids.length === 0 && (
+                <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Sem ninguém selecionado: você será o responsável.</div>
+              )}
+              {form.responsaveis_ids.filter(uid => uid !== profile?.id).length > 0 && (
                 <div style={{fontSize:11,color:'var(--teal)',marginTop:4}}>
-                  ✓ Notificação será enviada para {usuarios.find(u=>u.id===form.responsavel_id)?.nome}
+                  ✓ Notificação será enviada para {form.responsaveis_ids.filter(uid => uid !== profile?.id).length} pessoa(s)
                 </div>
               )}
             </div>

@@ -26,6 +26,10 @@ export default function MensagensPage() {
   const [naoLidas, setNaoLidas]       = useState<Record<string,number>>({})
   const [aba, setAba]                 = useState<'pessoas'|'grupos'>('pessoas')
 
+  // Admin pode visualizar a caixa de outro usuário
+  const [viewUserId, setViewUserId]   = useState<string>('')
+  const [viewProfile, setViewProfile] = useState<any>(null)
+
   // Modal criar grupo
   const [modalGrupo, setModalGrupo] = useState(false)
   const [novoGrupoNome, setNovoGrupoNome] = useState('')
@@ -40,11 +44,44 @@ export default function MensagensPage() {
   useEffect(() => {
     if (!profile) return
     const interval = setInterval(() => {
-      carregarNaoLidas(profile.id)
+      carregarNaoLidas(efetivoId())
       if (conversa) carregarMensagens(conversa)
     }, 3000)
     return () => clearInterval(interval)
-  }, [profile, conversa])
+  }, [profile, conversa, viewUserId])
+
+  // Quando admin troca a caixa visualizada, recarrega tudo a partir do alvo.
+  useEffect(() => {
+    if (!profile || profile.role !== 'admin') return
+    const alvoId = viewUserId || profile.id
+    setConversa(null)
+    setMensagens([])
+    ;(async () => {
+      // Profile do alvo (pra header etc.)
+      if (viewUserId && viewUserId !== profile.id) {
+        const { data: vp } = await supabase.from('users').select('id,nome,role,avatar_url').eq('id', viewUserId).single()
+        setViewProfile(vp)
+      } else {
+        setViewProfile(null)
+      }
+      // Lista de pessoas: todos os outros (do ponto de vista do alvo)
+      const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
+      setUsuarios((usr || []).filter(u => u.id !== alvoId))
+      // Grupos do alvo
+      const { data: g } = await supabase
+        .from('mensagens_grupo_membros').select('mensagens_grupos(id,nome,descricao,criado_em,atualizado_em)')
+        .eq('user_id', alvoId)
+      setGrupos((g || []).map((x: any) => x.mensagens_grupos).filter(Boolean)
+        .sort((a: any, b: any) => (b.atualizado_em || '').localeCompare(a.atualizado_em || '')))
+      await carregarNaoLidas(alvoId)
+    })()
+  }, [viewUserId, profile])
+
+  function efetivoId() {
+    if (profile?.role === 'admin' && viewUserId) return viewUserId
+    return profile?.id || ''
+  }
+  const somenteLeitura = profile?.role === 'admin' && !!viewUserId && viewUserId !== profile?.id
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -52,44 +89,48 @@ export default function MensagensPage() {
     setProfile(prof)
     const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
     setUsuarios((usr||[]).filter(u => u.id !== user?.id))
-    await carregarGrupos()
+    await carregarGrupos(user?.id || '')
     await carregarNaoLidas(user?.id||'')
     setLoading(false)
   }
 
-  async function carregarGrupos() {
-    const { data: g } = await supabase.from('mensagens_grupos')
-      .select('id,nome,descricao,criado_em')
-      .order('atualizado_em', { ascending: false })
-    setGrupos(g || [])
+  async function carregarGrupos(alvoId: string) {
+    // Grupos dos quais o usuário-alvo é membro
+    const { data: g } = await supabase
+      .from('mensagens_grupo_membros')
+      .select('mensagens_grupos(id,nome,descricao,criado_em,atualizado_em)')
+      .eq('user_id', alvoId)
+    setGrupos((g || []).map((x: any) => x.mensagens_grupos).filter(Boolean)
+      .sort((a: any, b: any) => (b.atualizado_em || '').localeCompare(a.atualizado_em || '')))
   }
 
   async function carregarNaoLidas(userId: string) {
-    // Mensagens diretas não lidas
+    if (!userId) { setNaoLidas({}); return }
     const { data: dir } = await supabase.from('mensagens_internas')
       .select('de_user_id,grupo_id')
       .eq('para_user_id', userId).eq('lida', false)
       .is('grupo_id', null)
     const map: Record<string,number> = {}
     ;(dir||[]).forEach(m => { map['u_'+m.de_user_id] = (map['u_'+m.de_user_id]||0)+1 })
-    // Grupos: contar mensagens não lidas em cada grupo (cuja autor não é o user)
-    // Simplificado: conta tudo desde a última visita (per-grupo cache no localStorage)
     setNaoLidas(map)
   }
 
   async function carregarMensagens(conv: Conversa) {
     if (!profile) return
+    const alvoId = efetivoId()
     let q = supabase.from('mensagens_internas').select('*,users!mensagens_internas_de_user_id_fkey(nome,avatar_url,role)').order('criado_em', { ascending: true })
     if (conv.tipo === 'grupo') {
       q = q.eq('grupo_id', conv.id)
     } else {
-      q = q.is('grupo_id', null).or(`and(de_user_id.eq.${profile.id},para_user_id.eq.${conv.id}),and(de_user_id.eq.${conv.id},para_user_id.eq.${profile.id})`)
+      q = q.is('grupo_id', null).or(`and(de_user_id.eq.${alvoId},para_user_id.eq.${conv.id}),and(de_user_id.eq.${conv.id},para_user_id.eq.${alvoId})`)
     }
     const { data } = await q
     setMensagens(data||[])
-    if (conv.tipo === 'usuario') {
+    // Marca como lida apenas quando é a própria caixa (nunca enquanto admin
+    // observa a caixa de outro usuário).
+    if (conv.tipo === 'usuario' && !somenteLeitura) {
       await supabase.from('mensagens_internas').update({ lida: true })
-        .eq('para_user_id', profile.id).eq('de_user_id', conv.id).eq('lida', false).is('grupo_id', null)
+        .eq('para_user_id', alvoId).eq('de_user_id', conv.id).eq('lida', false).is('grupo_id', null)
       setNaoLidas(prev => { const n = {...prev}; delete n['u_'+conv.id]; return n })
     }
   }
@@ -107,6 +148,7 @@ export default function MensagensPage() {
   }
 
   async function enviarMensagem() {
+    if (somenteLeitura) return
     if (!texto.trim() || !conversa || !profile) return
     setEnviando(true)
     const payload: any = { de_user_id: profile.id, conteudo: texto }
@@ -141,7 +183,7 @@ export default function MensagensPage() {
     setSalvandoGrupo(false)
     setModalGrupo(false)
     setNovoGrupoNome(''); setNovoGrupoMembros([])
-    await carregarGrupos()
+    await carregarGrupos(efetivoId())
     setAba('grupos')
   }
 
@@ -157,9 +199,24 @@ export default function MensagensPage() {
           💬 Mensagens Internas
           {totalNaoLidas>0&&<span style={{marginLeft:8,background:'var(--danger)',color:'#fff',fontSize:11,fontWeight:700,borderRadius:10,padding:'1px 7px'}}>{totalNaoLidas}</span>}
         </div>
-        <button onClick={()=>{setModalGrupo(true);setNovoGrupoNome('');setNovoGrupoMembros([])}} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
-          ➕ Novo grupo
-        </button>
+        {profile?.role === 'admin' && (
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>
+              {somenteLeitura ? '👁 Visualizando' : 'Caixa de'}
+            </span>
+            <select value={viewUserId} onChange={e=>setViewUserId(e.target.value)}
+              title="Visualizar caixa de outro usuário"
+              style={{border:'1px solid var(--border)',background:somenteLeitura?'rgba(201,168,76,0.08)':'rgba(255,255,255,0.04)',color:somenteLeitura?'var(--gold)':'var(--text)',borderRadius:8,padding:'6px 10px',fontSize:12,fontWeight:600,cursor:'pointer',outline:'none'}}>
+              <option value="">👤 Minhas mensagens</option>
+              {usuarios.filter(u => u.id !== profile?.id).map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          </div>
+        )}
+        {!somenteLeitura && (
+          <button onClick={()=>{setModalGrupo(true);setNovoGrupoNome('');setNovoGrupoMembros([])}} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
+            ➕ Novo grupo
+          </button>
+        )}
       </div>
 
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
@@ -270,6 +327,11 @@ export default function MensagensPage() {
                 <div ref={msgFimRef}/>
               </div>
 
+              {somenteLeitura ? (
+                <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',background:'rgba(201,168,76,0.06)',fontSize:12,color:'var(--gold)',textAlign:'center'}}>
+                  👁 Modo somente leitura — você está visualizando a caixa de {viewProfile?.nome || 'outro usuário'}.
+                </div>
+              ) : (
               <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',display:'flex',gap:10,alignItems:'center'}}>
                 <textarea rows={1}
                   style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:20,padding:'10px 16px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none',resize:'none'}}
@@ -283,6 +345,7 @@ export default function MensagensPage() {
                   {enviando?'⏳':'✈'}
                 </button>
               </div>
+              )}
             </>
           )}
         </div>
