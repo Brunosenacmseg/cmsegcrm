@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
 import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
+import { registrarLog } from '@/lib/logs'
 
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
@@ -34,6 +35,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config' },
+  { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', adminOnly:true },
   { href:'/dashboard/configuracoes',icon:'⚙️', label:'Configurações', section:'Config', adminOnly:true },
 ]
 
@@ -102,6 +104,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [profile, pathname, router])
 
+  // Registra navegação do usuário (auditoria). Usa o label do NAV quando
+  // possível para que o log fique legível no painel de admin.
+  useEffect(() => {
+    if (!user || !pathname) return
+    const item = NAV.find(it => pathname === it.href || (it.href !== '/dashboard' && pathname.startsWith(it.href)))
+    registrarLog({
+      acao: 'page_view',
+      recurso: item?.label || pathname,
+      pathname,
+    })
+  }, [user, pathname])
+
   async function carregarProfile(userId: string) {
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
@@ -142,6 +156,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   async function logout() {
+    await registrarLog({ acao: 'logout' })
     await supabase.auth.signOut()
     window.location.replace('/login')
   }
