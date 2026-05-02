@@ -21,6 +21,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/metas',        icon:'🎯', label:'Metas' },
   { href:'/dashboard/renovacoes',   icon:'🔄', label:'Renovações' },
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
+  { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique' },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
   { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE' },
   { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar' },
@@ -30,7 +31,6 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/integracoes/meta', icon:'🔗', label:'Conectar Meta', adminOnly:true },
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
   { href:'/dashboard/automacoes',   icon:'⚡', label:'Automações', adminOnly:true },
-  { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique' },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config' },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
@@ -97,7 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // (caso contrário gera React error #310 — hooks chamados condicionalmente).
   useEffect(() => {
     if (!profile) return
-    const isAdminUser = profile.role === 'admin'
+    const isAdminUser = profile.role === 'admin' || profile.role === 'financeiro'
     const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
     if (rotaAdmin && !isAdminUser) {
       router.replace('/dashboard')
@@ -120,7 +120,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
     // Acesso ao módulo financeiro: admin sempre tem; demais via financeiro_acessos
-    if (data?.role === 'admin') {
+    if (data?.role === 'admin' || data?.role === 'financeiro') {
       setTemAcessoFin(true)
     } else {
       const { data: ac } = await supabase.from('financeiro_acessos').select('user_id').eq('user_id', userId).maybeSingle()
@@ -183,7 +183,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   let lastSection = ''
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'financeiro'
   const navVisible = NAV.filter(item => {
     if (item.adminOnly && !isAdmin) return false
     // Financeiro só pra quem tem permissão

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 
-export type UserRole = 'admin' | 'lider' | 'corretor'
+export type UserRole = 'admin' | 'lider' | 'corretor' | 'financeiro'
 
 export interface UserProfile {
   id: string
@@ -29,8 +29,8 @@ export async function getVisibleUserIds(): Promise<string[] | null> {
   const profile = await getUserProfile()
   if (!profile) return null
 
-  // Admin vê todos
-  if (profile.role === 'admin') return null // null = sem filtro
+  // Admin e Financeiro veem todos
+  if (profile.role === 'admin' || profile.role === 'financeiro') return null // null = sem filtro
 
   // Líder vê próprio + equipe
   if (profile.role === 'lider') {
