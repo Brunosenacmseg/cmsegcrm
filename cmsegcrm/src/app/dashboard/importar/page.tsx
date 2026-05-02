@@ -269,52 +269,78 @@ export default function ImportarPage() {
       return novo
     })
 
-    // Manda em lotes de 50 pra evitar timeout do Vercel (~60s no Hobby).
-    // Backend faz batch insert + lookup unificado, entao 50 rodam em <5s.
-    const TAMANHO_LOTE = 50
+    // Lote 200 pra reduzir total de requests (76k -> 380 lotes em vez de 1520).
+    // Backend faz batch insert + lookup unificado, entao 200 rodam em ~10-20s
+    // (folga confortavel sob o teto de 60s do Vercel Hobby).
+    const TAMANHO_LOTE = 200
     const totalLotes = Math.ceil(linhas.length / TAMANHO_LOTE)
     const acc = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
     let falhouTudo = false
 
-    for (let i = 0; i < linhas.length; i += TAMANHO_LOTE) {
-      const lote = linhas.slice(i, i + TAMANHO_LOTE)
-      const numLote = Math.floor(i / TAMANHO_LOTE) + 1
-      setResultado({ ...acc, _progresso: `Lote ${numLote}/${totalLotes} — ${i + lote.length}/${linhas.length} linhas` })
+    async function getHeaders() {
+      // Refresh session se ja expirou (sessoes Supabase duram ~1h por padrao)
+      const { data: { session } } = await supabase.auth.getSession()
+      const expiresAt = (session?.expires_at || 0) * 1000
+      if (expiresAt && expiresAt - Date.now() < 60_000) {
+        await supabase.auth.refreshSession()
+      }
+      return await authHeaders()
+    }
+
+    async function enviarLote(lote: any[], numLote: number, tentativa = 1): Promise<any> {
       try {
         const r = await fetch('/api/importar', {
           method: 'POST',
-          headers: await authHeaders(),
+          headers: await getHeaders(),
           body: JSON.stringify({ entidade, linhas: lote, nome_arquivo: nomeArquivo, formato }),
         })
         const txt = await r.text()
         let j: any
         try { j = JSON.parse(txt) }
         catch {
-          // Vercel devolve HTML em timeout / 500. Tenta detectar.
+          if (tentativa < 3) {
+            await new Promise(res => setTimeout(res, 1500 * tentativa))
+            return enviarLote(lote, numLote, tentativa + 1)
+          }
           const ehTimeout = /timeout|504|gateway|an error o/i.test(txt)
-          acc.qtd_erros += lote.length
-          acc.erros.push(ehTimeout
-            ? `Lote ${numLote}: timeout do servidor (lote grande). Tente arquivos menores.`
-            : `Lote ${numLote}: resposta inválida (${txt.slice(0, 80)})`
-          )
-          if (acc.erros.length > 30) acc.erros = acc.erros.slice(0, 30)
-          continue
+          return { _erroFatal: ehTimeout
+            ? `Lote ${numLote}: timeout do servidor.`
+            : `Lote ${numLote}: resposta inválida (${txt.slice(0, 80)})` }
         }
         if (!r.ok) {
-          acc.qtd_erros += lote.length
-          acc.erros.push(`Lote ${numLote}: ${j.error || 'erro'}`)
-          continue
+          if ((r.status === 401 || r.status === 429 || r.status >= 500) && tentativa < 3) {
+            await new Promise(res => setTimeout(res, 1500 * tentativa))
+            return enviarLote(lote, numLote, tentativa + 1)
+          }
+          return { _erroFatal: `Lote ${numLote}: ${j.error || 'erro'}` }
         }
-        const s = j.stats || {}
-        acc.qtd_lidos      += s.qtd_lidos      || lote.length
-        acc.qtd_criados    += s.qtd_criados    || 0
-        acc.qtd_atualizados+= s.qtd_atualizados|| 0
-        acc.qtd_erros      += s.qtd_erros      || 0
-        if (s.erros) acc.erros = [...acc.erros, ...s.erros].slice(0, 30)
+        return j
       } catch (e: any) {
-        acc.qtd_erros += lote.length
-        acc.erros.push(`Lote ${numLote}: ${e.message}`)
+        if (tentativa < 3) {
+          await new Promise(res => setTimeout(res, 1500 * tentativa))
+          return enviarLote(lote, numLote, tentativa + 1)
+        }
+        return { _erroFatal: `Lote ${numLote}: ${e.message}` }
       }
+    }
+
+    for (let i = 0; i < linhas.length; i += TAMANHO_LOTE) {
+      const lote = linhas.slice(i, i + TAMANHO_LOTE)
+      const numLote = Math.floor(i / TAMANHO_LOTE) + 1
+      setResultado({ ...acc, _progresso: `Lote ${numLote}/${totalLotes} — ${i + lote.length}/${linhas.length} linhas` })
+      const j = await enviarLote(lote, numLote)
+      if (j._erroFatal) {
+        acc.qtd_erros += lote.length
+        acc.erros.push(j._erroFatal)
+        if (acc.erros.length > 30) acc.erros = acc.erros.slice(0, 30)
+        continue
+      }
+      const s = j.stats || {}
+      acc.qtd_lidos      += s.qtd_lidos      || lote.length
+      acc.qtd_criados    += s.qtd_criados    || 0
+      acc.qtd_atualizados+= s.qtd_atualizados|| 0
+      acc.qtd_erros      += s.qtd_erros      || 0
+      if (s.erros) acc.erros = [...acc.erros, ...s.erros].slice(0, 30)
     }
 
     setResultado(acc)
