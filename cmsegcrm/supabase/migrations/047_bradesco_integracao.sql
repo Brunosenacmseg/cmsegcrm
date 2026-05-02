@@ -94,6 +94,16 @@ create table if not exists public.endossos (
 );
 create unique index if not exists ux_endossos_seg_num on public.endossos(seguradora, numero_endosso);
 
+alter table public.endossos enable row level security;
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename='endossos' and policyname='autenticados leem endossos') then
+    create policy "autenticados leem endossos" on public.endossos for select using (auth.role() = 'authenticated');
+  end if;
+  if not exists (select 1 from pg_policies where tablename='endossos' and policyname='autenticados escrevem endossos') then
+    create policy "autenticados escrevem endossos" on public.endossos for all using (auth.role() = 'authenticated');
+  end if;
+end $$;
+
 -- Campos auxiliares em apólices
 alter table public.apolices
   add column if not exists nome_segurado     text,
