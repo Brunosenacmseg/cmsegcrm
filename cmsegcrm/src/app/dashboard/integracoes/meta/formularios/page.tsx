@@ -119,11 +119,17 @@ export default function FormulariosMetaPage() {
       setForms(prev => prev.map(x => x.form_id === form.form_id ? { ...x, mapeamento: novo } : x))
     } finally { setSalvando(null) }
   }
-  function mapearCampo(form: Form, formKey: string, clienteCol: string) {
+  function mapearCampo(form: Form, formKey: string, alvo: 'cliente'|'negocio', valor: string) {
     const m = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {} }
-    const cm = { ...(m.campo_map || {}) }
-    if (clienteCol) cm[formKey] = clienteCol
-    else delete cm[formKey]
+    const cm: Record<string, any> = { ...(m.campo_map || {}) }
+    // Migração soft: se valor era string (legado), promove pra objeto { cliente: ... }
+    let entry: any = cm[formKey]
+    if (typeof entry === 'string') entry = { cliente: entry }
+    if (!entry || typeof entry !== 'object') entry = {}
+    if (valor) entry[alvo] = valor
+    else delete entry[alvo]
+    if (Object.keys(entry).length === 0) delete cm[formKey]
+    else cm[formKey] = entry
     salvarMapeamento(form, { campo_map: cm })
   }
 
@@ -256,38 +262,50 @@ export default function FormulariosMetaPage() {
                   {form.questions && form.questions.length > 0 && (
                     <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
                       <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>
-                        Mapeamento de campos do formulário
+                        Mapeamento de campos
                       </div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      <div style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr 1fr',gap:6,fontSize:10,color:'var(--text-muted)',padding:'4px 8px',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                        <div>Campo do formulário</div>
+                        <div>→ Cliente</div>
+                        <div>→ Negociação</div>
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
                         {form.questions.map(q => {
-                          const valorMap = (m?.campo_map || {})[q.key] || ''
+                          const entry: any = (m?.campo_map || {})[q.key]
+                          const vCli = typeof entry === 'string' ? entry : (entry?.cliente || '')
+                          const vNeg = typeof entry === 'string' ? '' : (entry?.negocio || '')
                           return (
-                            <div key={q.key} style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.03)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
-                              <div style={{flex:1,minWidth:0,fontSize:11}}>
-                                <div style={{fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={q.label || q.key}>
+                            <div key={q.key} style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr 1fr',gap:6,alignItems:'center',background:'rgba(255,255,255,0.03)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
+                              <div style={{minWidth:0,fontSize:11}}>
+                                <div style={{fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color:'#1a1a2e'}} title={q.label || q.key}>
                                   {q.label || q.key}
                                 </div>
                                 <div style={{color:'var(--text-muted)',fontSize:10,fontFamily:'monospace'}}>{q.key}</div>
                               </div>
-                              <span style={{fontSize:11,color:'var(--text-muted)'}}>→</span>
-                              <select value={valorMap} onChange={e=>mapearCampo(form, q.key, e.target.value)}
-                                style={{...sel,width:'auto',minWidth:200,padding:'4px 6px',fontSize:11}}>
+
+                              <select value={vCli} onChange={e=>mapearCampo(form, q.key, 'cliente', e.target.value)}
+                                style={{...sel,padding:'4px 6px',fontSize:11}}>
                                 <option value="">— ignorar —</option>
-                                <optgroup label="Cliente — campos padrão">
+                                <optgroup label="Padrão">
                                   {COLS_CLIENTE_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
                                 </optgroup>
                                 {customFields.filter(cf => cf.entidade === 'cliente').length > 0 && (
-                                  <optgroup label="Cliente — campos personalizados">
+                                  <optgroup label="Personalizados">
                                     {customFields.filter(cf => cf.entidade === 'cliente').map(cf =>
                                       <option key={cf.chave} value={`cliente_cf:${cf.chave}`}>{cf.nome}</option>
                                     )}
                                   </optgroup>
                                 )}
-                                <optgroup label="Negociação — campos padrão">
+                              </select>
+
+                              <select value={vNeg} onChange={e=>mapearCampo(form, q.key, 'negocio', e.target.value)}
+                                style={{...sel,padding:'4px 6px',fontSize:11}}>
+                                <option value="">— ignorar —</option>
+                                <optgroup label="Padrão">
                                   {COLS_NEGOCIO_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
                                 </optgroup>
                                 {customFields.filter(cf => cf.entidade === 'negocio').length > 0 && (
-                                  <optgroup label="Negociação — campos personalizados">
+                                  <optgroup label="Personalizados">
                                     {customFields.filter(cf => cf.entidade === 'negocio').map(cf =>
                                       <option key={cf.chave} value={`negocio_cf:${cf.chave}`}>{cf.nome}</option>
                                     )}

@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
           .select('*').eq('form_id', String(linha.form_id)).maybeSingle()
         if (m && m.ativo !== false) mapping = m
       }
-      const campoMap: Record<string, string> = (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
+      const campoMap: Record<string, any> = (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
 
       // Extrai campos do field_data
       const campos = Array.isArray(linha.campos) ? linha.campos : []
@@ -123,16 +123,24 @@ export async function POST(req: NextRequest) {
       const cliCustom: Record<string, any> = {}
       const negBase: Record<string, any> = {}
       const negCustom: Record<string, any> = {}
-      for (const [formKey, target] of Object.entries(campoMap)) {
-        if (!target) continue
-        const v = valorPorKey[formKey]
-        if (!v) continue
+      const aplicar = (target: any, v: string) => {
+        if (!target) return
         const t = String(target)
         if (t.startsWith('cliente_cf:'))      cliCustom[t.slice(11)] = v
         else if (t.startsWith('cliente:'))    cliBase[t.slice(8)]    = v
         else if (t.startsWith('negocio_cf:')) negCustom[t.slice(11)] = v
         else if (t.startsWith('negocio:'))    negBase[t.slice(8)]    = v
-        else                                   cliBase[t]             = v // legado
+        else                                   cliBase[t]             = v // legado plano
+      }
+      for (const [formKey, target] of Object.entries(campoMap)) {
+        const v = valorPorKey[formKey]
+        if (!v) continue
+        if (typeof target === 'string') {
+          aplicar(target, v)
+        } else if (target && typeof target === 'object') {
+          aplicar((target as any).cliente, v)
+          aplicar((target as any).negocio, v)
+        }
       }
       // Garante os campos básicos (heurística como fallback)
       const nome     = cliBase.nome     || heur('full_name', 'nome', 'name')
