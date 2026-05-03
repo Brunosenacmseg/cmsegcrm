@@ -675,15 +675,16 @@ function FunisPage() {
     const r1 = await fetch('/api/funis/normalize', { method:'POST', headers, body: JSON.stringify({ dryRun:true }) })
     const j1 = await r1.json()
     if (!r1.ok) { alert('Erro ao analisar: ' + (j1.error || 'falha')); return }
-    if ((j1.grupos_duplicados || 0) === 0) { alert('Nenhum funil duplicado encontrado.'); return }
-    const resumo = (j1.detalhes || []).map((a:any) =>
-      `• "${a.keeper.nome}" — manter (${a.keeper.cards} cards) + unificar ${a.duplicatas.length} duplicata(s) (${a.duplicatas.reduce((s:number,d:any)=>s+d.cards,0)} cards a mover)`
+    if ((j1.grupos_duplicados || 0) === 0) { alert('Nenhuma negociação duplicada encontrada.'); return }
+    const resumo = (j1.detalhes || []).slice(0, 15).map((a:any) =>
+      `• "${a.titulo}" — manter 1 + unificar ${a.duplicatas.length} duplicata(s)`
     ).join('\n')
-    if (!confirm(`Encontrados ${j1.grupos_duplicados} grupo(s) de funis duplicados:\n\n${resumo}\n\nIsto NÃO pode ser desfeito. Confirmar?`)) return
+    const extra = (j1.detalhes || []).length > 15 ? `\n... e mais ${(j1.detalhes||[]).length - 15} grupo(s)` : ''
+    if (!confirm(`Encontrados ${j1.grupos_duplicados} grupo(s) de negociações duplicadas (${j1.negocios_apagados} a remover):\n\n${resumo}${extra}\n\nHistórico, tarefas, comissões e anexos serão transferidos. Isto NÃO pode ser desfeito. Confirmar?`)) return
     const r2 = await fetch('/api/funis/normalize', { method:'POST', headers, body: JSON.stringify({ dryRun:false }) })
     const j2 = await r2.json()
     if (!r2.ok) { alert('Erro ao normalizar: ' + (j2.error || 'falha')); return }
-    alert(`✓ Normalização concluída.\n${j2.funis_apagados} funil(is) apagado(s).\n${j2.cards_movidos} card(s) movido(s).`)
+    alert(`✓ Normalização concluída.\n${j2.negocios_apagados} negociação(ões) duplicada(s) removida(s).`)
     window.location.reload()
   }
 
@@ -849,8 +850,8 @@ function FunisPage() {
           <>
             <button onClick={normalizarFunis}
               style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
-              title="Encontra funis com nome duplicado e unifica em um só (admin)">
-              🧹 Normalizar
+              title="Encontra negociações duplicadas (mesmo cliente, mesmo funil, mesmo título) e unifica em uma só (admin)">
+              🧹 Normalizar negociações
             </button>
             <button onClick={()=>router.push('/dashboard/funis/configurar')}
               style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
