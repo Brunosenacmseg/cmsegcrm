@@ -103,7 +103,7 @@ export default function HdiPage() {
     if (session?.access_token) h['Authorization'] = `Bearer ${session.access_token}`
     return h
   }
-  async function bearerOnly() {
+  async function bearerOnly(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession()
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
   }
