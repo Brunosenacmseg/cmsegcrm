@@ -166,7 +166,14 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin().from('clientes').update(upd).eq('id', clienteId)
       }
 
-      let vendedorId: string | null = mapping?.vendedor_id || null
+      // Define vendedor: round-robin se houver vendedor_ids, senão fixo
+      let vendedorId: string | null = null
+      if (mapping?.vendedor_ids && Array.isArray(mapping.vendedor_ids) && mapping.vendedor_ids.length > 0) {
+        const { data: rr } = await supabaseAdmin().rpc('meta_proximo_vendedor', { p_form_id: String(linha.form_id) })
+        vendedorId = (rr as any) || mapping.vendedor_ids[0]
+      } else {
+        vendedorId = mapping?.vendedor_id || null
+      }
 
       // Cria negócio se: temos cliente E (mapping permite OU não há mapping)
       let negocioId: string | null = null
