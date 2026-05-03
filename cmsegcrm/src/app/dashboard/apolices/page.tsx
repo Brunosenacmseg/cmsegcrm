@@ -22,6 +22,11 @@ export default function ApolicesPage() {
   const [detForm,  setDetForm]  = useState<any>({})
   const [detSalvando, setDetSalvando] = useState(false)
 
+  // Importação/Exportação HDI
+  const pdfInputRef = (typeof window !== 'undefined') ? (globalThis as any).__hdiPdfRef ||= { current: null as HTMLInputElement | null } : { current: null }
+  const [hdiPdfTarget, setHdiPdfTarget] = useState<any|null>(null)   // negócio alvo do upload de PDF
+  const [hdiBusy, setHdiBusy] = useState<string|null>(null)          // id do negócio em operação
+
   // Lançamento de comissão recebida (admin)
   const [comModal, setComModal] = useState<any|null>(null)
   const hojeIso = new Date().toISOString().slice(0,10)
@@ -149,6 +154,50 @@ export default function ApolicesPage() {
     if (error) { alert('Erro ao lançar: '+error.message); return }
     setComModal(null)
     alert('Comissão lançada com sucesso. Aparecerá no extrato de '+(comModal.users?.nome||'do vendedor')+'.')
+  }
+
+  async function exportarHDI(neg: any) {
+    setHdiBusy(neg.id)
+    try {
+      const { data: apo } = await supabase.from('apolices').select('id, susep_corretor').eq('negocio_id', neg.id).maybeSingle()
+      if (!apo) { alert('Esta apólice ainda não foi cadastrada — abra "Detalhes" e salve antes de exportar.'); return }
+      const susep = apo.susep_corretor || prompt('Informe o código SUSEP do corretor (9 dígitos):') || ''
+      if (!susep) return
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/integracoes/hdi/export?ids=${apo.id}&susep=${encodeURIComponent(susep)}`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      })
+      if (!res.ok) { alert('Erro: '+(await res.text())); return }
+      const blob = await res.blob()
+      const cd = res.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="([^"]+)"/)
+      const filename = m?.[1] || `C${susep.replace(/\D/g,'').padStart(9,'0').slice(-9)}.txt`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+    } finally { setHdiBusy(null) }
+  }
+
+  async function importarPDF(neg: any, file: File) {
+    setHdiBusy(neg.id)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      // se já existe apólice ligada ao negócio, vincula a ela; senão cria
+      const { data: apo } = await supabase.from('apolices').select('id').eq('negocio_id', neg.id).maybeSingle()
+      if (apo) fd.append('apolice_id', apo.id)
+      else     fd.append('negocio_id', neg.id)
+      if (neg.numero) fd.append('numero', neg.numero)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/integracoes/hdi/import-pdf', {
+        method: 'POST', body: fd,
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      })
+      const j = await res.json()
+      if (!res.ok) { alert('Erro: '+(j.erro||res.statusText)); return }
+      alert('PDF anexado à apólice com sucesso.')
+      carregar()
+    } finally { setHdiBusy(null); setHdiPdfTarget(null) }
   }
 
   const ramos       = [...new Set(negocios.map((n:any)=>(n.produto||'').split(' — ')[0]).filter(Boolean))]
@@ -290,6 +339,18 @@ export default function ApolicesPage() {
                           style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
                           📝 Detalhes
                         </button>
+                        <button onClick={()=>{ setHdiPdfTarget(n); setTimeout(()=>pdfInputRef.current?.click(),0) }}
+                          title="Anexar PDF da apólice (sincroniza com o registro)"
+                          disabled={hdiBusy===n.id}
+                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(120,140,200,0.4)',background:'rgba(120,140,200,0.10)',color:'#5b6cb0',cursor:hdiBusy===n.id?'wait':'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                          📎 PDF
+                        </button>
+                        <button onClick={()=>exportarHDI(n)}
+                          title="Exportar arquivo HDI (.txt)"
+                          disabled={hdiBusy===n.id}
+                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(180,120,60,0.4)',background:'rgba(180,120,60,0.10)',color:'#a86a2a',cursor:hdiBusy===n.id?'wait':'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                          📤 HDI
+                        </button>
                         <button onClick={()=>abrirComissao(n)}
                           title={n.vendedor_id?'Lançar comissão recebida':'Atribua um vendedor antes'}
                           disabled={!n.vendedor_id}
@@ -309,6 +370,10 @@ export default function ApolicesPage() {
           )}
         </div>
       </div>
+
+      {/* Input oculto para upload de PDF (HDI) */}
+      <input ref={(el)=>{pdfInputRef.current=el}} type="file" accept=".pdf,application/pdf" style={{display:'none'}}
+        onChange={e=>{ const f=e.target.files?.[0]; if(f && hdiPdfTarget) importarPDF(hdiPdfTarget,f); e.currentTarget.value='' }} />
 
       {/* Modal Editar Detalhes da Apólice */}
       {detModal && (
