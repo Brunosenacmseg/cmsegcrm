@@ -127,6 +127,16 @@ export default function TokioPage() {
             <button onClick={testarLogin} disabled={processando} style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
               🔐 Testar Login WS
             </button>
+            <button onClick={async ()=>{
+              setProcessando(true); setResultado(null)
+              try {
+                const r = await fetch('/api/tokio/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'descobrir_login' }) })
+                const d = await r.json()
+                setResultado({ ok: true, configCheck: d })
+              } finally { setProcessando(false) }
+            }} disabled={processando} style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+              🧭 Descobrir Login
+            </button>
             <button onClick={testarConfig} style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
               🔍 Testar Config
             </button>

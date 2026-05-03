@@ -4,14 +4,16 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 const MODELOS = [
-  { id: 'claude-opus-4-7',     nome: 'Claude Opus 4.7 — máxima qualidade' },
-  { id: 'claude-sonnet-4-6',   nome: 'Claude Sonnet 4.6 — equilíbrio (recomendado)' },
-  { id: 'claude-haiku-4-5-20251001', nome: 'Claude Haiku 4.5 — rápido e barato' },
+  { id: 'gpt-4o',      nome: 'GPT-4o — máxima qualidade' },
+  { id: 'gpt-4o-mini', nome: 'GPT-4o mini — equilíbrio (recomendado)' },
+  { id: 'gpt-4-turbo', nome: 'GPT-4 Turbo' },
+  { id: 'gpt-3.5-turbo', nome: 'GPT-3.5 Turbo — rápido e barato' },
 ]
 
 const empty = {
-  nome: '', descricao: '', modelo: 'claude-sonnet-4-6',
-  system_prompt: '', temperatura: '0.7', max_tokens: '1024', ativo: true,
+  nome: '', descricao: '', modelo: 'gpt-4o-mini',
+  system_prompt: '', base_conhecimento: '',
+  temperatura: '0.7', max_tokens: '1024', ativo: true,
 }
 
 export default function AgentesIAPage() {
@@ -24,6 +26,7 @@ export default function AgentesIAPage() {
   const [modal, setModal] = useState(false)
   const [editando, setEditando] = useState<any>(null)
   const [form, setForm] = useState<any>(empty)
+  const [aba, setAba] = useState<'geral'|'comportamento'|'conhecimento'>('geral')
 
   // Teste rápido
   const [testando, setTestando] = useState<string | null>(null)
@@ -54,6 +57,7 @@ export default function AgentesIAPage() {
       descricao: form.descricao || null,
       modelo: form.modelo,
       system_prompt: form.system_prompt,
+      base_conhecimento: form.base_conhecimento || null,
       temperatura: parseFloat(form.temperatura) || 0.7,
       max_tokens: parseInt(form.max_tokens) || 1024,
       ativo: !!form.ativo,
@@ -104,12 +108,12 @@ export default function AgentesIAPage() {
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)'}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>🤖 Agentes de IA</div>
-        <button onClick={()=>{setEditando(null);setForm(empty);setModal(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>+ Novo agente</button>
+        <button onClick={()=>{setEditando(null);setForm(empty);setAba('geral');setModal(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>+ Novo agente</button>
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
         <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:18,maxWidth:780}}>
-          Crie agentes com prompts personalizados (Claude). Depois, no módulo WhatsApp,
+          Crie agentes com prompts personalizados (ChatGPT). Depois, no módulo WhatsApp,
           você pode ativar um agente em cada instância — o agente vai responder
           automaticamente as mensagens recebidas usando o prompt que você definir.
         </div>
@@ -118,7 +122,7 @@ export default function AgentesIAPage() {
           <div className="card" style={{textAlign:'center',padding:'40px 20px',color:'var(--text-muted)'}}>
             <div style={{fontSize:40,marginBottom:12}}>🤖</div>
             <div style={{marginBottom:12}}>Nenhum agente criado ainda.</div>
-            <button onClick={()=>{setEditando(null);setForm(empty);setModal(true)}} className="btn-primary">+ Criar primeiro agente</button>
+            <button onClick={()=>{setEditando(null);setForm(empty);setAba('geral');setModal(true)}} className="btn-primary">+ Criar primeiro agente</button>
           </div>
         ) : (
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(360px, 1fr))',gap:18}}>
@@ -164,9 +168,11 @@ export default function AgentesIAPage() {
                     setForm({
                       nome: a.nome, descricao: a.descricao||'', modelo: a.modelo,
                       system_prompt: a.system_prompt,
+                      base_conhecimento: a.base_conhecimento || '',
                       temperatura: String(a.temperatura), max_tokens: String(a.max_tokens),
                       ativo: a.ativo,
                     })
+                    setAba('geral')
                     setModal(true)
                   }} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>✎ Editar</button>
                   <button onClick={()=>excluir(a.id, a.nome)}
@@ -186,53 +192,82 @@ export default function AgentesIAPage() {
               {editando ? '✎ Editar agente' : '🤖 Novo agente de IA'}
             </div>
 
-            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12,marginBottom:14}}>
-              <div>
-                <label style={lbl}>Nome *</label>
-                <input value={form.nome} onChange={e=>setForm((f:any)=>({...f,nome:e.target.value}))} placeholder="Ex: Atendente WhatsApp" style={inp} autoFocus />
-              </div>
-              <div>
-                <label style={lbl}>Modelo *</label>
-                <select value={form.modelo} onChange={e=>setForm((f:any)=>({...f,modelo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
-                  {MODELOS.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-                </select>
-              </div>
+            <div style={{display:'flex',gap:4,borderBottom:'1px solid var(--border)',marginBottom:18}}>
+              {([
+                ['geral','Geral'],
+                ['comportamento','Comportamento'],
+                ['conhecimento','Base de conhecimento'],
+              ] as const).map(([id,label])=>(
+                <button key={id} onClick={()=>setAba(id)}
+                  style={{padding:'9px 16px',fontSize:12,fontWeight:600,letterSpacing:'0.5px',border:'none',background:'transparent',cursor:'pointer',color:aba===id?'var(--gold)':'var(--text-muted)',borderBottom:'2px solid '+(aba===id?'var(--gold)':'transparent'),marginBottom:-1}}>
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <div style={{marginBottom:14}}>
-              <label style={lbl}>Descrição (interna)</label>
-              <input value={form.descricao} onChange={e=>setForm((f:any)=>({...f,descricao:e.target.value}))} placeholder="Para que esse agente é usado" style={inp} />
-            </div>
+            {aba==='geral' && (<>
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12,marginBottom:14}}>
+                <div>
+                  <label style={lbl}>Nome *</label>
+                  <input value={form.nome} onChange={e=>setForm((f:any)=>({...f,nome:e.target.value}))} placeholder="Ex: Atendente WhatsApp" style={inp} autoFocus />
+                </div>
+                <div>
+                  <label style={lbl}>Modelo *</label>
+                  <select value={form.modelo} onChange={e=>setForm((f:any)=>({...f,modelo:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                    {MODELOS.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  </select>
+                </div>
+              </div>
 
-            <div style={{marginBottom:14}}>
-              <label style={lbl}>Prompt do sistema *</label>
-              <textarea value={form.system_prompt} onChange={e=>setForm((f:any)=>({...f,system_prompt:e.target.value}))} rows={10}
-                placeholder="Você é uma atendente da CM.seg... Responda em português do Brasil... Sempre confirme dados antes de tomar ações."
-                style={{...inp,resize:'vertical',fontFamily:'monospace',fontSize:12,lineHeight:1.5}} />
-              <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
-                Esse prompt define o comportamento da IA. Seja específico sobre tom, limites, e o que NÃO fazer.
+              <div style={{marginBottom:14}}>
+                <label style={lbl}>Descrição (interna)</label>
+                <input value={form.descricao} onChange={e=>setForm((f:any)=>({...f,descricao:e.target.value}))} placeholder="Para que esse agente é usado" style={inp} />
               </div>
-            </div>
 
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:18}}>
-              <div>
-                <label style={lbl}>Temperatura</label>
-                <input type="number" min={0} max={1} step={0.1} value={form.temperatura} onChange={e=>setForm((f:any)=>({...f,temperatura:e.target.value}))} style={inp} />
-                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>0 = direto, 1 = criativo</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:18}}>
+                <div>
+                  <label style={lbl}>Temperatura</label>
+                  <input type="number" min={0} max={1} step={0.1} value={form.temperatura} onChange={e=>setForm((f:any)=>({...f,temperatura:e.target.value}))} style={inp} />
+                  <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>0 = direto, 1 = criativo</div>
+                </div>
+                <div>
+                  <label style={lbl}>Max tokens</label>
+                  <input type="number" min={64} max={8192} step={64} value={form.max_tokens} onChange={e=>setForm((f:any)=>({...f,max_tokens:e.target.value}))} style={inp} />
+                  <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>~250 chars/100 tokens</div>
+                </div>
+                <div>
+                  <label style={lbl}>Status</label>
+                  <label style={{display:'flex',alignItems:'center',gap:8,marginTop:8,cursor:'pointer',fontSize:13}}>
+                    <input type="checkbox" checked={!!form.ativo} onChange={e=>setForm((f:any)=>({...f,ativo:e.target.checked}))} style={{accentColor:'var(--teal)'}} />
+                    Ativo
+                  </label>
+                </div>
               </div>
-              <div>
-                <label style={lbl}>Max tokens</label>
-                <input type="number" min={64} max={8192} step={64} value={form.max_tokens} onChange={e=>setForm((f:any)=>({...f,max_tokens:e.target.value}))} style={inp} />
-                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>~250 chars/100 tokens</div>
+            </>)}
+
+            {aba==='comportamento' && (
+              <div style={{marginBottom:18}}>
+                <label style={lbl}>Comportamento (prompt do sistema) *</label>
+                <textarea value={form.system_prompt} onChange={e=>setForm((f:any)=>({...f,system_prompt:e.target.value}))} rows={16}
+                  placeholder="Você é uma atendente da CM.seg... Responda em português do Brasil... Tom de voz: cordial e objetivo. Sempre confirme dados antes de tomar ações. Nunca invente preços."
+                  style={{...inp,resize:'vertical',fontFamily:'monospace',fontSize:12,lineHeight:1.5}} />
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:6}}>
+                  Defina quem é o agente, tom de voz, regras, limites e o que NÃO fazer.
+                </div>
               </div>
-              <div>
-                <label style={lbl}>Status</label>
-                <label style={{display:'flex',alignItems:'center',gap:8,marginTop:8,cursor:'pointer',fontSize:13}}>
-                  <input type="checkbox" checked={!!form.ativo} onChange={e=>setForm((f:any)=>({...f,ativo:e.target.checked}))} style={{accentColor:'var(--teal)'}} />
-                  Ativo
-                </label>
+            )}
+
+            {aba==='conhecimento' && (
+              <div style={{marginBottom:18}}>
+                <label style={lbl}>Base de conhecimento</label>
+                <textarea value={form.base_conhecimento} onChange={e=>setForm((f:any)=>({...f,base_conhecimento:e.target.value}))} rows={16}
+                  placeholder={'Cole aqui informações que o agente deve usar como referência:\n\n- Tabelas de produtos\n- FAQs\n- Procedimentos internos\n- Scripts de atendimento\n- Endereços, telefones, horários...'}
+                  style={{...inp,resize:'vertical',fontFamily:'monospace',fontSize:12,lineHeight:1.5}} />
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:6}}>
+                  Esse texto é anexado ao prompt como contexto de consulta. Quanto mais específico, melhor.
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn-secondary" onClick={()=>setModal(false)}>Cancelar</button>
