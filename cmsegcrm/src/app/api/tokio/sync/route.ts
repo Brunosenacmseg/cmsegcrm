@@ -670,18 +670,25 @@ export async function POST(request: NextRequest) {
       if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
         return NextResponse.json({ error: 'Credenciais incompletas' }, { status: 400 })
       }
+      // /Corretor/Login retornou 404 da aplicação real (Spring Boot) ↑
+      // → o WAF aceita /Corretor/*, mas o endpoint específico tem outro nome.
+      // Variações comuns no Tokio + Spring Boot REST.
       const candidatos = [
-        '/login', '/Login',
-        '/Corretor/Login', '/corretor/login',
-        '/auth/login', '/Auth/Login',
-        '/autenticacao/login',
-        '/usuario/login', '/Usuario/Login',
+        '/Corretor/login', '/Corretor/autenticar', '/Corretor/auth',
+        '/Corretor/token', '/Corretor/getToken', '/Corretor/gerarToken',
+        '/Corretor/Authenticate', '/Corretor/Autenticacao',
+        '/Corretor/Acessar', '/Corretor/acessar',
+        '/Corretor/Sessao', '/Corretor/sessao',
+        '/Corretor', '/Corretor/Corretor',
+        '/Corretor/getApolice',  // se ele responde 401 dá pra deduzir o endpoint de auth
       ]
       const bodies = [
         { user: TOKIO_USER, password: TOKIO_PASSWORD, serviceKey: TOKIO_SERVICE_KEY },
         { usuario: TOKIO_USER, senha: TOKIO_PASSWORD, serviceKey: TOKIO_SERVICE_KEY },
         { login: TOKIO_USER, senha: TOKIO_PASSWORD, chave: TOKIO_SERVICE_KEY },
         { username: TOKIO_USER, password: TOKIO_PASSWORD, apiKey: TOKIO_SERVICE_KEY },
+        // Variação onde só user+password vão no body, serviceKey vai como header
+        { user: TOKIO_USER, password: TOKIO_PASSWORD },
       ]
       const tentativas: any[] = []
       for (const path of candidatos) {
@@ -700,6 +707,11 @@ export async function POST(request: NextRequest) {
                 ...BROWSER_HEADERS,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
+                // serviceKey muitas vezes vai como header em vez do body
+                'serviceKey':   TOKIO_SERVICE_KEY,
+                'service-key':  TOKIO_SERVICE_KEY,
+                'X-Service-Key': TOKIO_SERVICE_KEY,
+                'Authorization': `Bearer ${TOKIO_SERVICE_KEY}`,
                 ...(cookieJar ? { 'Cookie': cookieJar } : {}),
               },
               body: JSON.stringify(body),
