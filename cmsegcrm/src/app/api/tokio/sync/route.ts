@@ -23,14 +23,54 @@ const TOKIO_SERVICE_KEY = process.env.TOKIO_SERVICE_KEY || ''
 // Cache simples do token (vive por instância da Lambda)
 let tokenCache: { token: string; exp: number } | null = null
 
+// Headers genéricos de browser pra evitar bloqueio do Imperva.
+// O WAF da Tokio (X-CDN: Imperva) bloqueia User-Agents de bot/lib.
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-Mode': 'cors',
+}
+
+// Cookie jar simples — Imperva exige reaproveitar visid_incap / incap_ses
+let cookieJar = ''
+function mergeCookies(setCookieHeader: string | null) {
+  if (!setCookieHeader) return
+  const parts = setCookieHeader.split(/,(?=[^;]+=)/)
+  for (const p of parts) {
+    const kv = p.split(';')[0].trim()
+    if (kv.includes('=')) {
+      const [name] = kv.split('=')
+      // Substitui se já existe no jar
+      cookieJar = cookieJar
+        .split('; ')
+        .filter(c => c && !c.startsWith(name+'='))
+        .concat(kv)
+        .join('; ')
+    }
+  }
+}
+
 async function tokioLogin(force = false): Promise<string> {
   if (!force && tokenCache && tokenCache.exp > Date.now()) return tokenCache.token
   if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
     throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
   }
+  // Handshake Imperva: GET inicial pra captar cookies de sessão antes do POST
+  try {
+    const warm = await fetch(TOKIO_BASE, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) })
+    mergeCookies(warm.headers.get('set-cookie'))
+  } catch {}
+
   const r = await fetch(`${TOKIO_BASE}${TOKIO_LOGIN_PATH}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    headers: {
+      ...BROWSER_HEADERS,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...(cookieJar ? { 'Cookie': cookieJar } : {}),
+    },
     body: JSON.stringify({
       user: TOKIO_USER,
       password: TOKIO_PASSWORD,
@@ -38,6 +78,7 @@ async function tokioLogin(force = false): Promise<string> {
     }),
     signal: AbortSignal.timeout(25000),
   })
+  mergeCookies(r.headers.get('set-cookie'))
   if (!r.ok) throw new Error(`Tokio Login HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
   const txt = await r.text()
   // Resposta pode ser JSON {"token":"..."} ou string crua
@@ -58,9 +99,11 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
   const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
   const url = `${TOKIO_BASE}/${servico}${qs ? `?${qs}` : ''}`
   const headers = (t: string) => ({
+    ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
     'Authorization': `Bearer ${t}`,
     'token': t,
+    ...(cookieJar ? { 'Cookie': cookieJar } : {}),
   })
   let r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
   if (r.status === 401) {
@@ -644,12 +687,25 @@ export async function POST(request: NextRequest) {
       for (const path of candidatos) {
         for (const body of bodies) {
           try {
+            // Faz handshake Imperva 1x antes da bateria
+            if (!cookieJar) {
+              try {
+                const warm = await fetch(TOKIO_BASE, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) })
+                mergeCookies(warm.headers.get('set-cookie'))
+              } catch {}
+            }
             const r = await fetch(`${TOKIO_BASE}${path}`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              headers: {
+                ...BROWSER_HEADERS,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                ...(cookieJar ? { 'Cookie': cookieJar } : {}),
+              },
               body: JSON.stringify(body),
               signal: AbortSignal.timeout(15000),
             })
+            mergeCookies(r.headers.get('set-cookie'))
             const txt = (await r.text()).slice(0, 200)
             tentativas.push({ path, body_keys: Object.keys(body).join(','), status: r.status, resposta: txt })
             if (r.ok) {
