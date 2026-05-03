@@ -534,7 +534,9 @@ async function importarApolices(linhas: any[]) {
       if (!numero) { stats.qtd_erros++; continue }
       const cpf = s(r.cpf_cnpj || r.cpf)
       const nomeRaw = s(r.nome) || s(r.cliente) || s(r.segurado)
-      // Resolve cliente: 1) CPF (formatado ou digits-only), 2) nome (normalizado)
+      // Resolve cliente: 1) CPF, 2) nome (normalizado). Se nao encontrar, importa
+      // mesmo assim com cliente_id=null — depois o usuario clica "Sincronizar
+      // clientes" em /dashboard/apolices pra fazer o vinculo.
       let clienteId: string | null = null
       if (cpf) {
         const dig = onlyDigits(cpf)
@@ -543,7 +545,6 @@ async function importarApolices(linhas: any[]) {
       if (!clienteId && nomeRaw) {
         clienteId = clientePorNome[normNome(nomeRaw)] || null
       }
-      if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente (cpf=${cpf||'-'} nome=${nomeRaw||'-'})`); continue }
 
       const parseBool = (v: any): boolean | null => {
         if (v === undefined || v === null || v === '') return null
@@ -563,11 +564,14 @@ async function importarApolices(linhas: any[]) {
       const payload: any = {
         cliente_id: clienteId,
         numero,
+        // Sempre persiste nome/CPF do segurado pra permitir sync posterior
+        nome_segurado:      nomeRaw,
+        cpf_cnpj_segurado:  cpf ? (onlyDigits(cpf) || cpf) : null,
         proposta:           s(r.proposta),
         endosso:            s(r.endosso),
         proposta_endosso:   s(r.proposta_endosso),
         tipo_documento:     s(r.tipo_documento),
-        // tipo_pessoa não existe na coluna; mapeia pra clientes.tipo se necessário (ignorado aqui)
+        tipo_pessoa:        s(r.tipo_pessoa),
         estipulante:        s(r.estipulante),
         ramo:               s(r.ramo),
         produto:            s(r.produto),

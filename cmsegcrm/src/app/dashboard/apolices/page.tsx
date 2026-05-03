@@ -33,6 +33,9 @@ export default function ApolicesPage() {
   const [hdiPdfTarget, setHdiPdfTarget] = useState<any|null>(null)   // negócio alvo do upload de PDF
   const [hdiBusy, setHdiBusy] = useState<string|null>(null)          // id do negócio em operação
 
+  // Sincronizar clientes em apolices sem vinculo
+  const [syncBusy, setSyncBusy] = useState(false)
+
   // Lançamento de comissão recebida (admin)
   const [comModal, setComModal] = useState<any|null>(null)
   const hojeIso = new Date().toISOString().slice(0,10)
@@ -125,6 +128,42 @@ export default function ApolicesPage() {
     }
     setEditandoVendedor(null)
     carregar()
+  }
+
+  async function sincronizarClientes() {
+    if (syncBusy) return
+    setSyncBusy(true)
+    try {
+      // Pre-visualiza
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const r1 = await fetch('/api/apolices/sincronizar-clientes', {
+        method: 'POST', headers, body: JSON.stringify({ dry_run: true }),
+      })
+      const j1 = await r1.json()
+      if (j1.error) { alert('Erro: ' + j1.error); return }
+      const s = j1.stats
+      const ok = confirm(
+        `Sincronizar ${s.a_vincular} apólice(s)?\n\n` +
+        `Sem cliente: ${s.total_apolices_sem_cliente}\n` +
+        `→ Casará por CPF: ${s.casadas_por_cpf}\n` +
+        `→ Casará por nome: ${s.casadas_por_nome}\n` +
+        `→ Sem match (continuarão sem cliente): ${s.sem_match}`
+      )
+      if (!ok) return
+      const r2 = await fetch('/api/apolices/sincronizar-clientes', {
+        method: 'POST', headers, body: JSON.stringify({ dry_run: false }),
+      })
+      const j2 = await r2.json()
+      if (j2.error) { alert('Erro ao aplicar: ' + j2.error); return }
+      alert(`✓ ${j2.aplicados} apólices vinculadas (${j2.erros} erros).`)
+      await carregar()
+    } catch (e: any) {
+      alert('Erro: ' + (e?.message || e))
+    } finally {
+      setSyncBusy(false)
+    }
   }
 
   function abrirNovaApolice() {
@@ -341,6 +380,13 @@ export default function ApolicesPage() {
           title="Exportar lista atual em Excel">
           📥 Exportar ({filtrados.length})
         </button>
+        {profile?.role === 'admin' && (
+          <button onClick={sincronizarClientes} disabled={syncBusy}
+            title="Vincula apólices não associadas a clientes (por CPF/CNPJ ou nome)"
+            style={{padding:'7px 12px',borderRadius:8,fontSize:13,border:'1px solid var(--gold)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:syncBusy?'wait':'pointer',whiteSpace:'nowrap',fontWeight:500}}>
+            {syncBusy ? '⏳ Sincronizando...' : '🔗 Sincronizar clientes'}
+          </button>
+        )}
         <button className="btn-primary" onClick={abrirNovaApolice} style={{padding:'7px 14px',fontSize:13}}>
           + Nova apólice
         </button>
