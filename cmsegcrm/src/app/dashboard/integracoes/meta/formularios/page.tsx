@@ -21,16 +21,26 @@ type Form = {
   }
 }
 
-const COLUNAS_CLIENTE = [
-  { val: '',         label: '— ignorar —' },
-  { val: 'nome',     label: 'Nome' },
-  { val: 'cpf_cnpj', label: 'CPF/CNPJ' },
-  { val: 'email',    label: 'E-mail' },
-  { val: 'telefone', label: 'Telefone' },
-  { val: 'cep',      label: 'CEP' },
-  { val: 'cidade',   label: 'Cidade' },
-  { val: 'estado',   label: 'Estado' },
-  { val: 'fonte',    label: 'Fonte' },
+const COLS_CLIENTE_PADRAO = [
+  { val: 'cliente:nome',     label: 'Nome' },
+  { val: 'cliente:cpf_cnpj', label: 'CPF/CNPJ' },
+  { val: 'cliente:email',    label: 'E-mail' },
+  { val: 'cliente:telefone', label: 'Telefone' },
+  { val: 'cliente:cep',      label: 'CEP' },
+  { val: 'cliente:cidade',   label: 'Cidade' },
+  { val: 'cliente:estado',   label: 'Estado' },
+  { val: 'cliente:fonte',    label: 'Fonte' },
+]
+const COLS_NEGOCIO_PADRAO = [
+  { val: 'negocio:titulo',     label: 'Título' },
+  { val: 'negocio:produto',    label: 'Produto' },
+  { val: 'negocio:seguradora', label: 'Seguradora' },
+  { val: 'negocio:premio',     label: 'Prêmio' },
+  { val: 'negocio:comissao_pct', label: 'Comissão %' },
+  { val: 'negocio:placa',      label: 'Placa' },
+  { val: 'negocio:cep',        label: 'CEP' },
+  { val: 'negocio:vencimento', label: 'Vencimento' },
+  { val: 'negocio:obs',        label: 'Observações' },
 ]
 
 export default function FormulariosMetaPage() {
@@ -41,6 +51,7 @@ export default function FormulariosMetaPage() {
   const [forms, setForms] = useState<Form[]>([])
   const [funis, setFunis] = useState<any[]>([])
   const [vendedores, setVendedores] = useState<any[]>([])
+  const [customFields, setCustomFields] = useState<any[]>([])
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState<string | null>(null)
   const [statusMeta, setStatusMeta] = useState<any>(null)
@@ -61,13 +72,15 @@ export default function FormulariosMetaPage() {
     setProfile(prof)
     if (prof?.role !== 'admin') { setLoading(false); return }
 
-    const [{ data: f }, { data: u }, statusR] = await Promise.all([
+    const [{ data: f }, { data: u }, { data: cf }, statusR] = await Promise.all([
       supabase.from('funis').select('id, nome, tipo, emoji, etapas').order('ordem'),
       supabase.from('users').select('id, nome, email, role').order('nome'),
+      supabase.from('campos_personalizados').select('entidade, chave, nome').eq('ativo', true).order('ordem'),
       fetch('/api/meta/connect', { headers: await authHeaders() }).then(r => r.json()).catch(() => null),
     ])
     setFunis(f || [])
     setVendedores(u || [])
+    setCustomFields(cf || [])
     setStatusMeta(statusR)
 
     await carregarForms()
@@ -258,8 +271,28 @@ export default function FormulariosMetaPage() {
                               </div>
                               <span style={{fontSize:11,color:'var(--text-muted)'}}>→</span>
                               <select value={valorMap} onChange={e=>mapearCampo(form, q.key, e.target.value)}
-                                style={{...sel,width:'auto',minWidth:130,padding:'4px 6px',fontSize:11}}>
-                                {COLUNAS_CLIENTE.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
+                                style={{...sel,width:'auto',minWidth:200,padding:'4px 6px',fontSize:11}}>
+                                <option value="">— ignorar —</option>
+                                <optgroup label="Cliente — campos padrão">
+                                  {COLS_CLIENTE_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
+                                </optgroup>
+                                {customFields.filter(cf => cf.entidade === 'cliente').length > 0 && (
+                                  <optgroup label="Cliente — campos personalizados">
+                                    {customFields.filter(cf => cf.entidade === 'cliente').map(cf =>
+                                      <option key={cf.chave} value={`cliente_cf:${cf.chave}`}>{cf.nome}</option>
+                                    )}
+                                  </optgroup>
+                                )}
+                                <optgroup label="Negociação — campos padrão">
+                                  {COLS_NEGOCIO_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
+                                </optgroup>
+                                {customFields.filter(cf => cf.entidade === 'negocio').length > 0 && (
+                                  <optgroup label="Negociação — campos personalizados">
+                                    {customFields.filter(cf => cf.entidade === 'negocio').map(cf =>
+                                      <option key={cf.chave} value={`negocio_cf:${cf.chave}`}>{cf.nome}</option>
+                                    )}
+                                  </optgroup>
+                                )}
                               </select>
                             </div>
                           )
