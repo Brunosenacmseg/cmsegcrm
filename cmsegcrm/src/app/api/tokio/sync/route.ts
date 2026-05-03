@@ -299,17 +299,14 @@ async function processarApolices(xml: string) {
         email: c.email, telefone: tel,
         dadosBrutos,
       })
-      // Apolices.cliente_id é NOT NULL — se o XML não tem segurado
-      // identificável, criamos placeholder pra não quebrar o insert.
+      // Tenta placeholder se o XML não trouxe segurado identificável.
+      // Se mesmo assim falhar, segue com cliente_id NULL — a migration
+      // 047 deixou a coluna nullable.
       if (!clienteId) {
         clienteId = await obterOuCriarCliente({
           nome: `Apólice Tokio ${numero} (sem segurado identificado)`,
           dadosBrutos,
         })
-      }
-      if (!clienteId) {
-        msgs.push(`${numero}: não foi possível criar cliente`)
-        erros++; continue
       }
 
       // ── ENDOSSO DE CANCELAMENTO: zera valores ──
