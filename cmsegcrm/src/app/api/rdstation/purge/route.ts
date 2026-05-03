@@ -6,20 +6,21 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { data: userData, error } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData, error } = await supabaseAdmin().auth.getUser(token)
   if (error || !userData?.user) return NextResponse.json({ error: 'Sessão inválida' }, { status: 401 })
 
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return NextResponse.json({ error: 'Apenas admin' }, { status: 403 })
 
   let body: any = {}
@@ -32,28 +33,28 @@ export async function POST(req: NextRequest) {
 
   // 1) Desvincula apolices (FK negocio_id sem ON DELETE — bloquearia a exclusão)
   try {
-    const { error: e } = await supabaseAdmin.from('apolices').update({ negocio_id: null }).not('negocio_id', 'is', null)
+    const { error: e } = await supabaseAdmin().from('apolices').update({ negocio_id: null }).not('negocio_id', 'is', null)
     resumo['apolices.negocio_id=null'] = { erro: e?.message || null }
   } catch (e: any) { resumo['apolices.negocio_id=null'] = { erro: e?.message?.slice(0,200) } }
 
   // 2) Desvincula comissoes_recebidas (FK ON DELETE SET NULL já existe, mas ajudamos caso a 007 não tenha rodado)
   try {
-    const { error: e } = await supabaseAdmin.from('comissoes_recebidas').update({ negocio_id: null }).not('negocio_id', 'is', null)
+    const { error: e } = await supabaseAdmin().from('comissoes_recebidas').update({ negocio_id: null }).not('negocio_id', 'is', null)
     resumo['comissoes_recebidas.negocio_id=null'] = { erro: e?.message || null }
   } catch (e: any) {
     resumo['comissoes_recebidas.negocio_id=null'] = { aviso: 'tabela inexistente (migration 007 não rodou)', erro: e?.message?.slice(0,200) }
   }
 
   // 3) Conta antes de apagar
-  const { count: antes } = await supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true })
+  const { count: antes } = await supabaseAdmin().from('negocios').select('*', { count: 'exact', head: true })
 
   // 4) Apaga negocios — historico/tarefas/anexos cascadeiam automaticamente conforme FKs
   try {
-    const { error: e } = await supabaseAdmin.from('negocios').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    const { error: e } = await supabaseAdmin().from('negocios').delete().neq('id', '00000000-0000-0000-0000-000000000000')
     resumo['negocios.delete'] = { erro: e?.message || null }
   } catch (e: any) { resumo['negocios.delete'] = { erro: e?.message?.slice(0,200) } }
 
-  const { count: depois } = await supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true })
+  const { count: depois } = await supabaseAdmin().from('negocios').select('*', { count: 'exact', head: true })
 
   return NextResponse.json({
     ok: true,

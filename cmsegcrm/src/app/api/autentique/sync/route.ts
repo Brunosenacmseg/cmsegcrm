@@ -6,16 +6,17 @@ export const dynamic = 'force-dynamic'
 
 export const maxDuration = 60
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function autenticar(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data } = await supabaseAdmin.auth.getUser(token)
+  const { data } = await supabaseAdmin().auth.getUser(token)
   return data?.user || null
 }
 
@@ -30,10 +31,10 @@ export async function POST(request: NextRequest) {
 
   let assinaturas: any[] = []
   if (filtroId) {
-    const { data } = await supabaseAdmin.from('assinaturas').select('*').eq('id', filtroId).maybeSingle()
+    const { data } = await supabaseAdmin().from('assinaturas').select('*').eq('id', filtroId).maybeSingle()
     if (data) assinaturas = [data]
   } else {
-    const { data } = await supabaseAdmin.from('assinaturas').select('*')
+    const { data } = await supabaseAdmin().from('assinaturas').select('*')
       .in('status', ['pendente','enviado']).limit(50)
     assinaturas = data || []
   }
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
       const agg = statusAgregado(doc.signatures || [])
       const urlPdfFinal = doc.files?.signed || null
       const concluidoEm = agg.status === 'assinado' ? new Date().toISOString() : a.concluido_em
-      await supabaseAdmin.from('assinaturas').update({
+      await supabaseAdmin().from('assinaturas').update({
         status: agg.status,
         total_signatarios: agg.total,
         total_assinados:   agg.assinados,
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         if (s?.signed?.created_at)   st = 'assinado'
         if (s?.rejected?.created_at) st = 'recusado'
         if (s?.expired)              st = 'expirado'
-        await supabaseAdmin.from('assinaturas_signatarios').update({
+        await supabaseAdmin().from('assinaturas_signatarios').update({
           status: st,
           assinado_em: s?.signed?.created_at || null,
           link_assinatura: s?.link?.short_link || null,

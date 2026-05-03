@@ -6,16 +6,17 @@ export const dynamic = 'force-dynamic'
 
 export const maxDuration = 60
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function autenticar(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data } = await supabaseAdmin.auth.getUser(token)
+  const { data } = await supabaseAdmin().auth.getUser(token)
   return data?.user || null
 }
 
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     const agg = statusAgregado(doc.signatures || [])
 
-    const { data: assin, error } = await supabaseAdmin.from('assinaturas').insert({
+    const { data: assin, error } = await supabaseAdmin().from('assinaturas').insert({
       autentique_id:     doc.id,
       nome_documento:    nome,
       arquivo_nome:      file.name,
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
       link_assinatura: s.link?.short_link || null,
       status:        'pendente',
     }))
-    if (linhas.length) await supabaseAdmin.from('assinaturas_signatarios').insert(linhas)
+    if (linhas.length) await supabaseAdmin().from('assinaturas_signatarios').insert(linhas)
 
     return NextResponse.json({ ok: true, assinatura_id: assin.id, autentique_id: doc.id, signatures: doc.signatures })
   } catch (e: any) {

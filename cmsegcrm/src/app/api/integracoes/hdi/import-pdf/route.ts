@@ -18,16 +18,17 @@ import { createClient } from '@supabase/supabase-js'
 export const maxDuration = 120
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function checarAuth(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
   return { ok: true as const, userId: userData.user.id }
 }
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = `apolices/${apoliceId}/${Date.now()}_${safeName}`
   const buf = Buffer.from(await file.arrayBuffer())
-  const { error: errUp } = await supabaseAdmin.storage
+  const { error: errUp } = await supabaseAdmin().storage
     .from('cmsegcrm')
     .upload(path, buf, { contentType: file.type || 'application/pdf', upsert: false })
   if (errUp) return NextResponse.json({ erro: 'Erro ao subir PDF: '+errUp.message }, { status: 500 })
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
 
   // 5. Atualiza o número da apólice se foi informado e ainda vazio
   if (numero) {
-    await supabaseAdmin.from('apolices').update({ numero }).eq('id', apoliceId).is('numero', null)
+    await supabaseAdmin().from('apolices').update({ numero }).eq('id', apoliceId).is('numero', null)
   }
 
   return NextResponse.json({

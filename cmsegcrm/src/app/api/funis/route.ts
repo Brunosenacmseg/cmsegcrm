@@ -9,18 +9,19 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const }
 }
@@ -41,7 +42,7 @@ export async function PATCH(req: NextRequest) {
   for (const k of permitidos) if (k in patch) dados[k] = patch[k]
   if (Object.keys(dados).length === 0) return NextResponse.json({ error: 'nada a atualizar' }, { status: 400 })
 
-  const { data, error } = await supabaseAdmin.from('funis').update(dados).eq('id', id).select()
+  const { data, error } = await supabaseAdmin().from('funis').update(dados).eq('id', id).select()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, funil: data?.[0] })
 }
@@ -58,7 +59,7 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
 
   // Conta cards
-  const { count } = await supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true }).eq('funil_id', id)
+  const { count } = await supabaseAdmin().from('negocios').select('*', { count: 'exact', head: true }).eq('funil_id', id)
 
   if ((count || 0) > 0 && !cascade) {
     return NextResponse.json({ error: `Funil tem ${count} card(s). Use cascade=1 ou apague os cards primeiro.` }, { status: 409 })
@@ -66,15 +67,15 @@ export async function DELETE(req: NextRequest) {
 
   // Cascade: apaga negocios primeiro (FK negocios.funil_id é RESTRICT)
   if ((count || 0) > 0) {
-    const { error: e1 } = await supabaseAdmin.from('negocios').delete().eq('funil_id', id)
+    const { error: e1 } = await supabaseAdmin().from('negocios').delete().eq('funil_id', id)
     if (e1) return NextResponse.json({ error: 'Erro ao apagar cards: ' + e1.message }, { status: 500 })
   }
 
   // Apaga vínculos com equipes (FK on delete cascade já cobriria, mas explicitar é seguro)
-  await supabaseAdmin.from('funis_equipes').delete().eq('funil_id', id)
+  await supabaseAdmin().from('funis_equipes').delete().eq('funil_id', id)
 
   // Apaga o funil
-  const { data, error } = await supabaseAdmin.from('funis').delete().eq('id', id).select()
+  const { data, error } = await supabaseAdmin().from('funis').delete().eq('id', id).select()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data || data.length === 0) return NextResponse.json({ error: 'Funil não encontrado' }, { status: 404 })
 
