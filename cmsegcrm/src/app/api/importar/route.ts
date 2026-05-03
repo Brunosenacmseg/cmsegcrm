@@ -58,13 +58,23 @@ const nClamp = (v: any, max: number) => {
 const MAX_VALOR = 9_999_999_999.99
 const MAX_PCT   = 999_999.99
 const dateBR = (v: any) => {
-  if (!v) return null
+  if (v === null || v === undefined || v === '') return null
   const t = String(v).trim()
   // DD/MM/YYYY → YYYY-MM-DD
   const m1 = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`
   // YYYY-MM-DD já OK
   if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10)
+  // Serial do Excel (1900 date system) — número entre ~10000 e 80000
+  if (/^\d{4,6}(\.\d+)?$/.test(t)) {
+    const serial = parseFloat(t)
+    if (serial > 10000 && serial < 80000) {
+      // Excel epoch = 1899-12-30 (corrige bug do leap year de 1900)
+      const ms = Math.round(serial) * 86400000 + Date.UTC(1899, 11, 30)
+      const d = new Date(ms)
+      return d.toISOString().slice(0, 10)
+    }
+  }
   return null
 }
 
@@ -416,6 +426,7 @@ async function importarApolices(linhas: any[]) {
   const numerosLote = Array.from(new Set(linhas.map(r => s(r.numero || r.apolice)).filter(Boolean))) as string[]
   const clientePorCpf: Record<string, string> = {}
   const apolicePorNum: Record<string, string> = {}
+  const negocioPorApoliceNum: Record<string, string> = {}
   if (cpfsLote.length) {
     const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
     for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
@@ -424,8 +435,26 @@ async function importarApolices(linhas: any[]) {
   if (numerosLote.length) {
     for (let i = 0; i < numerosLote.length; i += 500) {
       const chunk = numerosLote.slice(i, i + 500)
-      const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', chunk)
-      for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
+      const { data } = await supabaseAdmin.from('apolices').select('id, numero, negocio_id').in('numero', chunk)
+      for (const a of data || []) if (a.numero) {
+        apolicePorNum[a.numero] = a.id
+        if (a.negocio_id) negocioPorApoliceNum[a.numero] = a.negocio_id
+      }
+    }
+  }
+
+  // Funil/etapa default para os negócios criados a partir das apólices
+  // (a página de Apólices lê de public.negocios, então cada apólice
+  // precisa de um negócio espelho pra aparecer na listagem).
+  let funilDefaultId: string | null = null
+  let etapaDefault = 'Ativo'
+  {
+    const { data: funil } = await supabaseAdmin.from('funis').select('id, etapas').order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (funil?.id) {
+      funilDefaultId = funil.id
+      const etapas = Array.isArray(funil.etapas) ? funil.etapas : []
+      // Prefere uma etapa de "ganho/ativo" se existir; senão a última (geralmente fechamento)
+      etapaDefault = etapas.find((e:any)=>/ativ|ganh|fech|emit/i.test(String(e))) || etapas[etapas.length-1] || etapas[0] || 'Ativo'
     }
   }
 
@@ -449,9 +478,15 @@ async function importarApolices(linhas: any[]) {
     for (const c of criados || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
 
+  // Mapa numero da apólice → id do negócio espelho (carregado da
+  // tabela apolices na consulta acima ou criado em batch a seguir).
+  const negocioPorNum: Record<string, string> = { ...negocioPorApoliceNum }
+
   // Monta payloads + separa novos vs updates
   const novos: any[] = []
   const updates: { id: string; payload: any }[] = []
+  // Negócios a criar para apólices que ainda não têm negócio vinculado
+  const negociosACriar: { numero: string; payload: any }[] = []
   for (const r of linhas) {
     try {
       const numero = s(r.numero || r.apolice)
@@ -459,6 +494,33 @@ async function importarApolices(linhas: any[]) {
       const cpf = s(r.cpf_cnpj || r.cpf)
       const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
       if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente`); continue }
+
+      // Prepara payload do negocio que precisa existir para a apólice
+      // aparecer nas listagens (módulo Apólices e aba do cliente leem
+      // de public.negocios)
+      if (funilDefaultId && !negocioPorNum[numero] && !negociosACriar.find(x => x.numero === numero)) {
+        const nomeCli = s(r.nome) || s(r.segurado) || s(r.cliente) || 'Apólice'
+        const produtoNeg = s(r.produto) || s(r.ramo) || null
+        const venc = dateBR(r.vigencia_fim || r.fim || r.vencimento)
+        const premioNeg = nClamp(r.premio || r.premio_total, MAX_VALOR)
+        negociosACriar.push({
+          numero,
+          payload: {
+            titulo:        produtoNeg ? `${nomeCli} — ${produtoNeg}` : nomeCli,
+            cliente_id:    clienteId,
+            funil_id:      funilDefaultId,
+            etapa:         etapaDefault,
+            status:        'ganho',
+            produto:       produtoNeg,
+            seguradora:    s(r.seguradora),
+            premio:        premioNeg,
+            comissao_pct:  nClamp(r.comissao_pct || r.comissao, MAX_PCT),
+            vencimento:    venc,
+            cpf_cnpj:      cpf,
+            placa:         s(r.placa),
+          },
+        })
+      }
 
       const parseBool = (v: any): boolean | null => {
         if (v === undefined || v === null || v === '') return null
@@ -477,6 +539,7 @@ async function importarApolices(linhas: any[]) {
       })()
       const payload: any = {
         cliente_id: clienteId,
+        negocio_id: negocioPorNum[numero] || null,
         numero,
         proposta:           s(r.proposta),
         endosso:            s(r.endosso),
@@ -520,6 +583,31 @@ async function importarApolices(linhas: any[]) {
       stats.qtd_erros++
       if (stats.erros.length < 20) stats.erros.push(e?.message?.slice(0, 120) || 'erro')
     }
+  }
+
+  // Cria os negócios necessários em batch (chunks de 200). Como
+  // public.negocios não tem coluna `numero`, casamos pela ORDEM do
+  // chunk com a ORDEM dos ids retornados — Postgres preserva a ordem
+  // do INSERT...VALUES no RETURNING.
+  if (negociosACriar.length) {
+    for (let i = 0; i < negociosACriar.length; i += 200) {
+      const chunk = negociosACriar.slice(i, i + 200)
+      const { data, error } = await supabaseAdmin.from('negocios')
+        .insert(chunk.map(x => x.payload)).select('id')
+      if (error || !data || data.length !== chunk.length) {
+        // fallback linha a linha (mantém a relação numero ↔ id)
+        for (const x of chunk) {
+          const { data: one, error: e2 } = await supabaseAdmin.from('negocios').insert(x.payload).select('id').single()
+          if (!e2 && one?.id) negocioPorNum[x.numero] = one.id
+          else if (e2 && stats.erros.length < 20) stats.erros.push(`negocio ${x.numero}: ${e2.message?.slice(0,80)}`)
+        }
+      } else {
+        for (let j = 0; j < chunk.length; j++) negocioPorNum[chunk[j].numero] = data[j].id
+      }
+    }
+    // Back-fill negocio_id em payloads de apolices que ficaram pendentes
+    for (const p of novos) if (!p.negocio_id && p.numero) p.negocio_id = negocioPorNum[p.numero] || null
+    for (const u of updates) if (!u.payload.negocio_id && u.payload.numero) u.payload.negocio_id = negocioPorNum[u.payload.numero] || null
   }
 
   // UPSERT por numero (idempotente — atualiza se ja existe, insere caso contrario).
