@@ -262,7 +262,7 @@ async function bulkInsert(
   for (let i = 0; i < payloads.length; i += TAM) {
     const chunk = payloads.slice(i, i + TAM)
     const q = supabaseAdmin.from(tabela).upsert(chunk, conflito ? { onConflict: conflito, ignoreDuplicates: false } : undefined)
-    const { error, count } = await q.select('*', { count: 'exact', head: true })
+    const { error, count } = await (q as any).select('*', { count: 'exact', head: true })
     if (error) {
       // fallback row-by-row
       for (const p of chunk) {
