@@ -174,6 +174,20 @@ export default function ApolicesPage() {
     carregar()
   }
 
+  // Le response com fallback pra texto: evita "Unexpected end of JSON input"
+  // quando o servidor retorna 504/HTML/timeout.
+  async function lerResposta(r: Response): Promise<any> {
+    const txt = await r.text()
+    if (!txt) return { error: `Resposta vazia (HTTP ${r.status})` }
+    try { return JSON.parse(txt) }
+    catch {
+      const ehTimeout = /timeout|504|gateway|an error o/i.test(txt)
+      return { error: ehTimeout
+        ? `Timeout do servidor (HTTP ${r.status}). Tente novamente.`
+        : `Resposta inválida (HTTP ${r.status}): ${txt.slice(0, 120)}` }
+    }
+  }
+
   async function normalizarDuplicatas() {
     if (dupBusy) return
     setDupBusy(true)
@@ -184,7 +198,7 @@ export default function ApolicesPage() {
       const r1 = await fetch('/api/apolices/normalizar-duplicatas', {
         method: 'POST', headers, body: JSON.stringify({ dry_run: true }),
       })
-      const j1 = await r1.json()
+      const j1 = await lerResposta(r1)
       if (j1.error) { alert('Erro: ' + j1.error); return }
       const s = j1.stats
       if (!s.apolices_a_remover) { alert(`✓ Nenhuma duplicata encontrada (${s.total_apolices} apólices).`); return }
@@ -199,7 +213,7 @@ export default function ApolicesPage() {
       const r2 = await fetch('/api/apolices/normalizar-duplicatas', {
         method: 'POST', headers, body: JSON.stringify({ dry_run: false }),
       })
-      const j2 = await r2.json()
+      const j2 = await lerResposta(r2)
       if (j2.error) { alert('Erro ao aplicar: ' + j2.error); return }
       alert(`✓ ${j2.removidas} apólices duplicadas removidas (${j2.erros} erros).`)
       await carregar()
@@ -221,7 +235,7 @@ export default function ApolicesPage() {
       const r1 = await fetch('/api/apolices/sincronizar-clientes', {
         method: 'POST', headers, body: JSON.stringify({ dry_run: true }),
       })
-      const j1 = await r1.json()
+      const j1 = await lerResposta(r1)
       if (j1.error) { alert('Erro: ' + j1.error); return }
       const s = j1.stats
       const ok = confirm(
@@ -235,7 +249,7 @@ export default function ApolicesPage() {
       const r2 = await fetch('/api/apolices/sincronizar-clientes', {
         method: 'POST', headers, body: JSON.stringify({ dry_run: false }),
       })
-      const j2 = await r2.json()
+      const j2 = await lerResposta(r2)
       if (j2.error) { alert('Erro ao aplicar: ' + j2.error); return }
       alert(`✓ ${j2.aplicados} apólices vinculadas (${j2.erros} erros).`)
       await carregar()
