@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { exportarXLSX, fmt } from '@/lib/export-xlsx'
 
 export default function ApolicesPage() {
   const supabase = createClient()
@@ -322,6 +323,24 @@ export default function ApolicesPage() {
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Apólices</div>
         <input style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 14px',color:'var(--text)',fontSize:13,width:220,outline:'none',fontFamily:'DM Sans,sans-serif'}}
           placeholder="🔍  Buscar..." value={busca} onChange={e=>setBusca(e.target.value)} />
+        <button onClick={()=>exportarXLSX(filtrados, [
+          { campo:'numero_apolice', titulo:'Apólice' },
+          { campo:'clientes',       titulo:'Cliente',     fmt:(v:any)=>v?.nome || '' },
+          { campo:'cpf_cnpj',       titulo:'CPF/CNPJ' },
+          { campo:'produto',        titulo:'Produto' },
+          { campo:'seguradora',     titulo:'Seguradora' },
+          { campo:'placa',          titulo:'Placa' },
+          { campo:'premio',         titulo:'Prêmio (R$)', fmt:fmt.brl },
+          { campo:'comissao_pct',   titulo:'Comissão %' },
+          { campo:'vigencia_ini',   titulo:'Vigência ini', fmt:fmt.data },
+          { campo:'vencimento',     titulo:'Vencimento',   fmt:fmt.data },
+          { campo:'status',         titulo:'Status' },
+          { campo:'users',          titulo:'Vendedor',    fmt:(v:any)=>v?.nome || '' },
+        ], 'apolices')}
+          style={{padding:'7px 12px',borderRadius:8,fontSize:13,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',cursor:'pointer',whiteSpace:'nowrap'}}
+          title="Exportar lista atual em Excel">
+          📥 Exportar ({filtrados.length})
+        </button>
         <button className="btn-primary" onClick={abrirNovaApolice} style={{padding:'7px 14px',fontSize:13}}>
           + Nova apólice
         </button>
