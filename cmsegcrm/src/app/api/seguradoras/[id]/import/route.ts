@@ -129,17 +129,19 @@ function mapInadimplencia(row: any, seguradora_id: string, importacao_id: string
 function mapComissao(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
-    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice'])),
-    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento'])),
-    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome'])),
+    // Inclui aliases Tokio: numApolice, CPFCnpj, nomeSegurado, vlrPremio,
+    // vlrComissaoParcela, pcComissao, qtdeParcela, numParcela, dtPagamento
+    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice','numapolice'])),
+    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento','cpfcnpj'])),
+    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome','nomesegurado'])),
     produto:        sStr(pick(row, ['produto','ramo'])),
     competencia:    sStr(pick(row, ['competencia','competência','referencia','mes referencia'])),
-    data_pagamento: date(pick(row, ['pagamento','data pagamento','data credito'])),
-    parcela:        nInt(pick(row, ['parcela','nr parcela'])),
-    total_parcelas: nInt(pick(row, ['total parcelas','qtd parcelas'])),
-    premio:         num(pick(row, ['premio','prêmio','premio liquido'])),
-    comissao_pct:   num(pick(row, ['% comissao','percentual comissao','aliquota'])),
-    comissao_valor: num(pick(row, ['valor comissao','comissao','comissão','valor comissão'])),
+    data_pagamento: date(pick(row, ['pagamento','data pagamento','data credito','dtpagamento'])),
+    parcela:        nInt(pick(row, ['parcela','nr parcela','numparcela'])),
+    total_parcelas: nInt(pick(row, ['total parcelas','qtd parcelas','qtdeparcela'])),
+    premio:         num(pick(row, ['premio','prêmio','premio liquido','vlrpremio'])),
+    comissao_pct:   num(pick(row, ['% comissao','percentual comissao','aliquota','pccomissao'])),
+    comissao_valor: num(pick(row, ['valor comissao','comissao','comissão','valor comissão','vlrcomissaoparcela'])),
     dados: row,
   }
 }
@@ -161,7 +163,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const body = await req.json().catch(() => null) as any
   const tipo = body?.tipo as Tipo
-  const formato = (body?.formato as 'xlsx'|'csv'|'pdf') || 'xlsx'
+  const formato = (body?.formato as 'xlsx'|'csv'|'xml'|'pdf') || 'xlsx'
   const linhas: any[] = Array.isArray(body?.linhas) ? body.linhas : []
   if (!TIPOS.includes(tipo)) return NextResponse.json({ erro: 'tipo inválido' }, { status: 400 })
   if (formato === 'pdf') return NextResponse.json({ erro: 'PDF ainda não suportado — em breve' }, { status: 400 })

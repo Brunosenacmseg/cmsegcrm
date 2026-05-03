@@ -61,6 +61,48 @@ function lerArquivo(buf: ArrayBuffer): Record<string, any>[] {
   return out
 }
 
+// Decoder Latin1/Windows-1252 → string (para .RET da Porto).
+function decodificarLatin(buf: ArrayBuffer): string {
+  // TextDecoder com windows-1252 cobre o conjunto Latin1 + extras (€, etc.)
+  return new TextDecoder('windows-1252').decode(new Uint8Array(buf))
+}
+
+// Lê Tokio XML (Comissoes). Extrai cada <DetalheComissao> como uma linha.
+function lerTokioXML(buf: ArrayBuffer): Record<string, any>[] {
+  // Tokio manda em ISO-8859-1; força decodificação correta.
+  const txt = decodificarLatin(buf)
+  // DOMParser cuida da árvore mesmo se a declaração disser ISO-8859-1.
+  const xml = new DOMParser().parseFromString(txt, 'text/xml')
+  const out: Record<string, any>[] = []
+  // Procura todos os <DetalheComissao> (ou <Detalhe...> caso a tag varie).
+  const detalhes = xml.querySelectorAll('DetalheComissao, DetalheApolice, DetalheSinistro')
+  detalhes.forEach(node => {
+    const row: Record<string, any> = {}
+    Array.from(node.children).forEach(child => {
+      const k = child.tagName
+      const v = (child.textContent || '').trim()
+      if (k && v) row[k] = v
+    })
+    if (Object.keys(row).length) out.push(row)
+  })
+  // Se não achou Detalhes mas tem <Extrato>, captura o cabeçalho como 1 linha
+  if (out.length === 0) {
+    const extrato = xml.querySelector('Extrato')
+    if (extrato) {
+      const row: Record<string, any> = {}
+      Array.from(extrato.children).forEach(child => {
+        if (child.children.length === 0) {
+          const k = child.tagName
+          const v = (child.textContent || '').trim()
+          if (k && v) row[k] = v
+        }
+      })
+      if (Object.keys(row).length) out.push(row)
+    }
+  }
+  return out
+}
+
 export default function SeguradoraDetalhePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -134,23 +176,37 @@ export default function SeguradoraDetalhePage() {
     setMsg(null)
     const lower = file.name.toLowerCase()
     if (lower.endsWith('.pdf')) {
-      setMsg({ tipo: 'err', texto: 'Importação por PDF está em desenvolvimento. Use XLSX ou CSV por enquanto.' })
+      setMsg({ tipo: 'err', texto: 'Importação por PDF está em desenvolvimento. Use XLSX, CSV ou XML por enquanto.' })
+      e.target.value = ''
+      return
+    }
+    if (lower.endsWith('.ret')) {
+      setMsg({ tipo: 'err', texto: 'Arquivos .RET (Porto) precisam do layout fixo CNAB para serem parseados. Em breve — preciso do manual de layout da Porto pra mapear as colunas.' })
       e.target.value = ''
       return
     }
     setImportando(true)
     try {
-      await loadXLSX()
       const buf = await file.arrayBuffer()
-      const linhasArq = lerArquivo(buf)
-      if (!linhasArq.length) throw new Error('Arquivo sem linhas')
+      let linhasArq: Record<string, any>[] = []
+      let formato: 'xlsx' | 'csv' | 'xml' | 'pdf' = 'xlsx'
+
+      if (lower.endsWith('.xml')) {
+        formato = 'xml'
+        linhasArq = lerTokioXML(buf)
+      } else {
+        formato = lower.endsWith('.csv') ? 'csv' : 'xlsx'
+        await loadXLSX()
+        linhasArq = lerArquivo(buf)
+      }
+      if (!linhasArq.length) throw new Error('Arquivo sem linhas (verifique se o arquivo está no formato esperado)')
 
       const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
         method: 'POST',
         headers: await authHeaders(),
         body: JSON.stringify({
           tipo: aba,
-          formato: lower.endsWith('.csv') ? 'csv' : 'xlsx',
+          formato,
           nome_arquivo: file.name,
           linhas: linhasArq,
         }),
@@ -256,7 +312,7 @@ export default function SeguradoraDetalhePage() {
             <input
               ref={inputRef}
               type="file"
-              accept=".xlsx,.xls,.csv,.pdf"
+              accept=".xlsx,.xls,.csv,.xml,.pdf"
               onChange={onSelecionarArquivo}
               disabled={importando}
               style={{
