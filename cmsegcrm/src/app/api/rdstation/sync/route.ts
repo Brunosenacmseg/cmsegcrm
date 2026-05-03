@@ -408,6 +408,18 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         if (cid && clientePorRd[cid]) clienteId = clientePorRd[cid]
       }
 
+      // Pula deals cujo cliente foi criado por importação de seguradora.
+      // Esses cadastros não devem virar negócios (carteira é gerida pelo
+      // módulo Seguradoras / Apólices), evitando lixo em "RD: Importados".
+      if (clienteId) {
+        const { data: cli } = await supabaseAdmin().from('clientes')
+          .select('fonte').eq('id', clienteId).maybeSingle()
+        if (cli?.fonte && /^import:/i.test(String(cli.fonte))) {
+          stats.qtd_pulados = (stats.qtd_pulados || 0) + 1
+          continue
+        }
+      }
+
       // Resolver vendedor a partir do user RD do deal
       let vendedorId: string | null = null
       const userRdId = rdId(dx.user)

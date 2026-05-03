@@ -1,19 +1,24 @@
-// Endpoint admin pra normalizar funis: encontra duplicados (mesmo nome
-// normalizado) e unifica em um só funil. Move negócios e vínculos de
-// equipe pro "keeper" e apaga as duplicatas.
+// Endpoint admin pra normalizar NEGOCIAÇÕES duplicadas.
 //
-// Critério de escolha do keeper (em ordem):
-//  1) tem rd_id (integração RD Station é fonte de verdade)
-//  2) tem mais negócios associados
-//  3) created_at mais antigo
+// Agrupa por (funil_id, cliente_id, titulo normalizado) — quando 2+ negócios
+// caem no mesmo grupo, mantém um (keeper) e remove os outros, transferindo
+// histórico, tarefas, comissões e anexos para o keeper.
 //
-// Retorna um relatório do que foi feito.
+// Critério do keeper, em ordem:
+//   1) tem rd_id (RD Station é fonte de verdade)
+//   2) status='ganho' antes de 'em_andamento' antes de 'perdido'
+//   3) prêmio maior
+//   4) updated_at mais recente
+//
+// POST { dryRun?: boolean }
+//   dryRun=true → só relata o que seria feito.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { norm } from '@/lib/rdstation'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 let _sa: ReturnType<typeof createClient> | null = null
 function supabaseAdmin() {
@@ -28,25 +33,12 @@ async function checarAdmin(req: NextRequest) {
   const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
   const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
-  if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
+  if ((u as any)?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const }
 }
 
-type Funil = {
-  id: string
-  nome: string
-  tipo: string | null
-  emoji: string | null
-  cor: string | null
-  etapas: string[] | null
-  ordem: number | null
-  descricao: string | null
-  rd_id: string | null
-  created_at: string
-}
+const STATUS_RANK: Record<string, number> = { ganho: 3, em_andamento: 2, perdido: 1 }
 
-// POST /api/funis/normalize  body: { dryRun?: boolean }
-// dryRun=true só retorna o que seria feito, sem alterar nada.
 export async function POST(req: NextRequest) {
   const auth = await checarAdmin(req)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
@@ -55,101 +47,94 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch {}
   const dryRun = !!body.dryRun
 
-  const { data: funis, error } = await supabaseAdmin
-    .from('funis')
-    .select('id, nome, tipo, emoji, cor, etapas, ordem, descricao, rd_id, created_at')
-    .order('created_at', { ascending: true })
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  // Conta negócios por funil
-  const contagem: Record<string, number> = {}
-  for (const f of (funis || []) as Funil[]) {
-    const { count } = await supabaseAdmin
-      .from('negocios')
-      .select('*', { count: 'exact', head: true })
-      .eq('funil_id', f.id)
-    contagem[f.id] = count || 0
+  // Carrega negócios em lotes (a tabela pode ser grande)
+  const PAGE = 1000
+  let from = 0
+  const todos: any[] = []
+  while (true) {
+    const { data, error } = await supabaseAdmin().from('negocios')
+      .select('id, funil_id, cliente_id, titulo, rd_id, status, premio, updated_at, created_at')
+      .order('created_at', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data || !data.length) break
+    todos.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
   }
 
-  // Agrupa por nome normalizado
-  const grupos: Record<string, Funil[]> = {}
-  for (const f of (funis || []) as Funil[]) {
-    const k = norm(f.nome)
-    if (!k) continue
+  // Agrupa por (funil_id, cliente_id, titulo normalizado)
+  const grupos: Record<string, any[]> = {}
+  for (const n of todos) {
+    if (!n.titulo || !n.cliente_id || !n.funil_id) continue
+    const k = `${n.funil_id}::${n.cliente_id}::${norm(String(n.titulo))}`
     if (!grupos[k]) grupos[k] = []
-    grupos[k].push(f)
+    grupos[k].push(n)
   }
 
   const acoes: any[] = []
+  let totalApagados = 0
 
   for (const [chave, lista] of Object.entries(grupos)) {
     if (lista.length < 2) continue
 
-    // Escolhe o keeper
     const ordenados = [...lista].sort((a, b) => {
-      const ra = a.rd_id ? 1 : 0
-      const rb = b.rd_id ? 1 : 0
+      const ra = a.rd_id ? 1 : 0, rb = b.rd_id ? 1 : 0
       if (ra !== rb) return rb - ra
-      const ca = contagem[a.id] || 0
-      const cb = contagem[b.id] || 0
-      if (ca !== cb) return cb - ca
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      const sa = STATUS_RANK[a.status || 'em_andamento'] || 2
+      const sb = STATUS_RANK[b.status || 'em_andamento'] || 2
+      if (sa !== sb) return sb - sa
+      const pa = Number(a.premio || 0), pb = Number(b.premio || 0)
+      if (pa !== pb) return pb - pa
+      return new Date(b.updated_at || b.created_at).getTime() -
+             new Date(a.updated_at || a.created_at).getTime()
     })
     const keeper = ordenados[0]
     const duplicatas = ordenados.slice(1)
 
-    // Etapas mescladas (union, preservando ordem do keeper)
-    const etapasKeeper = (keeper.etapas || []).slice()
-    const setEtapas = new Set(etapasKeeper.map(e => norm(e)))
-    for (const d of duplicatas) {
-      for (const e of (d.etapas || [])) {
-        if (!setEtapas.has(norm(e))) {
-          etapasKeeper.push(e)
-          setEtapas.add(norm(e))
-        }
-      }
-    }
-
     const acao = {
       grupo: chave,
-      keeper: { id: keeper.id, nome: keeper.nome, rd_id: keeper.rd_id, cards: contagem[keeper.id] || 0 },
-      duplicatas: duplicatas.map(d => ({ id: d.id, nome: d.nome, rd_id: d.rd_id, cards: contagem[d.id] || 0 })),
-      etapas_finais: etapasKeeper,
-      cards_movidos: 0,
-      equipes_movidas: 0,
+      titulo: keeper.titulo,
+      keeper: { id: keeper.id, status: keeper.status, premio: keeper.premio, rd_id: keeper.rd_id },
+      duplicatas: duplicatas.map(d => ({ id: d.id, status: d.status, premio: d.premio, rd_id: d.rd_id })),
+      historico_movido: 0,
+      tarefas_movidas: 0,
+      comissoes_movidas: 0,
+      anexos_movidos: 0,
     }
 
     if (!dryRun) {
       for (const d of duplicatas) {
-        // Move negócios da duplicata pro keeper
-        const { error: eN, count: nMov } = await supabaseAdmin
-          .from('negocios')
-          .update({ funil_id: keeper.id }, { count: 'exact' })
-          .eq('funil_id', d.id)
-        if (eN) return NextResponse.json({ error: `Erro movendo negócios de ${d.id}: ${eN.message}`, parcial: acoes }, { status: 500 })
-        acao.cards_movidos += nMov || 0
+        // Move histórico
+        const { count: hCount } = await supabaseAdmin().from('historico')
+          .update({ negocio_id: keeper.id }, { count: 'exact' }).eq('negocio_id', d.id)
+        acao.historico_movido += hCount || 0
 
-        // Move vínculos de equipe (ignora conflito de PK)
-        const { data: vinculos } = await supabaseAdmin
-          .from('funis_equipes')
-          .select('equipe_id')
-          .eq('funil_id', d.id)
-        for (const v of vinculos || []) {
-          const { error: eFE } = await supabaseAdmin
-            .from('funis_equipes')
-            .upsert({ funil_id: keeper.id, equipe_id: (v as any).equipe_id }, { onConflict: 'funil_id,equipe_id' })
-          if (!eFE) acao.equipes_movidas++
-        }
-        await supabaseAdmin().from('funis_equipes').delete().eq('funil_id', d.id)
+        // Move tarefas
+        const { count: tCount } = await supabaseAdmin().from('tarefas')
+          .update({ negocio_id: keeper.id }, { count: 'exact' }).eq('negocio_id', d.id)
+        acao.tarefas_movidas += tCount || 0
+
+        // Move comissões recebidas
+        const { count: cCount } = await supabaseAdmin().from('comissoes_recebidas')
+          .update({ negocio_id: keeper.id }, { count: 'exact' }).eq('negocio_id', d.id)
+        acao.comissoes_movidas += cCount || 0
+
+        // Anexos (se a tabela referenciar negocio_id)
+        const { count: aCount } = await supabaseAdmin().from('anexos')
+          .update({ negocio_id: keeper.id }, { count: 'exact' }).eq('negocio_id', d.id)
+        acao.anexos_movidos += aCount || 0
 
         // Apaga a duplicata
-        const { error: eD } = await supabaseAdmin().from('funis').delete().eq('id', d.id)
-        if (eD) return NextResponse.json({ error: `Erro apagando duplicata ${d.id}: ${eD.message}`, parcial: acoes }, { status: 500 })
+        const { error } = await supabaseAdmin().from('negocios').delete().eq('id', d.id)
+        if (error) return NextResponse.json({
+          error: `Erro apagando negócio ${d.id}: ${error.message}`,
+          parcial: acoes,
+        }, { status: 500 })
+        totalApagados++
       }
-
-      // Atualiza etapas do keeper (union)
-      await supabaseAdmin().from('funis').update({ etapas: etapasKeeper }).eq('id', keeper.id)
+    } else {
+      totalApagados += duplicatas.length
     }
 
     acoes.push(acao)
@@ -159,8 +144,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     dryRun,
     grupos_duplicados: acoes.length,
-    funis_apagados: acoes.reduce((s, a) => s + a.duplicatas.length, 0),
-    cards_movidos: acoes.reduce((s, a) => s + a.cards_movidos, 0),
+    negocios_apagados: totalApagados,
     detalhes: acoes,
   })
 }
