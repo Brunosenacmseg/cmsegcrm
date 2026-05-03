@@ -17,6 +17,7 @@ export default function ApolicesPage() {
   const [filtroRamo, setFiltroRamo] = useState('todos')
   const [filtroSeg, setFiltroSeg]   = useState('todos')
   const [filtroVendedor, setFiltroVendedor] = useState('todos')
+  const [filtroStatus, setFiltroStatus] = useState<'todos'|'ativo'|'cancelado'|'renovar'|'vencido'>('ativo')
   const [editandoVendedor, setEditandoVendedor] = useState<string|null>(null)
 
   // Modal "editar detalhes" (todos os campos da apólice)
@@ -28,13 +29,11 @@ export default function ApolicesPage() {
   const [novoClienteRes, setNovoClienteRes] = useState<any[]>([])
   const [novoClienteSel, setNovoClienteSel] = useState<any>(null)
 
-  // Importação/Exportação HDI
-  const pdfInputRef = (typeof window !== 'undefined') ? (globalThis as any).__hdiPdfRef ||= { current: null as HTMLInputElement | null } : { current: null }
-  const [hdiPdfTarget, setHdiPdfTarget] = useState<any|null>(null)   // negócio alvo do upload de PDF
-  const [hdiBusy, setHdiBusy] = useState<string|null>(null)          // id do negócio em operação
 
   // Sincronizar clientes em apolices sem vinculo
   const [syncBusy, setSyncBusy] = useState(false)
+  // Normalizar duplicatas
+  const [dupBusy, setDupBusy] = useState(false)
 
   // Lançamento de comissão recebida (admin)
   const [comModal, setComModal] = useState<any|null>(null)
@@ -128,6 +127,42 @@ export default function ApolicesPage() {
     }
     setEditandoVendedor(null)
     carregar()
+  }
+
+  async function normalizarDuplicatas() {
+    if (dupBusy) return
+    setDupBusy(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const r1 = await fetch('/api/apolices/normalizar-duplicatas', {
+        method: 'POST', headers, body: JSON.stringify({ dry_run: true }),
+      })
+      const j1 = await r1.json()
+      if (j1.error) { alert('Erro: ' + j1.error); return }
+      const s = j1.stats
+      if (!s.apolices_a_remover) { alert(`✓ Nenhuma duplicata encontrada (${s.total_apolices} apólices).`); return }
+      const ok = confirm(
+        `Remover ${s.apolices_a_remover} apólice(s) duplicada(s)?\n\n` +
+        `Total no banco: ${s.total_apolices}\n` +
+        `Grupos com duplicatas: ${s.grupos_com_duplicatas}\n` +
+        `Critério: mesmo nome + número + seguradora.\n` +
+        `Mantém a apólice mais antiga; remove o restante.`
+      )
+      if (!ok) return
+      const r2 = await fetch('/api/apolices/normalizar-duplicatas', {
+        method: 'POST', headers, body: JSON.stringify({ dry_run: false }),
+      })
+      const j2 = await r2.json()
+      if (j2.error) { alert('Erro ao aplicar: ' + j2.error); return }
+      alert(`✓ ${j2.removidas} apólices duplicadas removidas (${j2.erros} erros).`)
+      await carregar()
+    } catch (e: any) {
+      alert('Erro: ' + (e?.message || e))
+    } finally {
+      setDupBusy(false)
+    }
   }
 
   async function sincronizarClientes() {
@@ -289,47 +324,6 @@ export default function ApolicesPage() {
     alert('Comissão lançada com sucesso. Aparecerá no extrato de '+(comModal.users?.nome||'do vendedor')+'.')
   }
 
-  async function exportarHDI(neg: any) {
-    // A linha já é a apólice (id = apolice.id)
-    setHdiBusy(neg.id)
-    try {
-      const susep = neg.susep_corretor || prompt('Informe o código SUSEP do corretor (9 dígitos):') || ''
-      if (!susep) return
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/integracoes/hdi/export?ids=${neg.id}&susep=${encodeURIComponent(susep)}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      })
-      if (!res.ok) { alert('Erro: '+(await res.text())); return }
-      const blob = await res.blob()
-      const cd = res.headers.get('Content-Disposition') || ''
-      const m = cd.match(/filename="([^"]+)"/)
-      const filename = m?.[1] || `C${susep.replace(/\D/g,'').padStart(9,'0').slice(-9)}.txt`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
-      URL.revokeObjectURL(url)
-    } finally { setHdiBusy(null) }
-  }
-
-  async function importarPDF(neg: any, file: File) {
-    // A linha já é a apólice — anexa direto ao apolice_id
-    setHdiBusy(neg.id)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('apolice_id', neg.id)
-      if (neg.numero) fd.append('numero', neg.numero)
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/integracoes/hdi/import-pdf', {
-        method: 'POST', body: fd,
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      })
-      const j = await res.json()
-      if (!res.ok) { alert('Erro: '+(j.erro||res.statusText)); return }
-      alert('PDF anexado à apólice com sucesso.')
-      carregar()
-    } finally { setHdiBusy(null); setHdiPdfTarget(null) }
-  }
-
   const ramos       = [...new Set(negocios.map((n:any)=>(n.produto||'').split(' — ')[0]).filter(Boolean))]
   const seguradoras = [...new Set(negocios.map((n:any)=>n.seguradora).filter(Boolean))]
   const isAdmin     = profile?.role === 'admin'
@@ -340,7 +334,8 @@ export default function ApolicesPage() {
     const mr = filtroRamo==='todos'||(n.produto||'').startsWith(filtroRamo)
     const ms = filtroSeg==='todos'||n.seguradora===filtroSeg
     const mv = filtroVendedor==='todos'||(n.users?.id===filtroVendedor)||(filtroVendedor==='sem'&&!n.vendedor_id)
-    return mb&&mr&&ms&&mv
+    const mst = filtroStatus==='todos' || (n.status||'ativo')===filtroStatus
+    return mb&&mr&&ms&&mv&&mst
   })
 
   const premioTotal   = filtrados.reduce((s:number,n:any)=>s+(n.premio||0),0)
@@ -381,11 +376,18 @@ export default function ApolicesPage() {
           📥 Exportar ({filtrados.length})
         </button>
         {profile?.role === 'admin' && (
-          <button onClick={sincronizarClientes} disabled={syncBusy}
-            title="Vincula apólices não associadas a clientes (por CPF/CNPJ ou nome)"
-            style={{padding:'7px 12px',borderRadius:8,fontSize:13,border:'1px solid var(--gold)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:syncBusy?'wait':'pointer',whiteSpace:'nowrap',fontWeight:500}}>
-            {syncBusy ? '⏳ Sincronizando...' : '🔗 Sincronizar clientes'}
-          </button>
+          <>
+            <button onClick={sincronizarClientes} disabled={syncBusy}
+              title="Vincula apólices não associadas a clientes (por CPF/CNPJ ou nome)"
+              style={{padding:'7px 12px',borderRadius:8,fontSize:13,border:'1px solid var(--gold)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:syncBusy?'wait':'pointer',whiteSpace:'nowrap',fontWeight:500}}>
+              {syncBusy ? '⏳ Sincronizando...' : '🔗 Sincronizar clientes'}
+            </button>
+            <button onClick={normalizarDuplicatas} disabled={dupBusy}
+              title="Remove apólices duplicadas (mesmo nome + número + seguradora)"
+              style={{padding:'7px 12px',borderRadius:8,fontSize:13,border:'1px solid rgba(224,82,82,0.5)',background:'rgba(224,82,82,0.08)',color:'var(--red)',cursor:dupBusy?'wait':'pointer',whiteSpace:'nowrap',fontWeight:500}}>
+              {dupBusy ? '⏳ Normalizando...' : '🧹 Normalizar duplicatas'}
+            </button>
+          </>
         )}
         <button className="btn-primary" onClick={abrirNovaApolice} style={{padding:'7px 14px',fontSize:13}}>
           + Nova apólice
@@ -426,6 +428,14 @@ export default function ApolicesPage() {
               {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
             </select>
           </>)}
+          <span style={{fontSize:12,color:'var(--text-muted)'}}>Status:</span>
+          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value as any)}>
+            <option value="ativo">Ativo</option>
+            <option value="todos">Todos</option>
+            <option value="renovar">Renovar</option>
+            <option value="vencido">Vencido</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
           <span style={{marginLeft:'auto',fontSize:13,color:'var(--text-muted)'}}>{filtrados.length} apólice{filtrados.length!==1?'s':''}</span>
         </div>
 
@@ -497,18 +507,6 @@ export default function ApolicesPage() {
                           style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
                           📝 Detalhes
                         </button>
-                        <button onClick={()=>{ setHdiPdfTarget(n); setTimeout(()=>pdfInputRef.current?.click(),0) }}
-                          title="Anexar PDF da apólice (sincroniza com o registro)"
-                          disabled={hdiBusy===n.id}
-                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(120,140,200,0.4)',background:'rgba(120,140,200,0.10)',color:'#5b6cb0',cursor:hdiBusy===n.id?'wait':'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
-                          📎 PDF
-                        </button>
-                        <button onClick={()=>exportarHDI(n)}
-                          title="Exportar arquivo HDI (.txt)"
-                          disabled={hdiBusy===n.id}
-                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(180,120,60,0.4)',background:'rgba(180,120,60,0.10)',color:'#a86a2a',cursor:hdiBusy===n.id?'wait':'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
-                          📤 HDI
-                        </button>
                         <button onClick={()=>abrirComissao(n)}
                           title={n.vendedor_id?'Lançar comissão recebida':'Atribua um vendedor antes'}
                           disabled={!n.vendedor_id}
@@ -528,10 +526,6 @@ export default function ApolicesPage() {
           )}
         </div>
       </div>
-
-      {/* Input oculto para upload de PDF (HDI) */}
-      <input ref={(el)=>{pdfInputRef.current=el}} type="file" accept=".pdf,application/pdf" style={{display:'none'}}
-        onChange={e=>{ const f=e.target.files?.[0]; if(f && hdiPdfTarget) importarPDF(hdiPdfTarget,f); e.currentTarget.value='' }} />
 
       {/* Modal Editar Detalhes da Apólice */}
       {detModal && (
