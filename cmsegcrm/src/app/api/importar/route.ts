@@ -541,6 +541,60 @@ async function importarApolices(linhas: any[]) {
     if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${u.payload.numero}: ${error.message?.slice(0,80)}`) }
     else stats.qtd_atualizados++
   }
+
+  // ─── Espelha em `negocios` para que apareçam no módulo /dashboard/apolices,
+  // que lê da tabela negocios (filtrada por premio > 0). Sem isso, os
+  // registros ficam só na tabela apolices "legado" e nenhum usuário vê.
+  try {
+    const { data: funilVenda } = await supabaseAdmin.from('funis').select('id, etapas').eq('tipo', 'venda').limit(1).maybeSingle()
+    const funilId = funilVenda?.id || null
+    const etapaGanho = (funilVenda?.etapas as string[] | undefined)?.find(e => ['Renovado','Fechado Ganho','Pago','Concluído','Ganho'].includes(e))
+                    || (funilVenda?.etapas as string[] | undefined)?.[0]
+                    || 'Renovado'
+    if (funilId) {
+      // Evita duplicar: já existe negocio com o mesmo "numero" de apólice (campo cpf_cnpj livre não serve, mas titulo costuma incluir)
+      const titulosExistentes: Record<string, true> = {}
+      const titulosCheck = linhas.map(r => `Apólice ${s(r.numero||r.apolice)||''}`).filter(t => t !== 'Apólice ')
+      if (titulosCheck.length) {
+        const { data: ja } = await supabaseAdmin.from('negocios').select('titulo').in('titulo', titulosCheck)
+        for (const n of ja || []) if (n.titulo) titulosExistentes[n.titulo] = true
+      }
+      const negs: any[] = []
+      for (const r of linhas) {
+        const numero = s(r.numero || r.apolice); if (!numero) continue
+        const cpf = s(r.cpf_cnpj || r.cpf)
+        const clienteId = cpf ? clientePorCpf[cpf] : null
+        if (!clienteId) continue
+        const titulo = `Apólice ${numero}`
+        if (titulosExistentes[titulo]) continue
+        negs.push({
+          funil_id:    funilId,
+          cliente_id:  clienteId,
+          titulo,
+          etapa:       etapaGanho,
+          status:      'ganho',
+          produto:     s(r.produto),
+          seguradora:  s(r.seguradora),
+          premio:      nClamp(r.premio, MAX_VALOR),
+          comissao_pct: nClamp(r.comissao_pct, MAX_PCT),
+          vencimento:  dateBR(r.vigencia_fim || r.fim || r.vencimento),
+          obs:         `Importado de apólice nº ${numero}`,
+        })
+      }
+      if (negs.length) {
+        const { error } = await supabaseAdmin.from('negocios').insert(negs)
+        if (error) {
+          // tenta um a um
+          for (const p of negs) {
+            await supabaseAdmin.from('negocios').insert(p)
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    if (stats.erros.length < 20) stats.erros.push('Espelhamento em negócios falhou: ' + (e?.message?.slice(0,80) || 'erro'))
+  }
+
   return stats
 }
 
