@@ -9,6 +9,7 @@ export default function ApolicesPage() {
   const [negocios, setNegocios]   = useState<any[]>([])
   const [usuarios, setUsuarios]   = useState<any[]>([])
   const [vendedoresLegado, setVendedoresLegado] = useState<any[]>([])
+  const [seguradorasCad, setSeguradorasCad] = useState<string[]>([])
   const [profile, setProfile]     = useState<any>(null)
   const [loading, setLoading]     = useState(true)
   const [busca, setBusca]         = useState('')
@@ -56,14 +57,16 @@ export default function ApolicesPage() {
 
     if (visibleIds) query = (query as any).in('vendedor_id', visibleIds)
 
-    const [{ data }, { data: usr }, { data: vleg }] = await Promise.all([
+    const [{ data }, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
       query,
       supabase.from('users').select('id, nome').order('nome'),
       supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
+      supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome'),
     ])
     setNegocios(data || [])
     setUsuarios(usr || [])
     setVendedoresLegado(vleg || [])
+    setSeguradorasCad((segs || []).map((s:any)=>s.nome))
     setLoading(false)
   }
 
@@ -358,7 +361,7 @@ export default function ApolicesPage() {
 
                   {F('Ramo','ramo')}
                   {F('Produto','produto')}
-                  {F('Seguradora','seguradora')}
+                  {F('Seguradora','seguradora','select',{options:seguradorasCad})}
                   {F('Item','item')}
 
                   {F('Vigência inicial','vigencia_ini','date')}

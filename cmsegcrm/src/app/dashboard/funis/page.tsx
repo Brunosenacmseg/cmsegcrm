@@ -70,6 +70,7 @@ function FunisPage() {
   const [origens, setOrigens]           = useState<any[]>([])
   const [tagsAll, setTagsAll]           = useState<any[]>([])
   const [produtosAll, setProdutosAll]   = useState<any[]>([])
+  const [seguradorasAll, setSeguradorasAll] = useState<any[]>([])
   const [novaNota, setNovaNota]         = useState('')
   const [novoProdNeg, setNovoProdNeg]   = useState({ produto_id: '', quantidade: '1', valor_unit: '' })
   // Modal de marcar perdido
@@ -81,7 +82,7 @@ function FunisPage() {
   const [modalNovo, setModalNovo] = useState(false)
   const [funilModal, setFunilModal] = useState<any>(null)
   const [salvando, setSalvando]   = useState(false)
-  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
+  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
   const [clienteBusca, setClienteBusca] = useState('')
   const [clientesRes, setClientesRes]   = useState<any[]>([])
   const [clienteSel, setClienteSel]     = useState<any>(null)
@@ -135,6 +136,7 @@ function FunisPage() {
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
     supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
     supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
+    supabase.from('seguradoras').select('id,nome').eq('ativo', true).order('nome').then(({ data }) => setSeguradorasAll(data || []))
     supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
     supabase.from('email_templates').select('*').eq('ativo', true)
       .in('categoria', ['assinatura','renovacao','cobranca','geral'])
@@ -457,6 +459,7 @@ function FunisPage() {
     await supabase.from('negocios').insert({
       titulo:      formNovo.titulo,
       produto:     formNovo.produto || null,
+      seguradora:  formNovo.seguradora || null,
       premio:      formNovo.premio ? parseFloat(formNovo.premio) : null,
       obs:         formNovo.obs || null,
       etapa,
@@ -465,7 +468,7 @@ function FunisPage() {
       vendedor_id: formNovo.vendedor_id || profile?.id,
     })
     setModalNovo(false)
-    setFormNovo({ titulo:'', produto:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
+    setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
     setClienteSel(null); setClienteBusca('')
     setSalvando(false)
     await carregarNegocios()
@@ -1072,6 +1075,13 @@ function FunisPage() {
                 <input value={formNovo.produto} onChange={e=>setFormNovo(f=>({...f,produto:e.target.value}))} placeholder="Ex: Auto" style={inp}/></div>
               <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Prêmio (R$)</label>
                 <input value={formNovo.premio} onChange={e=>setFormNovo(f=>({...f,premio:e.target.value}))} placeholder="0,00" style={inp}/></div>
+            </div>
+
+            <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Seguradora</label>
+              <select value={formNovo.seguradora} onChange={e=>setFormNovo(f=>({...f,seguradora:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                <option value="">— Selecione —</option>
+                {seguradorasAll.map(s=><option key={s.id} value={s.nome} style={{background:'#ffffff'}}>{s.nome}</option>)}
+              </select>
             </div>
 
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Etapa</label>
