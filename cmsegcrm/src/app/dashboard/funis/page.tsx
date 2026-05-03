@@ -40,7 +40,7 @@ function FunisPage() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
-  const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
+  const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('em_andamento')
   const [modoVisao, setModoVisao] = useState<'kanban'|'lista'>('kanban')
   const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'>('recentes')
   // Filtro por data (criação ou fechamento) com período opcional

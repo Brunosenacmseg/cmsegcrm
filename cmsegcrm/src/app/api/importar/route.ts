@@ -227,6 +227,32 @@ async function importarNegocios(linhas: any[]) {
   const equipePorNome: Record<string, string> = {}
   for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
 
+  // DEDUP: pre-fetch negocios existentes pra evitar duplicar quando o user
+  // re-importa a mesma planilha. Chave de dedup:
+  //  1) rd_id (chave perfeita) — quando vier
+  //  2) titulo + cpf_cnpj (chave natural quando nao tem rd_id)
+  const rdIdsLote = Array.from(new Set(linhas.map(r => s(r.rd_id || r.id_rd || r.id_negocio || r['id rd'])).filter(Boolean))) as string[]
+  const titulosLote = Array.from(new Set(linhas.map(r => s(r.titulo) || s(r.nome) || s(r.cliente)).filter(Boolean))) as string[]
+  const negocioPorRdId:    Record<string, string> = {}
+  const negocioPorTitCpf:  Record<string, string> = {}
+  if (rdIdsLote.length) {
+    for (let i = 0; i < rdIdsLote.length; i += 500) {
+      const chunk = rdIdsLote.slice(i, i + 500)
+      const { data } = await supabaseAdmin().from('negocios').select('id, rd_id').in('rd_id', chunk)
+      for (const n of data || []) if ((n as any).rd_id) negocioPorRdId[(n as any).rd_id] = (n as any).id
+    }
+  }
+  if (titulosLote.length) {
+    for (let i = 0; i < titulosLote.length; i += 500) {
+      const chunk = titulosLote.slice(i, i + 500)
+      const { data } = await supabaseAdmin().from('negocios').select('id, titulo, cpf_cnpj').in('titulo', chunk)
+      for (const n of data || []) {
+        const k = `${(n as any).titulo}|||${(n as any).cpf_cnpj || ''}`
+        negocioPorTitCpf[k] = (n as any).id
+      }
+    }
+  }
+
   // Helpers locais
   const parseBoolOpt = (v: any): boolean | null => {
     if (v === undefined || v === null || v === '') return null
@@ -289,6 +315,20 @@ async function importarNegocios(linhas: any[]) {
   for (const r of linhas) {
     try {
       const titulo = s(r.titulo) || s(r.nome) || s(r.cliente) || s(r.empresa) || 'Negócio importado'
+      const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
+
+      // DEDUP: se ja existe negocio com mesmo rd_id ou (titulo+cpf), pula.
+      const rdId = s(r.rd_id || r.id_rd || r.id_negocio || r['id rd'])
+      if (rdId && negocioPorRdId[rdId]) {
+        stats.qtd_atualizados++
+        continue
+      }
+      const chaveTitCpf = `${titulo}|||${cpf || ''}`
+      if (negocioPorTitCpf[chaveTitCpf]) {
+        stats.qtd_atualizados++
+        continue
+      }
+
       const funilNome = s(r.funil) || s(r.pipeline)
       const f = funilNome ? (funis || []).find((x:any) => x.nome.toLowerCase() === funilNome.toLowerCase()) || funilDefault : funilDefault
       const etapa = s(r.etapa) || s(r.stage) || (f.etapas?.[0] || 'Novo')
@@ -298,7 +338,6 @@ async function importarNegocios(linhas: any[]) {
         if (!etapasNovasPorFunil.has(f.id)) etapasNovasPorFunil.set(f.id, new Set())
         etapasNovasPorFunil.get(f.id)!.add(etapa)
       }
-      const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
       const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
 
       // Status
@@ -328,8 +367,13 @@ async function importarNegocios(linhas: any[]) {
         if (!camposConhecidos.has(kn)) customFields[k] = v
       }
 
+      // Marca a chave dedup pra que duplicatas DENTRO do mesmo lote tambem sejam evitadas
+      negocioPorTitCpf[chaveTitCpf] = '__pendente__'
+      if (rdId) negocioPorRdId[rdId] = '__pendente__'
+
       novos.push({
         titulo,
+        rd_id: rdId || null,
         cliente_id: clienteId,
         funil_id: f.id,
         etapa,
