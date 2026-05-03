@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 
 type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'comissoes' | 'beneficios' | 'aniversariantes' | 'cargos' | 'desligamentos' | 'documentos'
@@ -201,9 +202,9 @@ function FuncionariosTab({ isAdmin }: { isAdmin: boolean }) {
         </table>
       </div>
 
-      {edit && (
-        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}} onClick={e=>e.target===e.currentTarget&&setEdit(null)}>
-          <div style={{background:'#fff',borderRadius:16,padding:'24px 28px',width:760,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+      {edit && typeof document !== 'undefined' && createPortal(
+        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(15,23,42,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)',padding:20}} onClick={e=>e.target===e.currentTarget&&setEdit(null)}>
+          <div style={{background:'#fff',borderRadius:16,padding:'24px 28px',width:760,maxWidth:'min(95vw, 760px)',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:16}}>{edit.id ? '✏️ Editar funcionário' : '➕ Novo funcionário'}</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
               {[
@@ -232,7 +233,8 @@ function FuncionariosTab({ isAdmin }: { isAdmin: boolean }) {
               <button className="btn-primary" onClick={salvar}>✓ Salvar</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -377,9 +379,9 @@ function SimpleListTab({ table, columns, createFields, isAdmin }: {
           </tbody>
         </table>
       </div>
-      {novo && (
-        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}} onClick={e=>e.target===e.currentTarget&&setNovo(null)}>
-          <div style={{background:'#fff',borderRadius:16,padding:'24px 28px',width:560,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+      {novo && typeof document !== 'undefined' && createPortal(
+        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(15,23,42,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)',padding:20}} onClick={e=>e.target===e.currentTarget&&setNovo(null)}>
+          <div style={{background:'#fff',borderRadius:16,padding:'24px 28px',width:560,maxWidth:'min(95vw, 560px)',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:16}}>➕ Novo</div>
             <div style={{display:'grid',gap:12}}>
               {createFields.map(f => (
@@ -399,7 +401,8 @@ function SimpleListTab({ table, columns, createFields, isAdmin }: {
               <button className="btn-primary" onClick={salvar}>✓ Salvar</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -741,7 +744,7 @@ function ComissoesTab({ isRH, userId }: { isRH: boolean; userId: string }) {
         </tbody>
       </table>
 
-      {modal === 'novo' && isRH && (
+      {modal === 'novo' && isRH && typeof document !== 'undefined' && createPortal(
         <div style={modalOverlay} onClick={e=>e.target===e.currentTarget&&setModal(null)}>
           <div style={modalBox}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:14}}>+ Nova comissão</div>
@@ -776,10 +779,11 @@ function ComissoesTab({ isRH, userId }: { isRH: boolean; userId: string }) {
               <button onClick={salvarNovo} disabled={carregando} className="btn-primary">{carregando?'Salvando…':'✓ Lançar'}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {modal === 'duvida' && (
+      {modal === 'duvida' && typeof document !== 'undefined' && createPortal(
         <div style={modalOverlay} onClick={e=>e.target===e.currentTarget&&setModal(null)}>
           <div style={modalBox}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:14}}>? Tenho uma dúvida</div>
@@ -794,7 +798,8 @@ function ComissoesTab({ isRH, userId }: { isRH: boolean; userId: string }) {
               <button onClick={enviarDuvida} disabled={!duvidaTexto.trim()} className="btn-primary">Enviar dúvida</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -803,5 +808,5 @@ function ComissoesTab({ isRH, userId }: { isRH: boolean; userId: string }) {
 const th: React.CSSProperties = { padding:'8px 6px', borderBottom:'1px solid var(--border)' }
 const td: React.CSSProperties = { padding:'8px 6px' }
 const lblSm: React.CSSProperties = { display:'block', fontSize:11, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase', letterSpacing:'1px' }
-const modalOverlay: React.CSSProperties = { position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, backdropFilter:'blur(4px)' }
-const modalBox: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'24px 28px', width:520, maxWidth:'95vw', maxHeight:'90vh', overflow:'auto' }
+const modalOverlay: React.CSSProperties = { position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(15,23,42,0.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, backdropFilter:'blur(6px)', padding:20 }
+const modalBox: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'24px 28px', width:520, maxWidth:'min(95vw, 520px)', maxHeight:'90vh', overflow:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }
