@@ -110,7 +110,7 @@ export default function AgentesIAPage() {
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
         <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:18,maxWidth:780}}>
-          Crie agentes com prompts personalizados (Claude). Depois, no módulo WhatsApp,
+          Crie agentes com prompts personalizados (ChatGPT). Depois, no módulo WhatsApp,
           você pode ativar um agente em cada instância — o agente vai responder
           automaticamente as mensagens recebidas usando o prompt que você definir.
         </div>
