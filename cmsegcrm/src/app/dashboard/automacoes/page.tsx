@@ -22,6 +22,7 @@ const empty = {
   nome: '', descricao: '', ativo: true,
   trigger: 'status_perdido',
   funil_id: '', etapa_filtro: '',
+  funis_excluidos: [] as string[],
   acoes: [] as any[],
 }
 
@@ -34,6 +35,7 @@ export default function AutomacoesPage() {
   const [automacoes, setAutomacoes] = useState<any[]>([])
   const [funis, setFunis] = useState<any[]>([])
   const [usuarios, setUsuarios] = useState<any[]>([])
+  const [equipes, setEquipes] = useState<any[]>([])
   const [logs, setLogs] = useState<any[]>([])
   const [aba, setAba] = useState<'lista'|'logs'>('lista')
 
@@ -49,13 +51,14 @@ export default function AutomacoesPage() {
     const { data: prof } = await supabase.from('users').select('*').eq('id', user.id).single()
     if (prof?.role !== 'admin') { router.push('/dashboard'); return }
     setProfile(prof)
-    const [{ data: a }, { data: f }, { data: u }, { data: l }] = await Promise.all([
+    const [{ data: a }, { data: f }, { data: u }, { data: eq }, { data: l }] = await Promise.all([
       supabase.from('automacoes').select('*, funis(nome)').order('criado_em', { ascending: false }),
       supabase.from('funis').select('id, nome, etapas').order('ordem'),
       supabase.from('users').select('id, nome').order('nome'),
+      supabase.from('equipes').select('id, nome').order('nome'),
       supabase.from('automacoes_logs').select('*, automacoes(nome), negocios(titulo)').order('executado_em', { ascending: false }).limit(50),
     ])
-    setAutomacoes(a || []); setFunis(f || []); setUsuarios(u || []); setLogs(l || [])
+    setAutomacoes(a || []); setFunis(f || []); setUsuarios(u || []); setEquipes(eq || []); setLogs(l || [])
     setLoading(false)
   }
 
@@ -68,6 +71,7 @@ export default function AutomacoesPage() {
       trigger: form.trigger,
       funil_id: form.funil_id || null,
       etapa_filtro: form.etapa_filtro || null,
+      funis_excluidos: Array.isArray(form.funis_excluidos) ? form.funis_excluidos : [],
       acoes: form.acoes,
       criado_por: profile?.id,
     }
@@ -174,6 +178,7 @@ export default function AutomacoesPage() {
                         setForm({
                           nome: a.nome, descricao: a.descricao||'', ativo: a.ativo,
                           trigger: a.trigger, funil_id: a.funil_id||'', etapa_filtro: a.etapa_filtro||'',
+                          funis_excluidos: Array.isArray(a.funis_excluidos)?a.funis_excluidos:[],
                           acoes: Array.isArray(a.acoes)?a.acoes:[],
                         })
                         setModal(true)
@@ -268,6 +273,27 @@ export default function AutomacoesPage() {
                   </div>
                 )}
               </div>
+              <div style={{marginTop:10}}>
+                <label style={lbl}>Não disparar nestes funis (exclusões)</label>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:6,background:'#fff',border:'1px solid var(--border)',borderRadius:6,maxHeight:120,overflow:'auto'}}>
+                  {funis.map(fn => {
+                    const ex = (form.funis_excluidos||[]).includes(fn.id)
+                    return (
+                      <label key={fn.id} style={{display:'flex',alignItems:'center',gap:4,fontSize:11,padding:'2px 6px',borderRadius:4,background:ex?'rgba(224,82,82,0.12)':'transparent',cursor:'pointer'}}>
+                        <input type="checkbox" checked={ex} onChange={e=>{
+                          const cur = new Set<string>(form.funis_excluidos||[])
+                          if (e.target.checked) cur.add(fn.id); else cur.delete(fn.id)
+                          setForm((f:any)=>({...f,funis_excluidos:Array.from(cur)}))
+                        }} />
+                        {fn.nome}
+                      </label>
+                    )
+                  })}
+                </div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
+                  Marque os funis em que esta automação NÃO deve disparar (ex: Cobrança, Sinistro, Emissão).
+                </div>
+              </div>
             </div>
 
             <div style={{padding:14,marginBottom:14,background:'rgba(201,168,76,0.06)',border:'1px solid rgba(201,168,76,0.2)',borderRadius:10}}>
@@ -301,7 +327,7 @@ export default function AutomacoesPage() {
                       <div style={{gridColumn:'1/-1',fontSize:11,color:'var(--text-muted)',marginTop:4}}>
                         Copiar do negócio original:
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
-                          {['cliente','produto','vendedor','equipe','origem','cpf','premio'].map(c => (
+                          {['cliente','produto','seguradora','vendedor','equipe','origem','cpf','cep','placa','premio','comissao_pct','vencimento'].map(c => (
                             <label key={c} style={{display:'flex',alignItems:'center',gap:4,fontSize:11,cursor:'pointer'}}>
                               <input type="checkbox" checked={(ac.copiar||[]).includes(c)} onChange={e=>{
                                 const cur = new Set<string>(ac.copiar||[])
@@ -311,6 +337,17 @@ export default function AutomacoesPage() {
                             </label>
                           ))}
                         </div>
+                      </div>
+                      <div style={{gridColumn:'1/-1',marginTop:8}}>
+                        <label style={lbl}>Atribuir ao líder da equipe (sobrescreve "vendedor")</label>
+                        <select value={ac.vendedor_lider_equipe||''} onChange={e=>alterarAcao(idx,{vendedor_lider_equipe:e.target.value||undefined})} style={{...inp,background:'#ffffff'}}>
+                          <option value="">— não usar (mantém vendedor copiado) —</option>
+                          {equipes.map(eq => <option key={eq.id} value={eq.nome}>{eq.nome}</option>)}
+                        </select>
+                      </div>
+                      <div style={{gridColumn:'1/-1',marginTop:8}}>
+                        <label style={lbl}>Título do novo card (opcional)</label>
+                        <input value={ac.titulo||''} onChange={e=>alterarAcao(idx,{titulo:e.target.value})} placeholder='Ex: "Pós-venda"' style={inp} />
                       </div>
                     </div>
                   )}
