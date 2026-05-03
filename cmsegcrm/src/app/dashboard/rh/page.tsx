@@ -135,6 +135,10 @@ function FuncionariosTab({ isAdmin }: { isAdmin: boolean }) {
     delete payload.rh_cargos
     if (payload.salario === '' || payload.salario === undefined) payload.salario = null
     else payload.salario = Number(String(payload.salario).replace(',','.'))
+    ;['comissao_pct_padrao','comissao_pct_meta_batida'].forEach(k => {
+      if (payload[k] === '' || payload[k] === undefined) payload[k] = null
+      else payload[k] = Number(String(payload[k]).replace(',','.'))
+    })
     ;['data_nascimento','data_admissao','data_demissao'].forEach(k => { if (payload[k] === '') payload[k] = null })
     const { error } = payload.id
       ? await supabase.from('rh_funcionarios').update(payload).eq('id', payload.id)
@@ -210,6 +214,8 @@ function FuncionariosTab({ isAdmin }: { isAdmin: boolean }) {
                 ['cep','CEP','text'],['banco','Banco','text'],['agencia','Agência','text'],
                 ['conta','Conta','text'],['pix','PIX','text'],['status','Status (ativo/ferias/afastado/desligado)','text'],
                 ['contato_emerg_nome','Contato emergência','text'],['contato_emerg_fone','Fone emergência','text'],['foto_url','Foto URL','text'],
+                ['comissao_pct_padrao','% Comissão padrão (sem meta)','number'],
+                ['comissao_pct_meta_batida','% Comissão com meta batida','number'],
               ].map(([k,label,type]) => (
                 <div key={k}>
                   <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>{label}</label>
