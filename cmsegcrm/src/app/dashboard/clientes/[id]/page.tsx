@@ -22,6 +22,7 @@ export default function FichaClientePage() {
 
   const [cliente,   setCliente]   = useState<any>(null)
   const [negocios,  setNegocios]  = useState<any[]>([])
+  const [apolices,  setApolices]  = useState<any[]>([])
   const [historico, setHistorico] = useState<any[]>([])
   const [abaAtiva,  setAbaAtiva]  = useState('negocios')
   const [loading,   setLoading]   = useState(true)
@@ -39,9 +40,10 @@ export default function FichaClientePage() {
   useEffect(() => { carregar() }, [id])
 
   async function carregar() {
-    const [{ data: cli }, { data: negs }, { data: hist }, { data: fns }, { data: anxCli }, { data: anxNegs }] = await Promise.all([
+    const [{ data: cli }, { data: negs }, { data: apos }, { data: hist }, { data: fns }, { data: anxCli }, { data: anxNegs }] = await Promise.all([
       supabase.from('clientes').select('*').eq('id', id).single(),
       supabase.from('negocios').select('*, funis(tipo,nome,emoji,etapas,cor)').eq('cliente_id', id).order('created_at', {ascending:false}),
+      supabase.from('apolices').select('*').eq('cliente_id', id).order('vigencia_fim', {ascending:false, nullsFirst:false}),
       supabase.from('historico').select('*, negocios(produto, funis(tipo,nome,emoji))').eq('cliente_id', id).order('created_at', {ascending:false}),
       supabase.from('funis').select('*').order('ordem'),
       supabase.from('anexos').select('*').eq('cliente_id', id).eq('categoria','cliente').order('created_at',{ascending:false}),
@@ -49,6 +51,7 @@ export default function FichaClientePage() {
     ])
     setCliente(cli)
     setNegocios(negs || [])
+    setApolices(apos || [])
     setHistorico(hist || [])
     setFunis(fns || [])
     if (fns && fns.length > 0) setNeg(n => ({ ...n, funil_id: fns[0].id, etapa: fns[0].etapas[0] }))
@@ -282,28 +285,36 @@ export default function FichaClientePage() {
           <div className="card">
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead>
-                <tr>{['Produto','Seguradora','Prêmio','Vencimento','Etapa'].map(h =>
+                <tr>{['Apólice','Produto','Seguradora','Prêmio','Vigência','Status'].map(h =>
                   <th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',
                     color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>
                 )}</tr>
               </thead>
               <tbody>
-                {negocios.filter(n=>n.premio>0).map(n => (
-                  <tr key={n.id}>
-                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
-                      <strong>{n.produto}</strong>{n.placa&&<><br/><span style={{fontSize:11,color:'var(--text-muted)'}}>{n.placa}</span></>}
+                {apolices.map(a => (
+                  <tr key={a.id}>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,fontFamily:'monospace'}}>
+                      {a.numero||'—'}
+                      {a.placa&&<div style={{fontSize:11,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>🚗 {a.placa}</div>}
                     </td>
-                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{n.seguradora}</td>
-                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',color:'var(--gold)',fontWeight:600}}>R$ {n.premio.toLocaleString('pt-BR')}</td>
-                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{n.vencimento?new Date(n.vencimento).toLocaleDateString('pt-BR'):'—'}</td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:13}}>
+                      <strong>{a.produto||a.ramo||'—'}</strong>
+                    </td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{a.seguradora||'—'}</td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',color:'var(--gold)',fontWeight:600}}>{a.premio?`R$ ${Number(a.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}`:'—'}</td>
+                    <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                      {a.vigencia_ini?new Date(a.vigencia_ini).toLocaleDateString('pt-BR'):'—'}
+                      {' → '}
+                      {a.vigencia_fim?new Date(a.vigencia_fim).toLocaleDateString('pt-BR'):'—'}
+                    </td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                       <span style={{fontSize:10,fontWeight:600,borderRadius:10,padding:'2px 9px',
-                        background:'rgba(201,168,76,0.12)',color:'var(--gold)'}}>{n.etapa}</span>
+                        background:'rgba(201,168,76,0.12)',color:'var(--gold)'}}>{a.status||'ativo'}</span>
                     </td>
                   </tr>
                 ))}
-                {negocios.filter(n=>n.premio>0).length===0 && (
-                  <tr><td colSpan={5} style={{padding:20,color:'var(--text-muted)'}}>Sem apólices.</td></tr>
+                {apolices.length===0 && (
+                  <tr><td colSpan={6} style={{padding:20,color:'var(--text-muted)'}}>Sem apólices.</td></tr>
                 )}
               </tbody>
             </table>
