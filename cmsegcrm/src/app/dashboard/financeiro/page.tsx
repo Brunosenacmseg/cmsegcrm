@@ -16,6 +16,16 @@ export default function FinanceiroPage() {
   const [temAcesso, setTemAcesso] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  // Senha extra do cofre financeiro
+  const [senhaOk, setSenhaOk] = useState(false)
+  const [senhaDefinida, setSenhaDefinida] = useState<boolean | null>(null)
+  const [senhaInput, setSenhaInput] = useState('')
+  const [senhaErro, setSenhaErro] = useState('')
+  const [verificando, setVerificando] = useState(false)
+  const [modalSenha, setModalSenha] = useState(false)
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmaSenha, setConfirmaSenha] = useState('')
+
   const hoje = new Date()
   const [ano, setAno] = useState(hoje.getFullYear())
   const [mes, setMes] = useState(hoje.getMonth() + 1)
@@ -65,7 +75,7 @@ export default function FinanceiroPage() {
   const [aba, setAba] = useState<'dre'|'despesas'|'recorrentes'|'categorias'>('dre')
 
   useEffect(()=>{ init() }, [])
-  useEffect(()=>{ if (temAcesso) carregarDados() }, [competencia, temAcesso, modo])
+  useEffect(()=>{ if (temAcesso && senhaOk) carregarDados() }, [competencia, temAcesso, senhaOk, modo])
 
   async function init() {
     const { data:{ user } } = await supabase.auth.getUser()
@@ -78,7 +88,45 @@ export default function FinanceiroPage() {
       const { data: ac } = await supabase.from('financeiro_acessos').select('user_id').eq('user_id', user.id).maybeSingle()
       setTemAcesso(!!ac)
     }
+
+    // Senha do cofre: já desbloqueada nesta sessão?
+    if (typeof window !== 'undefined' && sessionStorage.getItem('financeiro_senha_ok') === '1') {
+      setSenhaOk(true)
+    }
+    const { data: def } = await supabase.rpc('financeiro_senha_definida')
+    setSenhaDefinida(!!def)
+
     setLoading(false)
+  }
+
+  async function verificarSenha() {
+    setSenhaErro('')
+    if (!senhaInput) return
+    setVerificando(true)
+    const { data, error } = await supabase.rpc('verify_financeiro_senha', { tentativa: senhaInput })
+    setVerificando(false)
+    if (error) { setSenhaErro('Erro ao verificar: '+error.message); return }
+    if (data === true) {
+      setSenhaOk(true); setSenhaInput('')
+      try { sessionStorage.setItem('financeiro_senha_ok', '1') } catch {}
+    } else {
+      setSenhaErro('Senha incorreta.')
+    }
+  }
+
+  async function definirSenha() {
+    setSenhaErro('')
+    if (novaSenha.length < 4) { setSenhaErro('A senha precisa ter pelo menos 4 caracteres.'); return }
+    if (novaSenha !== confirmaSenha) { setSenhaErro('As senhas não coincidem.'); return }
+    const { error } = await supabase.rpc('set_financeiro_senha', { nova: novaSenha })
+    if (error) { setSenhaErro('Erro: '+error.message); return }
+    setNovaSenha(''); setConfirmaSenha(''); setModalSenha(false); setSenhaDefinida(true)
+    alert('Senha do cofre financeiro atualizada.')
+  }
+
+  function bloquearCofre() {
+    try { sessionStorage.removeItem('financeiro_senha_ok') } catch {}
+    setSenhaOk(false)
   }
 
   async function carregarDados() {
@@ -252,6 +300,82 @@ export default function FinanceiroPage() {
   )
 
   const isAdmin = profile?.role === 'admin'
+
+  // Cofre: pede a senha antes de mostrar o módulo
+  if (!senhaOk) return (
+    <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'var(--bg-soft)',border:'1px solid var(--border)',borderRadius:16,padding:'32px 36px',width:420,maxWidth:'95vw'}}>
+        <div style={{textAlign:'center',fontSize:42,marginBottom:8}}>🔐</div>
+        <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,textAlign:'center',marginBottom:6}}>Cofre Financeiro / DRE</div>
+        <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',marginBottom:22}}>
+          Esse módulo é protegido por senha. Digite a senha para continuar.
+        </div>
+
+        {senhaDefinida === false ? (
+          <div style={{padding:14,borderRadius:8,background:'rgba(201,168,76,0.08)',border:'1px solid rgba(201,168,76,0.3)',fontSize:13,marginBottom:14}}>
+            {isAdmin ? (
+              <>Nenhuma senha cadastrada ainda. Defina a senha do cofre para liberar o acesso.</>
+            ) : (
+              <>Nenhuma senha cadastrada. Peça a um administrador para configurar a senha do cofre financeiro.</>
+            )}
+          </div>
+        ) : (
+          <>
+            <input
+              type="password"
+              autoFocus
+              placeholder="Senha do cofre"
+              value={senhaInput}
+              onChange={e=>setSenhaInput(e.target.value)}
+              onKeyDown={e=>{ if (e.key==='Enter') verificarSenha() }}
+              style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'11px 14px',color:'var(--text)',fontSize:14,outline:'none',boxSizing:'border-box',marginBottom:10}}
+            />
+            <button onClick={verificarSenha} disabled={!senhaInput||verificando} className="btn-primary" style={{width:'100%',padding:'10px 14px',fontSize:13}}>
+              {verificando ? 'Verificando...' : 'Desbloquear'}
+            </button>
+          </>
+        )}
+
+        {senhaErro && <div style={{marginTop:10,fontSize:12,color:'var(--red)',textAlign:'center'}}>{senhaErro}</div>}
+
+        {isAdmin && (
+          <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--border)',textAlign:'center'}}>
+            <button onClick={()=>{setNovaSenha('');setConfirmaSenha('');setSenhaErro('');setModalSenha(true)}} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
+              {senhaDefinida ? '🔑 Trocar senha do cofre' : '🔑 Definir senha do cofre'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {modalSenha && isAdmin && (
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalSenha(false)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:440,maxWidth:'95vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>🔑 {senhaDefinida ? 'Trocar' : 'Definir'} senha do cofre</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>
+              Essa senha será exigida de qualquer usuário (inclusive admins) para abrir o módulo Financeiro / DRE.
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Nova senha</label>
+              <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',display:'block',marginBottom:5}}>Confirmar senha</label>
+              <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)}
+                onKeyDown={e=>{ if (e.key==='Enter') definirSenha() }}
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}} />
+            </div>
+            {senhaErro && <div style={{marginBottom:10,fontSize:12,color:'var(--red)'}}>{senhaErro}</div>}
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalSenha(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={definirSenha} disabled={!novaSenha||!confirmaSenha}>✓ Salvar senha</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
   const fmt = (n: number) => Number(n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'DM Sans,sans-serif' }
   const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 }
@@ -298,10 +422,18 @@ export default function FinanceiroPage() {
         </select>
 
         {isAdmin && (
-          <button onClick={()=>setModalAcessos(true)} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
-            👥 Acessos
-          </button>
+          <>
+            <button onClick={()=>setModalAcessos(true)} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
+              👥 Acessos
+            </button>
+            <button onClick={()=>{setNovaSenha('');setConfirmaSenha('');setSenhaErro('');setModalSenha(true)}} className="btn-secondary" style={{padding:'7px 14px',fontSize:12}}>
+              🔑 Senha
+            </button>
+          </>
         )}
+        <button onClick={bloquearCofre} className="btn-secondary" title="Bloquear cofre" style={{padding:'7px 14px',fontSize:12}}>
+          🔒 Bloquear
+        </button>
         <button onClick={()=>{setEditandoDespesa(null);setFormDespesa(emptyDespesa);setModalDespesa(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>
           + Lançar despesa
         </button>
@@ -791,6 +923,33 @@ export default function FinanceiroPage() {
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn-secondary" onClick={()=>setModalCategoria(false)}>Cancelar</button>
               <button className="btn-primary" onClick={salvarCategoria} disabled={!formCategoria.codigo||!formCategoria.nome}>✓ Criar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: trocar senha do cofre (acessível com cofre destravado) */}
+      {modalSenha && isAdmin && (
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalSenha(false)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:440,maxWidth:'95vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>🔑 {senhaDefinida ? 'Trocar' : 'Definir'} senha do cofre</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>
+              Essa senha será exigida de qualquer usuário (inclusive admins) para abrir o módulo Financeiro / DRE.
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>Nova senha</label>
+              <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus style={inp} />
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Confirmar senha</label>
+              <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)}
+                onKeyDown={e=>{ if (e.key==='Enter') definirSenha() }} style={inp} />
+            </div>
+            {senhaErro && <div style={{marginBottom:10,fontSize:12,color:'var(--red)'}}>{senhaErro}</div>}
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalSenha(false)}>Cancelar</button>
+              <button className="btn-primary" onClick={definirSenha} disabled={!novaSenha||!confirmaSenha}>✓ Salvar senha</button>
             </div>
           </div>
         </div>
