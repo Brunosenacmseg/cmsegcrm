@@ -171,6 +171,29 @@ export default function ConfigurarFunisPage() {
     await carregar()
   }
 
+  async function normalizar() {
+    // 1) preview com dryRun
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers = { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token||''}` }
+    const r1 = await fetch('/api/funis/normalize', { method:'POST', headers, body: JSON.stringify({ dryRun:true }) })
+    const j1 = await r1.json()
+    if (!r1.ok) { alert('Erro ao analisar: ' + (j1.error || 'falha')); return }
+    if ((j1.grupos_duplicados || 0) === 0) { alert('Nenhum funil duplicado encontrado.'); return }
+
+    const resumo = (j1.detalhes || []).map((a:any) =>
+      `• "${a.keeper.nome}" — manter (${a.keeper.cards} cards) + unificar ${a.duplicatas.length} duplicata(s) (${a.duplicatas.reduce((s:number,d:any)=>s+d.cards,0)} cards a mover)`
+    ).join('\n')
+    const msg = `Encontrados ${j1.grupos_duplicados} grupo(s) de funis duplicados:\n\n${resumo}\n\nIsto irá:\n- mover todos os cards das duplicatas pro funil mantido\n- unificar etapas (união)\n- transferir vínculos de equipe\n- apagar ${j1.funis_apagados} funil(is) duplicado(s)\n\nEsta ação NÃO pode ser desfeita. Confirmar?`
+    if (!confirm(msg)) return
+
+    // 2) executa
+    const r2 = await fetch('/api/funis/normalize', { method:'POST', headers, body: JSON.stringify({ dryRun:false }) })
+    const j2 = await r2.json()
+    if (!r2.ok) { alert('Erro ao normalizar: ' + (j2.error || 'falha')); return }
+    alert(`✓ Normalização concluída.\n${j2.funis_apagados} funil(is) apagado(s).\n${j2.cards_movidos} card(s) movido(s).`)
+    await carregar()
+  }
+
   async function reordenar(idx: number, dir: -1|1) {
     const alvo = idx + dir
     if (alvo < 0 || alvo >= funis.length) return
@@ -200,6 +223,7 @@ export default function ConfigurarFunisPage() {
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:12,background:'var(--bg-soft)',position:'sticky',top:0,zIndex:5}}>
         <button onClick={()=>router.push('/dashboard/funis')} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>← Voltar aos funis</button>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>⚙ Configurar Funis</div>
+        <button className="btn-secondary" onClick={normalizar} title="Encontra funis com nome duplicado e unifica em um só">🧹 Normalizar duplicados</button>
         <button className="btn-primary" onClick={novoFunil}>+ Novo Funil</button>
       </div>
 
