@@ -397,11 +397,20 @@ export default function ApolicesPage() {
   const vencendo30d   = stats.vencendo_30d
 
   function statusApolice(n: any) {
-    if (!n.vencimento) return { label: n.etapa||'Ativo', cor: 'var(--teal)' }
-    const dias = diasAte(n.vencimento)
-    if (dias < 0)   return { label:'Vencido',           cor:'var(--red)' }
-    if (dias <= 7)  return { label:'Renovar',            cor:'var(--gold)' }
-    if (dias <= 30) return { label:'Renovar em breve',   cor:'#e6c97a' }
+    // Status do banco tem prioridade absoluta — antes ele era ignorado em
+    // favor do calculo por vencimento, dando a impressao de "varios
+    // status" mesmo quando o filtro estava ativo.
+    const st = (n.status || 'ativo').toLowerCase()
+    if (st === 'cancelado') return { label:'Cancelado', cor:'var(--red)' }
+    if (st === 'vencido')   return { label:'Vencido',   cor:'var(--red)' }
+    if (st === 'renovar')   return { label:'Renovar',   cor:'var(--gold)' }
+    // status === 'ativo' (ou desconhecido): mostra "Renovar em breve" como
+    // SUB-rotulo se a vigencia estiver chegando, mas mantem como Ativo.
+    if (n.vencimento) {
+      const dias = diasAte(n.vencimento)
+      if (dias < 0)   return { label:'Ativo (vencido)',         cor:'var(--gold)' }
+      if (dias <= 30) return { label:`Ativo (vence em ${dias}d)`, cor:'#e6c97a' }
+    }
     return { label:'Ativo', cor:'var(--teal)' }
   }
 
