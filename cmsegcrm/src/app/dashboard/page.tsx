@@ -41,6 +41,10 @@ export default function DashboardPage() {
   const [ini, setIni] = useState('')
   const [fim, setFim] = useState('')
   const [usuarios, setUsuarios] = useState<any[]>([])
+  const [equipes, setEquipes]   = useState<any[]>([])
+  const [equipeMembros, setEquipeMembros] = useState<Record<string, string[]>>({})
+  const [filtroEquipe, setFiltroEquipe]   = useState<string>('')
+  const [filtroUser, setFiltroUser]       = useState<string>('')
 
   const [ranking, setRanking]       = useState<any[]>([])
   const [rankingLig, setRankingLig] = useState<any[]>([])
@@ -57,7 +61,7 @@ export default function DashboardPage() {
   const intervalo = useMemo(() => intervaloDoPeriodo(periodo, ini, fim), [periodo, ini, fim])
 
   useEffect(() => { carregarKPIs() }, [])
-  useEffect(() => { if (!loading) carregarRankings() }, [periodo, ini, fim, loading])
+  useEffect(() => { if (!loading) carregarRankings() }, [periodo, ini, fim, filtroEquipe, filtroUser, loading])
 
   async function carregarKPIs() {
     const hoje = new Date()
@@ -90,6 +94,19 @@ export default function DashboardPage() {
     ])
 
     setUsuarios(usr || [])
+
+    // Carrega equipes + membros para os filtros
+    const [{ data: eqs }, { data: mems }] = await Promise.all([
+      supabase.from('equipes').select('id, nome').order('nome'),
+      supabase.from('equipe_membros').select('equipe_id, user_id'),
+    ])
+    setEquipes(eqs || [])
+    const map: Record<string, string[]> = {}
+    for (const m of (mems || []) as any[]) {
+      if (!map[m.equipe_id]) map[m.equipe_id] = []
+      map[m.equipe_id].push(m.user_id)
+    }
+    setEquipeMembros(map)
 
     const fechadasNoMes = (negs||[]).filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= inicioMes)
     const fechadasNoMesAnt = (negs||[]).filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= inicioMesAnt && n.created_at < inicioMes)
@@ -128,12 +145,19 @@ export default function DashboardPage() {
     const onlyMine = (prof as any)?.role === 'corretor'
     const meId = user?.id || ''
 
+    // Resolve a lista de user_ids permitida pelos filtros
+    let userIdsFiltro: string[] | null = null
+    if (filtroUser) userIdsFiltro = [filtroUser]
+    else if (filtroEquipe) userIdsFiltro = equipeMembros[filtroEquipe] || []
+
     // — Ranking de Vendas (negócios fechados ganhos no período) —
     let qNegs = supabase.from('negocios')
       .select('premio, comissao_pct, vendedor_id, etapa')
       .in('etapa', ETAPAS_FECHADAS_GANHAS)
       .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim)
     if (onlyMine) qNegs = qNegs.eq('vendedor_id', meId)
+    else if (userIdsFiltro && userIdsFiltro.length) qNegs = qNegs.in('vendedor_id', userIdsFiltro)
+    else if (userIdsFiltro) qNegs = qNegs.eq('vendedor_id', '00000000-0000-0000-0000-000000000000') // equipe vazia
     const { data: negs } = await qNegs
 
     // — Ranking de Ligações (sainte+encerrada) —
@@ -141,6 +165,8 @@ export default function DashboardPage() {
       .select('user_id, duracao_seg, status')
       .gte('criado_em', intervalo.inicio).lte('criado_em', intervalo.fim)
     if (onlyMine) qLig = qLig.eq('user_id', meId)
+    else if (userIdsFiltro && userIdsFiltro.length) qLig = qLig.in('user_id', userIdsFiltro)
+    else if (userIdsFiltro) qLig = qLig.eq('user_id', '00000000-0000-0000-0000-000000000000')
     const { data: ligs } = await qLig
 
     // — Tarefas pendentes (não fecha por período; mostra atual) —
@@ -150,6 +176,8 @@ export default function DashboardPage() {
       .order('prazo', { ascending: true, nullsFirst: false })
       .limit(50)
     if (onlyMine) qTar = qTar.eq('responsavel_id', meId)
+    else if (userIdsFiltro && userIdsFiltro.length) qTar = qTar.in('responsavel_id', userIdsFiltro)
+    else if (userIdsFiltro) qTar = qTar.eq('responsavel_id', '00000000-0000-0000-0000-000000000000')
     const { data: tar } = await qTar
     setTarefasPend(tar || [])
 
@@ -233,6 +261,32 @@ export default function DashboardPage() {
             <span style={{marginLeft:'auto', fontSize:11, color:'var(--text-muted)'}}>
               Exibindo <strong style={{color:'var(--gold)'}}>{intervalo.rotulo}</strong>
             </span>
+
+            <div style={{flexBasis:'100%', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap', paddingTop:10, borderTop:'1px dashed var(--border)'}}>
+              <span style={{fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', fontWeight:600, letterSpacing:1, marginRight:6}}>Filtrar por:</span>
+              <select value={filtroEquipe} onChange={e=>{ setFiltroEquipe(e.target.value); setFiltroUser('') }}
+                style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                <option value="">👥 Todas as equipes</option>
+                {equipes.map((e:any) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+              </select>
+              <select value={filtroUser} onChange={e=>setFiltroUser(e.target.value)}
+                style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                <option value="">👤 Todos os usuários</option>
+                {(filtroEquipe
+                  ? usuarios.filter((u:any) => (equipeMembros[filtroEquipe] || []).includes(u.id))
+                  : usuarios
+                ).map((u:any) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+              {(filtroEquipe || filtroUser) && (
+                <button onClick={()=>{ setFiltroEquipe(''); setFiltroUser('') }}
+                  style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer',fontWeight:600}}>
+                  ✕ Limpar
+                </button>
+              )}
+              <span style={{marginLeft:'auto', fontSize:11, color:'var(--text-muted)'}}>
+                Aplica em <strong>Vendas</strong>, <strong>Ligações</strong> e <strong>Tarefas</strong>
+              </span>
+            </div>
           </div>
         )}
 
