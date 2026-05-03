@@ -130,7 +130,7 @@ export default function FormulariosMetaPage() {
     </div>
   )
 
-  const sel: React.CSSProperties = { width:'100%',padding:'7px 10px',borderRadius:6,border:'1px solid var(--border)',background:'#0e2040',color:'var(--text)',fontSize:12,cursor:'pointer' }
+  const sel: React.CSSProperties = { width:'100%',padding:'7px 10px',borderRadius:6,border:'1px solid var(--border)',background:'#ffffff',color:'#1a1a2e',fontSize:12,cursor:'pointer' }
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -216,18 +216,18 @@ export default function FormulariosMetaPage() {
                       <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:1}}>
                         Distribuição (round-robin)
                       </div>
-                      <div style={{padding:6,background:'#fff',border:'1px solid var(--border)',borderRadius:6,maxHeight:120,overflow:'auto'}}>
-                        {vendedores.length === 0 && <div style={{fontSize:11,color:'var(--text-muted)'}}>Sem usuários</div>}
+                      <div style={{padding:8,background:'#ffffff',border:'1px solid var(--border)',borderRadius:6,maxHeight:140,overflow:'auto'}}>
+                        {vendedores.length === 0 && <div style={{fontSize:11,color:'#6b7280'}}>Sem usuários</div>}
                         {vendedores.map(u => {
                           const ativo = (m?.vendedor_ids || []).includes(u.id)
                           return (
-                            <label key={u.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:11,padding:'2px 0',cursor:'pointer'}}>
+                            <label key={u.id} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,padding:'4px 6px',cursor:'pointer',color:'#1a1a2e',borderRadius:4,background: ativo ? 'rgba(201,168,76,0.08)' : 'transparent'}}>
                               <input type="checkbox" checked={ativo} onChange={e=>{
                                 const cur = new Set<string>(m?.vendedor_ids || [])
                                 if (e.target.checked) cur.add(u.id); else cur.delete(u.id)
                                 salvarMapeamento(form, { vendedor_ids: Array.from(cur), vendedor_id: cur.size === 1 ? Array.from(cur)[0] : null })
-                              }} />
-                              {u.nome || u.email}
+                              }} style={{accentColor:'var(--gold)'}}/>
+                              <span style={{color:'#1a1a2e'}}>{u.nome || u.email}</span>
                             </label>
                           )
                         })}
