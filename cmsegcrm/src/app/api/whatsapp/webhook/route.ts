@@ -371,6 +371,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── MENSAGEM APAGADA ─────────────────────
+    // Evolution envia 'messages.delete' (alguns provedores) ou
+    // 'messages.update' com protocolMessage type=REVOKE quando alguém apaga.
+    {
+      const isDelete = event === 'messages.delete'
+      const protoType = data?.message?.protocolMessage?.type
+                     || data?.update?.message?.protocolMessage?.type
+      const isRevokeUpdate = event === 'messages.update' &&
+        (protoType === 0 || protoType === 'REVOKE' || data?.update?.messageStubType === 'REVOKE')
+      if (isDelete || isRevokeUpdate) {
+        const alvoId = data?.message?.protocolMessage?.key?.id
+                    || data?.update?.message?.protocolMessage?.key?.id
+                    || data?.key?.id
+        if (alvoId) {
+          const { data: instRow } = await supabase
+            .from('whatsapp_instancias').select('id').eq('nome', instance).single()
+          if (instRow) {
+            await supabase.from('whatsapp_mensagens')
+              .update({ deletada: true, deletada_em: new Date().toISOString() })
+              .eq('instancia_id', instRow.id)
+              .eq('evolution_id', alvoId)
+          }
+        }
+        return NextResponse.json({ ok: true, deleted: true })
+      }
+    }
+
     // ── STATUS DE CONEXÃO ────────────────────
     if (event === 'connection.update') {
       const status = data?.state === 'open' ? 'connected'

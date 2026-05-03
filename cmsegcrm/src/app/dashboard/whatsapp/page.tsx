@@ -704,10 +704,17 @@ export default function WhatsAppPage() {
                 <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
                   {mensagens.map(m=>(
                     <div key={m.id} style={{display:'flex',justifyContent:m.direcao==='enviada'?'flex-end':'flex-start'}}>
-                      <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'#dcf8c6':'#ffffff',color:'#1a1a2e',border:`1px solid ${m.direcao==='enviada'?'#bcdc99':'#e5e7eb'}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)'}}>
-                        <MidiaMensagem m={m} />
-                        {m.conteudo && (m.tipo==='text' || m.tipo==='sticker' || m.tipo==='document' || !['📷 Imagem','🎬 Vídeo','🎵 Áudio'].includes(m.conteudo)) && (
-                          <div style={{fontSize:13,lineHeight:1.5,marginTop:m.midia_url?6:0}}>{m.conteudo}</div>
+                      <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.deletada?'#f3f4f6':(m.direcao==='enviada'?'#dcf8c6':'#ffffff'),color:'#1a1a2e',border:`1px solid ${m.deletada?'#e5e7eb':(m.direcao==='enviada'?'#bcdc99':'#e5e7eb')}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)',opacity:m.deletada?0.85:1}}>
+                        <div style={{textDecoration:m.deletada?'line-through':'none',color:m.deletada?'var(--text-muted)':'inherit'}}>
+                          <MidiaMensagem m={m} />
+                          {m.conteudo && (m.tipo==='text' || m.tipo==='sticker' || m.tipo==='document' || !['📷 Imagem','🎬 Vídeo','🎵 Áudio'].includes(m.conteudo)) && (
+                            <div style={{fontSize:13,lineHeight:1.5,marginTop:m.midia_url?6:0}}>{m.conteudo}</div>
+                          )}
+                        </div>
+                        {m.deletada && (
+                          <div style={{fontSize:10,color:'var(--red)',marginTop:4,fontStyle:'italic',display:'flex',alignItems:'center',gap:4}}>
+                            🚫 Mensagem apagada {m.deletada_em ? `em ${new Date(m.deletada_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}` : ''}
+                          </div>
                         )}
                         <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,textAlign:'right'}}>
                           {new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
