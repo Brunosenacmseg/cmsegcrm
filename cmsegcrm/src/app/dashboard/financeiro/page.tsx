@@ -53,6 +53,7 @@ export default function FinanceiroPage() {
     tipo_despesa:'FIXA',
     forma_pagto:'PIX', condicao:'',
     fornecedor:'', obs:'',
+    numero_nf:'',
     recorrente_id:'',
     salvar_recorrente: true
   }
@@ -175,6 +176,7 @@ export default function FinanceiroPage() {
       forma_pagto:     formDespesa.forma_pagto || null,
       fornecedor:      formDespesa.fornecedor || null,
       obs:             formDespesa.obs || null,
+      numero_nf:       formDespesa.numero_nf || null,
       recorrente_id:   formDespesa.recorrente_id || null,
       registrado_por:  profile?.id,
     }
@@ -238,6 +240,41 @@ export default function FinanceiroPage() {
     if (!confirm('Excluir essa despesa?')) return
     await supabase.from('financeiro_despesas').delete().eq('id', id)
     await carregarDados()
+  }
+
+  async function exportarSaidas() {
+    // Exporta TODOS os lançamentos de saída pagos (com data de pagamento e Nº NF).
+    // Por padrão exporta o ano corrente; se quiser tudo, passa null/null.
+    const desde = `${ano}-01-01`
+    const ate   = `${ano+1}-01-01`
+    const { data, error } = await supabase.from('financeiro_despesas')
+      .select('*, financeiro_categorias(codigo,nome)')
+      .gte('data_pgto', desde).lt('data_pgto', ate)
+      .not('data_pgto','is',null)
+      .order('data_pgto', { ascending: true })
+    if (error) { alert('Erro ao exportar: '+error.message); return }
+    if (!data || data.length === 0) { alert('Nenhum lançamento pago encontrado em '+ano+'.'); return }
+
+    const fmtData = (d:string|null) => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : ''
+    const esc = (v:any) => v == null ? '' : String(v).replace(/[\n;]/g,' ')
+    const cab = ['Vencimento','Pago em','Categoria','Descrição','Fornecedor','Forma','Condição','Valor Pago','Nº Nota Fiscal','Observações'].join(';')
+    const linhas = data.map((d:any)=> [
+      fmtData(d.data_vencimento),
+      fmtData(d.data_pgto),
+      esc([d.financeiro_categorias?.codigo, d.financeiro_categorias?.nome].filter(Boolean).join(' ')),
+      esc(d.descricao),
+      esc(d.fornecedor),
+      esc(d.forma_pagto),
+      esc(d.condicao),
+      String(Number(d.valor||0).toFixed(2)).replace('.', ','),
+      esc(d.numero_nf),
+      esc(d.obs),
+    ].join(';')).join('\n')
+    const blob = new Blob(['﻿' + cab + '\n' + linhas], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `saidas_${ano}.csv`; a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function salvarCategoria() {
@@ -431,6 +468,9 @@ export default function FinanceiroPage() {
             </button>
           </>
         )}
+        <button onClick={exportarSaidas} className="btn-secondary" title={`Exportar todos os lançamentos pagos de ${ano}`} style={{padding:'7px 14px',fontSize:12}}>
+          ⬇ Exportar saídas {ano}
+        </button>
         <button onClick={bloquearCofre} className="btn-secondary" title="Bloquear cofre" style={{padding:'7px 14px',fontSize:12}}>
           🔒 Bloquear
         </button>
@@ -568,6 +608,7 @@ export default function FinanceiroPage() {
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Descrição</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Forma</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Cond.</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Nº NF</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}>Valor</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}></th>
                   </tr>
@@ -594,6 +635,7 @@ export default function FinanceiroPage() {
                         </td>
                         <td style={{padding:'10px 4px',fontSize:11,color:'var(--text-muted)'}}>{d.forma_pagto || '—'}</td>
                         <td style={{padding:'10px 4px',fontSize:11,color:'var(--text-muted)',fontFamily:'monospace'}}>{d.condicao || '—'}</td>
+                        <td style={{padding:'10px 4px',fontSize:11,fontFamily:'monospace',color:'var(--text-muted)'}}>{d.numero_nf || '—'}</td>
                         <td style={{padding:'10px 4px',textAlign:'right',color:'var(--danger)',fontWeight:600}}>R$ {fmt(d.valor)}</td>
                         <td style={{padding:'10px 4px',textAlign:'right'}}>
                           <button onClick={()=>{
@@ -606,6 +648,7 @@ export default function FinanceiroPage() {
                               forma_pagto:d.forma_pagto||'PIX',
                               condicao:d.condicao||'',
                               fornecedor:d.fornecedor||'', obs:d.obs||'',
+                              numero_nf:d.numero_nf||'',
                               recorrente_id:d.recorrente_id||''
                             })
                             setModalDespesa(true)
@@ -797,6 +840,11 @@ export default function FinanceiroPage() {
                 <label style={lbl}>Fornecedor</label>
                 <input value={formDespesa.fornecedor} onChange={e=>setFormDespesa((f:any)=>({...f,fornecedor:e.target.value}))} placeholder="(opcional)" style={inp} />
               </div>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Nº Nota Fiscal</label>
+              <input value={formDespesa.numero_nf} onChange={e=>setFormDespesa((f:any)=>({...f,numero_nf:e.target.value}))} placeholder="Ex: 000123456" style={inp} />
             </div>
 
             <div style={{marginBottom:14}}>
