@@ -66,26 +66,43 @@ export default function RelatoriosPage() {
 
     const ids = userIdsParaFiltro()
 
-    let qNeg = supabase.from('negocios').select('*, funis(tipo,nome,emoji), clientes(nome)')
-    let qCli = supabase.from('clientes').select('id, created_at, vendedor_id')
-    if (ids) {
-      if (ids.length === 0) {
-        // Filtro selecionado mas sem usuários (ex: equipe vazia) — força resultado vazio
-        qNeg = qNeg.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
-        qCli = qCli.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
-      } else {
-        qNeg = qNeg.in('vendedor_id', ids)
-        qCli = qCli.in('vendedor_id', ids)
+    // Query slim: so campos que o relatorio usa, filtrada por created_at
+    // (relatorio mostra dados do periodo). Pagina ate 5000 por seguranca.
+    async function carregarPaginado(): Promise<any[]> {
+      const PAGE = 1000
+      const acc: any[] = []
+      for (let off = 0; ; off += PAGE) {
+        let q = supabase.from('negocios')
+          .select('id, etapa, status, premio, comissao_pct, produto, funil_id, vendedor_id, created_at, data_fechamento, funis(tipo,nome,emoji), clientes(nome)')
+          .gte('created_at', dataInicio)
+          .order('created_at', { ascending: false })
+          .range(off, off + PAGE - 1)
+        if (ids) {
+          if (ids.length === 0) q = q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+          else                  q = q.in('vendedor_id', ids)
+        }
+        const { data } = await q
+        if (!data || !data.length) break
+        acc.push(...data)
+        if (data.length < PAGE) break
+        if (acc.length >= 5000) break
       }
+      return acc
     }
 
-    const [{ data: negs }, { data: clientes }, { data: hist }] = await Promise.all([
-      qNeg,
+    let qCli = supabase.from('clientes').select('id, created_at, vendedor_id').gte('created_at', dataInicio)
+    if (ids) {
+      if (ids.length === 0) qCli = qCli.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+      else                  qCli = qCli.in('vendedor_id', ids)
+    }
+
+    const [negs, { data: clientes }, { data: hist }] = await Promise.all([
+      carregarPaginado(),
       qCli,
       supabase.from('historico').select('created_at, tipo').gte('created_at', dataInicio),
     ])
 
-    const todos  = negs || []
+    const todos  = negs
     const ativos = todos.filter((n:any) => !['Fechado Perdido','Não Renovado','Inadimplente','Negado'].includes(n.etapa))
     const ganhos = todos.filter((n:any) => ['Fechado Ganho','Renovado','Pago','Concluído'].includes(n.etapa))
     const perdidos = todos.filter((n:any) => ['Fechado Perdido','Não Renovado'].includes(n.etapa))

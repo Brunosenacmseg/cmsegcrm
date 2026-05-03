@@ -81,6 +81,11 @@ export default function ClientesPage() {
   const [busca, setBusca]         = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
   const [visibleIds, setVisibleIds]       = useState<string[] | null>(null)
+  // Server-side pagination
+  const [pagina, setPagina] = useState(0)
+  const PAGE_SIZE = 50
+  const [totalClientes, setTotalClientes] = useState(0)
+  const [buscaDebounced, setBuscaDebounced] = useState('')
   const [modal, setModal]         = useState(false)
   const [salvando, setSalvando]   = useState(false)
   const [editando, setEditando]   = useState<any>(null)
@@ -118,18 +123,34 @@ export default function ClientesPage() {
     await carregar(ids, '')
   }
 
-  async function carregar(ids: string[] | null = visibleIds, fu: string = filtroUsuario) {
+  async function carregar(ids: string[] | null = visibleIds, fu: string = filtroUsuario, pg: number = pagina) {
     setLoading(true)
-    let q = supabase.from('clientes').select('*, users!clientes_vendedor_id_fkey(nome)').order('nome')
-    if (busca) q = q.or(`nome.ilike.%${busca}%,cpf_cnpj.ilike.%${busca}%,telefone.ilike.%${busca}%,email.ilike.%${busca}%`)
+    // SLIM: so os campos que a lista da tabela usa (sem o '*' que puxa
+    // 50+ colunas e nao ajuda em nada). Edicao usa busca individual.
+    let q = supabase
+      .from('clientes')
+      .select('id, nome, cpf_cnpj, tipo, telefone, email, vendedor_id, users!clientes_vendedor_id_fkey(nome)', { count: 'exact' })
+      .order('nome')
+      .range(pg * PAGE_SIZE, pg * PAGE_SIZE + PAGE_SIZE - 1)
+    const b = (buscaDebounced || busca).trim().replace(/[%]/g, '')
+    if (b) q = q.or(`nome.ilike.%${b}%,cpf_cnpj.ilike.%${b}%,telefone.ilike.%${b}%,email.ilike.%${b}%`)
     if (fu) q = q.eq('vendedor_id', fu)
     else if (ids) q = q.in('vendedor_id', ids)
-    const { data } = await q
+    const { data, count } = await q
     setClientes(data||[])
+    setTotalClientes(count || 0)
     setLoading(false)
   }
 
-  useEffect(() => { if (!loading) carregar() }, [busca, filtroUsuario])
+  // Debounce 350ms na busca pra nao queriar a cada tecla
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca), 350)
+    return () => clearTimeout(t)
+  }, [busca])
+  // Reset paginacao quando filtros mudam
+  useEffect(() => { setPagina(0) }, [buscaDebounced, filtroUsuario])
+  // Recarrega quando filtros ou pagina mudam
+  useEffect(() => { if (!loading) carregar(visibleIds, filtroUsuario, pagina) }, [buscaDebounced, filtroUsuario, pagina])
 
   async function buscarCep(cep: string, prefix: ''|'2'|'3') {
     const c = cep.replace(/\D/g,'')
@@ -267,7 +288,7 @@ export default function ClientesPage() {
         ], 'clientes')}
           style={{padding:'7px 12px',borderRadius:8,fontSize:12,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',cursor:'pointer',whiteSpace:'nowrap'}}
           title="Exportar lista atual em Excel">
-          📥 Exportar ({clientes.length})
+          📥 Exportar ({totalClientes})
         </button>
         <button className="btn-primary" onClick={()=>{setEditando(null);setForm({...clienteVazio});setAbaModal('dados');setModal(true)}}>
           + Novo Cliente
@@ -314,6 +335,19 @@ export default function ClientesPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {totalClientes > PAGE_SIZE && (
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginTop:14,fontSize:13,color:'var(--text-muted)'}}>
+            <button onClick={()=>setPagina(p => Math.max(0, p-1))} disabled={pagina===0||loading}
+              style={{padding:'6px 12px',border:'1px solid var(--border)',borderRadius:6,background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:pagina===0?'not-allowed':'pointer',opacity:pagina===0?0.5:1}}>
+              ← Anterior
+            </button>
+            <span>Página <b>{pagina+1}</b> de <b>{Math.max(1, Math.ceil(totalClientes/PAGE_SIZE))}</b> ({totalClientes.toLocaleString('pt-BR')} clientes)</span>
+            <button onClick={()=>setPagina(p => Math.min(Math.ceil(totalClientes/PAGE_SIZE)-1, p+1))} disabled={pagina>=Math.ceil(totalClientes/PAGE_SIZE)-1||loading}
+              style={{padding:'6px 12px',border:'1px solid var(--border)',borderRadius:6,background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:pagina>=Math.ceil(totalClientes/PAGE_SIZE)-1?'not-allowed':'pointer',opacity:pagina>=Math.ceil(totalClientes/PAGE_SIZE)-1?0.5:1}}>
+              Próxima →
+            </button>
           </div>
         )}
       </div>
