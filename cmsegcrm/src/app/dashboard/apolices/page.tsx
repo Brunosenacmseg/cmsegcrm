@@ -35,82 +35,127 @@ export default function ApolicesPage() {
   // Normalizar duplicatas
   const [dupBusy, setDupBusy] = useState(false)
 
+  // Server-side pagination + stats agregadas
+  const [pagina, setPagina] = useState(0)
+  const PAGE_SIZE = 50
+  const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState({ premio_total: 0, comissao_total: 0, vencendo_30d: 0 })
+  const [ramosLista, setRamosLista] = useState<string[]>([])
+  const [seguradorasLista, setSeguradorasLista] = useState<string[]>([])
+  const [buscaDebounced, setBuscaDebounced] = useState('')
+
   // Lançamento de comissão recebida (admin)
   const [comModal, setComModal] = useState<any|null>(null)
   const hojeIso = new Date().toISOString().slice(0,10)
   const [comForm, setComForm] = useState({ valor:'', competencia: hojeIso.slice(0,7), data_recebimento: hojeIso, parcela:'1', total_parcelas:'1', obs:'' })
   const [comSalvando, setComSalvando] = useState(false)
 
-  useEffect(() => { carregar() }, [])
+  // Carga inicial: profile + listas auxiliares (uma vez)
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
+      setProfile(prof)
+      const [{ data: usr }, { data: vleg }, { data: segs }, { data: filtros }] = await Promise.all([
+        supabase.from('users').select('id, nome').order('nome'),
+        supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
+        supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome'),
+        supabase.from('apolices_filtros').select('seguradoras, ramos').maybeSingle(),
+      ])
+      setUsuarios(usr || [])
+      setVendedoresLegado(vleg || [])
+      setSeguradorasCad((segs || []).map((s:any)=>s.nome))
+      setRamosLista((filtros as any)?.ramos || [])
+      setSeguradorasLista((filtros as any)?.seguradoras || [])
+    })()
+  }, [])
+
+  // Debounce do campo de busca (350ms) pra evitar query a cada tecla
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca), 350)
+    return () => clearTimeout(t)
+  }, [busca])
+
+  // Re-carrega lista + stats quando filtros ou pagina mudam
+  useEffect(() => { carregar() }, [pagina, filtroStatus, filtroSeg, filtroRamo, filtroVendedor, buscaDebounced, profile?.id])
+
+  // Reset pagina quando filtro muda
+  useEffect(() => { setPagina(0) }, [filtroStatus, filtroSeg, filtroRamo, filtroVendedor, buscaDebounced])
 
   async function carregar() {
+    if (!profile) return
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
-    setProfile(prof)
 
-    // Determinar IDs visíveis
+    // Determinar filtro de vendedor (RLS ja restringe, mas filtramos
+    // pra acelerar o index seek)
     let visibleIds: string[] | null = null
-    if (prof?.role === 'corretor') {
-      visibleIds = [user?.id||'']
-    } else if (prof?.role === 'lider') {
-      const { data: eq } = await supabase.from('equipes').select('id').eq('lider_id', user?.id||'')
+    if (profile.role === 'corretor') {
+      visibleIds = [profile.id]
+    } else if (profile.role === 'lider') {
+      const { data: eq } = await supabase.from('equipes').select('id').eq('lider_id', profile.id)
       if (eq?.length) {
-        const { data: mb } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eq.map(e=>e.id))
-        visibleIds = [user?.id||'', ...(mb?.map(m=>m.user_id)||[])]
-      } else visibleIds = [user?.id||'']
+        const { data: mb } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eq.map((e:any)=>e.id))
+        visibleIds = [profile.id, ...(mb?.map((m:any)=>m.user_id)||[])]
+      } else visibleIds = [profile.id]
     }
 
-    // Fonte da verdade: tabela apolices. Trazemos junto cliente, vendedor
-    // do user e dados do negócio espelho (etapa/vendedor legado quando
-    // existir) para preservar a UI atual.
-    // Fonte da verdade: tabela apolices. Sem joins aninhados pra evitar
-    // conflitos de FK no PostgREST — vendedor_legado é resolvido em JS
-    // via lookup no array `vleg`.
-    // Carrega apólices em páginas de 1000 (limite default do PostgREST)
-    // — evita perder linhas quando a base passa de 1k registros.
-    async function carregarTodas(): Promise<any[]> {
-      const PAGE = 1000
-      let offset = 0
-      const acc: any[] = []
-      while (true) {
-        let q = supabase
-          .from('apolices')
-          .select('*, clientes(id,nome,tipo), users(id,nome)')
-          .order('vigencia_fim', { ascending: true, nullsFirst: false })
-          .range(offset, offset + PAGE - 1)
-        if (visibleIds) q = (q as any).in('vendedor_id', visibleIds)
-        const { data, error } = await q
-        if (error) {
-          console.error('Erro ao carregar apólices:', error)
-          alert('Erro ao carregar apólices: ' + error.message)
-          break
-        }
-        if (!data || data.length === 0) break
-        acc.push(...data)
-        if (data.length < PAGE) break
-        offset += PAGE
-        if (offset >= 100_000) break
-      }
-      return acc
+    // Args dos filtros (null = sem filtro)
+    const argStatus    = filtroStatus    === 'todos' ? null : filtroStatus
+    const argSeg       = filtroSeg       === 'todos' ? null : filtroSeg
+    const argRamo      = filtroRamo      === 'todos' ? null : filtroRamo
+    const argBusca     = buscaDebounced.trim() || null
+    let argVendedorId: string | null = null
+    if (filtroVendedor !== 'todos') {
+      argVendedorId = filtroVendedor === 'sem' ? '00000000-0000-0000-0000-000000000000' : filtroVendedor
     }
 
-    const [apoList, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
-      carregarTodas(),
-      supabase.from('users').select('id, nome').order('nome'),
-      supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
-      supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome'),
-    ])
-    console.log(`[apolices] carregadas ${apoList.length} apólices (role=${prof?.role})`)
-    const items = apoList.map((a:any) => ({
-      ...a,
-      vencimento: a.vigencia_fim,
-      etapa:      a.status || 'ativo',
-    }))
-    setNegocios(items)
-    setUsuarios(usr || [])
-    setVendedoresLegado(vleg || [])
-    setSeguradorasCad((segs || []).map((s:any)=>s.nome))
+    // 1) Stats agregadas via RPC (1 query, retorna 4 numeros)
+    const statsP = supabase.rpc('apolices_stats', {
+      p_status: argStatus,
+      p_seguradora: argSeg,
+      p_ramo: argRamo,
+      p_vendedor_id: argVendedorId,
+      p_busca: argBusca,
+    } as any)
+
+    // 2) Pagina atual da tabela (so 50 linhas, slim columns)
+    let qList = supabase
+      .from('apolices')
+      .select('id, numero, produto, seguradora, premio, comissao_pct, vigencia_ini, vigencia_fim, status, vendedor_id, cliente_id, negocio_id, clientes(id,nome,tipo), users(id,nome)', { count: 'exact' })
+      .order('vigencia_fim', { ascending: true, nullsFirst: false })
+      .range(pagina * PAGE_SIZE, pagina * PAGE_SIZE + PAGE_SIZE - 1)
+    if (argStatus)      qList = qList.eq('status', argStatus)
+    if (argSeg)         qList = qList.eq('seguradora', argSeg)
+    if (argRamo)        qList = qList.ilike('produto', `${argRamo}%`)
+    if (argVendedorId === '00000000-0000-0000-0000-000000000000') qList = qList.is('vendedor_id', null)
+    else if (argVendedorId) qList = qList.eq('vendedor_id', argVendedorId)
+    if (visibleIds)     qList = qList.in('vendedor_id', visibleIds)
+    if (argBusca) {
+      const b = argBusca.replace(/[%]/g, '')
+      qList = qList.or(`produto.ilike.%${b}%,seguradora.ilike.%${b}%,numero.ilike.%${b}%,nome_segurado.ilike.%${b}%`)
+    }
+
+    const [statsRes, listRes] = await Promise.all([statsP, qList])
+    const sRow = (statsRes.data as any)?.[0] || (statsRes.data as any)
+    if (sRow) {
+      setStats({
+        premio_total:   Number(sRow.premio_total)   || 0,
+        comissao_total: Number(sRow.comissao_total) || 0,
+        vencendo_30d:   Number(sRow.vencendo_30d)   || 0,
+      })
+      setTotal(Number(sRow.total) || 0)
+    }
+    if (listRes.error) {
+      console.error('Erro ao carregar apólices:', listRes.error)
+      alert('Erro ao carregar apólices: ' + listRes.error.message)
+    } else {
+      const items = (listRes.data || []).map((a:any) => ({
+        ...a,
+        vencimento: a.vigencia_fim,
+        etapa:      a.status || 'ativo',
+      }))
+      setNegocios(items)
+    }
     setLoading(false)
   }
 
@@ -324,23 +369,18 @@ export default function ApolicesPage() {
     alert('Comissão lançada com sucesso. Aparecerá no extrato de '+(comModal.users?.nome||'do vendedor')+'.')
   }
 
-  const ramos       = [...new Set(negocios.map((n:any)=>(n.produto||'').split(' — ')[0]).filter(Boolean))]
-  const seguradoras = [...new Set(negocios.map((n:any)=>n.seguradora).filter(Boolean))]
+  // Listas vêm de view apolices_filtros (pré-carregada)
+  const ramos       = ramosLista
+  const seguradoras = seguradorasLista
   const isAdmin     = profile?.role === 'admin'
   const isLider     = profile?.role === 'lider'
 
-  const filtrados = negocios.filter((n:any) => {
-    const mb = !busca||(n.clientes?.nome||'').toLowerCase().includes(busca.toLowerCase())||(n.produto||'').toLowerCase().includes(busca.toLowerCase())||(n.seguradora||'').toLowerCase().includes(busca.toLowerCase())
-    const mr = filtroRamo==='todos'||(n.produto||'').startsWith(filtroRamo)
-    const ms = filtroSeg==='todos'||n.seguradora===filtroSeg
-    const mv = filtroVendedor==='todos'||(n.users?.id===filtroVendedor)||(filtroVendedor==='sem'&&!n.vendedor_id)
-    const mst = filtroStatus==='todos' || (n.status||'ativo')===filtroStatus
-    return mb&&mr&&ms&&mv&&mst
-  })
-
-  const premioTotal   = filtrados.reduce((s:number,n:any)=>s+(n.premio||0),0)
-  const comissaoTotal = filtrados.reduce((s:number,n:any)=>s+(n.premio&&n.comissao_pct?n.premio*n.comissao_pct/100:0),0)
-  const vencendo30d   = filtrados.filter((n:any)=>{if(!n.vencimento)return false;const d=diasAte(n.vencimento);return d>=0&&d<=30}).length
+  // negocios ja vem filtrado e paginado do servidor
+  const filtrados = negocios
+  const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const premioTotal   = stats.premio_total
+  const comissaoTotal = stats.comissao_total
+  const vencendo30d   = stats.vencendo_30d
 
   function statusApolice(n: any) {
     if (!n.vencimento) return { label: n.etapa||'Ativo', cor: 'var(--teal)' }
@@ -397,7 +437,7 @@ export default function ApolicesPage() {
       <div style={{flex:1,overflow:'auto',padding:'28px 28px 40px'}}>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:24}}>
           {[
-            {label:'Total de Apólices', val:filtrados.length,           tone:'info'    as const},
+            {label:'Total de Apólices', val:total,                      tone:'info'    as const},
             {label:'Prêmio Total',      val:'R$ '+fmt(premioTotal),     tone:'warning' as const},
             {label:'Comissão Total',    val:'R$ '+fmt(comissaoTotal),   tone:'success' as const},
             {label:'Vencendo (30d)',    val:vencendo30d,                tone:'danger'  as const},
@@ -436,7 +476,7 @@ export default function ApolicesPage() {
             <option value="vencido">Vencido</option>
             <option value="cancelado">Cancelado</option>
           </select>
-          <span style={{marginLeft:'auto',fontSize:13,color:'var(--text-muted)'}}>{filtrados.length} apólice{filtrados.length!==1?'s':''}</span>
+          <span style={{marginLeft:'auto',fontSize:13,color:'var(--text-muted)'}}>{total} apólice{total!==1?'s':''}</span>
         </div>
 
         <div className="card">
@@ -525,6 +565,20 @@ export default function ApolicesPage() {
           </table>
           )}
         </div>
+        {/* Paginação */}
+        {total > PAGE_SIZE && (
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginTop:14,fontSize:13,color:'var(--text-muted)'}}>
+            <button onClick={()=>setPagina(p => Math.max(0, p-1))} disabled={pagina===0||loading}
+              style={{padding:'6px 12px',border:'1px solid var(--border)',borderRadius:6,background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:pagina===0?'not-allowed':'pointer',opacity:pagina===0?0.5:1}}>
+              ← Anterior
+            </button>
+            <span>Página <b>{pagina+1}</b> de <b>{totalPaginas}</b> ({total.toLocaleString('pt-BR')} apólices)</span>
+            <button onClick={()=>setPagina(p => Math.min(totalPaginas-1, p+1))} disabled={pagina>=totalPaginas-1||loading}
+              style={{padding:'6px 12px',border:'1px solid var(--border)',borderRadius:6,background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:pagina>=totalPaginas-1?'not-allowed':'pointer',opacity:pagina>=totalPaginas-1?0.5:1}}>
+              Próxima →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Modal Editar Detalhes da Apólice */}
