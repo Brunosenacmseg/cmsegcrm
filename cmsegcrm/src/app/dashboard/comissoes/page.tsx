@@ -91,7 +91,7 @@ export default function ComissoesPage(){
     let negQuery=supabase.from('negocios').select('*,clientes(id,nome,tipo),funis(tipo,nome,emoji),users!negocios_vendedor_id_fkey(nome)').gt('premio',0).gt('comissao_pct',0).order('created_at',{ascending:false})
     if(visibleIds) negQuery=(negQuery as any).in('vendedor_id',visibleIds)
 
-    let recQuery=supabase.from('comissoes_recebidas').select('*,clientes(id,nome,tipo),apolices(id,numero),users!comissoes_recebidas_vendedor_id_fkey(id,nome)').order('data_recebimento',{ascending:false})
+    let recQuery=supabase.from('vw_comissoes_vendedor').select('*').order('data_recebimento',{ascending:false})
     if(visibleIds) recQuery=(recQuery as any).in('vendedor_id',visibleIds)
 
     const [{data:negs},{data:recs},{data:imps},{data:usrs}]=await Promise.all([
@@ -105,7 +105,7 @@ export default function ComissoesPage(){
   }
 
   const isAdminOrLider = profile?.role==='admin' || profile?.role==='lider'
-  const aplicarFiltro = (arr:any[], campo:string='vendedor_id') => filtroVendedor==='todos' ? arr : arr.filter((x:any)=> (x[campo]||x.users?.id) === filtroVendedor)
+  const aplicarFiltro = (arr:any[], campo:string='vendedor_id') => filtroVendedor==='todos' ? arr : arr.filter((x:any)=> (x[campo]||x.vendedor_id||x.users?.id) === filtroVendedor)
   const negociosFiltrados = aplicarFiltro(negocios)
   const recebidasFiltradas = aplicarFiltro(recebidas)
 
@@ -118,11 +118,11 @@ export default function ComissoesPage(){
   const recDoMes = recebidasFiltradas.filter((r:any)=>{const d=recRefData(r);return d.getFullYear()===anoSel&&d.getMonth()===mesSel})
   const recDoAno = recebidasFiltradas.filter((r:any)=>recRefData(r).getFullYear()===anoSel)
   const recLista = vistaAno?recDoAno:recDoMes
-  const recTotal = recLista.reduce((s:number,r:any)=>s+Number(r.valor||0), 0)
-  const recPorMes = Array(12).fill(0).map((_,i)=>({mes:i, total:recebidasFiltradas.filter((r:any)=>{const d=recRefData(r);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,r:any)=>s+Number(r.valor||0),0)}))
+  const recTotal = recLista.reduce((s:number,r:any)=>s+Number(r.valor_vendedor||r.valor||0), 0)
+  const recPorMes = Array(12).fill(0).map((_,i)=>({mes:i, total:recebidasFiltradas.filter((r:any)=>{const d=recRefData(r);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,r:any)=>s+Number(r.valor_vendedor||r.valor||0),0)}))
   const recMaxMes = Math.max(...recPorMes.map(m=>m.total),1)
   const recPorVendedor: Record<string,{nome:string;total:number;qtd:number}> = {}
-  recLista.forEach((r:any)=>{const k=r.vendedor_id||'sem'; const nome=r.users?.nome||'(sem vendedor)'; if(!recPorVendedor[k]) recPorVendedor[k]={nome,total:0,qtd:0}; recPorVendedor[k].total+=Number(r.valor||0); recPorVendedor[k].qtd++})
+  recLista.forEach((r:any)=>{const k=r.vendedor_id||'sem'; const nome=r.vendedor_nome||r.users?.nome||'(sem vendedor)'; if(!recPorVendedor[k]) recPorVendedor[k]={nome,total:0,qtd:0}; recPorVendedor[k].total+=Number(r.valor_vendedor||r.valor||0); recPorVendedor[k].qtd++})
   const recRankVendedores = Object.values(recPorVendedor).sort((a,b)=>b.total-a.total)
   const premioLista  =lista.reduce((s:number,n:any)=>s+(n.premio||0),0)
   const comissaoLista=lista.reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)
@@ -267,18 +267,21 @@ export default function ComissoesPage(){
                       : (usuarios.find((u:any)=>u.id===filtroVendedor)?.nome || 'vendedor').toLowerCase().replace(/\s+/g,'_')
                     const periodo = vistaAno ? String(anoSel) : `${anoSel}-${String(mesSel+1).padStart(2,'0')}`
                     exportarXLSX(recLista, [
-                      { campo:'clientes',     titulo:'Cliente',      fmt:(v:any)=>v?.nome || '' },
-                      { campo:'apolices',     titulo:'Apólice',      fmt:(v:any)=>v?.numero || '' },
-                      { campo:'users',        titulo:'Vendedor',     fmt:(v:any)=>v?.nome || '' },
-                      { campo:'produto',      titulo:'Produto' },
-                      { campo:'seguradora',   titulo:'Seguradora' },
-                      { campo:'competencia',  titulo:'Competência' },
+                      { campo:'cliente_nome',   titulo:'Cliente' },
+                      { campo:'apolice_numero', titulo:'Apólice' },
+                      { campo:'vendedor_nome',  titulo:'Vendedor' },
+                      { campo:'produto',        titulo:'Produto' },
+                      { campo:'seguradora',     titulo:'Seguradora' },
+                      { campo:'competencia',    titulo:'Competência' },
                       { campo:'data_recebimento', titulo:'Recebido em', fmt:fmt.data },
-                      { campo:'parcela',      titulo:'Parcela' },
+                      { campo:'parcela',        titulo:'Parcela' },
                       { campo:'total_parcelas', titulo:'Total parcelas' },
-                      { campo:'valor',        titulo:'Valor (R$)',   fmt:fmt.brl },
-                      { campo:'status',       titulo:'Status' },
-                      { campo:'obs',          titulo:'Descrição' },
+                      { campo:'valor_seguradora', titulo:'Valor seguradora (R$)', fmt:fmt.brl },
+                      { campo:'meta_batida',    titulo:'Meta batida', fmt:(v:any)=>v?'SIM':'NÃO' },
+                      { campo:'pct_aplicado',   titulo:'% Aplicado' },
+                      { campo:'valor_vendedor', titulo:'Comissão vendedor (R$)', fmt:fmt.brl },
+                      { campo:'status',         titulo:'Status' },
+                      { campo:'obs',            titulo:'Descrição' },
                     ], `comissoes_${vendedorNome}_${periodo}`)
                   }}
                   disabled={!recLista.length}
@@ -290,28 +293,34 @@ export default function ComissoesPage(){
             </div>
             {loading?<div style={{color:'var(--text-muted)'}}>Carregando...</div>:(
             <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead><tr>{['Cliente','Apólice','Vendedor','Produto','Seguradora','Competência','Recebido em','Parcela','Valor'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Cliente','Apólice','Vendedor','Produto','Seguradora','Competência','Recebido em','Parcela','Valor seguradora','% Aplicado','Comissão vendedor'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {recLista.map((r:any)=>(
                   <tr key={r.id} onClick={()=>r.cliente_id && router.push(`/dashboard/clientes/${r.cliente_id}`)} style={{cursor:r.cliente_id?'pointer':'default'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(201,168,76,0.03)'} onMouseLeave={e=>e.currentTarget.style.background=''}>
                     <td style={td0}>
-                      <div style={{fontWeight:500}}>{r.clientes?.nome||'—'}</div>
+                      <div style={{fontWeight:500}}>{r.cliente_nome||'—'}</div>
                       {r.obs && <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:280}}>{r.obs}</div>}
                     </td>
-                    <td style={{...td0,fontSize:12,fontFamily:'monospace'}}>{r.apolices?.numero||'—'}</td>
-                    <td style={{...td0,fontSize:12}}>{r.users?.nome||'—'}</td>
+                    <td style={{...td0,fontSize:12,fontFamily:'monospace'}}>{r.apolice_numero||'—'}</td>
+                    <td style={{...td0,fontSize:12}}>{r.vendedor_nome||'—'}</td>
                     <td style={{...td0,fontSize:12}}>{r.produto||'—'}</td>
                     <td style={{...td0,fontSize:12,color:'var(--text-muted)'}}>{r.seguradora||'—'}</td>
                     <td style={{...td0,fontSize:12}}>{r.competencia||'—'}</td>
                     <td style={{...td0,fontSize:12,color:'var(--text-muted)'}}>{r.data_recebimento?new Date(r.data_recebimento).toLocaleDateString('pt-BR'):'—'}</td>
                     <td style={{...td0,fontSize:12,textAlign:'center'}}>{r.parcela||1}/{r.total_parcelas||1}</td>
-                    <td style={td0}><div style={{color:'var(--teal)',fontWeight:700,fontSize:14}}>R$ {Number(r.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></td>
+                    <td style={{...td0,fontSize:12,color:'var(--text-muted)'}}>R$ {Number(r.valor_seguradora||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                    <td style={{...td0,fontSize:11,textAlign:'center'}}>
+                      <span title={r.meta_batida?'Meta batida no mês':'Meta não batida'} style={{padding:'2px 6px',borderRadius:5,fontWeight:600,background:r.meta_batida?'rgba(28,181,160,0.15)':'rgba(255,255,255,0.05)',color:r.meta_batida?'var(--teal)':'var(--text-muted)'}}>
+                        {Number(r.pct_aplicado||0).toFixed(2)}%{r.meta_batida?' ★':''}
+                      </span>
+                    </td>
+                    <td style={td0}><div style={{color:'var(--teal)',fontWeight:700,fontSize:14}}>R$ {Number(r.valor_vendedor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></td>
                   </tr>
                 ))}
               </tbody>
               {recLista.length>0 && <tfoot><tr style={{background:'rgba(255,255,255,0.03)'}}>
-                <td colSpan={8} style={{padding:'12px 0',fontWeight:700,fontSize:13}}>TOTAL</td>
-                <td style={{padding:'12px 0',color:'var(--teal)',fontWeight:700,fontSize:15,fontFamily:'DM Serif Display,serif'}}>R$ {fmtFull(recTotal)}</td>
+                <td colSpan={10} style={{padding:'12px 0',fontWeight:700,fontSize:13}}>TOTAL COMISSÃO VENDEDOR</td>
+                <td style={{padding:'12px 0',color:'var(--teal)',fontWeight:700,fontSize:15,fontFamily:'DM Serif Display,serif'}}>R$ {fmtFull(recLista.reduce((s:number,r:any)=>s+Number(r.valor_vendedor||0),0))}</td>
               </tr></tfoot>}
             </table>)}
             {recLista.length===0&&!loading&&(
