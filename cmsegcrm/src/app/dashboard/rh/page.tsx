@@ -9,12 +9,12 @@ type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'comissoes' | 'beneficios'
 const TABS_TODOS: { key: Tab; label: string; icon: string }[] = [
   { key:'avaliacoes',       label:'Avaliações',       icon:'⭐' },
   { key:'comissoes',        label:'Comissões',        icon:'💰' },
+  { key:'ferias',           label:'Férias',           icon:'🏖️' },
 ]
 // Abas restritas à equipe "RH" (e admin)
 const TABS_RH: { key: Tab; label: string; icon: string }[] = [
   { key:'funcionarios',     label:'Funcionários',     icon:'🧑' },
   { key:'aniversariantes',  label:'Aniversariantes',  icon:'🎂' },
-  { key:'ferias',           label:'Férias',           icon:'🏖️' },
   { key:'documentos',       label:'Documentos',       icon:'📁' },
   { key:'beneficios',       label:'Benefícios',       icon:'💼' },
   { key:'cargos',           label:'Cargos',           icon:'📋' },
@@ -80,7 +80,7 @@ export default function RHPage() {
           <>
             {tab === 'funcionarios'    && isRH && <FuncionariosTab isAdmin={podeEditar} />}
             {tab === 'aniversariantes' && isRH && <AniversariantesTab />}
-            {tab === 'ferias'          && isRH && <FeriasTab isAdmin={podeEditar} />}
+            {tab === 'ferias'          && <FeriasTab isRH={isRH} userId={profile?.id} />}
             {tab === 'avaliacoes'      && <SimpleListTab table="rh_avaliacoes"  isAdmin={isRH} columns={[
               {k:'periodo',label:'Período'},{k:'nota_geral',label:'Nota'},{k:'feedback',label:'Feedback'}
             ]} createFields={[
@@ -282,43 +282,190 @@ function AniversariantesTab() {
 }
 
 // ────────── Férias ──────────
-function FeriasTab({ isAdmin }: { isAdmin: boolean }) {
+function FeriasTab({ isRH, userId }: { isRH: boolean; userId: string }) {
   const supabase = createClient()
   const [list, setList] = useState<any[]>([])
+  const [meuFuncId, setMeuFuncId] = useState<string|null>(null)
+  const [modal, setModal] = useState<'novo'|'ajuste'|null>(null)
+  const [ajusteItem, setAjusteItem] = useState<any>(null)
+  const [ajusteTexto, setAjusteTexto] = useState('')
+  const [novoForm, setNovoForm] = useState({ inicio:'', fim:'', justificativa:'' })
+  const [filtroFunc, setFiltroFunc] = useState<string|null>(null)
+  const [salvando, setSalvando] = useState(false)
+
   async function carregar() {
-    const { data } = await supabase.from('rh_ferias').select('*, rh_funcionarios(nome)').order('inicio', { ascending: false })
+    let q = supabase.from('rh_ferias').select('*, rh_funcionarios(id, nome, user_id)').order('inicio', { ascending: false })
+    if (isRH && filtroFunc) q = q.eq('funcionario_id', filtroFunc)
+    const { data } = await q
     setList(data || [])
   }
-  useEffect(() => { carregar() }, [])
-  async function aprovar(id: string, status: 'aprovada'|'recusada') {
+  async function carregarMeuFunc() {
+    if (!userId) return
+    const { data } = await supabase.from('rh_funcionarios').select('id').eq('user_id', userId).maybeSingle()
+    if (data) setMeuFuncId((data as any).id)
+  }
+  useEffect(() => { carregar(); carregarMeuFunc() }, [filtroFunc, userId])
+
+  async function decidir(id: string, status: 'aprovada'|'recusada') {
+    if (!confirm(`Confirmar ${status.toUpperCase()}?`)) return
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('rh_ferias').update({ status, aprovado_por: user?.id, aprovado_em: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('rh_ferias').update({
+      status, aprovado_por: user?.id, aprovado_em: new Date().toISOString(), motivo_ajustes: null,
+    }).eq('id', id)
     if (error) { alert('Erro: '+error.message); return }
     carregar()
   }
+
+  async function pedirAjuste() {
+    if (!ajusteItem || !ajusteTexto.trim()) return
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase.from('rh_ferias').update({
+      status: 'ajustes', motivo_ajustes: ajusteTexto, aprovado_por: user?.id, aprovado_em: new Date().toISOString(),
+    }).eq('id', ajusteItem.id)
+    if (error) { alert('Erro: '+error.message); return }
+    setModal(null); setAjusteItem(null); setAjusteTexto('')
+    carregar()
+  }
+
+  async function solicitar() {
+    if (!novoForm.inicio || !novoForm.fim) { alert('Preencha início e fim'); return }
+    if (!meuFuncId) {
+      alert('Seu usuário ainda não está vinculado a um cadastro de funcionário. Peça ao RH para cadastrar você.')
+      return
+    }
+    setSalvando(true)
+    const { error } = await supabase.from('rh_ferias').insert({
+      funcionario_id: meuFuncId,
+      inicio: novoForm.inicio, fim: novoForm.fim,
+      justificativa: novoForm.justificativa || null,
+      status: 'solicitada',
+    })
+    setSalvando(false)
+    if (error) { alert('Erro: '+error.message); return }
+    setModal(null); setNovoForm({ inicio:'', fim:'', justificativa:'' })
+    carregar()
+  }
+
+  async function cancelar(id: string) {
+    if (!confirm('Cancelar esta solicitação?')) return
+    const { error } = await supabase.from('rh_ferias').update({ status: 'cancelada' }).eq('id', id)
+    if (error) { alert('Erro: '+error.message); return }
+    carregar()
+  }
+
+  const corStatus = (s: string) =>
+    s==='aprovada' ? { bg:'rgba(28,181,160,0.10)', cor:'var(--teal)' } :
+    s==='recusada' ? { bg:'rgba(224,82,82,0.10)',  cor:'var(--red)' } :
+    s==='ajustes'  ? { bg:'rgba(240,160,32,0.10)', cor:'#f0a020' } :
+    s==='cancelada'? { bg:'rgba(255,255,255,0.05)',cor:'var(--text-muted)' } :
+                      { bg:'rgba(201,168,76,0.10)', cor:'var(--gold)' }
+
   return (
-    <div className="card">
-      <table style={{width:'100%',borderCollapse:'collapse'}}>
-        <thead><tr>{['Funcionário','Início','Fim','Dias','Status','Ações'].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
-        <tbody>
-          {list.map(f => (
-            <tr key={f.id}>
-              <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>{f.rh_funcionarios?.nome || '—'}</td>
-              <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.inicio).toLocaleDateString('pt-BR')}</td>
-              <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.fim).toLocaleDateString('pt-BR')}</td>
-              <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{f.dias}d</td>
-              <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11}}><span style={{borderRadius:20,padding:'3px 10px',background:f.status==='aprovada'?'rgba(28,181,160,0.10)':f.status==='recusada'?'rgba(224,82,82,0.10)':'rgba(201,168,76,0.10)',color:f.status==='aprovada'?'var(--teal)':f.status==='recusada'?'var(--red)':'var(--gold)',fontWeight:600}}>{f.status}</span></td>
-              <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
-                {isAdmin && f.status === 'solicitada' && <>
-                  <button onClick={()=>aprovar(f.id,'aprovada')} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.05)',color:'var(--teal)',cursor:'pointer',marginRight:4}}>Aprovar</button>
-                  <button onClick={()=>aprovar(f.id,'recusada')} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.05)',color:'var(--red)',cursor:'pointer'}}>Recusar</button>
-                </>}
-              </td>
-            </tr>
-          ))}
-          {list.length === 0 && <tr><td colSpan={6} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>Sem férias registradas.</td></tr>}
-        </tbody>
-      </table>
+    <div>
+      <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}>
+        <span style={{fontSize:13,color:'var(--text-muted)'}}>
+          {isRH ? 'Visualização geral (filtre por funcionário se quiser)' : 'Suas solicitações de férias'}
+        </span>
+        <div style={{flex:1}} />
+        {isRH && (
+          <div style={{minWidth:240}}>
+            <FuncionarioPicker value={filtroFunc} onChange={setFiltroFunc} />
+          </div>
+        )}
+        <button className="btn-primary" onClick={()=>setModal('novo')} style={{padding:'7px 14px',fontSize:12}}>
+          + Nova solicitação
+        </button>
+      </div>
+
+      <div className="card">
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Funcionário','Início','Fim','Dias','Justificativa','Status','Ações'].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
+          <tbody>
+            {list.map(f => {
+              const cor = corStatus(f.status)
+              const ehMeuPedido = f.rh_funcionarios?.user_id === userId
+              const podeAprovar = isRH && (f.status === 'solicitada' || f.status === 'ajustes')
+              const podeCancelar = ehMeuPedido && (f.status === 'solicitada' || f.status === 'ajustes')
+              return (
+                <tr key={f.id}>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>{f.rh_funcionarios?.nome || '—'}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.inicio).toLocaleDateString('pt-BR')}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.fim).toLocaleDateString('pt-BR')}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{f.dias}d</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11,color:'var(--text-muted)',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={f.justificativa || ''}>{f.justificativa || '—'}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11}}>
+                    <span style={{borderRadius:20,padding:'3px 10px',background:cor.bg,color:cor.cor,fontWeight:600}}>{f.status}</span>
+                    {f.status==='ajustes' && f.motivo_ajustes && (
+                      <div style={{fontSize:10,color:'#f0a020',marginTop:4,maxWidth:240}} title={f.motivo_ajustes}>“{f.motivo_ajustes}”</div>
+                    )}
+                  </td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                    {podeAprovar && (
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        <button onClick={()=>decidir(f.id,'aprovada')} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.05)',color:'var(--teal)',cursor:'pointer'}}>Aprovar</button>
+                        <button onClick={()=>decidir(f.id,'recusada')} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.05)',color:'var(--red)',cursor:'pointer'}}>Recusar</button>
+                        <button onClick={()=>{setAjusteItem(f); setAjusteTexto(f.motivo_ajustes||''); setModal('ajuste')}} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid rgba(240,160,32,0.5)',background:'rgba(240,160,32,0.06)',color:'#f0a020',cursor:'pointer'}}>Pedir ajuste</button>
+                      </div>
+                    )}
+                    {podeCancelar && (
+                      <button onClick={()=>cancelar(f.id)} style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>Cancelar</button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+            {list.length === 0 && <tr><td colSpan={7} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>
+              Nenhuma solicitação de férias.
+            </td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal === 'novo' && typeof document !== 'undefined' && createPortal(
+        <div style={modalOverlay} onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div style={modalBox}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:14}}>+ Nova solicitação de férias</div>
+            <div style={{display:'grid',gap:10}}>
+              <div>
+                <label style={lblSm}>Início *</label>
+                <input type="date" value={novoForm.inicio} onChange={e=>setNovoForm({...novoForm,inicio:e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={lblSm}>Fim *</label>
+                <input type="date" value={novoForm.fim} onChange={e=>setNovoForm({...novoForm,fim:e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={lblSm}>Justificativa / observações</label>
+                <textarea value={novoForm.justificativa} onChange={e=>setNovoForm({...novoForm,justificativa:e.target.value})} placeholder="Motivo / observações" style={{...inputStyle, minHeight:80}} />
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16}}>
+              <button onClick={()=>setModal(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={solicitar} disabled={salvando} className="btn-primary">{salvando?'Enviando…':'✓ Solicitar'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {modal === 'ajuste' && typeof document !== 'undefined' && createPortal(
+        <div style={modalOverlay} onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div style={modalBox}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:14}}>? Pedir ajuste / esclarecimento</div>
+            <p style={{fontSize:13,color:'var(--text-muted)',marginTop:0}}>
+              Descreva o que precisa ser ajustado ou esclarecido. O colaborador será notificado.
+            </p>
+            <textarea value={ajusteTexto} onChange={e=>setAjusteTexto(e.target.value)}
+              placeholder="Ex: 'Pode mudar o início para depois do dia 15? Já temos outra férias coincidindo'"
+              style={{...inputStyle, minHeight:120}} autoFocus />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
+              <button onClick={()=>setModal(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={pedirAjuste} disabled={!ajusteTexto.trim()} className="btn-primary">Enviar pedido</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -453,19 +600,29 @@ function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
   const supabase = createClient()
   const [funcId, setFuncId] = useState<string|null>(null)
   const [docs, setDocs] = useState<any[]>([])
-  const [tipo, setTipo] = useState('RG')
+  const [todos, setTodos] = useState<any[]>([])
+  const [tipo, setTipo] = useState('Contrato')
   const [validade, setValidade] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [busca, setBusca] = useState('')
   const [enviando, setEnviando] = useState(false)
 
   async function carregar() {
-    if (!funcId) { setDocs([]); return }
-    const { data } = await supabase.from('rh_documentos').select('*').eq('funcionario_id', funcId).order('enviado_em', { ascending: false })
+    // Modo "biblioteca": sem funcionário selecionado, traz tudo (apenas RH/admin)
+    if (!funcId) {
+      const { data } = await supabase.from('rh_documentos')
+        .select('*, rh_funcionarios(id, nome)').order('enviado_em', { ascending: false }).limit(500)
+      setTodos(data || []); setDocs([])
+      return
+    }
+    const { data } = await supabase.from('rh_documentos').select('*, rh_funcionarios(id, nome)')
+      .eq('funcionario_id', funcId).order('enviado_em', { ascending: false })
     setDocs(data || [])
   }
   useEffect(() => { carregar() }, [funcId])
 
   async function upload(file: File) {
-    if (!funcId) { alert('Escolha um funcionário antes.'); return }
+    if (!funcId) { alert('Escolha um funcionário antes de enviar.'); return }
     setEnviando(true)
     try {
       const safe = file.name.replace(/[^\w.-]/g, '_')
@@ -475,10 +632,10 @@ function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
       const { data: { user } } = await supabase.auth.getUser()
       const { error: insErr } = await supabase.from('rh_documentos').insert({
         funcionario_id: funcId, tipo, arquivo_url: path, arquivo_nome: file.name,
-        validade: validade || null, enviado_por: user?.id || null,
+        validade: validade || null, descricao: descricao || null, enviado_por: user?.id || null,
       })
       if (insErr) throw insErr
-      setValidade('')
+      setValidade(''); setDescricao('')
       await carregar()
     } catch (e: any) {
       alert('Erro no upload: ' + (e?.message || ''))
@@ -500,44 +657,77 @@ function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
     carregar()
   }
 
+  const lista = funcId ? docs : todos
+  const filtrada = lista.filter(d => {
+    if (!busca.trim()) return true
+    const q = busca.toLowerCase()
+    return (d.tipo||'').toLowerCase().includes(q)
+        || (d.descricao||'').toLowerCase().includes(q)
+        || (d.arquivo_nome||'').toLowerCase().includes(q)
+        || (d.rh_funcionarios?.nome||'').toLowerCase().includes(q)
+  })
+
   return (
     <div>
-      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:12,marginBottom:16,alignItems:'end'}}>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:12,marginBottom:14,alignItems:'end'}}>
         <div>
-          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Funcionário</label>
+          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>
+            Funcionário {funcId ? '(documentos do funcionário)' : '(deixe vazio para ver toda a biblioteca)'}
+          </label>
           <FuncionarioPicker value={funcId} onChange={setFuncId} />
         </div>
         <div>
-          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Tipo</label>
-          <select value={tipo} onChange={e=>setTipo(e.target.value)} style={inputStyle}>
-            {['RG','CPF','CTPS','Contrato','Comprovante de residência','Foto 3x4','Atestado','Certificado','Outro'].map(t=><option key={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Validade (opc)</label>
-          <input type="date" value={validade} onChange={e=>setValidade(e.target.value)} style={inputStyle} />
+          <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Buscar</label>
+          <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Tipo, descrição, arquivo, funcionário…" style={inputStyle} />
         </div>
       </div>
 
-      {isAdmin && funcId && (
-        <div style={{marginBottom:16}}>
-          <label style={{display:'inline-block',padding:'8px 14px',borderRadius:8,background:'var(--gold-soft)',color:'var(--gold)',cursor:enviando?'wait':'pointer',fontSize:12,fontWeight:600,border:'1px solid var(--gold)'}}>
-            {enviando ? '⏳ Enviando…' : '📤 Enviar arquivo'}
-            <input type="file" style={{display:'none'}} disabled={enviando}
-              onChange={e=>{ const f = e.target.files?.[0]; if (f) upload(f); e.target.value='' }} />
-          </label>
+      {isAdmin && (
+        <div className="card" style={{marginBottom:14, padding:'14px 18px', background:'var(--gold-soft)', borderColor:'rgba(201,168,76,0.3)'}}>
+          <div style={{fontSize:12,fontWeight:600,color:'var(--gold)',marginBottom:10,letterSpacing:'1px',textTransform:'uppercase'}}>📤 Anexar novo documento</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            <div>
+              <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Tipo *</label>
+              <select value={tipo} onChange={e=>setTipo(e.target.value)} style={inputStyle}>
+                {['Contrato','RG','CPF','CTPS','Comprovante de residência','Foto 3x4','Atestado médico','Certificado','Termo aditivo','Termo de confidencialidade','Holerite','Outro'].map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Validade (opcional)</label>
+              <input type="date" value={validade} onChange={e=>setValidade(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{display:'flex',alignItems:'flex-end'}}>
+              <label style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'100%',padding:'8px 14px',borderRadius:8,background: funcId ? 'var(--gold)' : 'rgba(255,255,255,0.1)', color: funcId ? '#fff' : 'var(--text-muted)', cursor: !funcId || enviando ? 'not-allowed' : 'pointer',fontSize:12,fontWeight:600, border:'1px solid var(--gold)', opacity: !funcId ? 0.5 : 1}}>
+                {enviando ? '⏳ Enviando…' : '📎 Escolher arquivo'}
+                <input type="file" style={{display:'none'}} disabled={enviando || !funcId}
+                  onChange={e=>{ const f = e.target.files?.[0]; if (f) upload(f); e.target.value='' }} />
+              </label>
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Descrição</label>
+            <textarea value={descricao} onChange={e=>setDescricao(e.target.value)} rows={2}
+              placeholder="Ex.: 'Contrato CLT assinado em 12/03 — versão 2'"
+              style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+          </div>
+          {!funcId && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>Escolha um funcionário acima para habilitar o upload.</div>}
         </div>
       )}
 
       <div className="card">
-        {!funcId ? <div style={{padding:20,color:'var(--text-muted)',textAlign:'center'}}>Selecione um funcionário para ver os documentos.</div> :
-          docs.length === 0 ? <div style={{padding:20,color:'var(--text-muted)',textAlign:'center'}}>Nenhum documento ainda.</div> :
+        {filtrada.length === 0 ? (
+          <div style={{padding:20,color:'var(--text-muted)',textAlign:'center'}}>
+            {funcId ? 'Nenhum documento para este funcionário.' : busca ? 'Nada encontrado.' : 'Biblioteca vazia.'}
+          </div>
+        ) : (
           <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Tipo','Arquivo','Validade','Enviado em','Ações'].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Funcionário','Tipo','Descrição','Arquivo','Validade','Enviado em','Ações'].map(h=><th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>)}</tr></thead>
             <tbody>
-              {docs.map(d => (
+              {filtrada.map(d => (
                 <tr key={d.id}>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{d.rh_funcionarios?.nome || '—'}</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,fontWeight:500}}>{d.tipo}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11,color:'var(--text-muted)',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={d.descricao||''}>{d.descricao || '—'}</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{d.arquivo_nome || d.arquivo_url}</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{d.validade ? new Date(d.validade).toLocaleDateString('pt-BR') : '—'}</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{new Date(d.enviado_em).toLocaleDateString('pt-BR')}</td>
@@ -549,7 +739,7 @@ function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
               ))}
             </tbody>
           </table>
-        }
+        )}
       </div>
     </div>
   )
