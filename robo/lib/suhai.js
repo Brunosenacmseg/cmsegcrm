@@ -246,6 +246,42 @@ async function cotacaoSuhai(page, dados) {
     // Espera o Angular renderizar a etapa atual antes do primeiro pass
     if (ciclo === 0) await page.waitForTimeout(1500)
 
+    // Detecta modal de seleção de veículo (aparece quando placa retorna múltiplas FIPE)
+    const modalAtivo = await page.evaluate((modeloAlvo) => {
+      const txt = document.body.innerText
+      if (!/selecione\s+o\s+ve[íi]culo/i.test(txt)) return false
+      const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+      const alvo = norm(modeloAlvo || '')
+      const linhas = Array.from(document.querySelectorAll('tr, .modal tr'))
+      // Busca melhor match pelo texto da linha (modelo informado pelo usuário)
+      let melhor = null
+      for (const tr of linhas) {
+        const txt = norm(tr.textContent || '')
+        if (!txt || txt.length < 8) continue
+        if (alvo && txt.includes(alvo.split(' ')[0])) { melhor = tr; break }
+      }
+      // Fallback: primeira linha com botão/click handler ou checkbox/radio
+      if (!melhor) {
+        for (const tr of linhas) {
+          if (tr.querySelector('button, input[type=radio], input[type=checkbox], a, [ng-click]')) { melhor = tr; break }
+        }
+      }
+      if (!melhor) return false
+      const acao = melhor.querySelector('button, input[type=radio], input[type=checkbox], a, [ng-click]') || melhor
+      acao.click()
+      return true
+    }, dados.modelo || '').catch(() => false)
+    if (modalAtivo) {
+      await page.waitForTimeout(800)
+      // Tenta fechar o modal explicitamente (alguns fluxos precisam de Continuar/Fechar)
+      await page.evaluate(() => {
+        const b = document.getElementById('btnFecharModalV')
+          || Array.from(document.querySelectorAll('button')).find(x => /^\s*ok\s*$/i.test(x.innerText || ''))
+        if (b && b.offsetParent !== null) b.click()
+      }).catch(() => {})
+      await page.waitForTimeout(800)
+    }
+
     let preencheuAlgum = false
     let aindaTemVisivel = false
     for (const k of Array.from(pendentes)) {
