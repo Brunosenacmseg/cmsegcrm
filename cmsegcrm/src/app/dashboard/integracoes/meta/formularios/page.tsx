@@ -14,6 +14,7 @@ type Form = {
     funil_id: string | null
     etapa: string | null
     vendedor_id: string | null
+    vendedor_ids?: string[]
     ativo: boolean
     criar_negocio: boolean
     campo_map?: Record<string, string>
@@ -91,7 +92,7 @@ export default function FormulariosMetaPage() {
 
   async function salvarMapeamento(form: Form, patch: Partial<NonNullable<Form['mapeamento']>>) {
     setSalvando(form.form_id)
-    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {} }
+    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, vendedor_ids: [], ativo: true, criar_negocio: true, campo_map: {} }
     const novo = { ...atual, ...patch }
     try {
       await fetch('/api/meta/forms', {
@@ -212,11 +213,30 @@ export default function FormulariosMetaPage() {
                       </select>
                     </div>
                     <div>
-                      <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:1}}>Vendedor responsável</div>
-                      <select value={m?.vendedor_id || ''} onChange={e=>salvarMapeamento(form, { vendedor_id: e.target.value || null })} style={sel}>
-                        <option value="">— sem responsável —</option>
-                        {vendedores.map(u => <option key={u.id} value={u.id}>{u.nome || u.email}</option>)}
-                      </select>
+                      <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:1}}>
+                        Distribuição (round-robin)
+                      </div>
+                      <div style={{padding:6,background:'#fff',border:'1px solid var(--border)',borderRadius:6,maxHeight:120,overflow:'auto'}}>
+                        {vendedores.length === 0 && <div style={{fontSize:11,color:'var(--text-muted)'}}>Sem usuários</div>}
+                        {vendedores.map(u => {
+                          const ativo = (m?.vendedor_ids || []).includes(u.id)
+                          return (
+                            <label key={u.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:11,padding:'2px 0',cursor:'pointer'}}>
+                              <input type="checkbox" checked={ativo} onChange={e=>{
+                                const cur = new Set<string>(m?.vendedor_ids || [])
+                                if (e.target.checked) cur.add(u.id); else cur.delete(u.id)
+                                salvarMapeamento(form, { vendedor_ids: Array.from(cur), vendedor_id: cur.size === 1 ? Array.from(cur)[0] : null })
+                              }} />
+                              {u.nome || u.email}
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
+                        {(m?.vendedor_ids || []).length === 0 ? 'Sem responsável fixo (sem distribuição)' :
+                         (m?.vendedor_ids || []).length === 1 ? '1 vendedor — sempre ele' :
+                         `${(m?.vendedor_ids || []).length} vendedores — distribui em sequência`}
+                      </div>
                     </div>
                   </div>
 

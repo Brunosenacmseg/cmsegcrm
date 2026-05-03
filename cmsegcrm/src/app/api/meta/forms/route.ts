@@ -87,8 +87,10 @@ export async function POST(req: NextRequest) {
   if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, ativo, criar_negocio, observacoes, campo_map } = body
+  const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, vendedor_ids, ativo, criar_negocio, observacoes, campo_map } = body
   if (!form_id) return NextResponse.json({ error: 'form_id obrigatório' }, { status: 400 })
+
+  const ids = Array.isArray(vendedor_ids) ? vendedor_ids.filter(Boolean) : []
 
   const { error } = await admin.from('meta_form_mapeamento').upsert({
     form_id: String(form_id),
@@ -97,6 +99,7 @@ export async function POST(req: NextRequest) {
     funil_id:     funil_id || null,
     etapa:        etapa || null,
     vendedor_id:  vendedor_id || null,
+    vendedor_ids: ids,
     ativo:        ativo !== false,
     criar_negocio: criar_negocio !== false,
     observacoes:  observacoes || null,
