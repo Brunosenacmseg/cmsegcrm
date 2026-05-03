@@ -229,9 +229,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { event, instance, data } = body
 
-    // ── MENSAGEM RECEBIDA ─────────────────────
-    if (event === 'messages.upsert' && data?.key?.fromMe === false) {
-      const { jid: remotoJid, numero: remotoNumero } = extrairContato(data)
+    // ── MENSAGEM (recebida ou enviada pelo próprio celular) ───
+    if (event === 'messages.upsert' && data?.key?.remoteJid) {
+      const fromMe = !!data.key.fromMe
+      // Quando fromMe=true, o "remoto" da conversa é o destinatário (remoteJid).
+      // Quando fromMe=false, usa-se o extrator que ignora @lid.
+      let remotoJid: string
+      let remotoNumero: string
+      if (fromMe) {
+        remotoJid = data.key.remoteJid
+        remotoNumero = remotoJid.replace(/@.*$/, '').replace(/\D/g, '')
+      } else {
+        const ex = extrairContato(data)
+        remotoJid = ex.jid
+        remotoNumero = ex.numero
+      }
       const meta = detectarTipoEMidia(data.message)
       const conteudoTexto = data.message?.conversation
                          || data.message?.extendedTextMessage?.text
@@ -306,8 +318,8 @@ export async function POST(request: NextRequest) {
           remoto_nome:    pushName,
           conteudo:       conteudoFinal,
           tipo:           meta.tipo,
-          direcao:        'recebida',
-          lida:           false,
+          direcao:        fromMe ? 'enviada' : 'recebida',
+          lida:           fromMe ? true : false,
           evolution_id:   data.key.id,
           midia_url:      midiaPath,
           midia_mimetype: meta.mimetype,
@@ -323,7 +335,7 @@ export async function POST(request: NextRequest) {
         // Auto-resposta com agente IA. Se for áudio, usa transcrição como
         // entrada; se for outra mídia sem caption, ignora.
         const entradaIA = transcricao || conteudoTexto
-        if (inst.agente_ativo && inst.agente_id && remotoJid && entradaIA) {
+        if (!fromMe && inst.agente_ativo && inst.agente_id && remotoJid && entradaIA) {
           try {
             const { data: agente } = await supabase.from('ai_agentes').select('*').eq('id', inst.agente_id).maybeSingle()
             if (agente?.ativo) {
