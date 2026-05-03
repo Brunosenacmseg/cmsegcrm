@@ -1,173 +1,202 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Avatar from '@/components/Avatar'
 
-const ETAPAS_ATIVAS = ['Em contato','Proposta Enviada','Aguardando Assinatura','Em análise','Aguardando pagamento','Negociação']
-const ETAPAS_FECHADAS = ['Fechado Perdido','Não Renovado','Pago','Inadimplente','Negado','Fechado Ganho','Renovado','Concluído']
+const ETAPAS_FECHADAS_GANHAS = ['Fechado Ganho','Renovado','Pago','Concluído']
 
-const MEDALHAS = ['🥇','🥈','🥉','4️⃣','5️⃣']
+type Periodo = 'mes_atual' | 'mes_anterior' | 'semana' | 'custom'
+
+function intervaloDoPeriodo(p: Periodo, inicioCustom?: string, fimCustom?: string): { inicio: string; fim: string; rotulo: string } {
+  const hoje = new Date()
+  const fimDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+  if (p === 'mes_atual') {
+    const i = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+    return { inicio: i.toISOString(), fim: hoje.toISOString(), rotulo: i.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}) }
+  }
+  if (p === 'mes_anterior') {
+    const i = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
+    const f = new Date(hoje.getFullYear(), hoje.getMonth(), 0, 23, 59, 59, 999)
+    return { inicio: i.toISOString(), fim: f.toISOString(), rotulo: i.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}) }
+  }
+  if (p === 'semana') {
+    const dia = hoje.getDay() // 0=dom
+    const offsetParaSegunda = (dia + 6) % 7 // dias desde segunda
+    const i = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - offsetParaSegunda)
+    return { inicio: i.toISOString(), fim: hoje.toISOString(), rotulo: 'Esta semana' }
+  }
+  // custom
+  const i = inicioCustom ? new Date(inicioCustom + 'T00:00:00') : new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+  const f = fimCustom    ? fimDia(new Date(fimCustom + 'T00:00:00')) : hoje
+  return { inicio: i.toISOString(), fim: f.toISOString(), rotulo: `${i.toLocaleDateString('pt-BR')} – ${f.toLocaleDateString('pt-BR')}` }
+}
 
 export default function DashboardPage() {
   const supabase = createClient()
   const router   = useRouter()
   const [profile, setProfile]   = useState<any>(null)
-  const [dados, setDados]       = useState<any>({
+  const [loading, setLoading]   = useState(true)
+  const [periodo, setPeriodo]   = useState<Periodo>('mes_atual')
+  const [ini, setIni] = useState('')
+  const [fim, setFim] = useState('')
+  const [usuarios, setUsuarios] = useState<any[]>([])
+
+  const [ranking, setRanking]       = useState<any[]>([])
+  const [rankingLig, setRankingLig] = useState<any[]>([])
+  const [tarefasPend, setTarefasPend] = useState<any[]>([])
+
+  const [dados, setDados] = useState<any>({
     premioMes:0, premioMesAnterior:0,
     novosClientes:0, novosClientesAnterior:0,
     apolicesAtivas:0, renovacoes30d:0,
-    mediaComissao:0, tarefasPendentes:0, ligacoesHoje:0,
-    atividades:[], alertas:[],
+    mediaComissao:0, alertas:[],
     tendencia:[] as { mes:string; valor:number }[],
   })
-  const [ranking, setRanking]   = useState<any[]>([])
-  const [atendimentos, setAtendimentos] = useState<any[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [periodoRanking, setPeriodoRanking] = useState<'mes'|'ano'>('mes')
 
-  useEffect(() => { carregarDados() }, [])
-  useEffect(() => { if (!loading) carregarRanking() }, [periodoRanking, loading])
+  const intervalo = useMemo(() => intervaloDoPeriodo(periodo, ini, fim), [periodo, ini, fim])
 
-  async function carregarDados() {
+  useEffect(() => { carregarKPIs() }, [])
+  useEffect(() => { if (!loading) carregarRankings() }, [periodo, ini, fim, loading])
+
+  async function carregarKPIs() {
     const hoje = new Date()
     const inicioMes      = new Date(hoje.getFullYear(), hoje.getMonth(),   1).toISOString()
     const inicioMesAnt   = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1).toISOString()
     const em30dias       = new Date(hoje.getTime() + 30*24*60*60*1000).toISOString().slice(0,10)
-    const inicioHoje     = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString()
     const inicioSemestre = new Date(hoje.getFullYear(), hoje.getMonth()-5, 1).toISOString()
 
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
-
-    // Escopo por role: corretor vê só os próprios dados.
-    // Para admin/líder, escopo é null = sem filtro.
     const onlyMine = prof?.role === 'corretor'
     const meId = user?.id || ''
-
-    // Helpers para aplicar filtro condicional sem repetir a lógica.
-    const scoped = <T,>(q: any, col: string = 'vendedor_id'): T => onlyMine ? q.eq(col, meId) : q
+    const scoped = (q: any, col: string = 'vendedor_id') => onlyMine ? q.eq(col, meId) : q
 
     const [
       { data: negs },
       { count: novosCount },
       { count: novosCountAnterior },
       { data: renovs },
-      { data: hist },
       { data: usr },
-      { count: tarefasPendentes },
-      { count: ligacoesHoje },
       { data: negsSemestre },
     ] = await Promise.all([
-      scoped(supabase.from('negocios').select('premio, comissao_pct, etapa, funil_id, funis(tipo), vendedor_id, created_at')),
+      scoped(supabase.from('negocios').select('premio, comissao_pct, etapa, funil_id, vendedor_id, created_at')),
       scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMes)),
       scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMesAnt).lt('created_at', inicioMes)),
       scoped(supabase.from('negocios').select('id, vencimento, produto, clientes(nome)').lte('vencimento', em30dias).gt('vencimento', hoje.toISOString().slice(0,10)).order('vencimento')),
-      supabase.from('historico').select('*, clientes(nome), negocios(produto)').order('created_at', { ascending: false }).limit(8),
-      supabase.from('users').select('id, nome').order('nome'),
-      onlyMine
-        ? supabase.from('tarefas').select('id', { count: 'exact', head: true }).eq('status', 'pendente').eq('responsavel_id', meId)
-        : supabase.from('tarefas').select('id', { count: 'exact', head: true }).eq('status', 'pendente'),
-      onlyMine
-        ? supabase.from('ligacoes').select('id', { count: 'exact', head: true }).eq('user_id', meId).gte('criado_em', inicioHoje)
-        : supabase.from('ligacoes').select('id', { count: 'exact', head: true }).gte('criado_em', inicioHoje),
+      supabase.from('users').select('id, nome, avatar_url, role').order('nome'),
       scoped(supabase.from('negocios').select('premio, etapa, created_at').gte('created_at', inicioSemestre)),
     ])
 
-    const negAtivos  = (negs||[]).filter((n:any) => !ETAPAS_FECHADAS.includes(n.etapa))
-    const negFechadosMes    = (negs||[]).filter((n:any) => ['Fechado Ganho','Renovado','Pago','Concluído'].includes(n.etapa) && n.created_at >= inicioMes)
-    const negFechadosAntMes = (negs||[]).filter((n:any) => ['Fechado Ganho','Renovado','Pago','Concluído'].includes(n.etapa) && n.created_at >= inicioMesAnt && n.created_at < inicioMes)
-    const premioMes         = negFechadosMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
-    const premioMesAnterior = negFechadosAntMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
+    setUsuarios(usr || [])
 
-    const comissoes  = negAtivos.filter((n:any)=>n.comissao_pct>0).map((n:any)=>n.comissao_pct)
-    const mediaComissao = comissoes.length?(comissoes.reduce((a:number,b:number)=>a+b,0)/comissoes.length):0
+    const fechadasNoMes = (negs||[]).filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= inicioMes)
+    const fechadasNoMesAnt = (negs||[]).filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= inicioMesAnt && n.created_at < inicioMes)
+    const premioMes = fechadasNoMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
+    const premioMesAnterior = fechadasNoMesAnt.reduce((s:number,n:any)=>s+(n.premio||0),0)
+    const ativos = (negs||[]).filter((n:any) => !ETAPAS_FECHADAS_GANHAS.includes(n.etapa))
+    const comissoes = ativos.filter((n:any)=>n.comissao_pct>0).map((n:any)=>n.comissao_pct)
+    const mediaComissao = comissoes.length ? comissoes.reduce((a:number,b:number)=>a+b,0)/comissoes.length : 0
 
-    // Tendência dos últimos 6 meses (prêmio fechado por mês)
-    const ETAPAS_FECHADAS_GANHAS = ['Fechado Ganho','Renovado','Pago','Concluído']
     const tendencia: { mes: string; valor: number }[] = []
     for (let i = 5; i >= 0; i--) {
       const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1)
-      const ini = d.toISOString()
-      const fim = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
+      const iniM = d.toISOString()
+      const fimM = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
       const valor = (negsSemestre||[])
-        .filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= ini && n.created_at < fim)
+        .filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= iniM && n.created_at < fimM)
         .reduce((s:number,n:any) => s+(n.premio||0), 0)
       tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
     }
 
-    // Atendimentos por usuário (admin/líder veem time inteiro)
-    const atendMap: Record<string,{nome:string,qtd:number}> = {}
-    ;(usr||[]).forEach((u:any) => { atendMap[u.id] = { nome: u.nome, qtd: 0 } })
-    negAtivos.forEach((n:any) => { if(n.vendedor_id && atendMap[n.vendedor_id]) atendMap[n.vendedor_id].qtd++ })
-    const atendArr = Object.values(atendMap).filter((a:any)=>a.qtd>0).sort((a:any,b:any)=>b.qtd-a.qtd)
-    setAtendimentos(atendArr)
-
     setDados({
       premioMes, premioMesAnterior,
       novosClientes: novosCount||0, novosClientesAnterior: novosCountAnterior||0,
-      apolicesAtivas: negAtivos.length,
+      apolicesAtivas: ativos.length,
       renovacoes30d: (renovs||[]).length,
       mediaComissao,
-      tarefasPendentes: tarefasPendentes||0,
-      ligacoesHoje:     ligacoesHoje||0,
-      atividades: hist||[],
-      alertas:    (renovs||[]).slice(0,3),
+      alertas: (renovs||[]).slice(0,3),
       tendencia,
     })
     setLoading(false)
   }
 
-  async function carregarRanking() {
-    const hoje = new Date()
-    const inicio = periodoRanking === 'mes'
-      ? new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()
-      : new Date(hoje.getFullYear(), 0, 1).toISOString()
+  async function carregarRankings() {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: prof } = await supabase.from('users').select('role').eq('id', user?.id||'').single()
+    const onlyMine = (prof as any)?.role === 'corretor'
+    const meId = user?.id || ''
 
-    const { data: usr } = await supabase.from('users').select('id, nome').order('nome')
-    const { data: negs } = await supabase.from('negocios')
+    // — Ranking de Vendas (negócios fechados ganhos no período) —
+    let qNegs = supabase.from('negocios')
       .select('premio, comissao_pct, vendedor_id, etapa')
-      .in('etapa', ['Fechado Ganho','Renovado','Pago','Concluído'])
-      .gte('created_at', inicio)
+      .in('etapa', ETAPAS_FECHADAS_GANHAS)
+      .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim)
+    if (onlyMine) qNegs = qNegs.eq('vendedor_id', meId)
+    const { data: negs } = await qNegs
 
-    const map: Record<string,{nome:string,premio:number,apolices:number,comissao:number,pontos:number}> = {}
-    ;(usr||[]).forEach((u:any) => { map[u.id] = { nome:u.nome, premio:0, apolices:0, comissao:0, pontos:0 } })
+    // — Ranking de Ligações (sainte+encerrada) —
+    let qLig = supabase.from('ligacoes')
+      .select('user_id, duracao_seg, status')
+      .gte('criado_em', intervalo.inicio).lte('criado_em', intervalo.fim)
+    if (onlyMine) qLig = qLig.eq('user_id', meId)
+    const { data: ligs } = await qLig
+
+    // — Tarefas pendentes (não fecha por período; mostra atual) —
+    let qTar = supabase.from('tarefas')
+      .select('id, titulo, descricao, prazo, status, responsavel_id, cliente_id, clientes(nome)')
+      .eq('status', 'pendente')
+      .order('prazo', { ascending: true, nullsFirst: false })
+      .limit(50)
+    if (onlyMine) qTar = qTar.eq('responsavel_id', meId)
+    const { data: tar } = await qTar
+    setTarefasPend(tar || [])
+
+    // Mapear vendas
+    const mapV: Record<string,{user_id:string,nome:string,avatar_url?:string,role?:string,premio:number,apolices:number,comissao:number}> = {}
+    ;(usuarios||[]).forEach((u:any) => { mapV[u.id] = { user_id:u.id, nome:u.nome, avatar_url:u.avatar_url, role:u.role, premio:0, apolices:0, comissao:0 } })
     ;(negs||[]).forEach((n:any) => {
-      if(!n.vendedor_id || !map[n.vendedor_id]) return
-      map[n.vendedor_id].premio   += n.premio||0
-      map[n.vendedor_id].apolices += 1
-      map[n.vendedor_id].comissao += (n.premio||0)*(n.comissao_pct||0)/100
+      if (!n.vendedor_id || !mapV[n.vendedor_id]) return
+      mapV[n.vendedor_id].premio   += n.premio||0
+      mapV[n.vendedor_id].apolices += 1
+      mapV[n.vendedor_id].comissao += (n.premio||0)*(n.comissao_pct||0)/100
     })
+    const arrV = Object.values(mapV).filter(v => v.premio > 0 || v.apolices > 0).sort((a,b)=>b.premio - a.premio)
+    setRanking(arrV)
 
-    // Calcular pontos: normaliza cada métrica 0-100 e soma
-    const arr = Object.values(map).filter((v:any)=>v.apolices>0||v.premio>0)
-    const maxPremio   = Math.max(...arr.map((v:any)=>v.premio),1)
-    const maxApolices = Math.max(...arr.map((v:any)=>v.apolices),1)
-    const maxComissao = Math.max(...arr.map((v:any)=>v.comissao),1)
-    arr.forEach((v:any) => {
-      v.pontos = Math.round((v.premio/maxPremio)*100 + (v.apolices/maxApolices)*100 + (v.comissao/maxComissao)*100)
+    // Mapear ligações
+    const mapL: Record<string,{user_id:string,nome:string,avatar_url?:string,role?:string,total:number,duracao:number}> = {}
+    ;(usuarios||[]).forEach((u:any) => { mapL[u.id] = { user_id:u.id, nome:u.nome, avatar_url:u.avatar_url, role:u.role, total:0, duracao:0 } })
+    ;(ligs||[]).forEach((l:any) => {
+      if (!l.user_id || !mapL[l.user_id]) return
+      mapL[l.user_id].total += 1
+      mapL[l.user_id].duracao += l.duracao_seg || 0
     })
-    arr.sort((a:any,b:any)=>b.pontos-a.pontos)
-    setRanking(arr)
+    const arrL = Object.values(mapL).filter(v => v.total > 0).sort((a,b)=>b.total-a.total)
+    setRankingLig(arrL)
   }
 
   const fmt = (n: number) => n >= 1000 ? `R$ ${(n/1000).toFixed(0)}k` : `R$ ${n.toLocaleString('pt-BR')}`
   const isAdmin = profile?.role === 'admin'
   const isLider = profile?.role === 'lider'
 
-  // Calcula variação percentual entre dois valores. Retorna { texto, cor }.
   function delta(atual: number, anterior: number): { texto: string; cor: string } {
-    if (anterior === 0 && atual === 0) return { texto: '—',                 cor: 'var(--text-muted)' }
-    if (anterior === 0)                return { texto: '+ novo',            cor: 'var(--teal)' }
+    if (anterior === 0 && atual === 0) return { texto: '—', cor: 'var(--text-muted)' }
+    if (anterior === 0)                return { texto: '+ novo', cor: 'var(--teal)' }
     const pct = Math.round(((atual - anterior) / anterior) * 100)
-    if (pct === 0)                     return { texto: '= mês ant.',        cor: 'var(--text-muted)' }
+    if (pct === 0) return { texto: '= mês ant.', cor: 'var(--text-muted)' }
     const sinal = pct > 0 ? '↑' : '↓'
     return { texto: `${sinal} ${Math.abs(pct)}% vs mês ant.`, cor: pct > 0 ? 'var(--teal)' : 'var(--red)' }
   }
-  const dPremio  = delta(dados.premioMes, dados.premioMesAnterior)
+  const dPremio   = delta(dados.premioMes, dados.premioMesAnterior)
   const dClientes = delta(dados.novosClientes, dados.novosClientesAnterior)
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
+
+  const maxPremio = Math.max(1, ...ranking.map(r => r.premio))
+  const maxLig    = Math.max(1, ...rankingLig.map(r => r.total))
+  const podeVerTimes = isAdmin || isLider
 
   return (
     <div style={{flex:1, overflow:'auto'}}>
@@ -177,15 +206,112 @@ export default function DashboardPage() {
       </div>
 
       <div style={{padding:'28px 28px 40px'}}>
-        {/* Indicador de escopo (corretor vê só os próprios) */}
-        {profile?.role === 'corretor' && (
-          <div style={{marginBottom:16,fontSize:12,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:8}}>
-            <span style={{width:8,height:8,borderRadius:'50%',background:'var(--teal)'}}/>
-            Mostrando apenas seus dados
+        {/* ═════════ FILTRO DE PERÍODO ═════════ */}
+        {podeVerTimes && (
+          <div className="card" style={{marginBottom:18, padding:'14px 18px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', fontWeight:600, letterSpacing:1, marginRight:6}}>Período do ranking:</span>
+            {(['mes_atual','mes_anterior','semana','custom'] as Periodo[]).map(p => (
+              <button key={p} onClick={()=>setPeriodo(p)} style={{
+                padding:'6px 14px', borderRadius:20, fontSize:12, cursor:'pointer',
+                border:'1px solid', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                background: periodo===p ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)',
+                color: periodo===p ? 'var(--gold)' : 'var(--text-muted)',
+                borderColor: periodo===p ? 'var(--gold)' : 'var(--border)',
+              }}>
+                {p==='mes_atual'?'📅 Mês atual':p==='mes_anterior'?'⬅ Mês anterior':p==='semana'?'📆 Esta semana':'🎯 Personalizado'}
+              </button>
+            ))}
+            {periodo==='custom' && (
+              <>
+                <input type="date" value={ini} onChange={e=>setIni(e.target.value)}
+                  style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text)',fontSize:12}} />
+                <span style={{fontSize:12,color:'var(--text-muted)'}}>até</span>
+                <input type="date" value={fim} onChange={e=>setFim(e.target.value)}
+                  style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text)',fontSize:12}} />
+              </>
+            )}
+            <span style={{marginLeft:'auto', fontSize:11, color:'var(--text-muted)'}}>
+              Exibindo <strong style={{color:'var(--gold)'}}>{intervalo.rotulo}</strong>
+            </span>
           </div>
         )}
 
-        {/* KPIs principais — agora 4 cards com comparação */}
+        {/* ═════════ RANKING DE VENDAS — TOPO, GRANDE, "CORRIDA" ═════════ */}
+        {podeVerTimes && (
+          <div className="card" style={{marginBottom:18, padding:'24px 28px', background:'linear-gradient(180deg, rgba(201,168,76,0.04), transparent)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+              <div>
+                <div style={{fontFamily:'DM Serif Display,serif', fontSize:24, lineHeight:1.1}}>🏆 Ranking de Vendas</div>
+                <div style={{fontSize:12, color:'var(--text-muted)', marginTop:4}}>
+                  Os atletas estão na pista. Quem chega primeiro?
+                </div>
+              </div>
+              {ranking[0] && (
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:10, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:1}}>Líder</div>
+                  <div style={{fontFamily:'DM Serif Display,serif', fontSize:18, color:'var(--gold)'}}>{ranking[0].nome}</div>
+                  <div style={{fontSize:11, color:'var(--text-muted)'}}>R$ {ranking[0].premio.toLocaleString('pt-BR')} prêmio</div>
+                </div>
+              )}
+            </div>
+
+            {ranking.length === 0 ? (
+              <div style={{padding:30, textAlign:'center', color:'var(--text-muted)', fontSize:13}}>
+                Nenhuma venda fechada no período — corrida começa quando o primeiro fecha! 🏁
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                {ranking.slice(0,10).map((r:any, i:number) => {
+                  const pct = (r.premio / maxPremio) * 100
+                  const medalha = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`
+                  const corMed = i===0?'var(--gold)':i===1?'#9ba3b0':i===2?'#c07830':'var(--text-muted)'
+                  return (
+                    <div key={r.user_id} style={{display:'flex',alignItems:'center',gap:14}}>
+                      <div style={{width:36,fontSize:i<3?22:14,fontWeight:700,color:corMed,textAlign:'center',flexShrink:0}}>{medalha}</div>
+                      <div style={{minWidth:150, display:'flex', alignItems:'center', gap:10, flexShrink:0}}>
+                        <Avatar nome={r.nome} avatarUrl={r.avatar_url} role={r.role} size={40} />
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:140}}>{r.nome}</div>
+                          <div style={{fontSize:10,color:'var(--text-muted)'}}>{r.apolices} apólice{r.apolices!==1?'s':''}</div>
+                        </div>
+                      </div>
+                      {/* PISTA */}
+                      <div style={{flex:1, position:'relative', height:32, background:'rgba(255,255,255,0.04)', borderRadius:16, border:'1px dashed rgba(255,255,255,0.06)', overflow:'hidden'}}>
+                        {/* linha de meta */}
+                        <div style={{position:'absolute',right:0,top:0,bottom:0,width:6,background:'repeating-linear-gradient(45deg,rgba(201,168,76,0.7) 0 4px,transparent 4px 8px)'}}/>
+                        {/* barra preenchida */}
+                        <div style={{position:'absolute',left:0,top:0,bottom:0, width:`${pct}%`,
+                          background: i===0
+                            ? 'linear-gradient(90deg, rgba(201,168,76,0.35), rgba(201,168,76,0.7))'
+                            : 'linear-gradient(90deg, rgba(28,181,160,0.20), rgba(28,181,160,0.45))',
+                          borderRadius:16, transition:'width 0.8s ease'}}/>
+                        {/* "corredor" — avatar posicionado pelo progresso */}
+                        <div style={{position:'absolute', left:`calc(${pct}% - 14px)`, top:'50%', transform:'translateY(-50%)', transition:'left 0.8s ease'}}>
+                          <div style={{
+                            background: i===0?'rgba(201,168,76,0.2)':'rgba(28,181,160,0.18)',
+                            border: `2px solid ${i===0?'var(--gold)':'var(--teal)'}`,
+                            borderRadius:'50%', padding:2,
+                            boxShadow: i===0 ? '0 0 12px rgba(201,168,76,0.6)' : '0 0 8px rgba(28,181,160,0.35)',
+                          }}>
+                            <Avatar nome={r.nome} avatarUrl={r.avatar_url} role={r.role} size={24} />
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{minWidth:100, textAlign:'right', flexShrink:0}}>
+                        <div style={{fontSize:14, fontWeight:700, color:i===0?'var(--gold)':'var(--teal)'}}>
+                          R$ {r.premio>=1000 ? (r.premio/1000).toFixed(1)+'k' : r.premio.toFixed(0)}
+                        </div>
+                        <div style={{fontSize:10, color:'var(--text-muted)'}}>R$ {Math.round(r.comissao).toLocaleString('pt-BR')} com.</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═════════ KPIs PRINCIPAIS ═════════ */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
           {[
             {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor},
@@ -201,28 +327,92 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* KPIs secundários — operacionais do dia */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:24}}>
-          {[
-            {label:'Tarefas Pendentes', value:dados.tarefasPendentes, icon:'📋', cor:'var(--gold)',  link:'/dashboard/tarefas'},
-            {label:'Ligações Hoje',     value:dados.ligacoesHoje,     icon:'📞', cor:'var(--teal)',  link:'/dashboard/telefone'},
-            {label:'Média Comissão',    value:`${dados.mediaComissao.toFixed(1)}%`, icon:'💰', cor:'var(--gold)', link:'/dashboard/comissoes'},
-          ].map(({label,value,icon,cor,link}) => (
-            <div key={label} className="card" onClick={() => router.push(link)}
-              style={{display:'flex',alignItems:'center',gap:14,cursor:'pointer',transition:'background 0.16s'}}
-              onMouseEnter={e => e.currentTarget.style.background='rgba(201,168,76,0.04)'}
-              onMouseLeave={e => e.currentTarget.style.background='var(--card-bg)'}>
-              <div style={{fontSize:32}}>{icon}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:500,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{label}</div>
-                <div style={{fontFamily:'DM Serif Display,serif',fontSize:24,lineHeight:1,color:cor}}>{value}</div>
+        {/* ═════════ RANKING DE LIGAÇÕES + TAREFAS PENDENTES ═════════ */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:18}}>
+          {/* RANKING DE LIGAÇÕES */}
+          {podeVerTimes && (
+            <div className="card">
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                <div>
+                  <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>📞 Ranking de Ligações</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{intervalo.rotulo}</div>
+                </div>
+                <span style={{fontSize:11,color:'var(--gold)',cursor:'pointer'}} onClick={()=>router.push('/dashboard/telefone')}>Ver telefone →</span>
               </div>
-              <span style={{fontSize:18,color:'var(--text-muted)'}}>→</span>
+              {rankingLig.length === 0 ? (
+                <div style={{color:'var(--text-muted)',fontSize:13, padding:20, textAlign:'center'}}>Nenhuma ligação no período.</div>
+              ) : (
+                rankingLig.slice(0,8).map((r:any, i:number) => {
+                  const pct = (r.total / maxLig) * 100
+                  const medalha = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`
+                  return (
+                    <div key={r.user_id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                      <div style={{width:24,fontSize:i<3?16:11,fontWeight:700,color:i===0?'var(--gold)':'var(--text-muted)',textAlign:'center'}}>{medalha}</div>
+                      <Avatar nome={r.nome} avatarUrl={r.avatar_url} role={r.role} size={28} />
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
+                          <span style={{fontSize:12,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:160}}>{r.nome}</span>
+                          <span style={{fontSize:12,fontWeight:700,color:'var(--teal)'}}>{r.total} 📞</span>
+                        </div>
+                        <div style={{height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
+                          <div style={{height:'100%', width:`${pct}%`, background:'linear-gradient(90deg, var(--teal), var(--gold))', borderRadius:3, transition:'width 0.6s ease'}}/>
+                        </div>
+                      </div>
+                      <div style={{fontSize:10,color:'var(--text-muted)',minWidth:46,textAlign:'right'}}>
+                        {Math.round(r.duracao/60)}min
+                      </div>
+                    </div>
+                  )
+                })
+              )}
             </div>
-          ))}
+          )}
+
+          {/* TAREFAS PENDENTES */}
+          <div className="card">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>📋 Tarefas Pendentes</div>
+              <span style={{fontSize:12,color:'var(--gold)',cursor:'pointer'}} onClick={()=>router.push('/dashboard/tarefas')}>Ver todas →</span>
+            </div>
+            {tarefasPend.length === 0 ? (
+              <div style={{padding:20, textAlign:'center', color:'var(--text-muted)', fontSize:13}}>Nenhuma tarefa pendente. 🎉</div>
+            ) : (
+              <div style={{maxHeight:380, overflow:'auto'}}>
+                {tarefasPend.slice(0,12).map((t:any) => {
+                  const resp = usuarios.find(u => u.id === t.responsavel_id)
+                  const prazo = t.prazo ? new Date(t.prazo) : null
+                  const hoje = new Date()
+                  const atrasada = prazo && prazo < hoje
+                  const hoje0 = new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate())
+                  const ehHoje = prazo && new Date(prazo.getFullYear(),prazo.getMonth(),prazo.getDate()).getTime() === hoje0.getTime()
+                  return (
+                    <div key={t.id} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'10px 12px',background:'rgba(255,255,255,0.03)',borderRadius:10,borderLeft:`3px solid ${atrasada?'var(--red)':ehHoje?'var(--gold)':'var(--teal)'}`,marginBottom:6}}>
+                      <Avatar nome={resp?.nome} avatarUrl={resp?.avatar_url} role={resp?.role} size={32} />
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.titulo}</div>
+                        <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2,display:'flex',gap:6,flexWrap:'wrap'}}>
+                          <span>{resp?.nome || '— sem responsável'}</span>
+                          {t.clientes?.nome && <><span>·</span><span>{t.clientes.nome}</span></>}
+                        </div>
+                      </div>
+                      <div style={{fontSize:11,fontWeight:600,color:atrasada?'var(--red)':ehHoje?'var(--gold)':'var(--text-muted)',flexShrink:0,textAlign:'right'}}>
+                        {prazo ? (
+                          <>
+                            <div>{prazo.toLocaleDateString('pt-BR')}</div>
+                            {atrasada && <div style={{fontSize:9}}>ATRASADA</div>}
+                            {ehHoje && !atrasada && <div style={{fontSize:9}}>HOJE</div>}
+                          </>
+                        ) : <span style={{fontSize:10}}>sem prazo</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Tendência: prêmio fechado por mês — últimos 6 meses */}
+        {/* TENDÊNCIA — últimos 6 meses */}
         {dados.tendencia && dados.tendencia.length > 0 && (() => {
           const max = Math.max(1, ...dados.tendencia.map((p:any) => p.valor))
           return (
@@ -244,112 +434,17 @@ export default function DashboardPage() {
           )
         })()}
 
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
-
-          {/* Atendimentos ativos por usuário */}
-          {(isAdmin||isLider)&&(
-            <div className="card">
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:16}}>📊 Atendimentos Ativos</div>
-              {atendimentos.length===0?(
-                <div style={{color:'var(--text-muted)',fontSize:13}}>Nenhum negócio ativo com vendedor atribuído.</div>
-              ):atendimentos.map((a:any,i:number)=>{
-                const maxQtd = atendimentos[0]?.qtd||1
-                const pct = Math.round((a.qtd/maxQtd)*100)
-                return(
-                  <div key={i} style={{marginBottom:12}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                      <span style={{fontSize:13,fontWeight:500}}>{a.nome}</span>
-                      <span style={{fontSize:12,color:'var(--gold)',fontWeight:700}}>{a.qtd} negócio{a.qtd!==1?'s':''}</span>
-                    </div>
-                    <div style={{height:6,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--gold),var(--teal))',borderRadius:3,transition:'width 0.6s ease'}}/>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Atividades recentes */}
-          <div className="card">
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>Atividades Recentes</div>
-              <span style={{fontSize:12,color:'var(--gold)',cursor:'pointer'}} onClick={()=>router.push('/dashboard/tarefas')}>Ver todas →</span>
-            </div>
-            {dados.atividades.length===0&&<div style={{color:'var(--text-muted)',fontSize:13}}>Nenhuma atividade ainda.</div>}
-            {dados.atividades.map((h:any,i:number)=>(
-              <div key={i} style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px 12px',background:'rgba(255,255,255,0.03)',borderRadius:10,borderLeft:`3px solid ${h.tipo==='gold'?'var(--gold)':h.tipo==='red'?'var(--red)':'var(--teal)'}`,marginBottom:8}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.titulo}</div>
-                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{h.clientes?.nome}{h.negocios?.produto?` · ${h.negocios.produto}`:''}</div>
-                </div>
-                <div style={{fontSize:10,color:'var(--text-muted)',flexShrink:0}}>{new Date(h.created_at).toLocaleDateString('pt-BR')}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Ranking de gamificação */}
-        {(isAdmin||isLider)&&(
-          <div className="card" style={{marginBottom:16}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
-              <div>
-                <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>🏆 Ranking de Vendas</div>
-                <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Pontuação: prêmio + apólices + comissão</div>
-              </div>
-              <div style={{display:'flex',gap:4}}>
-                {(['mes','ano'] as const).map(p=>(
-                  <button key={p} onClick={()=>setPeriodoRanking(p)} style={{padding:'5px 14px',borderRadius:20,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:periodoRanking===p?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:periodoRanking===p?'var(--gold)':'var(--text-muted)',borderColor:periodoRanking===p?'var(--gold)':'var(--border)'}}>
-                    {p==='mes'?'Este mês':'Este ano'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {ranking.length===0?(
-              <div style={{textAlign:'center',padding:'20px',color:'var(--text-muted)',fontSize:13}}>
-                Nenhum negócio fechado no período.
-              </div>
-            ):(
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:12}}>
-                {ranking.slice(0,5).map((r:any,i:number)=>{
-                  const isFirst = i===0
-                  const cores = ['linear-gradient(135deg,#c9a84c,#f0d060)','linear-gradient(135deg,#9ba3b0,#d0d8e0)','linear-gradient(135deg,#c07830,#e0a050)']
-                  const cor = cores[i]||'linear-gradient(135deg,rgba(255,255,255,0.1),rgba(255,255,255,0.05))'
-                  return(
-                    <div key={i} style={{background: isFirst?'rgba(201,168,76,0.08)':'rgba(255,255,255,0.02)',border:`1px solid ${isFirst?'rgba(201,168,76,0.3)':'rgba(255,255,255,0.06)'}`,borderRadius:14,padding:'16px',textAlign:'center',position:'relative',overflow:'hidden'}}>
-                      {isFirst&&<div style={{position:'absolute',top:0,left:0,right:0,height:2,background:'linear-gradient(90deg,var(--gold),var(--teal))'}}/>}
-                      <div style={{fontSize:28,marginBottom:6}}>{MEDALHAS[i]}</div>
-                      <div style={{fontWeight:600,fontSize:13,marginBottom:8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.nome}</div>
-                      <div style={{display:'flex',flexDirection:'column',gap:3}}>
-                        <div style={{fontSize:11,color:'var(--gold)',fontWeight:600}}>R$ {Math.round(r.premio/1000)}k prêmio</div>
-                        <div style={{fontSize:11,color:'var(--teal)'}}>{r.apolices} apólice{r.apolices!==1?'s':''}</div>
-                        <div style={{fontSize:11,color:'var(--text-muted)'}}>R$ {Math.round(r.comissao).toLocaleString('pt-BR')} comissão</div>
-                      </div>
-                      <div style={{marginTop:10,padding:'4px 10px',borderRadius:20,display:'inline-block',background:isFirst?'rgba(201,168,76,0.15)':'rgba(255,255,255,0.05)',fontSize:11,fontWeight:700,color:isFirst?'var(--gold)':'var(--text-muted)'}}>
-                        {r.pontos} pts
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Alertas de renovação */}
-        {dados.alertas.length>0&&(
+        {/* RENOVAÇÕES URGENTES */}
+        {dados.alertas.length>0 && (
           <div className="card">
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:16}}>⚠ Renovações Urgentes</div>
             {dados.alertas.map((r:any,i:number)=>(
               <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                 <div style={{width:8,height:8,borderRadius:'50%',background:'var(--red)',flexShrink:0}}/>
                 <div style={{flex:1}}>
-                  <div
-                    onClick={()=>router.push(`/dashboard/funis?card=${r.id}`)}
+                  <div onClick={()=>router.push(`/dashboard/funis?card=${r.id}`)}
                     style={{fontSize:13,fontWeight:500,cursor:'pointer',color:'var(--gold)',textDecoration:'underline',textUnderlineOffset:2}}
-                    title="Abrir card da negociação"
-                  >
+                    title="Abrir card da negociação">
                     {r.clientes?.nome}
                   </div>
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>{r.produto}</div>
