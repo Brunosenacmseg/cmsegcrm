@@ -59,24 +59,42 @@ export default function ApolicesPage() {
     // Fonte da verdade: tabela apolices. Sem joins aninhados pra evitar
     // conflitos de FK no PostgREST — vendedor_legado é resolvido em JS
     // via lookup no array `vleg`.
-    let query = supabase
-      .from('apolices')
-      .select('*, clientes(id,nome,tipo), users(id,nome)')
-      .order('vigencia_fim', { ascending: true, nullsFirst: false })
+    // Carrega apólices em páginas de 1000 (limite default do PostgREST)
+    // — evita perder linhas quando a base passa de 1k registros.
+    async function carregarTodas(): Promise<any[]> {
+      const PAGE = 1000
+      let offset = 0
+      const acc: any[] = []
+      while (true) {
+        let q = supabase
+          .from('apolices')
+          .select('*, clientes(id,nome,tipo), users(id,nome)')
+          .order('vigencia_fim', { ascending: true, nullsFirst: false })
+          .range(offset, offset + PAGE - 1)
+        if (visibleIds) q = (q as any).in('vendedor_id', visibleIds)
+        const { data, error } = await q
+        if (error) {
+          console.error('Erro ao carregar apólices:', error)
+          alert('Erro ao carregar apólices: ' + error.message)
+          break
+        }
+        if (!data || data.length === 0) break
+        acc.push(...data)
+        if (data.length < PAGE) break
+        offset += PAGE
+        if (offset >= 100_000) break
+      }
+      return acc
+    }
 
-    if (visibleIds) query = (query as any).in('vendedor_id', visibleIds)
-
-    const [resApo, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
-      query,
+    const [apoList, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
+      carregarTodas(),
       supabase.from('users').select('id, nome').order('nome'),
       supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
       supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome'),
     ])
-    if (resApo.error) {
-      console.error('Erro ao carregar apólices:', resApo.error)
-      alert('Erro ao carregar apólices: ' + resApo.error.message)
-    }
-    const items = (resApo.data || []).map((a:any) => ({
+    console.log(`[apolices] carregadas ${apoList.length} apólices (role=${prof?.role})`)
+    const items = apoList.map((a:any) => ({
       ...a,
       vencimento: a.vigencia_fim,
       etapa:      a.status || 'ativo',
