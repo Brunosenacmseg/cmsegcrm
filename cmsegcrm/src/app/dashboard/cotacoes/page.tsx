@@ -18,7 +18,7 @@ const TEMPO_HABILITACAO = ['Menos de 1 ano','1 a 2 anos','3 a 5 anos','6 a 10 an
 const PACOTE_COBERTURA  = ['Prata','Ouro','Diamante','Personalizada']
 const TIPO_COBERTURA    = ['Compreensiva','RCF','Roubo/Furto']
 const TIPO_FRANQUIA     = ['Reduzida','Normal','Majorada']
-const SEGURADORAS       = ['Porto Seguro','Bradesco','Allianz','HDI','Tokio Marine','Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali']
+const SEGURADORAS_FALLBACK = ['Porto Seguro','Bradesco','Allianz','HDI','Tokio Marine','Azul','Sompo','Liberty','Itaú','Mapfre','Sul América','Generali']
 const COBERTURAS_VALOR  = ['Não','10.000','15.000','20.000','25.000','30.000','40.000','50.000','75.000','100.000','150.000','200.000','300.000','Ilimitado']
 const VIDROS_OPTS       = ['Não','Básico','Completo']
 const ASSISTENCIA_OPTS  = ['Não','Básica','Intermediária','Completa']
@@ -98,6 +98,7 @@ export default function CotacoesPage() {
 
   const [profile, setProfile]       = useState<any>(null)
   const [cotacoes, setCotacoes]     = useState<any[]>([])
+  const [seguradoras, setSeguradoras] = useState<string[]>(SEGURADORAS_FALLBACK)
   const [loading, setLoading]       = useState(true)
   const [modal, setModal]           = useState(false)
   const [calculando, setCalculando] = useState(false)
@@ -248,6 +249,8 @@ export default function CotacoesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
+    const { data: segs } = await supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome')
+    if (segs && segs.length) setSeguradoras(segs.map((s:any)=>s.nome))
     await carregarCotacoes()
     setLoading(false)
   }
@@ -621,7 +624,7 @@ export default function CotacoesPage() {
                   <Inp label="Final de Vigência *"     value={form.final_vigencia}   onChange={set('final_vigencia')}   type="date" />
                   {form.renovacao==='Sim' && <>
                     <Inp label="Final Vigência Anterior"  value={form.final_vigencia_anterior}  onChange={set('final_vigencia_anterior')}  type="date" />
-                    <Sel label="Seguradora Anterior"      value={form.seguradora_anterior}      onChange={set('seguradora_anterior')}      opts={SEGURADORAS} />
+                    <Sel label="Seguradora Anterior"      value={form.seguradora_anterior}      onChange={set('seguradora_anterior')}      opts={seguradoras} />
                     <Inp label="Nº Apólice Anterior"      value={form.numero_apolice_anterior}  onChange={set('numero_apolice_anterior')}  placeholder="Número" />
                     <Inp label="Código Interno (CI)"      value={form.codigo_interno}           onChange={set('codigo_interno')}           placeholder="CI" />
                     <Inp label="Qtd. Sinistros"           value={form.qtd_sinistros}            onChange={set('qtd_sinistros')}            placeholder="0" />
