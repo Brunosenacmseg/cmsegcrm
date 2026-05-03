@@ -80,7 +80,7 @@ export async function enviarEmail(input: SendInput): Promise<SendResult> {
     if (relay) {
       const r = await fetch(relay + '/send', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ smtp: input.smtp, from: fromHeader, ...input }),
+        body: JSON.stringify({ ...input, from: fromHeader }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) return { ok: false, erro: j?.erro || `relay ${r.status}` }
