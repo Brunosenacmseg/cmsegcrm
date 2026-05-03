@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = 'force-dynamic'
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getSupabase()
   try {
     const { vendedor_id, negocio_id } = await request.json()
     if (!vendedor_id) return NextResponse.json({ ok: true })
@@ -39,7 +44,6 @@ export async function POST(request: NextRequest) {
 
       await supabaseAdmin.from('metas').update({ valor_atual: novoValor }).eq('id', meta.id)
 
-      // Notificar ao atingir a meta
       if (novoValor >= meta.valor_meta && meta.valor_atual < meta.valor_meta) {
         await supabaseAdmin.from('notificacoes').insert({
           user_id: vendedor_id, tipo: 'sistema',
