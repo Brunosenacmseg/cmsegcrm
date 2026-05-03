@@ -34,6 +34,10 @@ function FunisPage() {
   // Drag & drop kanban
   const [arrastando, setArrastando] = useState<string | null>(null)
   const [etapaHover, setEtapaHover] = useState<string | null>(null)
+  // Seleção em massa (admin)
+  const [modoSelecao, setModoSelecao] = useState(false)
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('todos')
   const [modoVisao, setModoVisao] = useState<'kanban'|'lista'>('kanban')
@@ -694,6 +698,64 @@ function FunisPage() {
     if (error) { alert('Erro ao trocar responsável: ' + error.message); return }
     setNegocios(prev => prev.map(n => n.id === negId ? { ...n, vendedor_id: novoVendedor || null, users: usuarios.find(u => u.id === novoVendedor) || null } : n))
   }
+  // ─── Seleção em massa (admin) ─────────────────────────────────
+  function toggleSel(id: string) {
+    setSelecionados(prev => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id); else n.add(id)
+      return n
+    })
+  }
+  function selecionarTodosVisiveis() {
+    setSelecionados(new Set(negociosFunil.map(n => n.id)))
+  }
+  function limparSelecao() { setSelecionados(new Set()) }
+  function sairModoSelecao() { setModoSelecao(false); limparSelecao() }
+
+  async function bulkMoverEtapa(novaEtapa: string) {
+    if (!novaEtapa || !selecionados.size) return
+    if (!confirm(`Mover ${selecionados.size} negociação(ões) para a etapa "${novaEtapa}"?`)) return
+    setBulkLoading(true)
+    const ids = Array.from(selecionados)
+    const { error } = await supabase.from('negocios').update({ etapa: novaEtapa }).in('id', ids)
+    setBulkLoading(false)
+    if (error) { alert('Erro: ' + error.message); return }
+    setNegocios(prev => prev.map(n => ids.includes(n.id) ? { ...n, etapa: novaEtapa } : n))
+    limparSelecao()
+  }
+
+  async function bulkMudarStatus(status: 'ganho'|'perdido'|'em_andamento') {
+    if (!selecionados.size) return
+    if (!confirm(`Marcar ${selecionados.size} negociação(ões) como ${status.toUpperCase()}?`)) return
+    setBulkLoading(true)
+    const ids = Array.from(selecionados)
+    const patch: any = { status }
+    if (status === 'ganho' || status === 'perdido') patch.data_fechamento = new Date().toISOString()
+    if (status === 'em_andamento') { patch.data_fechamento = null; patch.motivo_perda = null }
+    const { error } = await supabase.from('negocios').update(patch).in('id', ids)
+    setBulkLoading(false)
+    if (error) { alert('Erro: ' + error.message); return }
+    setNegocios(prev => prev.map(n => ids.includes(n.id) ? { ...n, ...patch } : n))
+    // Dispara automações para ganho/perdido (uma por uma — engine é idempotente)
+    if (status === 'ganho' || status === 'perdido') {
+      for (const id of ids) disparaAutomacao(`status_${status}` as any, id)
+    }
+    limparSelecao()
+  }
+
+  async function bulkExcluir() {
+    if (profile?.role !== 'admin' || !selecionados.size) return
+    if (!confirm(`EXCLUIR ${selecionados.size} negociação(ões)? Esta ação não pode ser desfeita.`)) return
+    if (!confirm('Tem certeza? Toda a lista será removida permanentemente.')) return
+    setBulkLoading(true)
+    const ids = Array.from(selecionados)
+    const { error } = await supabase.from('negocios').delete().in('id', ids)
+    setBulkLoading(false)
+    if (error) { alert('Erro: ' + error.message); return }
+    setNegocios(prev => prev.filter(n => !ids.includes(n.id)))
+    limparSelecao()
+  }
+
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
@@ -848,6 +910,11 @@ function FunisPage() {
 
         {profile?.role === 'admin' && (
           <>
+            <button onClick={() => { if (modoSelecao) sairModoSelecao(); else setModoSelecao(true) }}
+              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background: modoSelecao?'rgba(74,128,240,0.15)':'rgba(255,255,255,0.04)',color: modoSelecao?'#4a80f0':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+              title="Modo seleção em massa (admin)">
+              {modoSelecao ? '✕ Sair da seleção' : '☑ Selecionar em massa'}
+            </button>
             <button onClick={normalizarFunis}
               style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
               title="Encontra negociações duplicadas (mesmo cliente, mesmo funil, mesmo título) e unifica em uma só (admin)">
@@ -864,6 +931,57 @@ function FunisPage() {
           + Novo Card
         </button>
       </div>
+
+      {/* Barra de ações em massa (admin) */}
+      {profile?.role === 'admin' && modoSelecao && (
+        <div style={{padding:'10px 20px',background:'#0f1729',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',position:'sticky',top:0,zIndex:50}}>
+          <span style={{fontSize:13,color:'#fff',fontWeight:600}}>
+            {selecionados.size} selecionada(s)
+          </span>
+          <button onClick={selecionarTodosVisiveis}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:'pointer'}}>
+            Selecionar todos visíveis ({negociosFunil.length})
+          </button>
+          <button onClick={limparSelecao} disabled={!selecionados.size}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
+            Limpar
+          </button>
+
+          <div style={{width:1,height:20,background:'rgba(255,255,255,0.15)'}} />
+
+          {funiAtual && (
+            <select
+              disabled={!selecionados.size || bulkLoading}
+              onChange={e => { if (e.target.value) bulkMoverEtapa(e.target.value); e.target.value = '' }}
+              defaultValue=""
+              style={{padding:'5px 8px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'#fff',color:'#222',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
+              <option value="">→ Mover para etapa…</option>
+              {(funiAtual.etapas || []).map((et:string) => <option key={et} value={et}>{et}</option>)}
+            </select>
+          )}
+
+          <button onClick={()=>bulkMudarStatus('ganho')} disabled={!selecionados.size || bulkLoading}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.5)',background:'rgba(28,181,160,0.15)',color:'#1cb5a0',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
+            ✓ Marcar Ganho
+          </button>
+          <button onClick={()=>bulkMudarStatus('perdido')} disabled={!selecionados.size || bulkLoading}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.5)',background:'rgba(224,82,82,0.15)',color:'#e05252',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
+            ✕ Marcar Perdido
+          </button>
+          <button onClick={()=>bulkMudarStatus('em_andamento')} disabled={!selecionados.size || bulkLoading}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
+            ↺ Em andamento
+          </button>
+
+          <div style={{flex:1}} />
+
+          <button onClick={bulkExcluir} disabled={!selecionados.size || bulkLoading}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.6)',background:'rgba(224,82,82,0.2)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
+            🗑 Excluir selecionadas
+          </button>
+          {bulkLoading && <span style={{fontSize:11,color:'#aaa'}}>⏳ aplicando…</span>}
+        </div>
+      )}
 
       {/* Kanban */}
       {funiAtual && modoVisao==='kanban' && (
@@ -902,14 +1020,29 @@ function FunisPage() {
                     const isPerdido = neg.status === 'perdido'
                     const corBorda  = isGanho ? 'rgba(28,181,160,0.55)' : isPerdido ? 'rgba(224,82,82,0.55)' : 'var(--border)'
                     const bgCard    = isGanho ? 'rgba(28,181,160,0.06)' : isPerdido ? 'rgba(224,82,82,0.06)'  : 'rgba(255,255,255,0.04)'
+                    const isSel = selecionados.has(neg.id)
                     return (
-                    <div key={neg.id} onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
-                      draggable
+                    <div key={neg.id}
+                      onClick={()=>{
+                        if (modoSelecao) { toggleSel(neg.id); return }
+                        setCardAtivo(neg); setModalCard(true)
+                      }}
+                      draggable={!modoSelecao}
                       onDragStart={e=>{e.dataTransfer.setData('text/plain', neg.id);e.dataTransfer.effectAllowed='move';setArrastando(neg.id)}}
                       onDragEnd={()=>{setArrastando(null);setEtapaHover(null)}}
-                      style={{background:bgCard,border:'1px solid '+corBorda,borderRadius:12,padding:'12px',cursor:arrastando===neg.id?'grabbing':'grab',transition:'all 0.15s',position:'relative',opacity:arrastando===neg.id?0.5:1}}
-                      onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--gold)')}
-                      onMouseLeave={e=>(e.currentTarget.style.borderColor=corBorda)}>
+                      style={{background: isSel?'rgba(74,128,240,0.18)':bgCard,border:'1px solid '+(isSel?'#4a80f0':corBorda),borderRadius:12,padding:'12px',cursor: modoSelecao?'pointer':(arrastando===neg.id?'grabbing':'grab'),transition:'all 0.15s',position:'relative',opacity:arrastando===neg.id?0.5:1}}
+                      onMouseEnter={e=>(e.currentTarget.style.borderColor= isSel?'#4a80f0':'var(--gold)')}
+                      onMouseLeave={e=>(e.currentTarget.style.borderColor= isSel?'#4a80f0':corBorda)}>
+
+                      {modoSelecao && (
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          onChange={e=>{e.stopPropagation();toggleSel(neg.id)}}
+                          onClick={e=>e.stopPropagation()}
+                          style={{position:'absolute',top:8,left:8,width:16,height:16,cursor:'pointer',accentColor:'#4a80f0'}}
+                        />
+                      )}
 
                       {(isGanho || isPerdido) && (
                         <span style={{position:'absolute',top:8,right:8,fontSize:9,fontWeight:700,letterSpacing:'1px',padding:'2px 6px',borderRadius:5,textTransform:'uppercase',background:isGanho?'rgba(28,181,160,0.18)':'rgba(224,82,82,0.18)',color:isGanho?'var(--teal)':'var(--red)',border:'1px solid '+(isGanho?'rgba(28,181,160,0.4)':'rgba(224,82,82,0.4)')}}>
