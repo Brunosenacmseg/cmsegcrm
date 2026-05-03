@@ -55,7 +55,8 @@ export async function GET(req: NextRequest) {
   const pageToken = await getPageToken(cfg.access_token, cfg.page_id) || cfg.access_token
   let forms: any[] = []
   try {
-    const r = await fetch(`${GRAPH}/${cfg.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=200&access_token=${encodeURIComponent(pageToken)}`)
+    // Inclui questions{key,label,type} para permitir mapeamento de campos no UI
+    const r = await fetch(`${GRAPH}/${cfg.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions{key,label,type}&limit=200&access_token=${encodeURIComponent(pageToken)}`)
     const j = await r.json()
     if (j.error) return NextResponse.json({ error: j.error.message }, { status: 400 })
     forms = j.data || []
@@ -72,6 +73,9 @@ export async function GET(req: NextRequest) {
     status: f.status,
     leads_count: f.leads_count,
     criado_em: f.created_time,
+    questions: Array.isArray(f.questions)
+      ? f.questions.map((q: any) => ({ key: q.key, label: q.label, type: q.type }))
+      : [],
     mapeamento: map.get(String(f.id)) || null,
   }))
 
@@ -83,7 +87,7 @@ export async function POST(req: NextRequest) {
   if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, ativo, criar_negocio, observacoes } = body
+  const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, ativo, criar_negocio, observacoes, campo_map } = body
   if (!form_id) return NextResponse.json({ error: 'form_id obrigatório' }, { status: 400 })
 
   const { error } = await admin.from('meta_form_mapeamento').upsert({
@@ -96,6 +100,7 @@ export async function POST(req: NextRequest) {
     ativo:        ativo !== false,
     criar_negocio: criar_negocio !== false,
     observacoes:  observacoes || null,
+    campo_map:    campo_map && typeof campo_map === 'object' ? campo_map : {},
     updated_at:   new Date().toISOString(),
   }, { onConflict: 'form_id' })
 

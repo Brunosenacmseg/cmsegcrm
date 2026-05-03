@@ -87,20 +87,45 @@ export async function POST(req: NextRequest) {
         } catch {}
       }
 
-      // Extrai campos básicos do field_data (nome/email/phone)
+      // Carrega mapeamento PRIMEIRO (precisa de campo_map antes de extrair)
+      let mapping: any = null
+      if (linha.form_id) {
+        const { data: m } = await supabaseAdmin().from('meta_form_mapeamento')
+          .select('*').eq('form_id', String(linha.form_id)).maybeSingle()
+        if (m && m.ativo !== false) mapping = m
+      }
+      const campoMap: Record<string, string> = (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
+
+      // Extrai campos do field_data
       const campos = Array.isArray(linha.campos) ? linha.campos : []
-      const get = (...keys: string[]) => {
+      // valor por chave do form
+      const valorPorKey: Record<string, string> = {}
+      for (const c of campos) {
+        const k = (c?.name || '').toString()
+        const v = Array.isArray(c.values) && c.values[0] ? String(c.values[0]).trim() : ''
+        if (k && v) valorPorKey[k] = v
+      }
+      // fallback heurístico (caso campo_map não cubra tudo)
+      const heur = (...keys: string[]) => {
         for (const k of keys) {
           const f = campos.find((x: any) => (x?.name || '').toLowerCase().includes(k))
           if (f && Array.isArray(f.values) && f.values[0]) return String(f.values[0]).trim()
         }
         return null
       }
-      const nome     = get('full_name', 'nome', 'name')
-      const email    = get('email', 'e-mail')
-      const telefone = get('phone_number', 'telefone', 'phone', 'celular')
-      const cpf      = get('cpf')
-      const cnpj     = get('cnpj')
+      // Aplica campo_map → preenche colunas do cliente
+      const cliBase: Record<string, any> = {}
+      for (const [formKey, clienteCol] of Object.entries(campoMap)) {
+        if (!clienteCol) continue
+        const v = valorPorKey[formKey]
+        if (v) cliBase[clienteCol] = v
+      }
+      // Garante os campos básicos (heurística como fallback)
+      const nome     = cliBase.nome     || heur('full_name', 'nome', 'name')
+      const email    = cliBase.email    || heur('email', 'e-mail')
+      const telefone = cliBase.telefone || heur('phone_number', 'telefone', 'phone', 'celular')
+      const cpf      = cliBase.cpf_cnpj || heur('cpf')
+      const cnpj     = (!cliBase.cpf_cnpj) ? heur('cnpj') : null
 
       // Tenta achar cliente existente por email/cpf/telefone, senão cria
       let clienteId: string | null = null
@@ -113,40 +138,34 @@ export async function POST(req: NextRequest) {
             || await tenta('cpf_cnpj', (cpf || cnpj))
             || await tenta('telefone', telefone)
 
-      if (!clienteId && (nome || email || telefone || cpf || cnpj)) {
-        const { data: novo } = await supabaseAdmin().from('clientes').insert({
-          nome:     nome || email || telefone || 'Lead Meta sem nome',
-          tipo:     cnpj ? 'PJ' : 'PF',
-          cpf_cnpj: cpf || cnpj || null,
-          email:    email?.toLowerCase() || null,
-          telefone: telefone || null,
-          fonte:    'Meta Ads',
-          meta_lead_id:     linha.meta_lead_id,
-          meta_campaign_id: linha.campanha_id || null,
-          meta_adset_id:    linha.adset_id || null,
-          meta_ad_id:       linha.ad_id || null,
-          meta_form_id:     linha.form_id || null,
-        }).select('id').single()
-        clienteId = novo?.id || null
-      } else if (clienteId) {
-        // Atualiza cliente existente com tracking IDs (se ainda não tinha)
-        await supabaseAdmin().from('clientes').update({
-          meta_lead_id:     linha.meta_lead_id,
-          meta_campaign_id: linha.campanha_id || null,
-          meta_adset_id:    linha.adset_id || null,
-          meta_ad_id:       linha.ad_id || null,
-          meta_form_id:     linha.form_id || null,
-        }).eq('id', clienteId)
+      // Monta payload do cliente (cliBase + heurística + tracking)
+      const payloadCliente: any = {
+        ...cliBase,
+        nome:     cliBase.nome || nome || email || telefone || 'Lead Meta sem nome',
+        tipo:     (cliBase.cpf_cnpj?.replace(/\D/g,'').length === 14 || cnpj) ? 'PJ' : 'PF',
+        cpf_cnpj: cliBase.cpf_cnpj || cpf || cnpj || null,
+        email:    cliBase.email?.toLowerCase() || email?.toLowerCase() || null,
+        telefone: cliBase.telefone || telefone || null,
+        fonte:    'Meta Ads',
+        meta_lead_id:     linha.meta_lead_id,
+        meta_campaign_id: linha.campanha_id || null,
+        meta_adset_id:    linha.adset_id || null,
+        meta_ad_id:       linha.ad_id || null,
+        meta_form_id:     linha.form_id || null,
       }
 
-      // Mapeamento por formulário: define funil/etapa/vendedor.
-      // Se não houver mapeamento ativo, cai no funil padrão "venda".
-      let mapping: any = null
-      if (linha.form_id) {
-        const { data: m } = await supabaseAdmin().from('meta_form_mapeamento')
-          .select('*').eq('form_id', String(linha.form_id)).maybeSingle()
-        if (m && m.ativo !== false) mapping = m
+      if (!clienteId) {
+        const { data: novo } = await supabaseAdmin().from('clientes').insert(payloadCliente).select('id').single()
+        clienteId = novo?.id || null
+      } else {
+        // Atualiza cliente existente com novos campos (sem sobrescrever com null)
+        const upd: any = {}
+        for (const [k, v] of Object.entries(payloadCliente)) {
+          if (v != null && v !== '') upd[k] = v
+        }
+        await supabaseAdmin().from('clientes').update(upd).eq('id', clienteId)
       }
+
       let vendedorId: string | null = mapping?.vendedor_id || null
 
       // Cria negócio se: temos cliente E (mapping permite OU não há mapping)

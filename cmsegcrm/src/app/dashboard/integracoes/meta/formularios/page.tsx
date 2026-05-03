@@ -9,14 +9,28 @@ type Form = {
   status: string
   leads_count?: number
   criado_em?: string
+  questions?: { key: string; label?: string; type?: string }[]
   mapeamento: null | {
     funil_id: string | null
     etapa: string | null
     vendedor_id: string | null
     ativo: boolean
     criar_negocio: boolean
+    campo_map?: Record<string, string>
   }
 }
+
+const COLUNAS_CLIENTE = [
+  { val: '',         label: '— ignorar —' },
+  { val: 'nome',     label: 'Nome' },
+  { val: 'cpf_cnpj', label: 'CPF/CNPJ' },
+  { val: 'email',    label: 'E-mail' },
+  { val: 'telefone', label: 'Telefone' },
+  { val: 'cep',      label: 'CEP' },
+  { val: 'cidade',   label: 'Cidade' },
+  { val: 'estado',   label: 'Estado' },
+  { val: 'fonte',    label: 'Fonte' },
+]
 
 export default function FormulariosMetaPage() {
   const supabase = createClient()
@@ -77,7 +91,7 @@ export default function FormulariosMetaPage() {
 
   async function salvarMapeamento(form: Form, patch: Partial<NonNullable<Form['mapeamento']>>) {
     setSalvando(form.form_id)
-    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true }
+    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {} }
     const novo = { ...atual, ...patch }
     try {
       await fetch('/api/meta/forms', {
@@ -90,6 +104,13 @@ export default function FormulariosMetaPage() {
       })
       setForms(prev => prev.map(x => x.form_id === form.form_id ? { ...x, mapeamento: novo } : x))
     } finally { setSalvando(null) }
+  }
+  function mapearCampo(form: Form, formKey: string, clienteCol: string) {
+    const m = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {} }
+    const cm = { ...(m.campo_map || {}) }
+    if (clienteCol) cm[formKey] = clienteCol
+    else delete cm[formKey]
+    salvarMapeamento(form, { campo_map: cm })
   }
 
   async function removerMapeamento(form: Form) {
@@ -198,6 +219,34 @@ export default function FormulariosMetaPage() {
                       </select>
                     </div>
                   </div>
+
+                  {form.questions && form.questions.length > 0 && (
+                    <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
+                      <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>
+                        Mapeamento de campos do formulário
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                        {form.questions.map(q => {
+                          const valorMap = (m?.campo_map || {})[q.key] || ''
+                          return (
+                            <div key={q.key} style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.03)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
+                              <div style={{flex:1,minWidth:0,fontSize:11}}>
+                                <div style={{fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={q.label || q.key}>
+                                  {q.label || q.key}
+                                </div>
+                                <div style={{color:'var(--text-muted)',fontSize:10,fontFamily:'monospace'}}>{q.key}</div>
+                              </div>
+                              <span style={{fontSize:11,color:'var(--text-muted)'}}>→</span>
+                              <select value={valorMap} onChange={e=>mapearCampo(form, q.key, e.target.value)}
+                                style={{...sel,width:'auto',minWidth:130,padding:'4px 6px',fontSize:11}}>
+                                {COLUNAS_CLIENTE.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
+                              </select>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:10,borderTop:'1px solid var(--border)'}}>
                     <label style={{fontSize:11,color:'var(--text-muted)',display:'flex',gap:6,alignItems:'center',cursor:'pointer'}}>
