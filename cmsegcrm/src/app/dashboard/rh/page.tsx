@@ -2,15 +2,19 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'treinamentos' | 'beneficios' | 'aniversariantes' | 'cargos' | 'desligamentos' | 'documentos'
+type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'comissoes' | 'beneficios' | 'aniversariantes' | 'cargos' | 'desligamentos' | 'documentos'
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
+// Abas visíveis para QUALQUER usuário autenticado (vê só o que for próprio)
+const TABS_TODOS: { key: Tab; label: string; icon: string }[] = [
+  { key:'avaliacoes',       label:'Avaliações',       icon:'⭐' },
+  { key:'comissoes',        label:'Comissões',        icon:'💰' },
+]
+// Abas restritas à equipe "RH" (e admin)
+const TABS_RH: { key: Tab; label: string; icon: string }[] = [
   { key:'funcionarios',     label:'Funcionários',     icon:'🧑' },
   { key:'aniversariantes',  label:'Aniversariantes',  icon:'🎂' },
   { key:'ferias',           label:'Férias',           icon:'🏖️' },
   { key:'documentos',       label:'Documentos',       icon:'📁' },
-  { key:'avaliacoes',       label:'Avaliações',       icon:'⭐' },
-  { key:'treinamentos',     label:'Treinamentos',     icon:'🎓' },
   { key:'beneficios',       label:'Benefícios',       icon:'💼' },
   { key:'cargos',           label:'Cargos',           icon:'📋' },
   { key:'desligamentos',    label:'Desligamentos',    icon:'🚪' },
@@ -23,21 +27,37 @@ const inputStyle: React.CSSProperties = {
 
 export default function RHPage() {
   const supabase = createClient()
-  const [tab, setTab] = useState<Tab>('funcionarios')
   const [profile, setProfile] = useState<any>(null)
+  const [isRH, setIsRH]       = useState(false)
   const [loading, setLoading] = useState(true)
+  const [tab, setTab]         = useState<Tab>('avaliacoes')
 
   useEffect(() => { (async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: p } = await supabase.from('users').select('*').eq('id', user.id).single()
       setProfile(p)
+      // Verifica se é membro da equipe "RH"
+      const { data: equipes } = await supabase
+        .from('equipe_membros')
+        .select('equipes!inner(id, nome)')
+        .eq('user_id', user.id)
+      const ehRH = (equipes || []).some((m: any) =>
+        String(m.equipes?.nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim() === 'rh'
+      ) || p?.role === 'admin'
+      setIsRH(ehRH)
+      // Aba inicial: RH abre em Funcionários, demais em Comissões
+      if (ehRH) setTab('funcionarios')
+      else setTab('comissoes')
     }
     setLoading(false)
   })() }, [])
 
   // Líder e admin gerenciam o RH; demais usuários só leem o próprio.
-  const podeEditar = profile?.role === 'admin' || profile?.role === 'lider'
+  const podeEditar = profile?.role === 'admin' || profile?.role === 'lider' || isRH
+
+  // Abas finais: RH vê tudo; demais só Avaliações + Comissões
+  const TABS = isRH ? [...TABS_TODOS, ...TABS_RH] : TABS_TODOS
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -57,10 +77,10 @@ export default function RHPage() {
       <div style={{flex:1,overflow:'auto',padding:'24px 28px 40px'}}>
         {loading ? <div style={{color:'var(--text-muted)'}}>Carregando…</div> : (
           <>
-            {tab === 'funcionarios'    && <FuncionariosTab isAdmin={podeEditar} />}
-            {tab === 'aniversariantes' && <AniversariantesTab />}
-            {tab === 'ferias'          && <FeriasTab isAdmin={podeEditar} />}
-            {tab === 'avaliacoes'      && <SimpleListTab table="rh_avaliacoes"  isAdmin={podeEditar} columns={[
+            {tab === 'funcionarios'    && isRH && <FuncionariosTab isAdmin={podeEditar} />}
+            {tab === 'aniversariantes' && isRH && <AniversariantesTab />}
+            {tab === 'ferias'          && isRH && <FeriasTab isAdmin={podeEditar} />}
+            {tab === 'avaliacoes'      && <SimpleListTab table="rh_avaliacoes"  isAdmin={isRH} columns={[
               {k:'periodo',label:'Período'},{k:'nota_geral',label:'Nota'},{k:'feedback',label:'Feedback'}
             ]} createFields={[
               {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'periodo',label:'Período (ex: 2026-Q1)',type:'text'},
@@ -68,34 +88,27 @@ export default function RHPage() {
               {k:'pontos_melhoria',label:'Pontos de melhoria',type:'textarea'},{k:'metas',label:'Metas',type:'textarea'},
               {k:'feedback',label:'Feedback geral',type:'textarea'}
             ]} />}
-            {tab === 'treinamentos'    && <SimpleListTab table="rh_treinamentos" isAdmin={podeEditar} columns={[
-              {k:'titulo',label:'Título'},{k:'instituicao',label:'Instituição'},{k:'status',label:'Status'},{k:'data_inicio',label:'Início'}
-            ]} createFields={[
-              {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'titulo',label:'Título',type:'text'},
-              {k:'instituicao',label:'Instituição',type:'text'},{k:'carga_horaria',label:'Carga horária (h)',type:'number'},
-              {k:'data_inicio',label:'Início',type:'date'},{k:'data_fim',label:'Fim',type:'date'},
-              {k:'certificado_url',label:'URL do certificado',type:'text'}
-            ]} />}
-            {tab === 'beneficios'      && <SimpleListTab table="rh_beneficios" isAdmin={podeEditar} columns={[
+            {tab === 'comissoes'       && <ComissoesTab isRH={isRH} userId={profile?.id} />}
+            {tab === 'beneficios'      && isRH && <SimpleListTab table="rh_beneficios" isAdmin={podeEditar} columns={[
               {k:'tipo',label:'Tipo'},{k:'valor',label:'Valor'},{k:'inicio',label:'Início'}
             ]} createFields={[
               {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'tipo',label:'Tipo (VR/VT/Plano…)',type:'text'},
               {k:'valor',label:'Valor R$',type:'number'},{k:'inicio',label:'Início',type:'date'},{k:'fim',label:'Fim',type:'date'}
             ]} />}
-            {tab === 'cargos'          && <SimpleListTab table="rh_cargos" isAdmin={podeEditar} columns={[
+            {tab === 'cargos'          && isRH && <SimpleListTab table="rh_cargos" isAdmin={podeEditar} columns={[
               {k:'nome',label:'Nome'},{k:'salario_base',label:'Salário base'},{k:'ativo',label:'Ativo'}
             ]} createFields={[
               {k:'nome',label:'Nome do cargo',type:'text'},{k:'descricao',label:'Descrição',type:'textarea'},
               {k:'salario_base',label:'Salário base R$',type:'number'}
             ]} />}
-            {tab === 'desligamentos'   && <SimpleListTab table="rh_desligamentos" isAdmin={podeEditar} columns={[
+            {tab === 'desligamentos'   && isRH && <SimpleListTab table="rh_desligamentos" isAdmin={podeEditar} columns={[
               {k:'data',label:'Data'},{k:'tipo',label:'Tipo'},{k:'motivo',label:'Motivo'}
             ]} createFields={[
               {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'data',label:'Data',type:'date'},
               {k:'tipo',label:'Tipo (demissao_sem_justa_causa/justa_causa/pedido_demissao/acordo/aposentadoria/fim_contrato)',type:'text'},
               {k:'motivo',label:'Motivo',type:'textarea'},{k:'acerto_valor',label:'Acerto R$',type:'number'}
             ]} />}
-            {tab === 'documentos'      && <DocumentosTab isAdmin={podeEditar} />}
+            {tab === 'documentos'      && isRH && <DocumentosTab isAdmin={podeEditar} />}
           </>
         )}
       </div>
@@ -532,3 +545,257 @@ function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
     </div>
   )
 }
+
+// ────────── Comissões ──────────
+function ComissoesTab({ isRH, userId }: { isRH: boolean; userId: string }) {
+  const supabase = createClient()
+  const [list, setList] = useState<any[]>([])
+  const [usuarios, setUsuarios] = useState<any[]>([])
+  const [filtroUser, setFiltroUser] = useState<string>('')
+  const [modal, setModal] = useState<'novo'|'duvida'|null>(null)
+  const [duvidaItem, setDuvidaItem] = useState<any>(null)
+  const [duvidaTexto, setDuvidaTexto] = useState('')
+  const [novo, setNovo] = useState<any>({ vendedor_id:'', valor:'', competencia:'', descricao:'', file: null })
+  const [carregando, setCarregando] = useState(false)
+  const [filtroStatus, setFiltroStatus] = useState<'todos'|'pendente'|'aprovada'|'reprovada'|'duvida'>('todos')
+
+  useEffect(() => { carregar() }, [filtroUser, filtroStatus])
+
+  async function carregar() {
+    let q = supabase.from('rh_comissoes')
+      .select('*, vendedor:users!rh_comissoes_vendedor_id_fkey(id,nome,email), criador:users!rh_comissoes_created_by_fkey(nome)')
+      .order('created_at', { ascending: false })
+    if (filtroUser) q = q.eq('vendedor_id', filtroUser)
+    if (filtroStatus !== 'todos') q = q.eq('status', filtroStatus)
+    const { data } = await q
+    setList(data || [])
+    if (isRH && !usuarios.length) {
+      const { data: u } = await supabase.from('users').select('id, nome').order('nome')
+      setUsuarios(u || [])
+    }
+  }
+
+  async function salvarNovo() {
+    if (!novo.vendedor_id || !novo.valor) { alert('Vendedor e valor são obrigatórios'); return }
+    setCarregando(true)
+    let anexo_path: string | null = null
+    let anexo_nome: string | null = null
+    if (novo.file) {
+      const f = novo.file as File
+      const safe = f.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+      const path = `rh_comissoes/${novo.vendedor_id}/${Date.now()}_${safe}`
+      const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, f)
+      if (errUp) { alert('Erro ao subir anexo: ' + errUp.message); setCarregando(false); return }
+      anexo_path = path; anexo_nome = f.name
+    }
+    const { error } = await supabase.from('rh_comissoes').insert({
+      vendedor_id: novo.vendedor_id,
+      valor: Number(novo.valor),
+      competencia: novo.competencia || null,
+      descricao: novo.descricao || null,
+      anexo_path, anexo_nome,
+      created_by: userId,
+    })
+    setCarregando(false)
+    if (error) { alert('Erro: ' + error.message); return }
+    setModal(null); setNovo({ vendedor_id:'', valor:'', competencia:'', descricao:'', file: null })
+    carregar()
+  }
+
+  async function decidir(id: string, status: 'aprovada'|'reprovada') {
+    if (!confirm(`Confirmar ${status.toUpperCase()} desta comissão?`)) return
+    const { error } = await supabase.from('rh_comissoes')
+      .update({ status, decidido_em: new Date().toISOString() }).eq('id', id)
+    if (error) { alert('Erro: ' + error.message); return }
+    carregar()
+  }
+
+  async function enviarDuvida() {
+    if (!duvidaItem || !duvidaTexto.trim()) return
+    const { error } = await supabase.from('rh_comissoes')
+      .update({ status: 'duvida', duvida_texto: duvidaTexto, decidido_em: new Date().toISOString() })
+      .eq('id', duvidaItem.id)
+    if (error) { alert('Erro: ' + error.message); return }
+    setModal(null); setDuvidaItem(null); setDuvidaTexto('')
+    carregar()
+  }
+
+  async function excluir(id: string) {
+    if (!isRH) return
+    if (!confirm('Excluir esta comissão?')) return
+    const { error } = await supabase.from('rh_comissoes').delete().eq('id', id)
+    if (error) { alert('Erro: ' + error.message); return }
+    carregar()
+  }
+
+  async function baixarAnexo(path: string, nome: string) {
+    const { data, error } = await supabase.storage.from('cmsegcrm').createSignedUrl(path, 60)
+    if (error || !data?.signedUrl) { alert('Erro ao gerar link: ' + (error?.message || '?')); return }
+    const a = document.createElement('a'); a.href = data.signedUrl; a.download = nome; a.click()
+  }
+
+  const corStatus = (s: string) =>
+    s==='aprovada' ? 'rgba(28,181,160,0.18)' :
+    s==='reprovada' ? 'rgba(224,82,82,0.18)' :
+    s==='duvida' ? 'rgba(240,160,32,0.18)' : 'rgba(255,255,255,0.06)'
+  const txtStatus = (s: string) =>
+    s==='aprovada' ? 'var(--teal)' :
+    s==='reprovada' ? 'var(--red)' :
+    s==='duvida' ? '#f0a020' : 'var(--text-muted)'
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
+        <span style={{fontSize:13,color:'var(--text-muted)'}}>
+          {isRH ? 'Visualização geral (equipe RH)' : 'Suas comissões a aprovar'}
+        </span>
+        <div style={{flex:1}} />
+        <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value as any)}
+          style={{...inputStyle, width:'auto'}}>
+          <option value="todos">Todos status</option>
+          <option value="pendente">Pendentes</option>
+          <option value="aprovada">Aprovadas</option>
+          <option value="reprovada">Reprovadas</option>
+          <option value="duvida">Com dúvida</option>
+        </select>
+        {isRH && (
+          <select value={filtroUser} onChange={e=>setFiltroUser(e.target.value)}
+            style={{...inputStyle, width:'auto'}}>
+            <option value="">Todos vendedores</option>
+            {usuarios.map((u:any) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        )}
+        {isRH && (
+          <button onClick={()=>setModal('novo')} className="btn-primary"
+            style={{padding:'7px 14px',fontSize:12}}>+ Nova comissão</button>
+        )}
+      </div>
+
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+        <thead>
+          <tr style={{textAlign:'left',color:'var(--text-muted)',fontSize:10,letterSpacing:'1px',textTransform:'uppercase'}}>
+            <th style={th}>Vendedor</th>
+            <th style={th}>Competência</th>
+            <th style={th}>Valor</th>
+            <th style={th}>Anexo</th>
+            <th style={th}>Status</th>
+            <th style={th}>Lançada por</th>
+            <th style={th}>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map(it => {
+            const podeDecidir = it.status === 'pendente' && it.vendedor_id === userId
+            return (
+              <tr key={it.id} style={{borderBottom:'1px solid var(--border)'}}>
+                <td style={td}>{it.vendedor?.nome || '—'}</td>
+                <td style={td}>{it.competencia || '—'}</td>
+                <td style={{...td, fontWeight:600, color:'var(--teal)'}}>R$ {Number(it.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                <td style={td}>
+                  {it.anexo_path
+                    ? <button onClick={()=>baixarAnexo(it.anexo_path, it.anexo_nome||'extrato.xlsx')}
+                        style={{background:'none',border:'1px solid var(--border)',padding:'3px 8px',borderRadius:5,fontSize:11,cursor:'pointer',color:'var(--gold)'}}>
+                        📎 {it.anexo_nome || 'baixar'}
+                      </button>
+                    : <span style={{color:'var(--text-muted)'}}>—</span>}
+                </td>
+                <td style={td}>
+                  <span style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,background:corStatus(it.status),color:txtStatus(it.status),textTransform:'uppercase'}}>
+                    {it.status}
+                  </span>
+                  {it.status==='duvida' && it.duvida_texto && (
+                    <div style={{fontSize:11,color:'#f0a020',marginTop:4}}>“{it.duvida_texto}”</div>
+                  )}
+                </td>
+                <td style={{...td,color:'var(--text-muted)'}}>{it.criador?.nome || '—'}</td>
+                <td style={td}>
+                  {podeDecidir && (
+                    <div style={{display:'flex',gap:4}}>
+                      <button onClick={()=>decidir(it.id,'aprovada')}
+                        style={{padding:'4px 8px',borderRadius:5,border:'1px solid rgba(28,181,160,0.5)',background:'rgba(28,181,160,0.12)',color:'var(--teal)',cursor:'pointer',fontSize:11,fontWeight:600}}>✓ Aprovar</button>
+                      <button onClick={()=>decidir(it.id,'reprovada')}
+                        style={{padding:'4px 8px',borderRadius:5,border:'1px solid rgba(224,82,82,0.5)',background:'rgba(224,82,82,0.12)',color:'var(--red)',cursor:'pointer',fontSize:11,fontWeight:600}}>✕ Reprovar</button>
+                      <button onClick={()=>{setDuvidaItem(it); setDuvidaTexto(''); setModal('duvida')}}
+                        style={{padding:'4px 8px',borderRadius:5,border:'1px solid rgba(240,160,32,0.5)',background:'rgba(240,160,32,0.12)',color:'#f0a020',cursor:'pointer',fontSize:11,fontWeight:600}}>? Dúvida</button>
+                    </div>
+                  )}
+                  {isRH && (
+                    <button onClick={()=>excluir(it.id)}
+                      style={{padding:'4px 8px',borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--red)',cursor:'pointer',fontSize:11,marginLeft:4}}>🗑</button>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+          {list.length === 0 && (
+            <tr><td colSpan={7} style={{padding:24,textAlign:'center',color:'var(--text-muted)'}}>
+              Nenhuma comissão encontrada
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+
+      {modal === 'novo' && isRH && (
+        <div style={modalOverlay} onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div style={modalBox}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:14}}>+ Nova comissão</div>
+            <div style={{display:'grid',gap:10}}>
+              <div>
+                <label style={lblSm}>Vendedor *</label>
+                <select value={novo.vendedor_id} onChange={e=>setNovo({...novo,vendedor_id:e.target.value})} style={inputStyle}>
+                  <option value="">— selecione —</option>
+                  {usuarios.map((u:any) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={lblSm}>Valor (R$) *</label>
+                <input type="number" step="0.01" value={novo.valor} onChange={e=>setNovo({...novo,valor:e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={lblSm}>Competência (ex: 2026-04)</label>
+                <input value={novo.competencia} onChange={e=>setNovo({...novo,competencia:e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={lblSm}>Descrição</label>
+                <textarea value={novo.descricao} onChange={e=>setNovo({...novo,descricao:e.target.value})} style={{...inputStyle, minHeight:60}} />
+              </div>
+              <div>
+                <label style={lblSm}>Extrato (Excel/CSV/PDF)</label>
+                <input type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={e=>setNovo({...novo,file:e.target.files?.[0]||null})}
+                  style={{...inputStyle, padding:6}} />
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16}}>
+              <button onClick={()=>setModal(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={salvarNovo} disabled={carregando} className="btn-primary">{carregando?'Salvando…':'✓ Lançar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === 'duvida' && (
+        <div style={modalOverlay} onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div style={modalBox}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:14}}>? Tenho uma dúvida</div>
+            <p style={{fontSize:13,color:'var(--text-muted)',marginTop:0}}>
+              Descreva sua dúvida sobre essa comissão. A equipe RH será notificada.
+            </p>
+            <textarea value={duvidaTexto} onChange={e=>setDuvidaTexto(e.target.value)}
+              placeholder="Ex: 'O valor da apólice X parece divergente'"
+              style={{...inputStyle, minHeight:120}} autoFocus />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
+              <button onClick={()=>setModal(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={enviarDuvida} disabled={!duvidaTexto.trim()} className="btn-primary">Enviar dúvida</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const th: React.CSSProperties = { padding:'8px 6px', borderBottom:'1px solid var(--border)' }
+const td: React.CSSProperties = { padding:'8px 6px' }
+const lblSm: React.CSSProperties = { display:'block', fontSize:11, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase', letterSpacing:'1px' }
+const modalOverlay: React.CSSProperties = { position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, backdropFilter:'blur(4px)' }
+const modalBox: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'24px 28px', width:520, maxWidth:'95vw', maxHeight:'90vh', overflow:'auto' }
