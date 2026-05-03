@@ -225,18 +225,39 @@ async function importarContatos(token: string, from?: string, to?: string) {
   return stats
 }
 
+// Cache de payloads pesados (pipelines, stages) com TTL — evita refazer
+// chamadas de catálogo na RD a cada importação de janela curta. O timeout
+// do plano free do Vercel (60s) não comporta o preâmbulo + deals juntos.
+const CACHE_TTL_MS = 60 * 60 * 1000 // 1h
+async function lerCacheRD<T>(chave: string): Promise<T | null> {
+  const { data } = await supabaseAdmin.from('rdstation_cache')
+    .select('valor, atualizado_em').eq('chave', chave).maybeSingle()
+  if (!data) return null
+  const idade = Date.now() - new Date(data.atualizado_em).getTime()
+  if (idade > CACHE_TTL_MS) return null
+  return data.valor as T
+}
+async function gravarCacheRD(chave: string, valor: any) {
+  await supabaseAdmin.from('rdstation_cache').upsert({
+    chave, valor, atualizado_em: new Date().toISOString(),
+  })
+}
+
 async function importarNegocios(token: string, from?: string, to?: string, incluirDetalhes = false) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
 
   // ─── PIPELINES DO RD: nome + etapas (para resolver mismatch) ──
-  // Buscamos as pipelines primeiro pra evitar cair no fallback errado
-  // quando o deal só tem deal_pipeline_id mas não traz o name.
-  let rdPipelines: RDPipeline[] = []
-  for (const path of ['/deal_pipelines', '/pipelines']) {
-    for (const key of ['deal_pipelines', 'pipelines']) {
-      try { const r = await listarTodos<RDPipeline>(path, token, key); if (r.length) { rdPipelines = r; break } } catch {}
+  // Cacheado por 1h — refaz só se invalidado. Sem cache, isso sozinho
+  // já estoura o timeout do Vercel free em contas grandes.
+  let rdPipelines: RDPipeline[] = (await lerCacheRD<RDPipeline[]>('pipelines')) || []
+  if (!rdPipelines.length) {
+    for (const path of ['/deal_pipelines', '/pipelines']) {
+      for (const key of ['deal_pipelines', 'pipelines']) {
+        try { const r = await listarTodos<RDPipeline>(path, token, key); if (r.length) { rdPipelines = r; break } } catch {}
+      }
+      if (rdPipelines.length) break
     }
-    if (rdPipelines.length) break
+    if (rdPipelines.length) await gravarCacheRD('pipelines', rdPipelines)
   }
   const rdPipelinePorId:   Record<string, RDPipeline> = {}
   const rdPipelineNomePorId: Record<string, string>   = {}
@@ -281,8 +302,12 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
     funilFallback = data
   }
 
-  // Stages → pipeline (para deals que vêm com deal_stage mas não com deal_pipeline)
-  const stages = await listarTodos<RDStage>('/deal_stages', token, 'deal_stages')
+  // Stages → pipeline (cacheado, mesmo motivo das pipelines)
+  let stages: RDStage[] = (await lerCacheRD<RDStage[]>('stages')) || []
+  if (!stages.length) {
+    stages = await listarTodos<RDStage>('/deal_stages', token, 'deal_stages')
+    if (stages.length) await gravarCacheRD('stages', stages)
+  }
   const pipelinePorStage: Record<string, string> = {}
   for (const s of stages) {
     const sid = rdId(s)

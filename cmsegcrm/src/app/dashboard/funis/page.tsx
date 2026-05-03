@@ -70,6 +70,7 @@ function FunisPage() {
   const [origens, setOrigens]           = useState<any[]>([])
   const [tagsAll, setTagsAll]           = useState<any[]>([])
   const [produtosAll, setProdutosAll]   = useState<any[]>([])
+  const [seguradorasAll, setSeguradorasAll] = useState<any[]>([])
   const [novaNota, setNovaNota]         = useState('')
   const [novoProdNeg, setNovoProdNeg]   = useState({ produto_id: '', quantidade: '1', valor_unit: '' })
   // Modal de marcar perdido
@@ -81,7 +82,7 @@ function FunisPage() {
   const [modalNovo, setModalNovo] = useState(false)
   const [funilModal, setFunilModal] = useState<any>(null)
   const [salvando, setSalvando]   = useState(false)
-  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
+  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
   const [clienteBusca, setClienteBusca] = useState('')
   const [clientesRes, setClientesRes]   = useState<any[]>([])
   const [clienteSel, setClienteSel]     = useState<any>(null)
@@ -135,6 +136,7 @@ function FunisPage() {
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
     supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
     supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
+    supabase.from('seguradoras').select('id,nome').eq('ativo', true).order('nome').then(({ data }) => setSeguradorasAll(data || []))
     supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
     supabase.from('email_templates').select('*').eq('ativo', true)
       .in('categoria', ['assinatura','renovacao','cobranca','geral'])
@@ -457,6 +459,7 @@ function FunisPage() {
     await supabase.from('negocios').insert({
       titulo:      formNovo.titulo,
       produto:     formNovo.produto || null,
+      seguradora:  formNovo.seguradora || null,
       premio:      formNovo.premio ? parseFloat(formNovo.premio) : null,
       obs:         formNovo.obs || null,
       etapa,
@@ -465,7 +468,7 @@ function FunisPage() {
       vendedor_id: formNovo.vendedor_id || profile?.id,
     })
     setModalNovo(false)
-    setFormNovo({ titulo:'', produto:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
+    setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
     setClienteSel(null); setClienteBusca('')
     setSalvando(false)
     await carregarNegocios()
@@ -666,6 +669,24 @@ function FunisPage() {
     /* za */                         return String(b.titulo||'').localeCompare(String(a.titulo||''), 'pt-BR', { sensitivity:'base' })
   })
 
+  async function normalizarFunis() {
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers = { 'Content-Type':'application/json', Authorization: `Bearer ${session?.access_token||''}` }
+    const r1 = await fetch('/api/funis/normalize', { method:'POST', headers, body: JSON.stringify({ dryRun:true }) })
+    const j1 = await r1.json()
+    if (!r1.ok) { alert('Erro ao analisar: ' + (j1.error || 'falha')); return }
+    if ((j1.grupos_duplicados || 0) === 0) { alert('Nenhum funil duplicado encontrado.'); return }
+    const resumo = (j1.detalhes || []).map((a:any) =>
+      `• "${a.keeper.nome}" — manter (${a.keeper.cards} cards) + unificar ${a.duplicatas.length} duplicata(s) (${a.duplicatas.reduce((s:number,d:any)=>s+d.cards,0)} cards a mover)`
+    ).join('\n')
+    if (!confirm(`Encontrados ${j1.grupos_duplicados} grupo(s) de funis duplicados:\n\n${resumo}\n\nIsto NÃO pode ser desfeito. Confirmar?`)) return
+    const r2 = await fetch('/api/funis/normalize', { method:'POST', headers, body: JSON.stringify({ dryRun:false }) })
+    const j2 = await r2.json()
+    if (!r2.ok) { alert('Erro ao normalizar: ' + (j2.error || 'falha')); return }
+    alert(`✓ Normalização concluída.\n${j2.funis_apagados} funil(is) apagado(s).\n${j2.cards_movidos} card(s) movido(s).`)
+    window.location.reload()
+  }
+
   async function trocarVendedorNeg(negId: string, novoVendedor: string) {
     if (!(profile?.role === 'admin' || profile?.role === 'lider')) return
     const { error } = await supabase.from('negocios').update({ vendedor_id: novoVendedor || null }).eq('id', negId)
@@ -679,7 +700,7 @@ function FunisPage() {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:10,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
+      <div style={{minHeight:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',flexWrap:'wrap',rowGap:8,padding:'8px 20px',gap:10,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         {/* Dropdown de funis (filtrado por equipe via RLS — funis já chegam só os permitidos) */}
         <div style={{position:'relative',minWidth:280}}>
           <button onClick={()=>setSeletorAberto(s=>!s)}
@@ -825,13 +846,20 @@ function FunisPage() {
         </div>
 
         {profile?.role === 'admin' && (
-          <button onClick={()=>router.push('/dashboard/funis/configurar')}
-            style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
-            title="Criar, renomear e organizar funis (admin)">
-            ⚙ Configurar funis
-          </button>
+          <>
+            <button onClick={normalizarFunis}
+              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+              title="Encontra funis com nome duplicado e unifica em um só (admin)">
+              🧹 Normalizar
+            </button>
+            <button onClick={()=>router.push('/dashboard/funis/configurar')}
+              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+              title="Criar, renomear e organizar funis (admin)">
+              ⚙ Configurar funis
+            </button>
+          </>
         )}
-        <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||''})}}>
+        <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||''})}}>
           + Novo Card
         </button>
       </div>
@@ -1072,6 +1100,13 @@ function FunisPage() {
                 <input value={formNovo.produto} onChange={e=>setFormNovo(f=>({...f,produto:e.target.value}))} placeholder="Ex: Auto" style={inp}/></div>
               <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Prêmio (R$)</label>
                 <input value={formNovo.premio} onChange={e=>setFormNovo(f=>({...f,premio:e.target.value}))} placeholder="0,00" style={inp}/></div>
+            </div>
+
+            <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Seguradora</label>
+              <select value={formNovo.seguradora} onChange={e=>setFormNovo(f=>({...f,seguradora:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                <option value="">— Selecione —</option>
+                {seguradorasAll.map(s=><option key={s.id} value={s.nome} style={{background:'#ffffff'}}>{s.nome}</option>)}
+              </select>
             </div>
 
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Etapa</label>

@@ -46,15 +46,23 @@ function dataHoje(): string {
 }
 
 // Gera lista de janelas mensais entre duas datas (YYYY-MM-DD)
+// Gera janelas respeitando os dias exatos de inicio/fim. Quando o intervalo
+// cabe em um único mês, devolve uma janela só (de `inicio` até `fim`). Quando
+// atravessa meses, fatia por mês mas honra os dias nos extremos para não
+// puxar o mês inteiro à toa (era o que causava timeout).
 function gerarJanelasMensais(inicio: string, fim: string): { from: string, to: string }[] {
   const janelas: { from: string, to: string }[] = []
-  const [yi, mi] = inicio.split('-').map(Number)
-  const [yf, mf] = fim.split('-').map(Number)
+  const [yi, mi, di] = inicio.split('-').map(Number)
+  const [yf, mf, df] = fim.split('-').map(Number)
   let y = yi, m = mi
   while (y < yf || (y === yf && m <= mf)) {
-    const ultimoDia = new Date(y, m, 0).getDate()
-    const from = `${y}-${String(m).padStart(2,'0')}-01T00:00:00`
-    const to   = `${y}-${String(m).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}T23:59:59`
+    const ultimoDiaMes = new Date(y, m, 0).getDate()
+    const ehPrimeiro = (y === yi && m === mi)
+    const ehUltimo   = (y === yf && m === mf)
+    const diaInicio = ehPrimeiro ? di : 1
+    const diaFim    = ehUltimo   ? df : ultimoDiaMes
+    const from = `${y}-${String(m).padStart(2,'0')}-${String(diaInicio).padStart(2,'0')}T00:00:00`
+    const to   = `${y}-${String(m).padStart(2,'0')}-${String(diaFim   ).padStart(2,'0')}T23:59:59`
     janelas.push({ from, to })
     m++; if (m > 12) { m = 1; y++ }
     if (janelas.length > 600) break // segurança: 50 anos

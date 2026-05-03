@@ -58,13 +58,23 @@ const nClamp = (v: any, max: number) => {
 const MAX_VALOR = 9_999_999_999.99
 const MAX_PCT   = 999_999.99
 const dateBR = (v: any) => {
-  if (!v) return null
+  if (v === null || v === undefined || v === '') return null
   const t = String(v).trim()
   // DD/MM/YYYY → YYYY-MM-DD
   const m1 = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`
   // YYYY-MM-DD já OK
   if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10)
+  // Serial do Excel (1900 date system) — número entre ~10000 e 80000
+  if (/^\d{4,6}(\.\d+)?$/.test(t)) {
+    const serial = parseFloat(t)
+    if (serial > 10000 && serial < 80000) {
+      // Excel epoch = 1899-12-30 (corrige bug do leap year de 1900)
+      const ms = Math.round(serial) * 86400000 + Date.UTC(1899, 11, 30)
+      const d = new Date(ms)
+      return d.toISOString().slice(0, 10)
+    }
+  }
   return null
 }
 
@@ -412,37 +422,76 @@ async function importarNegocios(linhas: any[]) {
 async function importarApolices(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
   // BULK: pré-carrega clientes (por CPF) e apólices existentes (por número)
-  const cpfsLote = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
+  // Normaliza CPF/CNPJ para casamento: a planilha pode trazer formatado
+  // (033.636.658-22) e a base estar com dígitos puros (ou vice-versa).
+  // Indexamos clientes por dígitos-só para resolver os dois casos.
+  const onlyDigits = (v: any) => String(v ?? '').replace(/\D/g, '')
+  const cpfsRaw = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
+  const cpfsDigits = Array.from(new Set(cpfsRaw.map(onlyDigits).filter(Boolean)))
+  const cpfsLote = Array.from(new Set([...cpfsRaw, ...cpfsDigits]))
   const numerosLote = Array.from(new Set(linhas.map(r => s(r.numero || r.apolice)).filter(Boolean))) as string[]
   const clientePorCpf: Record<string, string> = {}
   const apolicePorNum: Record<string, string> = {}
   if (cpfsLote.length) {
-    const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
-    for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
-  }
-  if (numerosLote.length) {
-    const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', numerosLote)
-    for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
-  }
-
-  // Pre-cria clientes que não existem (em batch)
-  const novosClientes: any[] = []
-  for (const r of linhas) {
-    const cpf = s(r.cpf_cnpj || r.cpf)
-    if (cpf && !clientePorCpf[cpf]) {
-      const nome = s(r.nome) || s(r.segurado) || s(r.cliente)
-      if (nome && !novosClientes.find(c => c.cpf_cnpj === cpf)) {
-        novosClientes.push({
-          nome, cpf_cnpj: cpf,
-          tipo: cpf.replace(/\D/g,'').length > 11 ? 'PJ' : 'PF',
-          fonte: 'Importação Apólices',
-        })
+    // Busca em chunks de 500 (PostgREST limita ~1000 por filtro .in)
+    for (let i = 0; i < cpfsLote.length; i += 500) {
+      const chunk = cpfsLote.slice(i, i + 500)
+      const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', chunk)
+      for (const c of data || []) if (c.cpf_cnpj) {
+        clientePorCpf[c.cpf_cnpj] = c.id
+        clientePorCpf[onlyDigits(c.cpf_cnpj)] = c.id
       }
     }
   }
+  // Pré-busca apólices existentes em chunks de 500 (PostgREST limita 1000 por request)
+  if (numerosLote.length) {
+    for (let i = 0; i < numerosLote.length; i += 500) {
+      const chunk = numerosLote.slice(i, i + 500)
+      const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', chunk)
+      for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
+    }
+  }
+
+
+  // Pre-cria clientes que não existem (em batch). Considera tanto a
+  // forma formatada quanto digits-only — se já há cliente com o mesmo
+  // CPF (em qualquer formato), reaproveita.
+  const novosClientes: any[] = []
+  for (const r of linhas) {
+    const cpf = s(r.cpf_cnpj || r.cpf)
+    if (!cpf) continue
+    const dig = onlyDigits(cpf)
+    if (clientePorCpf[cpf] || (dig && clientePorCpf[dig])) continue
+    const nome = s(r.nome) || s(r.segurado) || s(r.cliente)
+    if (!nome) continue
+    if (novosClientes.find(c => onlyDigits(c.cpf_cnpj) === dig)) continue
+    novosClientes.push({
+      nome, cpf_cnpj: dig || cpf,
+      tipo: dig.length > 11 ? 'PJ' : 'PF',
+      fonte: 'Importação Apólices',
+    })
+  }
   if (novosClientes.length) {
-    const { data: criados } = await supabaseAdmin.from('clientes').insert(novosClientes).select('id, cpf_cnpj')
-    for (const c of criados || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+    // Insere em chunks de 500 pra evitar payloads enormes
+    for (let i = 0; i < novosClientes.length; i += 500) {
+      const chunk = novosClientes.slice(i, i + 500)
+      const { data: criados, error } = await supabaseAdmin.from('clientes').insert(chunk).select('id, cpf_cnpj')
+      if (error) {
+        // fallback linha a linha para não perder o lote inteiro
+        for (const c of chunk) {
+          const { data: one } = await supabaseAdmin.from('clientes').insert(c).select('id, cpf_cnpj').single()
+          if (one?.id && one.cpf_cnpj) {
+            clientePorCpf[one.cpf_cnpj] = one.id
+            clientePorCpf[onlyDigits(one.cpf_cnpj)] = one.id
+          }
+        }
+      } else {
+        for (const c of criados || []) if (c.cpf_cnpj) {
+          clientePorCpf[c.cpf_cnpj] = c.id
+          clientePorCpf[onlyDigits(c.cpf_cnpj)] = c.id
+        }
+      }
+    }
   }
 
   // Monta payloads + separa novos vs updates
@@ -453,7 +502,8 @@ async function importarApolices(linhas: any[]) {
       const numero = s(r.numero || r.apolice)
       if (!numero) { stats.qtd_erros++; continue }
       const cpf = s(r.cpf_cnpj || r.cpf)
-      const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
+      const cpfKey = cpf ? (clientePorCpf[cpf] ? cpf : onlyDigits(cpf)) : ''
+      const clienteId = cpfKey ? (clientePorCpf[cpfKey] || null) : null
       if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente`); continue }
 
       const parseBool = (v: any): boolean | null => {
@@ -518,11 +568,13 @@ async function importarApolices(linhas: any[]) {
     }
   }
 
+  // UPSERT por numero (idempotente — atualiza se ja existe, insere caso contrario).
+  // Evita quebrar com 'apolices_numero_unique' quando o pre-fetch nao detecta tudo.
   if (novos.length) {
-    const { error } = await supabaseAdmin.from('apolices').insert(novos)
+    const { error } = await supabaseAdmin.from('apolices').upsert(novos, { onConflict: 'numero' })
     if (error) {
       for (const p of novos) {
-        const { error: e2 } = await supabaseAdmin.from('apolices').insert(p)
+        const { error: e2 } = await supabaseAdmin.from('apolices').upsert(p, { onConflict: 'numero' })
         if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.numero}: ${e2.message?.slice(0,80)}`) }
         else stats.qtd_criados++
       }
@@ -535,6 +587,60 @@ async function importarApolices(linhas: any[]) {
     if (error) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${u.payload.numero}: ${error.message?.slice(0,80)}`) }
     else stats.qtd_atualizados++
   }
+
+  // ─── Espelha em `negocios` para que apareçam no módulo /dashboard/apolices,
+  // que lê da tabela negocios (filtrada por premio > 0). Sem isso, os
+  // registros ficam só na tabela apolices "legado" e nenhum usuário vê.
+  try {
+    const { data: funilVenda } = await supabaseAdmin.from('funis').select('id, etapas').eq('tipo', 'venda').limit(1).maybeSingle()
+    const funilId = funilVenda?.id || null
+    const etapaGanho = (funilVenda?.etapas as string[] | undefined)?.find(e => ['Renovado','Fechado Ganho','Pago','Concluído','Ganho'].includes(e))
+                    || (funilVenda?.etapas as string[] | undefined)?.[0]
+                    || 'Renovado'
+    if (funilId) {
+      // Evita duplicar: já existe negocio com o mesmo "numero" de apólice (campo cpf_cnpj livre não serve, mas titulo costuma incluir)
+      const titulosExistentes: Record<string, true> = {}
+      const titulosCheck = linhas.map(r => `Apólice ${s(r.numero||r.apolice)||''}`).filter(t => t !== 'Apólice ')
+      if (titulosCheck.length) {
+        const { data: ja } = await supabaseAdmin.from('negocios').select('titulo').in('titulo', titulosCheck)
+        for (const n of ja || []) if (n.titulo) titulosExistentes[n.titulo] = true
+      }
+      const negs: any[] = []
+      for (const r of linhas) {
+        const numero = s(r.numero || r.apolice); if (!numero) continue
+        const cpf = s(r.cpf_cnpj || r.cpf)
+        const clienteId = cpf ? clientePorCpf[cpf] : null
+        if (!clienteId) continue
+        const titulo = `Apólice ${numero}`
+        if (titulosExistentes[titulo]) continue
+        negs.push({
+          funil_id:    funilId,
+          cliente_id:  clienteId,
+          titulo,
+          etapa:       etapaGanho,
+          status:      'ganho',
+          produto:     s(r.produto),
+          seguradora:  s(r.seguradora),
+          premio:      nClamp(r.premio, MAX_VALOR),
+          comissao_pct: nClamp(r.comissao_pct, MAX_PCT),
+          vencimento:  dateBR(r.vigencia_fim || r.fim || r.vencimento),
+          obs:         `Importado de apólice nº ${numero}`,
+        })
+      }
+      if (negs.length) {
+        const { error } = await supabaseAdmin.from('negocios').insert(negs)
+        if (error) {
+          // tenta um a um
+          for (const p of negs) {
+            await supabaseAdmin.from('negocios').insert(p)
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    if (stats.erros.length < 20) stats.erros.push('Espelhamento em negócios falhou: ' + (e?.message?.slice(0,80) || 'erro'))
+  }
+
   return stats
 }
 

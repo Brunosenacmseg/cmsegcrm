@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { chamarClaude } from '@/lib/claude'
+import { chamarChatGPT } from '@/lib/openai'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,15 +30,17 @@ export async function POST(request: NextRequest) {
   if (!agente) return NextResponse.json({ error: 'Agente não encontrado' }, { status: 404 })
 
   try {
-    const resposta = await chamarClaude({
+    const resposta = await chamarChatGPT({
       modelo: agente.modelo,
-      systemPrompt: agente.system_prompt,
+      systemPrompt: agente.base_conhecimento
+        ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
+        : agente.system_prompt,
       mensagem,
       maxTokens: agente.max_tokens || 1024,
       temperatura: Number(agente.temperatura) || 0.7,
     })
     return NextResponse.json({ resposta })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Erro ao chamar Claude' }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Erro ao chamar ChatGPT' }, { status: 500 })
   }
 }

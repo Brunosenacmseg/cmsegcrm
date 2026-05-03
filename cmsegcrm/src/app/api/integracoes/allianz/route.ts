@@ -263,7 +263,6 @@ async function bulkInsert(
     const chunk = payloads.slice(i, i + TAM)
     const q = supabaseAdmin.from(tabela).upsert(chunk, conflito ? { onConflict: conflito, ignoreDuplicates: false } : undefined)
     const { error } = await q
-    const count = chunk.length
     if (error) {
       // fallback row-by-row
       for (const p of chunk) {
@@ -277,7 +276,7 @@ async function bulkInsert(
         }
       }
     } else {
-      stats.qtd_criados += count
+      stats.qtd_criados += chunk.length
     }
   }
 }

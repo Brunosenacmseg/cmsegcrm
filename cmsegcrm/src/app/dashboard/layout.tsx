@@ -15,6 +15,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/telefone',     icon:'📞', label:'Telefone' },
   { href:'/dashboard/whatsapp',     icon:'💬', label:'WhatsApp' },
   { href:'/dashboard/mensagens',    icon:'✉️', label:'Mensagens', badge:'mensagens' },
+  { href:'/dashboard/email',        icon:'📧', label:'Email' },
   { href:'/dashboard/mural',        icon:'📣', label:'Mural' },
   { href:'/dashboard/clientes',     icon:'👥', label:'Clientes' },
   { href:'/dashboard/apolices',     icon:'📋', label:'Apólices' },
