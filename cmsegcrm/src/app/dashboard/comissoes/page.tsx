@@ -90,7 +90,7 @@ export default function ComissoesPage(){
     let negQuery=supabase.from('negocios').select('*,clientes(id,nome,tipo),funis(tipo,nome,emoji),users!negocios_vendedor_id_fkey(nome)').gt('premio',0).gt('comissao_pct',0).order('created_at',{ascending:false})
     if(visibleIds) negQuery=(negQuery as any).in('vendedor_id',visibleIds)
 
-    let recQuery=supabase.from('comissoes_recebidas').select('*,clientes(id,nome,tipo),users!comissoes_recebidas_vendedor_id_fkey(id,nome)').order('data_recebimento',{ascending:false})
+    let recQuery=supabase.from('comissoes_recebidas').select('*,clientes(id,nome,tipo),apolices(id,numero),users!comissoes_recebidas_vendedor_id_fkey(id,nome)').order('data_recebimento',{ascending:false})
     if(visibleIds) recQuery=(recQuery as any).in('vendedor_id',visibleIds)
 
     const [{data:negs},{data:recs},{data:imps},{data:usrs}]=await Promise.all([
@@ -261,14 +261,15 @@ export default function ComissoesPage(){
             </div>
             {loading?<div style={{color:'var(--text-muted)'}}>Carregando...</div>:(
             <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead><tr>{['Cliente','Vendedor','Produto','Seguradora','Competência','Recebido em','Parcela','Valor'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Cliente','Apólice','Vendedor','Produto','Seguradora','Competência','Recebido em','Parcela','Valor'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {recLista.map((r:any)=>(
                   <tr key={r.id} onClick={()=>r.cliente_id && router.push(`/dashboard/clientes/${r.cliente_id}`)} style={{cursor:r.cliente_id?'pointer':'default'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(201,168,76,0.03)'} onMouseLeave={e=>e.currentTarget.style.background=''}>
                     <td style={td0}>
                       <div style={{fontWeight:500}}>{r.clientes?.nome||'—'}</div>
-                      {r.obs && <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:240}}>{r.obs}</div>}
+                      {r.obs && <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:280}}>{r.obs}</div>}
                     </td>
+                    <td style={{...td0,fontSize:12,fontFamily:'monospace'}}>{r.apolices?.numero||'—'}</td>
                     <td style={{...td0,fontSize:12}}>{r.users?.nome||'—'}</td>
                     <td style={{...td0,fontSize:12}}>{r.produto||'—'}</td>
                     <td style={{...td0,fontSize:12,color:'var(--text-muted)'}}>{r.seguradora||'—'}</td>
@@ -280,7 +281,7 @@ export default function ComissoesPage(){
                 ))}
               </tbody>
               {recLista.length>0 && <tfoot><tr style={{background:'rgba(255,255,255,0.03)'}}>
-                <td colSpan={7} style={{padding:'12px 0',fontWeight:700,fontSize:13}}>TOTAL</td>
+                <td colSpan={8} style={{padding:'12px 0',fontWeight:700,fontSize:13}}>TOTAL</td>
                 <td style={{padding:'12px 0',color:'var(--teal)',fontWeight:700,fontSize:15,fontFamily:'DM Serif Display,serif'}}>R$ {fmtFull(recTotal)}</td>
               </tr></tfoot>}
             </table>)}
