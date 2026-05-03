@@ -22,6 +22,10 @@ export default function ApolicesPage() {
   const [detModal, setDetModal] = useState<any|null>(null)
   const [detForm,  setDetForm]  = useState<any>({})
   const [detSalvando, setDetSalvando] = useState(false)
+  const [novoMode, setNovoMode] = useState(false)
+  const [novoClienteBusca, setNovoClienteBusca] = useState('')
+  const [novoClienteRes, setNovoClienteRes] = useState<any[]>([])
+  const [novoClienteSel, setNovoClienteSel] = useState<any>(null)
 
   // Lançamento de comissão recebida (admin)
   const [comModal, setComModal] = useState<any|null>(null)
@@ -80,6 +84,28 @@ export default function ApolicesPage() {
     carregar()
   }
 
+  function abrirNovaApolice() {
+    setNovoMode(true)
+    setNovoClienteSel(null)
+    setNovoClienteBusca('')
+    setNovoClienteRes([])
+    setDetForm({
+      numero:'', produto:'', seguradora:'', premio:'', comissao_pct:'',
+      vigencia_ini:'', vigencia_fim:'', status:'ativo',
+    })
+    setDetModal({ id:'novo', clientes:null, produto:'', seguradora:'' })
+  }
+
+  async function buscarClienteNovo(q: string) {
+    setNovoClienteBusca(q)
+    if (q.length < 2) { setNovoClienteRes([]); return }
+    const { data } = await supabase.from('clientes')
+      .select('id, nome, cpf_cnpj, telefone, tipo')
+      .or(`nome.ilike.%${q}%,cpf_cnpj.ilike.%${q}%`)
+      .limit(8)
+    setNovoClienteRes(data || [])
+  }
+
   async function abrirDetalhes(neg: any) {
     // Busca (ou cria implicitamente) a apólice ligada ao negócio
     const { data: apo } = await supabase.from('apolices').select('*').eq('negocio_id', neg.id).maybeSingle()
@@ -95,9 +121,39 @@ export default function ApolicesPage() {
 
   async function salvarDetalhes() {
     if (!detModal) return
+    if (novoMode && !novoClienteSel) { alert('Selecione um cliente para a nova apólice.'); return }
     setDetSalvando(true)
-    const payload: any = { ...detForm, negocio_id: detModal.id, cliente_id: detModal.clientes?.id }
-    // Limpa strings vazias para null em datas/numéricos
+
+    let negocioId = detModal.id as string | null
+    let clienteId: string | null = detModal.clientes?.id || null
+
+    if (novoMode) {
+      clienteId = novoClienteSel.id
+      const { data:{ user } } = await supabase.auth.getUser()
+      const premioNum = detForm.premio === '' || detForm.premio == null ? null
+        : Number(String(detForm.premio).replace(',','.'))
+      const comPctNum = detForm.comissao_pct === '' || detForm.comissao_pct == null ? null
+        : Number(String(detForm.comissao_pct).replace(',','.'))
+      const tituloNeg = `${novoClienteSel.nome}${detForm.produto?` — ${detForm.produto}`:''}`
+      const { data: negIns, error: errNeg } = await supabase.from('negocios').insert({
+        titulo:       tituloNeg,
+        cliente_id:   clienteId,
+        vendedor_id:  user?.id || null,
+        produto:      detForm.produto || null,
+        seguradora:   detForm.seguradora || null,
+        numero:       detForm.numero || null,
+        premio:       premioNum,
+        comissao_pct: comPctNum,
+        vencimento:   detForm.vigencia_fim || null,
+        cpf_cnpj:     novoClienteSel.cpf_cnpj || null,
+        etapa:        'ativo',
+        status:       'em_andamento',
+      }).select('id').single()
+      if (errNeg || !negIns) { setDetSalvando(false); alert('Erro ao criar negócio: ' + (errNeg?.message||'')); return }
+      negocioId = negIns.id
+    }
+
+    const payload: any = { ...detForm, negocio_id: negocioId, cliente_id: clienteId }
     ;['vigencia_ini','vigencia_fim','emissao','data_controle'].forEach(k => { if (payload[k] === '') payload[k] = null })
     ;['premio','premio_liquido','comissao_pct','repasse_vendedor_pct','qtd_parcelas','valor_iof'].forEach(k => {
       if (payload[k] === '' || payload[k] === undefined) payload[k] = null
@@ -109,6 +165,8 @@ export default function ApolicesPage() {
     setDetSalvando(false)
     if (error) { alert('Erro ao salvar: ' + error.message); return }
     setDetModal(null)
+    setNovoMode(false)
+    setNovoClienteSel(null)
     carregar()
   }
 
@@ -186,6 +244,9 @@ export default function ApolicesPage() {
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Apólices</div>
         <input style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 14px',color:'var(--text)',fontSize:13,width:220,outline:'none',fontFamily:'DM Sans,sans-serif'}}
           placeholder="🔍  Buscar..." value={busca} onChange={e=>setBusca(e.target.value)} />
+        <button className="btn-primary" onClick={abrirNovaApolice} style={{padding:'7px 14px',fontSize:13}}>
+          + Nova apólice
+        </button>
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'28px 28px 40px'}}>
@@ -316,12 +377,49 @@ export default function ApolicesPage() {
       {/* Modal Editar Detalhes da Apólice */}
       {detModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
-          onClick={e=>e.target===e.currentTarget&&setDetModal(null)}>
+          onClick={e=>e.target===e.currentTarget&&(setDetModal(null),setNovoMode(false))}>
           <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'24px 28px',width:920,maxWidth:'96vw',maxHeight:'92vh',overflow:'auto'}}>
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:4}}>📝 Detalhes da apólice</div>
-            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>
-              {detModal.clientes?.nome} · {detModal.produto||'—'} · {detModal.seguradora||'—'}
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:4}}>
+              {novoMode ? '➕ Nova apólice' : '📝 Detalhes da apólice'}
             </div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>
+              {novoMode
+                ? (novoClienteSel ? `${novoClienteSel.nome}${novoClienteSel.cpf_cnpj?` · ${novoClienteSel.cpf_cnpj}`:''}` : 'Selecione o cliente abaixo')
+                : `${detModal.clientes?.nome||''} · ${detModal.produto||'—'} · ${detModal.seguradora||'—'}`}
+            </div>
+
+            {novoMode && (
+              <div style={{marginBottom:16,padding:'12px 14px',background:'rgba(201,168,76,0.06)',border:'1px solid rgba(201,168,76,0.25)',borderRadius:10}}>
+                <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Cliente *</label>
+                {novoClienteSel ? (
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div>
+                      <div style={{fontSize:14,fontWeight:500}}>{novoClienteSel.nome}</div>
+                      <div style={{fontSize:11,color:'var(--text-muted)'}}>{novoClienteSel.cpf_cnpj} {novoClienteSel.telefone&&`· ${novoClienteSel.telefone}`}</div>
+                    </div>
+                    <button onClick={()=>{setNovoClienteSel(null);setNovoClienteBusca('')}} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>Trocar</button>
+                  </div>
+                ) : (
+                  <>
+                    <input value={novoClienteBusca} onChange={e=>buscarClienteNovo(e.target.value)} placeholder="Buscar por nome ou CPF/CNPJ..."
+                      style={inputStyle} autoFocus />
+                    {novoClienteRes.length>0 && (
+                      <div style={{marginTop:8,maxHeight:180,overflow:'auto',border:'1px solid var(--border)',borderRadius:8}}>
+                        {novoClienteRes.map((c:any)=>(
+                          <div key={c.id} onClick={()=>{setNovoClienteSel(c);setNovoClienteRes([])}}
+                            style={{padding:'8px 12px',fontSize:13,cursor:'pointer',borderBottom:'1px solid rgba(0,0,0,0.05)'}}
+                            onMouseEnter={e=>e.currentTarget.style.background='rgba(201,168,76,0.08)'}
+                            onMouseLeave={e=>e.currentTarget.style.background=''}>
+                            <div style={{fontWeight:500}}>{c.nome}</div>
+                            <div style={{fontSize:11,color:'var(--text-muted)'}}>{c.cpf_cnpj||'sem documento'} {c.telefone&&`· ${c.telefone}`}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {(() => {
               const F = (label:string, key:string, type:string='text', opts?:{options?:string[],span?:number}) => (
@@ -400,9 +498,9 @@ export default function ApolicesPage() {
             })()}
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20,paddingTop:16,borderTop:'1px solid var(--border)'}}>
-              <button className="btn-secondary" onClick={()=>setDetModal(null)} disabled={detSalvando}>Cancelar</button>
-              <button className="btn-primary" onClick={salvarDetalhes} disabled={detSalvando}>
-                {detSalvando?'Salvando...':'✓ Salvar detalhes'}
+              <button className="btn-secondary" onClick={()=>{setDetModal(null);setNovoMode(false)}} disabled={detSalvando}>Cancelar</button>
+              <button className="btn-primary" onClick={salvarDetalhes} disabled={detSalvando||(novoMode&&!novoClienteSel)}>
+                {detSalvando?'Salvando...':(novoMode?'✓ Criar apólice':'✓ Salvar detalhes')}
               </button>
             </div>
           </div>
