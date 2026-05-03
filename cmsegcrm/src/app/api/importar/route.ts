@@ -420,9 +420,13 @@ async function importarApolices(linhas: any[]) {
     const { data } = await supabaseAdmin.from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
     for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
+  // Pré-busca apólices existentes em chunks de 500 (PostgREST limita 1000 por request)
   if (numerosLote.length) {
-    const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', numerosLote)
-    for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
+    for (let i = 0; i < numerosLote.length; i += 500) {
+      const chunk = numerosLote.slice(i, i + 500)
+      const { data } = await supabaseAdmin.from('apolices').select('id, numero').in('numero', chunk)
+      for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
+    }
   }
 
   // Pre-cria clientes que não existem (em batch)
@@ -518,11 +522,13 @@ async function importarApolices(linhas: any[]) {
     }
   }
 
+  // UPSERT por numero (idempotente — atualiza se ja existe, insere caso contrario).
+  // Evita quebrar com 'apolices_numero_unique' quando o pre-fetch nao detecta tudo.
   if (novos.length) {
-    const { error } = await supabaseAdmin.from('apolices').insert(novos)
+    const { error } = await supabaseAdmin.from('apolices').upsert(novos, { onConflict: 'numero' })
     if (error) {
       for (const p of novos) {
-        const { error: e2 } = await supabaseAdmin.from('apolices').insert(p)
+        const { error: e2 } = await supabaseAdmin.from('apolices').upsert(p, { onConflict: 'numero' })
         if (e2) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${p.numero}: ${e2.message?.slice(0,80)}`) }
         else stats.qtd_criados++
       }
