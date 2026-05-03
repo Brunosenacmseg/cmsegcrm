@@ -53,11 +53,13 @@ export default function ApolicesPage() {
       } else visibleIds = [user?.id||'']
     }
 
+    // Fonte da verdade: tabela apolices. Trazemos junto cliente, vendedor
+    // do user e dados do negócio espelho (etapa/vendedor legado quando
+    // existir) para preservar a UI atual.
     let query = supabase
-      .from('negocios')
-      .select('*, clientes(id,nome,tipo), users!negocios_vendedor_id_fkey(id,nome), vendedores_legado(id,nome)')
-      .gt('premio', 0)
-      .order('vencimento', { ascending: true })
+      .from('apolices')
+      .select('*, clientes(id,nome,tipo), users(id,nome), negocios(id,etapa,vendedor_id,vendedor_legado_id,users!negocios_vendedor_id_fkey(id,nome),vendedores_legado(id,nome))')
+      .order('vigencia_fim', { ascending: true, nullsFirst: false })
 
     if (visibleIds) query = (query as any).in('vendedor_id', visibleIds)
 
@@ -67,19 +69,35 @@ export default function ApolicesPage() {
       supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
       supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome'),
     ])
-    setNegocios(data || [])
+    // Achata o registro pra que o resto da página (que foi escrita pra
+    // negócios) leia os mesmos campos.
+    const items = (data || []).map((a:any) => ({
+      ...a,
+      vencimento:        a.vigencia_fim,
+      etapa:             a.status || a.negocios?.etapa || 'ativo',
+      vendedor_id:       a.vendedor_id || a.negocios?.vendedor_id || null,
+      vendedor_legado_id: a.negocios?.vendedor_legado_id || null,
+      users:             a.users || a.negocios?.users || null,
+      vendedores_legado: a.negocios?.vendedores_legado || null,
+    }))
+    setNegocios(items)
     setUsuarios(usr || [])
     setVendedoresLegado(vleg || [])
     setSeguradorasCad((segs || []).map((s:any)=>s.nome))
     setLoading(false)
   }
 
-  async function salvarVendedor(negocioId: string, valor: string) {
+  async function salvarVendedor(apoliceId: string, valor: string) {
     // valor pode ser '', 'user:<uuid>' ou 'legado:<uuid>'
-    const patch: any = { vendedor_id: null, vendedor_legado_id: null }
-    if (valor.startsWith('user:'))   patch.vendedor_id        = valor.slice(5)
-    if (valor.startsWith('legado:')) patch.vendedor_legado_id = valor.slice(7)
-    await supabase.from('negocios').update(patch).eq('id', negocioId)
+    // apolices só tem vendedor_id (FK→users). vendedor_legado mora no
+    // negócio espelho — atualiza ambos quando existir.
+    const apo = negocios.find((x:any) => x.id === apoliceId)
+    const userId  = valor.startsWith('user:')   ? valor.slice(5)  : null
+    const legadoId = valor.startsWith('legado:') ? valor.slice(7) : null
+    await supabase.from('apolices').update({ vendedor_id: userId }).eq('id', apoliceId)
+    if (apo?.negocio_id) {
+      await supabase.from('negocios').update({ vendedor_id: userId, vendedor_legado_id: legadoId }).eq('id', apo.negocio_id)
+    }
     setEditandoVendedor(null)
     carregar()
   }
@@ -106,17 +124,11 @@ export default function ApolicesPage() {
     setNovoClienteRes(data || [])
   }
 
-  async function abrirDetalhes(neg: any) {
-    // Busca (ou cria implicitamente) a apólice ligada ao negócio
-    const { data: apo } = await supabase.from('apolices').select('*').eq('negocio_id', neg.id).maybeSingle()
-    setDetForm(apo || {
-      negocio_id: neg.id, cliente_id: neg.clientes?.id, vendedor_id: neg.vendedor_id,
-      numero: neg.numero || null, produto: neg.produto || null, seguradora: neg.seguradora || null,
-      premio: neg.premio || null, comissao_pct: neg.comissao_pct || null,
-      vigencia_ini: null, vigencia_fim: neg.vencimento || null, placa: neg.placa || null,
-      status: 'ativo', vendedores_envolvidos: [],
-    })
-    setDetModal(neg)
+  async function abrirDetalhes(apo: any) {
+    // Já temos o registro completo da apólice (a query principal traz *)
+    // — abrimos direto sem novo round-trip.
+    setDetForm({ ...apo })
+    setDetModal(apo)
   }
 
   async function salvarDetalhes() {
@@ -191,7 +203,8 @@ export default function ApolicesPage() {
     setComSalvando(true)
     const { data:{ user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('comissoes_recebidas').insert({
-      negocio_id:       comModal.id,
+      negocio_id:       comModal.negocio_id || null,
+      apolice_id:       comModal.id,
       cliente_id:       comModal.clientes?.id || null,
       vendedor_id:      comModal.vendedor_id,
       valor:            valorNum,
