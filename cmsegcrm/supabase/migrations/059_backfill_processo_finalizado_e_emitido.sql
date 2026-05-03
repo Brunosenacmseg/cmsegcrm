@@ -77,7 +77,6 @@ begin
     from public.equipes
    where public.pt_norm(nome) like '%' || public.pt_norm('pos venda') || '%'
       or public.pt_norm(nome) like '%' || public.pt_norm('posvenda') || '%'
-   order by criado_em
    limit 1;
 
   -- (b) MOVE — UPDATE funil_id pra EMISSÃO mantendo etapa PROCESSO FINALIZADO
