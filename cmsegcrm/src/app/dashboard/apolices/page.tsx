@@ -16,6 +16,7 @@ export default function ApolicesPage() {
   const [filtroRamo, setFiltroRamo] = useState('todos')
   const [filtroSeg, setFiltroSeg]   = useState('todos')
   const [filtroVendedor, setFiltroVendedor] = useState('todos')
+  const [filtroStatus, setFiltroStatus] = useState('ativo')
   const [editandoVendedor, setEditandoVendedor] = useState<string|null>(null)
 
   // Modal "editar detalhes" (todos os campos da apólice)
@@ -256,7 +257,16 @@ export default function ApolicesPage() {
     const mr = filtroRamo==='todos'||(n.produto||'').startsWith(filtroRamo)
     const ms = filtroSeg==='todos'||n.seguradora===filtroSeg
     const mv = filtroVendedor==='todos'||(n.users?.id===filtroVendedor)||(filtroVendedor==='sem'&&!n.vendedor_id)
-    return mb&&mr&&ms&&mv
+    const status = (n.status||'ativo').toLowerCase()
+    const venc = n.vencimento ? diasAte(n.vencimento) : null
+    let mst = true
+    if      (filtroStatus === 'ativo')      mst = status === 'ativo' && (venc === null || venc >= 0)
+    else if (filtroStatus === 'cancelado')  mst = status === 'cancelado'
+    else if (filtroStatus === 'vencido')    mst = status === 'vencido' || (status === 'ativo' && venc !== null && venc < 0)
+    else if (filtroStatus === 'renovar')    mst = status === 'renovar' || (status === 'ativo' && venc !== null && venc >= 0 && venc <= 30)
+    else if (filtroStatus === 'inativo')    mst = ['cancelado','vencido','inativo'].includes(status)
+    // 'todos' → sem filtro
+    return mb&&mr&&ms&&mv&&mst
   })
 
   const premioTotal   = filtrados.reduce((s:number,n:any)=>s+(n.premio||0),0)
@@ -299,6 +309,15 @@ export default function ApolicesPage() {
         </div>
 
         <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:12,color:'var(--text-muted)'}}>Status:</span>
+          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)}>
+            <option value="ativo">✅ Ativas</option>
+            <option value="renovar">🔄 A renovar (30d)</option>
+            <option value="vencido">⏰ Vencidas</option>
+            <option value="cancelado">❌ Canceladas</option>
+            <option value="inativo">🚫 Inativas (todas)</option>
+            <option value="todos">📋 Todas</option>
+          </select>
           <span style={{fontSize:12,color:'var(--text-muted)'}}>Ramo:</span>
           <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroRamo} onChange={e=>setFiltroRamo(e.target.value)}>
             <option value="todos">Todos</option>
