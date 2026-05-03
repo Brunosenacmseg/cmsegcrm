@@ -155,7 +155,11 @@ export default function TokioPage() {
                 {Object.entries(resultado.configCheck).map(([k,v])=>(
                   <div key={k} style={{fontSize:12,marginBottom:4}}>
                     <span style={{color:'var(--text-muted)',display:'inline-block',width:160}}>{k}:</span>
-                    <span style={{color: typeof v === 'string' && (v.includes('NÃO') || v.includes('FALTA')) ? 'var(--red)' : 'var(--teal)'}}>{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                    <span style={{color: typeof v === 'string' && (v.includes('NÃO') || v.includes('FALTA')) ? 'var(--red)' : 'var(--teal)', whiteSpace:'pre-wrap', wordBreak:'break-word'}}>{
+                      typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+                        ? String(v)
+                        : (<pre style={{margin:0, fontSize:11, fontFamily:'monospace'}}>{JSON.stringify(v, null, 2)}</pre>)
+                    }</span>
                   </div>
                 ))}
               </div>

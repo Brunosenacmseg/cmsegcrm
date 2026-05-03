@@ -666,7 +666,17 @@ export async function POST(request: NextRequest) {
           }
         }
       }
-      return NextResponse.json({ ok: false, msg: 'Nenhum path/body funcionou', tentativas })
+      return NextResponse.json({
+        ok: false,
+        msg: 'Nenhum path/body funcionou',
+        resumo_status: tentativas.reduce((acc:any, t:any) => {
+          const k = t.erro ? `erro:${(t.erro+'').slice(0,30)}` : `HTTP ${t.status}`
+          acc[k] = (acc[k]||0) + 1
+          return acc
+        }, {}),
+        primeira_resposta: tentativas[0],
+        tentativas,
+      })
     }
 
     if (action === 'testar_login') {
