@@ -46,19 +46,41 @@ async function executarAcao(acao: Acao, negocio: any, userId?: string): Promise<
         etapa,
         titulo:      acao.titulo || `↺ ${negocio.titulo || 'Reciclado'}`,
         fonte:       'Automação',
-        obs:         `Criado automaticamente pela automação a partir do negócio ${negocio.id}`,
+        obs:         `origem_negocio:${negocio.id} | criado por automação`,
       }
-      if (copiar.includes('cliente'))  payload.cliente_id  = negocio.cliente_id
-      if (copiar.includes('produto'))  payload.produto     = negocio.produto
-      if (copiar.includes('vendedor')) payload.vendedor_id = negocio.vendedor_id
-      if (copiar.includes('equipe'))   payload.equipe_id   = negocio.equipe_id
-      if (copiar.includes('cpf'))      payload.cpf_cnpj    = negocio.cpf_cnpj
-      if (copiar.includes('origem'))   payload.origem_id   = negocio.origem_id
-      if (copiar.includes('premio'))   payload.premio      = negocio.premio
+      if (copiar.includes('cliente'))    payload.cliente_id   = negocio.cliente_id
+      if (copiar.includes('produto'))    payload.produto      = negocio.produto
+      if (copiar.includes('seguradora')) payload.seguradora   = negocio.seguradora
+      if (copiar.includes('premio'))     payload.premio       = negocio.premio
+      if (copiar.includes('comissao_pct')) payload.comissao_pct = negocio.comissao_pct
+      if (copiar.includes('placa'))      payload.placa        = negocio.placa
+      if (copiar.includes('cpf'))        payload.cpf_cnpj     = negocio.cpf_cnpj
+      if (copiar.includes('cep'))        payload.cep          = negocio.cep
+      if (copiar.includes('vencimento')) payload.vencimento   = negocio.vencimento
+      if (copiar.includes('vendedor'))   payload.vendedor_id  = negocio.vendedor_id
+      if (copiar.includes('equipe'))     payload.equipe_id    = negocio.equipe_id
+      if (copiar.includes('origem'))     payload.origem_id    = negocio.origem_id
+
+      // Atribuição ao líder de uma equipe específica (sobrescreve copiar:vendedor)
+      if (acao.vendedor_lider_equipe) {
+        const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+        const alvo = norm(String(acao.vendedor_lider_equipe))
+        const { data: equipes } = await supabaseAdmin().from('equipes').select('id, nome, lider_id')
+        const eq = (equipes || []).find((e: any) => norm(e.nome || '').includes(alvo))
+        if (eq?.lider_id) payload.vendedor_id = eq.lider_id
+        if (eq?.id)       payload.equipe_id   = eq.id
+      }
+
+      // Idempotência: não cria duplicado se já existe um negócio nesse funil
+      // originado deste mesmo negócio.
+      const { data: existente } = await supabaseAdmin().from('negocios')
+        .select('id').eq('funil_id', funilDestino.id).eq('cliente_id', negocio.cliente_id || '')
+        .like('obs', `%origem_negocio:${negocio.id}%`).maybeSingle()
+      if (existente?.id) return { ok: true, detalhe: { negocio_existente_id: existente.id, etapa } }
 
       const { data: novo, error } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
       if (error) return { ok: false, erro: error.message }
-      return { ok: true, detalhe: { negocio_criado_id: novo?.id, funil_id: funilDestino.id, etapa } }
+      return { ok: true, detalhe: { negocio_criado_id: novo?.id, funil_id: funilDestino.id, etapa, vendedor_id: payload.vendedor_id || null } }
     }
 
     if (acao.tipo === 'criar_tarefa') {
@@ -129,6 +151,8 @@ export async function POST(request: NextRequest) {
   for (const a of automacoes || []) {
     // Filtro de etapa: se etapa_filtro setado, só dispara quando bater
     if (a.etapa_filtro && trigger === 'etapa_alterada' && a.etapa_filtro !== negocio.etapa) continue
+    // Funis excluídos: se o funil atual está na lista, pula
+    if (Array.isArray(a.funis_excluidos) && a.funis_excluidos.includes(negocio.funil_id)) continue
 
     const acoes: Acao[] = Array.isArray(a.acoes) ? a.acoes : []
     const execs: any[] = []
