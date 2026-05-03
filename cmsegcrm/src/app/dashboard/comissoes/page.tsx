@@ -68,7 +68,12 @@ export default function ComissoesPage(){
   const [drag,setDrag]               =useState(false)
   const [nomeArquivo,setNomeArquivo] =useState('')
 
-  useEffect(()=>{carregar()},[])
+  useEffect(()=>{
+    carregar()
+    // Atualiza periodicamente para refletir batidas de meta em tempo real
+    const id = setInterval(() => { carregar() }, 30000)
+    return () => clearInterval(id)
+  },[])
 
   async function carregar(){
     setLoading(true)
