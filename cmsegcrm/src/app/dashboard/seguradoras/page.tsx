@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 type Seguradora = {
@@ -148,7 +149,11 @@ export default function SeguradorasPage() {
             <tbody>
               {filtrada.map(s => (
                 <tr key={s.id} style={{ borderTop: '1px solid #222' }}>
-                  <td style={{ padding: 10, color: s.ativo ? '#eee' : '#777' }}>{s.nome}</td>
+                  <td style={{ padding: 10, color: s.ativo ? '#eee' : '#777' }}>
+                    <Link href={`/dashboard/seguradoras/${s.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {s.nome} <span style={{ color: '#666', fontSize: 11 }}>→ importar/sincronizar</span>
+                    </Link>
+                  </td>
                   <td style={{ padding: 10, textAlign: 'center' }}>
                     <button
                       onClick={() => isAdmin && alternarAtivo(s)}
