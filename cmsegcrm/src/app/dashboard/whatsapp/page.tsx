@@ -86,6 +86,16 @@ export default function WhatsAppPage() {
   const [buscaVincular, setBuscaVincular]   = useState('')
   const [resultVincular, setResultVincular] = useState<any[]>([])
 
+  // Vincular negociação (opcional)
+  const [modalNegocio, setModalNegocio]     = useState(false)
+  const [negociosCliente, setNegociosCliente] = useState<any[]>([])
+
+  // Painel lateral direito com dados do lead/negociação
+  const [showLeadPanel, setShowLeadPanel] = useState(true)
+  const [negocio, setNegocio]             = useState<any>(null)
+  const [editLead, setEditLead]           = useState<any>(null)
+  const [salvandoLead, setSalvandoLead]   = useState(false)
+
   // Mídia
   const [showEmojis, setShowEmojis]     = useState(false)
   const [showStickers, setShowStickers] = useState(false)
@@ -154,7 +164,7 @@ export default function WhatsAppPage() {
   async function carregarConversas(instanciaId: string) {
     const { data } = await supabase
       .from('whatsapp_mensagens')
-      .select('remoto_jid, remoto_nome, remoto_numero, conteudo, created_at, lida, direcao, cliente_id, clientes(nome)')
+      .select('remoto_jid, remoto_nome, remoto_numero, conteudo, created_at, lida, direcao, cliente_id, clientes(nome), negocio_id, negocios(id,produto,seguradora,etapa)')
       .eq('instancia_id', instanciaId)
       .order('created_at', { ascending: false })
     const map: Record<string, any> = {}
@@ -178,6 +188,72 @@ export default function WhatsAppPage() {
     setShowEmojis(false)
     setShowStickers(false)
     await carregarMensagens(conv.remoto_jid)
+    await carregarNegocio(conv)
+  }
+
+  async function carregarNegocio(conv: any) {
+    if (!conv?.negocio_id) { setNegocio(null); setEditLead(null); return }
+    const { data } = await supabase.from('negocios').select('*').eq('id', conv.negocio_id).maybeSingle()
+    setNegocio(data || null)
+    setEditLead(data ? {
+      cpf_cnpj: data.cpf_cnpj||'', cep: data.cep||'', placa: data.placa||'',
+      produto: data.produto||'', seguradora: data.seguradora||'',
+      premio: data.premio||0, vencimento: data.vencimento||'', obs: data.obs||'',
+    } : null)
+  }
+
+  async function abrirVincularNegocio() {
+    if (!conversa?.cliente_id) {
+      alert('Vincule esta conversa a um cliente antes de associar a uma negociação.')
+      return
+    }
+    const { data } = await supabase
+      .from('negocios')
+      .select('id, produto, seguradora, etapa, premio, created_at')
+      .eq('cliente_id', conversa.cliente_id)
+      .order('created_at', { ascending: false })
+    setNegociosCliente(data || [])
+    setModalNegocio(true)
+  }
+
+  async function vincularNegocio(neg: any) {
+    if (!conversa || !instancia) return
+    await supabase.from('whatsapp_mensagens')
+      .update({ negocio_id: neg?.id || null })
+      .eq('instancia_id', instancia.id).eq('remoto_jid', conversa.remoto_jid)
+    setConversa((p:any) => ({ ...p, negocio_id: neg?.id || null, negocios: neg ? { id: neg.id, produto: neg.produto, seguradora: neg.seguradora, etapa: neg.etapa } : null }))
+    setConversas(prev => prev.map(c => c.remoto_jid===conversa.remoto_jid ? { ...c, negocio_id: neg?.id || null } : c))
+    setModalNegocio(false)
+    if (neg) {
+      const { data } = await supabase.from('negocios').select('*').eq('id', neg.id).maybeSingle()
+      setNegocio(data || null)
+      setEditLead(data ? {
+        cpf_cnpj: data.cpf_cnpj||'', cep: data.cep||'', placa: data.placa||'',
+        produto: data.produto||'', seguradora: data.seguradora||'',
+        premio: data.premio||0, vencimento: data.vencimento||'', obs: data.obs||'',
+      } : null)
+    } else {
+      setNegocio(null); setEditLead(null)
+    }
+  }
+
+  async function salvarLead() {
+    if (!negocio || !editLead) return
+    setSalvandoLead(true)
+    const payload: any = {
+      cpf_cnpj: editLead.cpf_cnpj || null,
+      cep: editLead.cep || null,
+      placa: editLead.placa || null,
+      produto: editLead.produto || null,
+      seguradora: editLead.seguradora || null,
+      premio: Number(editLead.premio) || 0,
+      vencimento: editLead.vencimento || null,
+      obs: editLead.obs || null,
+      updated_at: new Date().toISOString(),
+    }
+    const { data, error } = await supabase.from('negocios').update(payload).eq('id', negocio.id).select().single()
+    if (!error && data) setNegocio(data)
+    setSalvandoLead(false)
   }
 
   async function verificarStatus() {
@@ -257,6 +333,7 @@ export default function WhatsAppPage() {
     if (!conversa || !instancia) return
     await supabase.from('whatsapp_mensagens').insert({
       instancia_id: instancia.id, cliente_id: conversa.cliente_id||null,
+      negocio_id: conversa.negocio_id||null,
       remoto_jid: conversa.remoto_jid, remoto_numero: conversa.remoto_numero,
       remoto_nome: conversa.remoto_nome, conteudo, tipo, direcao:'enviada', lida:true,
     })
@@ -598,6 +675,26 @@ export default function WhatsAppPage() {
                             👤 Vincular cliente
                           </button>
                         )}
+                        {conversa.cliente_id && (
+                          conversa.negocio_id ? (
+                            <button onClick={abrirVincularNegocio}
+                              title="Trocar/desvincular negociação"
+                              style={{fontSize:11,background:'rgba(184,146,63,0.1)',border:'1px solid rgba(184,146,63,0.35)',color:'var(--gold)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                              💼 Negociação ✓
+                            </button>
+                          ) : (
+                            <button onClick={abrirVincularNegocio}
+                              style={{fontSize:11,background:'rgba(184,146,63,0.06)',border:'1px solid rgba(184,146,63,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                              💼 Vincular negociação
+                            </button>
+                          )
+                        )}
+                        {negocio && (
+                          <button onClick={()=>setShowLeadPanel(s=>!s)}
+                            style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                            {showLeadPanel ? '⟩ Ocultar painel' : '⟨ Mostrar painel'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -701,6 +798,103 @@ export default function WhatsAppPage() {
                 <input ref={fileRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" style={{display:'none'}} onChange={enviarArquivo} />
               </>
             )}
+          </div>
+
+          {/* Painel lateral direito — dados do lead/negociação */}
+          {conversa && negocio && showLeadPanel && editLead && (
+            <div style={{width:320,flexShrink:0,borderLeft:'1px solid var(--border)',background:'var(--bg-soft)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>Negociação</div>
+                  <div style={{fontSize:14,fontWeight:600,marginTop:2}}>{negocio.produto || 'Sem produto'}</div>
+                  {negocio.etapa && <div style={{fontSize:11,color:'var(--gold)',marginTop:2}}>📍 {negocio.etapa}</div>}
+                </div>
+                <button onClick={()=>router.push(`/dashboard/clientes/${conversa.cliente_id}`)}
+                  title="Abrir ficha do cliente"
+                  style={{fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'4px 8px',cursor:'pointer'}}>↗</button>
+              </div>
+              <div style={{flex:1,overflowY:'auto',padding:'14px 18px',display:'flex',flexDirection:'column',gap:12}}>
+                {[
+                  { k:'cpf_cnpj', label:'CPF / CNPJ', placeholder:'000.000.000-00' },
+                  { k:'cep', label:'CEP', placeholder:'00000-000' },
+                  { k:'placa', label:'Placa', placeholder:'ABC1D23' },
+                  { k:'produto', label:'Produto' },
+                  { k:'seguradora', label:'Seguradora' },
+                ].map(f => (
+                  <div key={f.k}>
+                    <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:3}}>{f.label}</label>
+                    <input value={editLead[f.k] ?? ''} placeholder={f.placeholder||''}
+                      onChange={e=>setEditLead((p:any)=>({...p,[f.k]:e.target.value}))}
+                      style={inp} />
+                  </div>
+                ))}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  <div>
+                    <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:3}}>Prêmio (R$)</label>
+                    <input type="number" step="0.01" value={editLead.premio ?? 0}
+                      onChange={e=>setEditLead((p:any)=>({...p,premio:e.target.value}))}
+                      style={inp} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:3}}>Vencimento</label>
+                    <input type="date" value={editLead.vencimento || ''}
+                      onChange={e=>setEditLead((p:any)=>({...p,vencimento:e.target.value}))}
+                      style={inp} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:3}}>Observações</label>
+                  <textarea rows={3} value={editLead.obs || ''}
+                    onChange={e=>setEditLead((p:any)=>({...p,obs:e.target.value}))}
+                    style={{...inp, resize:'vertical', fontFamily:'DM Sans,sans-serif'}} />
+                </div>
+              </div>
+              <div style={{padding:'12px 18px',borderTop:'1px solid var(--border)',display:'flex',gap:8}}>
+                <button onClick={()=>vincularNegocio(null)}
+                  style={{flex:1,fontSize:12,background:'transparent',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:8,padding:'8px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                  Desvincular
+                </button>
+                <button onClick={salvarLead} disabled={salvandoLead}
+                  style={{flex:2,fontSize:12,background:'var(--gold)',border:'none',color:'#fff',borderRadius:8,padding:'8px',cursor:salvandoLead?'wait':'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                  {salvandoLead?'Salvando...':'💾 Salvar dados'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal Vincular Negociação */}
+      {modalNegocio && (
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalNegocio(false)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>💼 Vincular Negociação</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:18}}>Negociações existentes deste cliente. Vincular é opcional.</div>
+            <div style={{maxHeight:340,overflowY:'auto',marginBottom:14}}>
+              {negociosCliente.length === 0 ? (
+                <div style={{padding:20,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>
+                  Nenhuma negociação encontrada para este cliente.
+                </div>
+              ) : negociosCliente.map(n => (
+                <div key={n.id} onClick={()=>vincularNegocio(n)}
+                  style={{padding:'10px 14px',cursor:'pointer',border:'1px solid var(--border)',borderRadius:8,marginBottom:6,background:conversa?.negocio_id===n.id?'rgba(201,168,76,0.08)':'#fff'}}
+                  onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.08)')}
+                  onMouseLeave={e=>(e.currentTarget.style.background=conversa?.negocio_id===n.id?'rgba(201,168,76,0.08)':'#fff')}>
+                  <div style={{fontSize:13,fontWeight:600}}>{n.produto || 'Sem produto'} {n.seguradora ? `— ${n.seguradora}` : ''}</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>📍 {n.etapa} {n.premio ? `· R$ ${Number(n.premio).toLocaleString('pt-BR')}` : ''}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:10,justifyContent:'space-between'}}>
+              {conversa?.negocio_id && (
+                <button onClick={()=>vincularNegocio(null)}
+                  style={{fontSize:12,background:'transparent',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:8,padding:'8px 14px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                  Desvincular
+                </button>
+              )}
+              <button className="btn-secondary" onClick={()=>setModalNegocio(false)} style={{marginLeft:'auto'}}>Fechar</button>
+            </div>
           </div>
         </div>
       )}

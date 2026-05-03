@@ -213,7 +213,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   })
 
   return (
-    <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
+    <div style={{display:'flex', height:'100vh', overflow:'hidden'}}>
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,background:'radial-gradient(ellipse 60% 50% at 80% 10%, rgba(201,168,76,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 10% 80%, rgba(28,181,160,0.06) 0%, transparent 60%)'}}/>
 
       <aside style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>

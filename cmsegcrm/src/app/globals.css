@@ -86,6 +86,13 @@
 
 html, body {
   color-scheme: light;
+  height: 100%;
+}
+
+/* No dashboard a rolagem é interna às áreas de conteúdo (kanban, listas,
+   conversas, etc.) e nunca da janela inteira. */
+body:has(> div > aside) {
+  overflow: hidden;
 }
 
 body {
