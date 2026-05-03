@@ -11,9 +11,11 @@ const supabaseAdmin = createClient(
 )
 
 // ─── Webservice Tokio Marine ─────────────────────────────────
-// Documentação: dois endpoints — Login (gera token) + recursos.
-// Credenciais default vêm do .env; podemos sobrescrever via ENV.
-const TOKIO_BASE        = 'https://servicos.tokiomarine.com.br/wscorretor/rest/Corretor'
+// Endpoints podem ser sobrescritos via env (TOKIO_BASE / TOKIO_LOGIN_PATH).
+// Default tenta o caminho informado pelo cliente; ajuste se a Tokio
+// retornar 404.
+const TOKIO_BASE        = process.env.TOKIO_BASE        || 'https://servicos.tokiomarine.com.br/wscorretor/rest'
+const TOKIO_LOGIN_PATH  = process.env.TOKIO_LOGIN_PATH  || '/login'
 const TOKIO_USER        = process.env.TOKIO_USER        || ''
 const TOKIO_PASSWORD    = process.env.TOKIO_PASSWORD    || ''
 const TOKIO_SERVICE_KEY = process.env.TOKIO_SERVICE_KEY || ''
@@ -26,7 +28,7 @@ async function tokioLogin(force = false): Promise<string> {
   if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
     throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
   }
-  const r = await fetch(`${TOKIO_BASE}/Login`, {
+  const r = await fetch(`${TOKIO_BASE}${TOKIO_LOGIN_PATH}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({
@@ -609,11 +611,62 @@ export async function POST(request: NextRequest) {
         tipos_aceitos: ['APOLICES (inclui endossos)', 'PARCELAS', 'COMISSOES'],
         supabase_url:  process.env.NEXT_PUBLIC_SUPABASE_URL ? 'configurado' : 'FALTA',
         supabase_role: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configurado' : 'FALTA',
+        ws_base:        TOKIO_BASE,
+        ws_login_path:  TOKIO_LOGIN_PATH,
         ws_user:        TOKIO_USER ? `sim (${TOKIO_USER.slice(0,8)}…)` : 'NÃO CONFIGURADO',
         ws_password:    TOKIO_PASSWORD ? 'sim' : 'NÃO CONFIGURADA',
         ws_service_key: TOKIO_SERVICE_KEY ? `sim (${TOKIO_SERVICE_KEY.length} chars)` : 'NÃO CONFIGURADA',
         endossos_cancelamento: 'desconsidera valores quando qtdeParcelas=0 e tpComplemento for de cancelamento',
       })
+    }
+
+    // Diagnóstico: tenta vários paths possíveis para o login até achar
+    // um que aceite as credenciais. Sobrescreva TOKIO_LOGIN_PATH no Vercel
+    // com o que funcionar.
+    if (action === 'descobrir_login') {
+      if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
+        return NextResponse.json({ error: 'Credenciais incompletas' }, { status: 400 })
+      }
+      const candidatos = [
+        '/login', '/Login',
+        '/Corretor/Login', '/corretor/login',
+        '/auth/login', '/Auth/Login',
+        '/autenticacao/login',
+        '/usuario/login', '/Usuario/Login',
+      ]
+      const bodies = [
+        { user: TOKIO_USER, password: TOKIO_PASSWORD, serviceKey: TOKIO_SERVICE_KEY },
+        { usuario: TOKIO_USER, senha: TOKIO_PASSWORD, serviceKey: TOKIO_SERVICE_KEY },
+        { login: TOKIO_USER, senha: TOKIO_PASSWORD, chave: TOKIO_SERVICE_KEY },
+        { username: TOKIO_USER, password: TOKIO_PASSWORD, apiKey: TOKIO_SERVICE_KEY },
+      ]
+      const tentativas: any[] = []
+      for (const path of candidatos) {
+        for (const body of bodies) {
+          try {
+            const r = await fetch(`${TOKIO_BASE}${path}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(15000),
+            })
+            const txt = (await r.text()).slice(0, 200)
+            tentativas.push({ path, body_keys: Object.keys(body).join(','), status: r.status, resposta: txt })
+            if (r.ok) {
+              return NextResponse.json({
+                ok: true,
+                encontrado: { path, body_keys: Object.keys(body), status: r.status },
+                proxima_acao: `Defina TOKIO_LOGIN_PATH=${path} no Vercel`,
+                resposta: txt,
+                todas_tentativas: tentativas,
+              })
+            }
+          } catch (err: any) {
+            tentativas.push({ path, body_keys: Object.keys(body).join(','), erro: err.message?.slice(0,100) })
+          }
+        }
+      }
+      return NextResponse.json({ ok: false, msg: 'Nenhum path/body funcionou', tentativas })
     }
 
     if (action === 'testar_login') {
