@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { chamarClaude } from '@/lib/claude'
+import { chamarChatGPT } from '@/lib/openai'
 
 export const maxDuration = 60
 
@@ -317,7 +317,7 @@ export async function POST(request: NextRequest) {
                 role: m.direcao === 'enviada' ? 'assistant' as const : 'user' as const,
                 content: m.transcricao || m.conteudo || '',
               }))
-              const resposta = await chamarClaude({
+              const resposta = await chamarChatGPT({
                 modelo: agente.modelo,
                 systemPrompt: agente.system_prompt,
                 mensagem: entradaIA,

@@ -4,13 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 const MODELOS = [
-  { id: 'claude-opus-4-7',     nome: 'Claude Opus 4.7 — máxima qualidade' },
-  { id: 'claude-sonnet-4-6',   nome: 'Claude Sonnet 4.6 — equilíbrio (recomendado)' },
-  { id: 'claude-haiku-4-5-20251001', nome: 'Claude Haiku 4.5 — rápido e barato' },
+  { id: 'gpt-4o',      nome: 'GPT-4o — máxima qualidade' },
+  { id: 'gpt-4o-mini', nome: 'GPT-4o mini — equilíbrio (recomendado)' },
+  { id: 'gpt-4-turbo', nome: 'GPT-4 Turbo' },
+  { id: 'gpt-3.5-turbo', nome: 'GPT-3.5 Turbo — rápido e barato' },
 ]
 
 const empty = {
-  nome: '', descricao: '', modelo: 'claude-sonnet-4-6',
+  nome: '', descricao: '', modelo: 'gpt-4o-mini',
   system_prompt: '', temperatura: '0.7', max_tokens: '1024', ativo: true,
 }
 
@@ -109,7 +110,7 @@ export default function AgentesIAPage() {
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
         <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:18,maxWidth:780}}>
-          Crie agentes com prompts personalizados (Claude). Depois, no módulo WhatsApp,
+          Crie agentes com prompts personalizados (ChatGPT). Depois, no módulo WhatsApp,
           você pode ativar um agente em cada instância — o agente vai responder
           automaticamente as mensagens recebidas usando o prompt que você definir.
         </div>
