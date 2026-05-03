@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
   try {
     const resposta = await chamarChatGPT({
       modelo: agente.modelo,
-      systemPrompt: agente.system_prompt,
+      systemPrompt: agente.base_conhecimento
+        ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
+        : agente.system_prompt,
       mensagem,
       maxTokens: agente.max_tokens || 1024,
       temperatura: Number(agente.temperatura) || 0.7,

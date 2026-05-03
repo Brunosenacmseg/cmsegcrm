@@ -319,7 +319,9 @@ export async function POST(request: NextRequest) {
               }))
               const resposta = await chamarChatGPT({
                 modelo: agente.modelo,
-                systemPrompt: agente.system_prompt,
+                systemPrompt: agente.base_conhecimento
+                  ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
+                  : agente.system_prompt,
                 mensagem: entradaIA,
                 historico,
                 maxTokens: agente.max_tokens || 1024,
