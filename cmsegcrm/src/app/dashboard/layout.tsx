@@ -28,6 +28,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE', adminOnly:true },
   { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar', adminOnly:true },
   { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing', adminOnly:true },
+  { href:'/dashboard/seguradoras',  icon:'🛡️', label:'Seguradoras', section:'Seguradoras', adminOnly:true },
   { href:'/dashboard/porto',        icon:'🏢', label:'Porto Seguro', section:'Integrações', adminOnly:true },
   { href:'/dashboard/integracoes/allianz', icon:'🛡️', label:'Allianz - Importar', section:'Integrações', adminOnly:true },
   { href:'/dashboard/integracoes/allianz/dados', icon:'📊', label:'Allianz - Dados', section:'Integrações', adminOnly:true },
