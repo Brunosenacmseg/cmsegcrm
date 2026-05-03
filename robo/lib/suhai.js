@@ -224,6 +224,11 @@ async function cotacaoSuhai(page, dados) {
     tDataNascimentoCondutor: dados.dataNascimentoCondutor || dados.dataNascimento,
     tGeneroCondutor:         dados.generoCondutor || dados.genero || dados.sexo,
     tEstadoCivilCondutor:    dados.estadoCivilCondutor || dados.estadoCivil,
+    // Questionário de uso/garagem (etapa final, antes de Cotar)
+    tResposta_0: dados.utilizacaoUso     || 'Ida-retorno ao trabalho/lazer',
+    tResposta_1: dados.garagemResidencia || 'Sim, garagem na residência',
+    tResposta_2: dados.garagemTrabalho   || 'Não utiliza para ir ao trabalho',
+    tResposta_3: dados.garagemFaculdade  || 'Não utiliza para ir à faculdade',
   }
 
   // Loop iterativo: campos têm dependências em cascata (Angular ng-show/ng-if).
@@ -237,6 +242,7 @@ async function cotacaoSuhai(page, dados) {
     'tUf','tCor','tCombustivel',
     'tTipoCondutor','tCpfCondutor','tNomeCondutor','tDataNascimentoCondutor',
     'tGeneroCondutor','tEstadoCivilCondutor',
+    'tResposta_0','tResposta_1','tResposta_2','tResposta_3',
   ]
   const pendentes = new Set(ordemPreferencial.filter(k => todos[k] !== undefined && todos[k] !== null && todos[k] !== ''))
 
