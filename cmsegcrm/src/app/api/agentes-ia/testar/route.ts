@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   if (error || !userData?.user) return NextResponse.json({ error: 'Sessão inválida' }, { status: 401 })
 
   const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
-  if (u?.role !== 'admin') return NextResponse.json({ error: 'Apenas admin' }, { status: 403 })
+  if ((u as any)?.role !== 'admin') return NextResponse.json({ error: 'Apenas admin' }, { status: 403 })
 
   const body = await request.json().catch(() => ({}))
   const { agente_id, mensagem } = body

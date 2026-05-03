@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { exportarXLSX, fmt } from '@/lib/export-xlsx'
+import { exportarXLSX, fmt as xfmt } from '@/lib/export-xlsx'
 
 export default function ApolicesPage() {
   const supabase = createClient()
@@ -330,10 +330,10 @@ export default function ApolicesPage() {
           { campo:'produto',        titulo:'Produto' },
           { campo:'seguradora',     titulo:'Seguradora' },
           { campo:'placa',          titulo:'Placa' },
-          { campo:'premio',         titulo:'Prêmio (R$)', fmt:fmt.brl },
+          { campo:'premio',         titulo:'Prêmio (R$)', fmt:xfmt.brl },
           { campo:'comissao_pct',   titulo:'Comissão %' },
-          { campo:'vigencia_ini',   titulo:'Vigência ini', fmt:fmt.data },
-          { campo:'vencimento',     titulo:'Vencimento',   fmt:fmt.data },
+          { campo:'vigencia_ini',   titulo:'Vigência ini', fmt:xfmt.data },
+          { campo:'vencimento',     titulo:'Vencimento',   fmt:xfmt.data },
           { campo:'status',         titulo:'Status' },
           { campo:'users',          titulo:'Vendedor',    fmt:(v:any)=>v?.nome || '' },
         ], 'apolices')}
