@@ -4,10 +4,15 @@ import { chamarChatGPT } from '@/lib/openai'
 
 export const maxDuration = 60
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// lazy-init: evita que o build do Next falhe quando env vars
+// não estão disponíveis na fase 'Collecting page data'.
+const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_t, prop) {
+    const g = globalThis as any
+    if (!g['__sa_supabase']) g['__sa_supabase'] = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    return (g['__sa_supabase'] as any)[prop]
+  }
+})
 
 const BUCKET = 'cmsegcrm'
 
