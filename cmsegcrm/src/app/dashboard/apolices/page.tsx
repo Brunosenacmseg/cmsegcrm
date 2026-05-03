@@ -60,18 +60,18 @@ export default function ApolicesPage() {
     // Fonte da verdade: tabela apolices. Sem joins aninhados pra evitar
     // conflitos de FK no PostgREST — vendedor_legado é resolvido em JS
     // via lookup no array `vleg`.
-    // Carrega apólices em páginas de 1000. Ordena por id (PK) pra
-    // usar índice implícito e evitar timeout com 38k+ linhas. Usuário
-    // filtra/busca no client (ramo, seguradora, busca textual).
+    // Estratégia anti-timeout: carrega apólices SEM joins (mais rápido,
+    // usa só índices nativos), depois faz lookup separado de clientes
+    // e users. Páginas pequenas (500) e máximo 2000 inicial.
     async function carregarTodas(): Promise<any[]> {
-      const PAGE = 1000
-      const MAX_TOTAL = 5000
+      const PAGE = 500
+      const MAX_TOTAL = 2000
       let offset = 0
       const acc: any[] = []
       while (true) {
         let q = supabase
           .from('apolices')
-          .select('id,cliente_id,negocio_id,vendedor_id,numero,produto,seguradora,premio,comissao_pct,vigencia_ini,vigencia_fim,placa,status,ramo,clientes(id,nome,tipo),users(id,nome)')
+          .select('id,cliente_id,negocio_id,vendedor_id,numero,produto,seguradora,premio,comissao_pct,vigencia_ini,vigencia_fim,placa,status,ramo')
           .order('id', { ascending: false })
           .range(offset, offset + PAGE - 1)
         if (visibleIds) q = (q as any).in('vendedor_id', visibleIds)
@@ -87,7 +87,25 @@ export default function ApolicesPage() {
         offset += PAGE
         if (offset >= MAX_TOTAL) break
       }
-      return acc
+
+      // Enriquece com clientes e vendedores em batch (queries simples,
+      // usam índice de PK)
+      const cliIds = Array.from(new Set(acc.map(a => a.cliente_id).filter(Boolean)))
+      const vendIds = Array.from(new Set(acc.map(a => a.vendedor_id).filter(Boolean)))
+      const cliMap: Record<string,any> = {}
+      const vendMap: Record<string,any> = {}
+      if (cliIds.length) {
+        for (let i = 0; i < cliIds.length; i += 500) {
+          const ch = cliIds.slice(i, i+500)
+          const { data } = await supabase.from('clientes').select('id,nome,tipo').in('id', ch)
+          for (const c of data||[]) cliMap[c.id] = c
+        }
+      }
+      if (vendIds.length) {
+        const { data } = await supabase.from('users').select('id,nome').in('id', vendIds)
+        for (const u of data||[]) vendMap[u.id] = u
+      }
+      return acc.map(a => ({ ...a, clientes: cliMap[a.cliente_id]||null, users: vendMap[a.vendedor_id]||null }))
     }
 
     const [apoList, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
