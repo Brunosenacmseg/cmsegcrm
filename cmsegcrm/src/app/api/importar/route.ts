@@ -422,19 +422,21 @@ async function importarNegocios(linhas: any[]) {
 
 async function importarApolices(linhas: any[]) {
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
-  // BULK: pré-carrega clientes (por CPF) e apólices existentes (por número)
-  // Normaliza CPF/CNPJ para casamento: a planilha pode trazer formatado
-  // (033.636.658-22) e a base estar com dígitos puros (ou vice-versa).
-  // Indexamos clientes por dígitos-só para resolver os dois casos.
+  // BULK: pré-carrega clientes (por CPF e nome) e apólices existentes (por número)
   const onlyDigits = (v: any) => String(v ?? '').replace(/\D/g, '')
+  // Normaliza nome pra match (lower + sem-acento + colapsa espaços)
+  const normNome = (v: any) => String(v ?? '').toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ').trim()
   const cpfsRaw = Array.from(new Set(linhas.map(r => s(r.cpf_cnpj || r.cpf)).filter(Boolean))) as string[]
   const cpfsDigits = Array.from(new Set(cpfsRaw.map(onlyDigits).filter(Boolean)))
   const cpfsLote = Array.from(new Set([...cpfsRaw, ...cpfsDigits]))
+  const nomesLote = Array.from(new Set(linhas.map(r => s(r.nome) || s(r.cliente) || s(r.segurado)).filter(Boolean))) as string[]
   const numerosLote = Array.from(new Set(linhas.map(r => s(r.numero || r.apolice)).filter(Boolean))) as string[]
   const clientePorCpf: Record<string, string> = {}
+  const clientePorNome: Record<string, string> = {}
   const apolicePorNum: Record<string, string> = {}
   if (cpfsLote.length) {
-    // Busca em chunks de 500 (PostgREST limita ~1000 por filtro .in)
     for (let i = 0; i < cpfsLote.length; i += 500) {
       const chunk = cpfsLote.slice(i, i + 500)
       const { data } = await supabaseAdmin().from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', chunk)
@@ -444,7 +446,24 @@ async function importarApolices(linhas: any[]) {
       }
     }
   }
-  // Pré-busca apólices existentes em chunks de 500 (PostgREST limita 1000 por request)
+  // Pré-busca clientes por nome (case+sem-acento) — usado como fallback
+  // quando a planilha nao traz CPF/CNPJ. Tras tudo via paginacao normal.
+  if (nomesLote.length) {
+    const PAGE = 1000
+    for (let off = 0; ; off += PAGE) {
+      const { data } = await supabaseAdmin().from('clientes')
+        .select('id, nome, cpf_cnpj')
+        .not('nome', 'is', null)
+        .range(off, off + PAGE - 1)
+      if (!data || !data.length) break
+      for (const c of data) if (c.nome) {
+        const k = normNome(c.nome)
+        if (k && !clientePorNome[k]) clientePorNome[k] = c.id
+      }
+      if (data.length < PAGE) break
+      if (off > 200_000) break
+    }
+  }
   if (numerosLote.length) {
     for (let i = 0; i < numerosLote.length; i += 500) {
       const chunk = numerosLote.slice(i, i + 500)
@@ -454,42 +473,53 @@ async function importarApolices(linhas: any[]) {
   }
 
 
-  // Pre-cria clientes que não existem (em batch). Considera tanto a
-  // forma formatada quanto digits-only — se já há cliente com o mesmo
-  // CPF (em qualquer formato), reaproveita.
+  // Pre-cria clientes que não existem (em batch). Considera CPF primeiro;
+  // se nao tiver CPF, usa nome (normalizado) como chave.
   const novosClientes: any[] = []
+  const novosClientesPorNomeKey: Record<string, true> = {}
   for (const r of linhas) {
     const cpf = s(r.cpf_cnpj || r.cpf)
-    if (!cpf) continue
-    const dig = onlyDigits(cpf)
-    if (clientePorCpf[cpf] || (dig && clientePorCpf[dig])) continue
-    const nome = s(r.nome) || s(r.segurado) || s(r.cliente)
+    const nome = s(r.nome) || s(r.cliente) || s(r.segurado)
     if (!nome) continue
-    if (novosClientes.find(c => onlyDigits(c.cpf_cnpj) === dig)) continue
+    const dig = cpf ? onlyDigits(cpf) : ''
+    // Ja existe?
+    if (cpf && (clientePorCpf[cpf] || (dig && clientePorCpf[dig]))) continue
+    const nomeKey = normNome(nome)
+    if (!cpf && clientePorNome[nomeKey]) continue
+    if (novosClientesPorNomeKey[nomeKey]) continue
+    novosClientesPorNomeKey[nomeKey] = true
+    const tipoPessoa = (s(r.tipo_pessoa) || '').toUpperCase()
     novosClientes.push({
-      nome, cpf_cnpj: dig || cpf,
-      tipo: dig.length > 11 ? 'PJ' : 'PF',
+      nome,
+      cpf_cnpj: dig || (cpf || null),
+      email:   s(r.emails)?.split(/[,;]/)[0]?.trim().toLowerCase() || null,
+      telefone: s(r.telefones)?.split(/[,;]/)[0]?.trim() || null,
+      tipo: tipoPessoa === 'PJ' || (dig && dig.length > 11) ? 'PJ' : 'PF',
       fonte: 'Importação Apólices',
     })
   }
   if (novosClientes.length) {
-    // Insere em chunks de 500 pra evitar payloads enormes
     for (let i = 0; i < novosClientes.length; i += 500) {
       const chunk = novosClientes.slice(i, i + 500)
-      const { data: criados, error } = await supabaseAdmin().from('clientes').insert(chunk).select('id, cpf_cnpj')
+      const { data: criados, error } = await supabaseAdmin().from('clientes').insert(chunk).select('id, nome, cpf_cnpj')
       if (error) {
-        // fallback linha a linha para não perder o lote inteiro
         for (const c of chunk) {
-          const { data: one } = await supabaseAdmin().from('clientes').insert(c).select('id, cpf_cnpj').single()
-          if (one?.id && one.cpf_cnpj) {
-            clientePorCpf[one.cpf_cnpj] = one.id
-            clientePorCpf[onlyDigits(one.cpf_cnpj)] = one.id
+          const { data: one } = await supabaseAdmin().from('clientes').insert(c).select('id, nome, cpf_cnpj').single()
+          if (one?.id) {
+            if (one.cpf_cnpj) {
+              clientePorCpf[one.cpf_cnpj] = one.id
+              clientePorCpf[onlyDigits(one.cpf_cnpj)] = one.id
+            }
+            if (one.nome) clientePorNome[normNome(one.nome)] = one.id
           }
         }
       } else {
-        for (const c of criados || []) if (c.cpf_cnpj) {
-          clientePorCpf[c.cpf_cnpj] = c.id
-          clientePorCpf[onlyDigits(c.cpf_cnpj)] = c.id
+        for (const c of criados || []) {
+          if (c.cpf_cnpj) {
+            clientePorCpf[c.cpf_cnpj] = c.id
+            clientePorCpf[onlyDigits(c.cpf_cnpj)] = c.id
+          }
+          if (c.nome) clientePorNome[normNome(c.nome)] = c.id
         }
       }
     }
@@ -503,9 +533,17 @@ async function importarApolices(linhas: any[]) {
       const numero = s(r.numero || r.apolice)
       if (!numero) { stats.qtd_erros++; continue }
       const cpf = s(r.cpf_cnpj || r.cpf)
-      const cpfKey = cpf ? (clientePorCpf[cpf] ? cpf : onlyDigits(cpf)) : ''
-      const clienteId = cpfKey ? (clientePorCpf[cpfKey] || null) : null
-      if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente`); continue }
+      const nomeRaw = s(r.nome) || s(r.cliente) || s(r.segurado)
+      // Resolve cliente: 1) CPF (formatado ou digits-only), 2) nome (normalizado)
+      let clienteId: string | null = null
+      if (cpf) {
+        const dig = onlyDigits(cpf)
+        clienteId = clientePorCpf[cpf] || (dig ? clientePorCpf[dig] : null) || null
+      }
+      if (!clienteId && nomeRaw) {
+        clienteId = clientePorNome[normNome(nomeRaw)] || null
+      }
+      if (!clienteId) { stats.qtd_erros++; if (stats.erros.length < 20) stats.erros.push(`${numero}: sem cliente (cpf=${cpf||'-'} nome=${nomeRaw||'-'})`); continue }
 
       const parseBool = (v: any): boolean | null => {
         if (v === undefined || v === null || v === '') return null
