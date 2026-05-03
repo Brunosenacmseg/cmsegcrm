@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
           .select('*').eq('form_id', String(linha.form_id)).maybeSingle()
         if (m && m.ativo !== false) mapping = m
       }
-      const campoMap: Record<string, string> = (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
+      const campoMap: Record<string, any> = (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
 
       // Extrai campos do field_data
       const campos = Array.isArray(linha.campos) ? linha.campos : []
@@ -113,12 +113,34 @@ export async function POST(req: NextRequest) {
         }
         return null
       }
-      // Aplica campo_map → preenche colunas do cliente
+      // Aplica campo_map → preenche colunas (suporta prefixos)
+      //   cliente:<col>     → cliente.<col>
+      //   cliente_cf:<chave>→ cliente.custom_fields.<chave>
+      //   negocio:<col>     → negocio.<col>
+      //   negocio_cf:<chave>→ negocio.custom_fields.<chave>
+      // Sem prefixo (legado) = cliente:<col>
       const cliBase: Record<string, any> = {}
-      for (const [formKey, clienteCol] of Object.entries(campoMap)) {
-        if (!clienteCol) continue
+      const cliCustom: Record<string, any> = {}
+      const negBase: Record<string, any> = {}
+      const negCustom: Record<string, any> = {}
+      const aplicar = (target: any, v: string) => {
+        if (!target) return
+        const t = String(target)
+        if (t.startsWith('cliente_cf:'))      cliCustom[t.slice(11)] = v
+        else if (t.startsWith('cliente:'))    cliBase[t.slice(8)]    = v
+        else if (t.startsWith('negocio_cf:')) negCustom[t.slice(11)] = v
+        else if (t.startsWith('negocio:'))    negBase[t.slice(8)]    = v
+        else                                   cliBase[t]             = v // legado plano
+      }
+      for (const [formKey, target] of Object.entries(campoMap)) {
         const v = valorPorKey[formKey]
-        if (v) cliBase[clienteCol] = v
+        if (!v) continue
+        if (typeof target === 'string') {
+          aplicar(target, v)
+        } else if (target && typeof target === 'object') {
+          aplicar((target as any).cliente, v)
+          aplicar((target as any).negocio, v)
+        }
       }
       // Garante os campos básicos (heurística como fallback)
       const nome     = cliBase.nome     || heur('full_name', 'nome', 'name')
@@ -153,15 +175,21 @@ export async function POST(req: NextRequest) {
         meta_ad_id:       linha.ad_id || null,
         meta_form_id:     linha.form_id || null,
       }
+      if (Object.keys(cliCustom).length) payloadCliente.custom_fields = cliCustom
 
       if (!clienteId) {
         const { data: novo } = await supabaseAdmin().from('clientes').insert(payloadCliente).select('id').single()
         clienteId = novo?.id || null
       } else {
-        // Atualiza cliente existente com novos campos (sem sobrescrever com null)
+        // Atualiza cliente existente. custom_fields faz merge (não sobrescreve).
+        const { data: cur } = await supabaseAdmin().from('clientes').select('custom_fields').eq('id', clienteId).maybeSingle()
         const upd: any = {}
         for (const [k, v] of Object.entries(payloadCliente)) {
+          if (k === 'custom_fields') continue
           if (v != null && v !== '') upd[k] = v
+        }
+        if (Object.keys(cliCustom).length) {
+          upd.custom_fields = { ...((cur as any)?.custom_fields || {}), ...cliCustom }
         }
         await supabaseAdmin().from('clientes').update(upd).eq('id', clienteId)
       }
@@ -195,18 +223,31 @@ export async function POST(req: NextRequest) {
         }
 
         if (funilId) {
-          const { data: neg } = await supabaseAdmin().from('negocios').insert({
+          // Converte premio/numérico se mapeado
+          const negPayload: any = {
             cliente_id:        clienteId,
             funil_id:          funilId,
             etapa:             etapaInicial!,
-            titulo:            `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
-            fonte:             'Meta Ads',
+            titulo:            negBase.titulo || `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
+            fonte:             negBase.fonte  || 'Meta Ads',
             obs:               campos.length ? campos.map((c: any) => `${c.name}: ${(c.values || []).join(', ')}`).join('\n') : null,
             corretor_id:       vendedorId,
             vendedor_id:       vendedorId,
             meta_campaign_id:  linha.campanha_id || null,
             meta_ad_id:        linha.ad_id || null,
-          }).select('id').single()
+          }
+          // Aplica negBase (sobrescreve defaults se mapeado)
+          for (const [k, v] of Object.entries(negBase)) {
+            if (v == null || v === '') continue
+            // converte numérico para colunas numéricas conhecidas
+            if (k === 'premio' || k === 'comissao_pct') {
+              const n = Number(String(v).replace(/[^\d,.-]/g,'').replace(',', '.'))
+              if (isFinite(n)) negPayload[k] = n
+            } else negPayload[k] = v
+          }
+          if (Object.keys(negCustom).length) negPayload.custom_fields = negCustom
+
+          const { data: neg } = await supabaseAdmin().from('negocios').insert(negPayload).select('id').single()
           negocioId = neg?.id || null
         }
       }
