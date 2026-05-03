@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { maskCpfCnpj, maskTelefone, maskCEP } from '@/lib/masks'
 import { getVisibleUserIds } from '@/lib/auth'
+import { exportarXLSX, fmt } from '@/lib/export-xlsx'
 
 const SEXOS         = ['Masculino','Feminino','Outro']
 const ESTADOS_CIVIS = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)','União Estável']
@@ -252,6 +253,22 @@ export default function ClientesPage() {
             {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
         )}
+        <button onClick={()=>exportarXLSX(clientes, [
+          { campo:'nome',     titulo:'Nome' },
+          { campo:'tipo',     titulo:'Tipo' },
+          { campo:'cpf_cnpj', titulo:'CPF/CNPJ' },
+          { campo:'email',    titulo:'Email' },
+          { campo:'telefone', titulo:'Telefone' },
+          { campo:'cep',      titulo:'CEP' },
+          { campo:'cidade',   titulo:'Cidade' },
+          { campo:'estado',   titulo:'UF' },
+          { campo:'fonte',    titulo:'Fonte' },
+          { campo:'created_at', titulo:'Cadastrado em', fmt:fmt.dataHora },
+        ], 'clientes')}
+          style={{padding:'7px 12px',borderRadius:8,fontSize:12,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',cursor:'pointer',whiteSpace:'nowrap'}}
+          title="Exportar lista atual em Excel">
+          📥 Exportar ({clientes.length})
+        </button>
         <button className="btn-primary" onClick={()=>{setEditando(null);setForm({...clienteVazio});setAbaModal('dados');setModal(true)}}>
           + Novo Cliente
         </button>

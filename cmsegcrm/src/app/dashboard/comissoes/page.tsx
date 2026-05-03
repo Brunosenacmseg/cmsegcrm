@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { exportarXLSX, fmt } from '@/lib/export-xlsx'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 declare global { interface Window { XLSX: any } }
@@ -255,9 +256,37 @@ export default function ComissoesPage(){
           </div>
 
           <div className="card">
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,gap:10,flexWrap:'wrap'}}>
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>Detalhamento — {vistaAno?anoSel:`${MESES[mesSel]} ${anoSel}`}</div>
-              {profile?.role==='admin' && <span style={{fontSize:11,color:'var(--text-muted)'}}>Lançamentos vinculados a apólices/negócios</span>}
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                {profile?.role==='admin' && <span style={{fontSize:11,color:'var(--text-muted)'}}>Lançamentos vinculados a apólices/negócios</span>}
+                <button
+                  onClick={()=>{
+                    const vendedorNome = filtroVendedor==='todos'
+                      ? 'todos_vendedores'
+                      : (usuarios.find((u:any)=>u.id===filtroVendedor)?.nome || 'vendedor').toLowerCase().replace(/\s+/g,'_')
+                    const periodo = vistaAno ? String(anoSel) : `${anoSel}-${String(mesSel+1).padStart(2,'0')}`
+                    exportarXLSX(recLista, [
+                      { campo:'clientes',     titulo:'Cliente',      fmt:(v:any)=>v?.nome || '' },
+                      { campo:'apolices',     titulo:'Apólice',      fmt:(v:any)=>v?.numero || '' },
+                      { campo:'users',        titulo:'Vendedor',     fmt:(v:any)=>v?.nome || '' },
+                      { campo:'produto',      titulo:'Produto' },
+                      { campo:'seguradora',   titulo:'Seguradora' },
+                      { campo:'competencia',  titulo:'Competência' },
+                      { campo:'data_recebimento', titulo:'Recebido em', fmt:fmt.data },
+                      { campo:'parcela',      titulo:'Parcela' },
+                      { campo:'total_parcelas', titulo:'Total parcelas' },
+                      { campo:'valor',        titulo:'Valor (R$)',   fmt:fmt.brl },
+                      { campo:'status',       titulo:'Status' },
+                      { campo:'obs',          titulo:'Descrição' },
+                    ], `comissoes_${vendedorNome}_${periodo}`)
+                  }}
+                  disabled={!recLista.length}
+                  style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:recLista.length?'pointer':'not-allowed',opacity:recLista.length?1:0.4,fontWeight:600}}
+                  title="Exportar relatório de comissões (respeita filtro de vendedor e período)">
+                  📥 Exportar relatório ({recLista.length})
+                </button>
+              </div>
             </div>
             {loading?<div style={{color:'var(--text-muted)'}}>Carregando...</div>:(
             <table style={{width:'100%',borderCollapse:'collapse'}}>

@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getVisibleUserIds } from '@/lib/auth'
+import { exportarXLSX, fmt } from '@/lib/export-xlsx'
 
 export default function FunisPageWrapper() {
   return (
@@ -743,6 +744,27 @@ function FunisPage() {
     limparSelecao()
   }
 
+  async function exportarSelecao() {
+    const ids = selecionados.size ? Array.from(selecionados) : negociosFunil.map((n:any)=>n.id)
+    const lista = negociosFunil.filter((n:any) => ids.includes(n.id))
+    if (!lista.length) { alert('Nada para exportar'); return }
+    await exportarXLSX(lista, [
+      { campo:'titulo',     titulo:'Título' },
+      { campo:'etapa',      titulo:'Etapa' },
+      { campo:'status',     titulo:'Status' },
+      { campo:'clientes',   titulo:'Cliente',     fmt:(v:any)=>v?.nome || '' },
+      { campo:'cpf_cnpj',   titulo:'CPF/CNPJ' },
+      { campo:'produto',    titulo:'Produto' },
+      { campo:'seguradora', titulo:'Seguradora' },
+      { campo:'premio',     titulo:'Prêmio (R$)', fmt:fmt.brl },
+      { campo:'comissao_pct', titulo:'Comissão %' },
+      { campo:'placa',      titulo:'Placa' },
+      { campo:'vencimento', titulo:'Vencimento',  fmt:fmt.data },
+      { campo:'users',      titulo:'Vendedor',    fmt:(v:any)=>v?.nome || '' },
+      { campo:'created_at', titulo:'Criado em',   fmt:fmt.dataHora },
+    ], `negocios_${funiAtual?.nome?.replace(/\s+/g,'_').toLowerCase() || 'funil'}`)
+  }
+
   async function bulkExcluir() {
     if (profile?.role !== 'admin' || !selecionados.size) return
     if (!confirm(`EXCLUIR ${selecionados.size} negociação(ões)? Esta ação não pode ser desfeita.`)) return
@@ -975,6 +997,11 @@ function FunisPage() {
 
           <div style={{flex:1}} />
 
+          <button onClick={exportarSelecao} disabled={bulkLoading}
+            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:'pointer',fontWeight:600}}
+            title={selecionados.size ? 'Exporta selecionadas' : 'Exporta todas as visíveis'}>
+            📥 Exportar {selecionados.size ? `(${selecionados.size})` : 'visíveis'}
+          </button>
           <button onClick={bulkExcluir} disabled={!selecionados.size || bulkLoading}
             style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.6)',background:'rgba(224,82,82,0.2)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
             🗑 Excluir selecionadas
