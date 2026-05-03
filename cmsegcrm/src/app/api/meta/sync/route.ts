@@ -10,10 +10,11 @@ import { createClient } from '@supabase/supabase-js'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
@@ -21,9 +22,9 @@ async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const }
 }
@@ -47,7 +48,7 @@ async function paginar<T>(url: string): Promise<T[]> {
 }
 
 async function getConfig() {
-  const { data } = await supabaseAdmin.from('meta_config').select('*').eq('id', 1).maybeSingle()
+  const { data } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
   if (!data?.access_token) throw new Error('Meta não conectado — configure em /dashboard/integracoes/meta')
   if (!data.ad_account_id) throw new Error('ad_account_id não configurado')
   return data
@@ -71,12 +72,12 @@ async function syncCampanhas(cfg: any) {
       criada_em: c.created_time || null,
       atualizada_em: new Date().toISOString(),
     }
-    const { data: existente } = await supabaseAdmin.from('meta_campanhas').select('id').eq('meta_id', String(c.id)).maybeSingle()
+    const { data: existente } = await supabaseAdmin().from('meta_campanhas').select('id').eq('meta_id', String(c.id)).maybeSingle()
     if (existente) {
-      await supabaseAdmin.from('meta_campanhas').update(payload).eq('id', existente.id)
+      await supabaseAdmin().from('meta_campanhas').update(payload).eq('id', existente.id)
       atualizadas++
     } else {
-      await supabaseAdmin.from('meta_campanhas').insert(payload)
+      await supabaseAdmin().from('meta_campanhas').insert(payload)
       criadas++
     }
   }
@@ -89,7 +90,7 @@ async function syncAdsets(cfg: any) {
   const url = `${GRAPH}/${cfg.ad_account_id}/adsets?fields=${fields}&limit=200&access_token=${encodeURIComponent(cfg.access_token)}`
   const lista = await paginar<any>(url)
   // Mapa campanha_meta_id → campanha_uuid
-  const { data: cps } = await supabaseAdmin.from('meta_campanhas').select('id, meta_id')
+  const { data: cps } = await supabaseAdmin().from('meta_campanhas').select('id, meta_id')
   const mapa: Record<string, string> = {}
   for (const c of cps || []) mapa[c.meta_id] = c.id
 
@@ -103,9 +104,9 @@ async function syncAdsets(cfg: any) {
       daily_budget: a.daily_budget ? Number(a.daily_budget) / 100 : null,
       atualizada_em: new Date().toISOString(),
     }
-    const { data: existente } = await supabaseAdmin.from('meta_adsets').select('id').eq('meta_id', String(a.id)).maybeSingle()
-    if (existente) { await supabaseAdmin.from('meta_adsets').update(payload).eq('id', existente.id); atualizadas++ }
-    else           { await supabaseAdmin.from('meta_adsets').insert(payload);                       criadas++ }
+    const { data: existente } = await supabaseAdmin().from('meta_adsets').select('id').eq('meta_id', String(a.id)).maybeSingle()
+    if (existente) { await supabaseAdmin().from('meta_adsets').update(payload).eq('id', existente.id); atualizadas++ }
+    else           { await supabaseAdmin().from('meta_adsets').insert(payload);                       criadas++ }
   }
   return { lidas: lista.length, criadas, atualizadas }
 }
@@ -115,7 +116,7 @@ async function syncAds(cfg: any) {
   const fields = 'id,name,status,adset_id'
   const url = `${GRAPH}/${cfg.ad_account_id}/ads?fields=${fields}&limit=200&access_token=${encodeURIComponent(cfg.access_token)}`
   const lista = await paginar<any>(url)
-  const { data: as } = await supabaseAdmin.from('meta_adsets').select('id, meta_id')
+  const { data: as } = await supabaseAdmin().from('meta_adsets').select('id, meta_id')
   const mapa: Record<string, string> = {}
   for (const a of as || []) mapa[a.meta_id] = a.id
 
@@ -128,9 +129,9 @@ async function syncAds(cfg: any) {
       status: a.status || null,
       atualizado_em: new Date().toISOString(),
     }
-    const { data: existente } = await supabaseAdmin.from('meta_ads').select('id').eq('meta_id', String(a.id)).maybeSingle()
-    if (existente) { await supabaseAdmin.from('meta_ads').update(payload).eq('id', existente.id); atualizadas++ }
-    else           { await supabaseAdmin.from('meta_ads').insert(payload);                      criadas++ }
+    const { data: existente } = await supabaseAdmin().from('meta_ads').select('id').eq('meta_id', String(a.id)).maybeSingle()
+    if (existente) { await supabaseAdmin().from('meta_ads').update(payload).eq('id', existente.id); atualizadas++ }
+    else           { await supabaseAdmin().from('meta_ads').insert(payload);                      criadas++ }
   }
   return { lidas: lista.length, criadas, atualizadas }
 }
@@ -178,7 +179,7 @@ async function syncInsights(cfg: any, from?: string, to?: string) {
         cpm:        ins.cpm ? Number(ins.cpm) : null,
         atualizado_em: new Date().toISOString(),
       }
-      const { error } = await supabaseAdmin.from('meta_insights').upsert(payload, {
+      const { error } = await supabaseAdmin().from('meta_insights').upsert(payload, {
         onConflict: 'entidade_tipo,entidade_id,data'
       })
       if (!error) stats.gravadas++
@@ -192,11 +193,11 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
   const [{ count: cps }, { count: ass }, { count: ads }, { count: ins }, { count: leads }] = await Promise.all([
-    supabaseAdmin.from('meta_campanhas').select('*', { count:'exact', head: true }),
-    supabaseAdmin.from('meta_adsets').select('*', { count:'exact', head: true }),
-    supabaseAdmin.from('meta_ads').select('*', { count:'exact', head: true }),
-    supabaseAdmin.from('meta_insights').select('*', { count:'exact', head: true }),
-    supabaseAdmin.from('meta_leads').select('*', { count:'exact', head: true }),
+    supabaseAdmin().from('meta_campanhas').select('*', { count:'exact', head: true }),
+    supabaseAdmin().from('meta_adsets').select('*', { count:'exact', head: true }),
+    supabaseAdmin().from('meta_ads').select('*', { count:'exact', head: true }),
+    supabaseAdmin().from('meta_insights').select('*', { count:'exact', head: true }),
+    supabaseAdmin().from('meta_leads').select('*', { count:'exact', head: true }),
   ])
   return NextResponse.json({
     ok: true,

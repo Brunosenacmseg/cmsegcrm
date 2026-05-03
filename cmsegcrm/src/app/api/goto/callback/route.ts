@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
     const expiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000)
 
     if (state) {
-      await supabaseAdmin.from('goto_tokens').upsert({
+      await supabaseAdmin().from('goto_tokens').upsert({
         user_id:       state,
         access_token:  tokenData.access_token,
         refresh_token: tokenData.refresh_token || '',

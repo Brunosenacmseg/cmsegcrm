@@ -15,18 +15,19 @@ import { norm } from '@/lib/rdstation'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const }
 }
@@ -140,15 +141,15 @@ export async function POST(req: NextRequest) {
             .upsert({ funil_id: keeper.id, equipe_id: (v as any).equipe_id }, { onConflict: 'funil_id,equipe_id' })
           if (!eFE) acao.equipes_movidas++
         }
-        await supabaseAdmin.from('funis_equipes').delete().eq('funil_id', d.id)
+        await supabaseAdmin().from('funis_equipes').delete().eq('funil_id', d.id)
 
         // Apaga a duplicata
-        const { error: eD } = await supabaseAdmin.from('funis').delete().eq('id', d.id)
+        const { error: eD } = await supabaseAdmin().from('funis').delete().eq('id', d.id)
         if (eD) return NextResponse.json({ error: `Erro apagando duplicata ${d.id}: ${eD.message}`, parcial: acoes }, { status: 500 })
       }
 
       // Atualiza etapas do keeper (union)
-      await supabaseAdmin.from('funis').update({ etapas: etapasKeeper }).eq('id', keeper.id)
+      await supabaseAdmin().from('funis').update({ etapas: etapasKeeper }).eq('id', keeper.id)
     }
 
     acoes.push(acao)

@@ -6,16 +6,17 @@ export const dynamic = 'force-dynamic'
 
 export const maxDuration = 60
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function autenticar(request: NextRequest) {
   const auth = request.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return null
-  const { data } = await supabaseAdmin.auth.getUser(token)
+  const { data } = await supabaseAdmin().auth.getUser(token)
   return data?.user || null
 }
 
@@ -36,14 +37,14 @@ export async function POST(request: NextRequest) {
   }
 
   // 1) Carrega o anexo
-  const { data: anexo } = await supabaseAdmin.from('anexos').select('*').eq('id', anexo_id).maybeSingle()
+  const { data: anexo } = await supabaseAdmin().from('anexos').select('*').eq('id', anexo_id).maybeSingle()
   if (!anexo) return NextResponse.json({ error: 'anexo não encontrado' }, { status: 404 })
   if (!/\.pdf$/i.test(anexo.nome_arquivo) && !/pdf/i.test(anexo.tipo_mime || '')) {
     return NextResponse.json({ error: 'Apenas arquivos PDF podem ser enviados para assinatura' }, { status: 400 })
   }
 
   // 2) Baixa do Storage
-  const { data: blob, error: errBaixar } = await supabaseAdmin.storage
+  const { data: blob, error: errBaixar } = await supabaseAdmin().storage
     .from(anexo.bucket || 'cmsegcrm').download(anexo.path)
   if (errBaixar || !blob) return NextResponse.json({ error: 'Falha ao baixar PDF do storage: '+(errBaixar?.message||'') }, { status: 500 })
 
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     if (!doc?.id) throw new Error('resposta inválida da Autentique')
 
     const agg = statusAgregado(doc.signatures || [])
-    const { data: assin, error: errInsert } = await supabaseAdmin.from('assinaturas').insert({
+    const { data: assin, error: errInsert } = await supabaseAdmin().from('assinaturas').insert({
       autentique_id:     doc.id,
       nome_documento:    anexo.nome_arquivo,
       arquivo_nome:      anexo.nome_arquivo,
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
       link_assinatura: s.link?.short_link || null,
       status:        'pendente',
     }))
-    if (linhas.length) await supabaseAdmin.from('assinaturas_signatarios').insert(linhas)
+    if (linhas.length) await supabaseAdmin().from('assinaturas_signatarios').insert(linhas)
 
     return NextResponse.json({ ok: true, assinatura_id: assin.id, autentique_id: doc.id, signatures: doc.signatures })
   } catch (e: any) {

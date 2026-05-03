@@ -11,16 +11,17 @@ import { montarArquivoHDI, nomeArquivoHDI } from '@/lib/hdi-export'
 export const maxDuration = 120
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 async function checarAuth(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
   const { data: u } = await supabaseAdmin
     .from('users').select('role').eq('id', userData.user.id).single()
@@ -47,12 +48,12 @@ async function carregarApolices(ids: string[]) {
     { data: locais },
     { data: clausulas },
   ] = await Promise.all([
-    supabaseAdmin.from('apolice_itens_auto').select('*').in('apolice_id', apoliceIds),
-    supabaseAdmin.from('apolice_acessorios').select('*').in('apolice_id', apoliceIds),
-    supabaseAdmin.from('apolice_coberturas').select('*').in('apolice_id', apoliceIds),
-    supabaseAdmin.from('apolice_motoristas').select('*').in('apolice_id', apoliceIds),
-    supabaseAdmin.from('apolice_locais').select('*').in('apolice_id', apoliceIds),
-    supabaseAdmin.from('apolice_clausulas').select('*').in('apolice_id', apoliceIds),
+    supabaseAdmin().from('apolice_itens_auto').select('*').in('apolice_id', apoliceIds),
+    supabaseAdmin().from('apolice_acessorios').select('*').in('apolice_id', apoliceIds),
+    supabaseAdmin().from('apolice_coberturas').select('*').in('apolice_id', apoliceIds),
+    supabaseAdmin().from('apolice_motoristas').select('*').in('apolice_id', apoliceIds),
+    supabaseAdmin().from('apolice_locais').select('*').in('apolice_id', apoliceIds),
+    supabaseAdmin().from('apolice_clausulas').select('*').in('apolice_id', apoliceIds),
   ])
 
   return apolices.map((a: any) => ({

@@ -17,10 +17,11 @@ import { createClient } from '@supabase/supabase-js'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   const token     = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  const { data: cfg } = await supabaseAdmin.from('meta_config').select('verify_token').eq('id', 1).maybeSingle()
+  const { data: cfg } = await supabaseAdmin().from('meta_config').select('verify_token').eq('id', 1).maybeSingle()
   const verify = cfg?.verify_token || process.env.META_VERIFY_TOKEN
 
   if (mode === 'subscribe' && verify && token === verify) {
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   // Estrutura típica: { object: 'page', entry: [{ changes: [{ field: 'leadgen', value: { leadgen_id, ad_id, ... } }] }] }
   const entries: any[] = body?.entry || []
-  const { data: cfg } = await supabaseAdmin.from('meta_config').select('access_token').eq('id', 1).maybeSingle()
+  const { data: cfg } = await supabaseAdmin().from('meta_config').select('access_token').eq('id', 1).maybeSingle()
   const accessToken = cfg?.access_token
 
   const recebidos: any[] = []
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
       let clienteId: string | null = null
       const tenta = async (col: string, val: string | null) => {
         if (!val) return null
-        const { data } = await supabaseAdmin.from('clientes').select('id').eq(col, val).limit(1).maybeSingle()
+        const { data } = await supabaseAdmin().from('clientes').select('id').eq(col, val).limit(1).maybeSingle()
         return data?.id || null
       }
       clienteId = await tenta('email', email?.toLowerCase() || null)
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
             || await tenta('telefone', telefone)
 
       if (!clienteId && (nome || email || telefone || cpf || cnpj)) {
-        const { data: novo } = await supabaseAdmin.from('clientes').insert({
+        const { data: novo } = await supabaseAdmin().from('clientes').insert({
           nome:     nome || email || telefone || 'Lead Meta sem nome',
           tipo:     cnpj ? 'PJ' : 'PF',
           cpf_cnpj: cpf || cnpj || null,
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
         clienteId = novo?.id || null
       } else if (clienteId) {
         // Atualiza cliente existente com tracking IDs (se ainda não tinha)
-        await supabaseAdmin.from('clientes').update({
+        await supabaseAdmin().from('clientes').update({
           meta_lead_id:     linha.meta_lead_id,
           meta_campaign_id: linha.campanha_id || null,
           meta_adset_id:    linha.adset_id || null,
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
       // Se não houver mapeamento ativo, cai no funil padrão "venda".
       let mapping: any = null
       if (linha.form_id) {
-        const { data: m } = await supabaseAdmin.from('meta_form_mapeamento')
+        const { data: m } = await supabaseAdmin().from('meta_form_mapeamento')
           .select('*').eq('form_id', String(linha.form_id)).maybeSingle()
         if (m && m.ativo !== false) mapping = m
       }
@@ -156,19 +157,19 @@ export async function POST(req: NextRequest) {
         let etapaInicial: string | null = mapping?.etapa || null
 
         if (!funilId) {
-          const { data: funil } = await supabaseAdmin.from('funis')
+          const { data: funil } = await supabaseAdmin().from('funis')
             .select('id, etapas').eq('tipo', 'venda').order('ordem').limit(1).maybeSingle()
           if (funil) {
             funilId = funil.id
             etapaInicial = (funil.etapas as string[])?.[0] || 'Novo'
           }
         } else if (!etapaInicial) {
-          const { data: funil } = await supabaseAdmin.from('funis').select('etapas').eq('id', funilId).maybeSingle()
+          const { data: funil } = await supabaseAdmin().from('funis').select('etapas').eq('id', funilId).maybeSingle()
           etapaInicial = (funil?.etapas as string[])?.[0] || 'Novo'
         }
 
         if (funilId) {
-          const { data: neg } = await supabaseAdmin.from('negocios').insert({
+          const { data: neg } = await supabaseAdmin().from('negocios').insert({
             cliente_id:        clienteId,
             funil_id:          funilId,
             etapa:             etapaInicial!,
@@ -185,7 +186,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Grava o lead
-      await supabaseAdmin.from('meta_leads').insert({
+      await supabaseAdmin().from('meta_leads').insert({
         meta_lead_id:  linha.meta_lead_id,
         form_id:       linha.form_id,
         ad_id:         linha.ad_id,

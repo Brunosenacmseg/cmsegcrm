@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
           if (cliente) clienteId = cliente.id
         }
 
-        await supabaseAdmin.from('ligacoes').insert({
+        await supabaseAdmin().from('ligacoes').insert({
           goto_conversation_id: conversationId,
           goto_call_id: state.id,
           direcao: direction,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (stateType === 'ACTIVE') {
-      await supabaseAdmin.from('ligacoes')
+      await supabaseAdmin().from('ligacoes')
         .update({ status: 'em_andamento' })
         .eq('goto_conversation_id', conversationId)
     }
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
         duracaoSeg = Math.round((Date.now() - new Date(ligacao.inicio).getTime()) / 1000)
       }
 
-      await supabaseAdmin.from('ligacoes')
+      await supabaseAdmin().from('ligacoes')
         .update({
           status: stateType === 'ENDED' ? 'encerrada' : 'encerrando',
           fim: new Date().toISOString(),

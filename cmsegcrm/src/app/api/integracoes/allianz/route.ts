@@ -14,10 +14,11 @@ import { createClient } from '@supabase/supabase-js'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 type Tipo =
   | 'sinistros_avisados' | 'sinistros_encerrados'
@@ -37,9 +38,9 @@ async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
-  const { data: userData } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin.from('users').select('role').eq('id', userData.user.id).single()
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userData.user.id).single()
   if (u?.role !== 'admin') return { ok: false as const, erro: 'Apenas admin' }
   return { ok: true as const, userId: userData.user.id }
 }
@@ -122,12 +123,12 @@ async function preloadLookups(cpfs: string[], apolices: string[]) {
   const clientePorCpf: Record<string, string> = {}
   const apolicePorNum: Record<string, string> = {}
   if (cpfs.length) {
-    const { data } = await supabaseAdmin.from('clientes')
+    const { data } = await supabaseAdmin().from('clientes')
       .select('id, cpf_cnpj').in('cpf_cnpj', cpfs)
     for (const c of data || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
   if (apolices.length) {
-    const { data } = await supabaseAdmin.from('apolices')
+    const { data } = await supabaseAdmin().from('apolices')
       .select('id, numero').in('numero', apolices)
     for (const a of data || []) if (a.numero) apolicePorNum[a.numero] = a.id
   }
@@ -261,12 +262,12 @@ async function bulkInsert(
   const TAM = 200
   for (let i = 0; i < payloads.length; i += TAM) {
     const chunk = payloads.slice(i, i + TAM)
-    const q = supabaseAdmin.from(tabela).upsert(chunk, conflito ? { onConflict: conflito, ignoreDuplicates: false } : undefined)
+    const q = supabaseAdmin().from(tabela).upsert(chunk, conflito ? { onConflict: conflito, ignoreDuplicates: false } : undefined)
     const { error } = await q
     if (error) {
       // fallback row-by-row
       for (const p of chunk) {
-        const q2 = supabaseAdmin.from(tabela).upsert(p, conflito ? { onConflict: conflito } : undefined)
+        const q2 = supabaseAdmin().from(tabela).upsert(p, conflito ? { onConflict: conflito } : undefined)
         const { error: e2 } = await q2
         if (e2) {
           stats.qtd_erros++
@@ -299,7 +300,7 @@ export async function POST(req: NextRequest) {
   }
 
   // cria registro de importação
-  const { data: imp } = await supabaseAdmin.from('allianz_importacoes').insert({
+  const { data: imp } = await supabaseAdmin().from('allianz_importacoes').insert({
     user_id: auth.userId,
     nome_arquivo: nomeArquivo,
     tipo,
@@ -358,7 +359,7 @@ export async function POST(req: NextRequest) {
           let clienteId = p.cliente_id
           if (!clienteId && p.cpf_cnpj && p.cliente_nome) {
             const tipoP = p.cpf_cnpj.length > 11 ? 'PJ' : 'PF'
-            const { data: novo } = await supabaseAdmin.from('clientes').insert({
+            const { data: novo } = await supabaseAdmin().from('clientes').insert({
               nome: p.cliente_nome, cpf_cnpj: p.cpf_cnpj, tipo: tipoP, fonte: 'Allianz - Importação'
             }).select('id').single()
             if (novo) clienteId = novo.id
@@ -385,17 +386,17 @@ export async function POST(req: NextRequest) {
           }
 
           if (p.apolice_id) {
-            await supabaseAdmin.from('apolices').update(apolicePayload).eq('id', p.apolice_id)
+            await supabaseAdmin().from('apolices').update(apolicePayload).eq('id', p.apolice_id)
             stats.qtd_atualizados++
           } else {
-            await supabaseAdmin.from('apolices').insert(apolicePayload)
+            await supabaseAdmin().from('apolices').insert(apolicePayload)
           }
         } catch {/* ignora — apolices_relatorio já guardou o bruto */}
       }
     }
 
     // finaliza importação
-    await supabaseAdmin.from('allianz_importacoes').update({
+    await supabaseAdmin().from('allianz_importacoes').update({
       qtd_criados: stats.qtd_criados,
       qtd_atualizados: stats.qtd_atualizados,
       qtd_erros: stats.qtd_erros,
@@ -405,7 +406,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, stats, importacao_id: importacaoId })
   } catch (e: any) {
-    await supabaseAdmin.from('allianz_importacoes').update({
+    await supabaseAdmin().from('allianz_importacoes').update({
       qtd_erros: stats.qtd_lidos,
       erros: [String(e?.message || e).slice(0, 200)],
       concluido_em: new Date().toISOString(),

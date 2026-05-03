@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 const PORTO_URL   = 'https://wwws.portoseguro.com.br/CentralDownloadsIntegrationService/Proxy_Services/ArquivoRetornoIntegrationService'
 const PORTO_SUSEP = process.env.PORTO_SUSEP || 'J8FXUJ'
@@ -108,12 +109,12 @@ export async function POST(request: NextRequest) {
 
     // Salvar no storage como arquivo original
     const storagePath = `porto_debug/${nome}`
-    await supabaseAdmin.storage.from('cmsegcrm').upload(storagePath, bytes, {
+    await supabaseAdmin().storage.from('cmsegcrm').upload(storagePath, bytes, {
       contentType: 'application/octet-stream',
       upsert: true,
     })
 
-    const { data: urlData } = supabaseAdmin.storage.from('cmsegcrm').getPublicUrl(storagePath)
+    const { data: urlData } = supabaseAdmin().storage.from('cmsegcrm').getPublicUrl(storagePath)
 
     // Também salvar uma versão decodificada com cada método
     const resultados: Record<string, any> = {

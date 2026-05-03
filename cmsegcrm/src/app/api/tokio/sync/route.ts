@@ -5,10 +5,11 @@ export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
 export const maxDuration = 300
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
 
 // ─── Webservice Tokio Marine ─────────────────────────────────
 // Endpoints podem ser sobrescritos via env (TOKIO_BASE / TOKIO_LOGIN_PATH).
@@ -209,16 +210,16 @@ async function obterOuCriarCliente(opts: {
   const { cpfCnpj, nome, email, telefone, dadosBrutos } = opts
   if (!cpfCnpj && !nome) return null
   if (cpfCnpj) {
-    const { data } = await supabaseAdmin.from('clientes').select('id, nome').eq('cpf_cnpj', cpfCnpj).maybeSingle()
+    const { data } = await supabaseAdmin().from('clientes').select('id, nome').eq('cpf_cnpj', cpfCnpj).maybeSingle()
     if (data?.id) {
       if (nome && (!data.nome || data.nome === 'Sem nome')) {
-        await supabaseAdmin.from('clientes').update({ nome }).eq('id', data.id)
+        await supabaseAdmin().from('clientes').update({ nome }).eq('id', data.id)
       }
       return data.id
     }
   }
   if (!cpfCnpj && nome) {
-    const { data } = await supabaseAdmin.from('clientes').select('id').ilike('nome', nome).maybeSingle()
+    const { data } = await supabaseAdmin().from('clientes').select('id').ilike('nome', nome).maybeSingle()
     if (data?.id) return data.id
   }
   const tipo = opts.tipo || (cpfCnpj && cpfCnpj.length === 14 ? 'PJ' : 'PF')
@@ -231,7 +232,7 @@ async function obterOuCriarCliente(opts: {
     telefone: telefone || null,
   }
   if (dadosBrutos) payload.dados_tokio = dadosBrutos
-  const { data, error } = await supabaseAdmin.from('clientes').insert(payload).select('id').single()
+  const { data, error } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
   if (error) { console.warn('[Tokio] erro criando cliente:', error.message); return null }
   return data?.id || null
 }
@@ -239,7 +240,7 @@ async function obterOuCriarCliente(opts: {
 async function buscarApolicePorNumero(numero: string) {
   if (!numero) return null
   const limpo = numero.replace(/^0+/, '') || numero
-  const { data } = await supabaseAdmin.from('apolices')
+  const { data } = await supabaseAdmin().from('apolices')
     .select('id, cliente_id, vendedor_id, numero, premio')
     .or(`numero.eq.${numero},numero.eq.${limpo}`)
     .maybeSingle()
@@ -396,14 +397,14 @@ async function processarApolices(xml: string) {
         tipo_pagamento:    c.formaCobranca || null,
         dados_tokio:       { ...dadosBrutos, chassi: c.chassi, cancelamento },
       }
-      const { data: apolice, error: errApol } = await supabaseAdmin.from('apolices').upsert(payload, {
+      const { data: apolice, error: errApol } = await supabaseAdmin().from('apolices').upsert(payload, {
         onConflict: 'numero', ignoreDuplicates: false,
       }).select('id, cliente_id').single()
       if (errApol) { erros++; msgs.push(`${numero}: ${errApol.message?.slice(0,80)}`); continue }
 
       // ── Se tiver endosso, registrar em public.endossos ──
       if (c.numEndosso) {
-        const { error: errEnd } = await supabaseAdmin.from('endossos').upsert({
+        const { error: errEnd } = await supabaseAdmin().from('endossos').upsert({
           apolice_id:     apolice?.id || null,
           cliente_id:     apolice?.cliente_id || clienteId || null,
           numero_endosso: c.numEndosso,
@@ -423,7 +424,7 @@ async function processarApolices(xml: string) {
         if (errEnd) msgs.push(`endosso ${c.numEndosso}: ${errEnd.message?.slice(0,60)}`)
 
         if (apolice?.cliente_id) {
-          await supabaseAdmin.from('historico').insert({
+          await supabaseAdmin().from('historico').insert({
             cliente_id: apolice.cliente_id, tipo: cancelamento ? 'red' : 'gold',
             titulo: `${cancelamento?'❌':'📝'} Endosso Tokio: ${c.numEndosso}`,
             descricao: `${c.tpComplemento || 'Endosso'} · Apólice ${c.numApolice}${cancelamento?' (cancelamento — valores zerados)':''}`,
@@ -483,16 +484,16 @@ async function processarParcelas(xml: string) {
       }
 
       // De-dup (apólice + parcela + vencimento)
-      const { data: existing } = await supabaseAdmin.from('contas_pagar')
+      const { data: existing } = await supabaseAdmin().from('contas_pagar')
         .select('id').ilike('nome', `%Apólice ${numApolice} parc ${numParcela}/%`)
         .eq('vencimento', venc).maybeSingle()
 
       if (existing?.id) {
-        await supabaseAdmin.from('contas_pagar').update({
+        await supabaseAdmin().from('contas_pagar').update({
           status: conta.status, data_pagamento: conta.data_pagamento, valor: conta.valor,
         }).eq('id', existing.id)
       } else {
-        const { error } = await supabaseAdmin.from('contas_pagar').insert(conta)
+        const { error } = await supabaseAdmin().from('contas_pagar').insert(conta)
         if (error) { erros++; msgs.push(error.message?.slice(0,80)); continue }
       }
 
@@ -500,7 +501,7 @@ async function processarParcelas(xml: string) {
       if (!pago && apolice?.vendedor_id && clienteId) {
         const dias = Math.floor((new Date(venc).getTime() - Date.now()) / 86400000)
         if (dias <= 7) {
-          await supabaseAdmin.from('tarefas').insert({
+          await supabaseAdmin().from('tarefas').insert({
             titulo: `💸 Parcela Tokio: Apólice ${numApolice}`,
             descricao: `Parcela ${numParcela}/${totParcelas} | R$ ${valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} | Venc: ${venc}`,
             tipo: 'ligacao', status: 'pendente',
@@ -533,7 +534,7 @@ async function processarComissoes(xml: string) {
   const msgs: string[] = []
 
   // Importação master
-  const { data: imp } = await supabaseAdmin.from('importacoes_comissao').insert({
+  const { data: imp } = await supabaseAdmin().from('importacoes_comissao').insert({
     nome_arquivo: `tokio-extrato-${numExtrato || Date.now()}.xml`,
     competencia: dtPagto ? dtPagto.slice(0,7) : new Date().toISOString().slice(0,7),
     qtd_registros: detalhes.length,
@@ -577,7 +578,7 @@ async function processarComissoes(xml: string) {
         vlrPremio != null && `Prêmio R$ ${vlrPremio}`,
       ].filter(Boolean).join(' | ')
 
-      const { error } = await supabaseAdmin.from('comissoes_recebidas').insert({
+      const { error } = await supabaseAdmin().from('comissoes_recebidas').insert({
         apolice_id:       apolice?.id || null,
         cliente_id:       apolice?.cliente_id || null,
         vendedor_id:      vendedorId,
@@ -616,7 +617,7 @@ function detectarTipo(xml: string, nomeArquivo: string): string {
 }
 
 async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) {
-  const { data: importacao } = await supabaseAdmin.from('importacoes_tokio').insert({
+  const { data: importacao } = await supabaseAdmin().from('importacoes_tokio').insert({
     tipo_arquivo: tipo, nome_arquivo: nomeArquivo,
     data_geracao: new Date().toISOString().split('T')[0],
     qtd_registros: (xml.match(/</g) || []).length,
@@ -630,7 +631,7 @@ async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) 
   else resultado = { importados: 0, erros: 0, msgs: ['Tipo não reconhecido — informe manualmente.'] }
 
   if (importacao?.id) {
-    await supabaseAdmin.from('importacoes_tokio').update({
+    await supabaseAdmin().from('importacoes_tokio').update({
       status: resultado.erros === 0 ? 'concluido' : 'parcial',
       qtd_importados: resultado.importados,
       qtd_erros: resultado.erros,
@@ -796,7 +797,7 @@ export async function POST(request: NextRequest) {
       if (typeof conteudo === 'string' && conteudo.length > 0) {
         xml = conteudo
       } else if (typeof storage_path === 'string' && storage_path.length > 0) {
-        const { data, error } = await supabaseAdmin.storage.from('cmsegcrm').download(storage_path)
+        const { data, error } = await supabaseAdmin().storage.from('cmsegcrm').download(storage_path)
         if (error || !data) {
           return NextResponse.json({ error: `Falha ao baixar do storage: ${error?.message || 'desconhecido'}` }, { status: 500 })
         }
