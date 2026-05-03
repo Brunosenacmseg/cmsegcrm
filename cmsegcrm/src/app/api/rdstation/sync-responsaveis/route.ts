@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
   // Busca em chunks de 200 pra nao explodir url
   for (let i = 0; i < titulos.length; i += 200) {
     const chunk = titulos.slice(i, i + 200)
-    const { data } = await supabaseAdmin
+    const { data } = await supabaseAdmin()
       .from('negocios')
       .select('id, titulo, cpf_cnpj, vendedor_id')
       .in('titulo', chunk)
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     const chunk = updates.slice(i, i + 500)
     // Faz updates 1 a 1 — Supabase nao tem bulk update por id em uma chamada
     await Promise.all(chunk.map(async u => {
-      const { error } = await supabaseAdmin
+      const { error } = await supabaseAdmin()
         .from('negocios')
         .update({ vendedor_id: u.vendedor_id })
         .eq('id', u.id)
