@@ -75,6 +75,7 @@ async function syncApolices(seguradoraId: string, seguradoraNome: string) {
   for (const r of (rows || []) as any[]) {
     try {
       let cliente_id = await localizarCliente(r.cpf_cnpj, r.numero)
+      let clienteCriadoAuto = false
       if (!cliente_id && r.cliente_nome) {
         const { data: novo, error: errCli } = await admin().from('clientes').insert({
           nome: r.cliente_nome, cpf_cnpj: r.cpf_cnpj || null,
@@ -83,6 +84,7 @@ async function syncApolices(seguradoraId: string, seguradoraNome: string) {
         }).select('id').single()
         if (errCli) throw errCli
         cliente_id = (novo as any).id
+        clienteCriadoAuto = true
       }
       if (!cliente_id) throw new Error('cliente não localizado e sem nome para criar')
 
@@ -122,6 +124,7 @@ async function syncApolices(seguradoraId: string, seguradoraNome: string) {
       await admin().from('seg_stage_apolices').update({
         status: 'sincronizado', sincronizado_em: new Date().toISOString(),
         cliente_id, apolice_id, erro_msg: null,
+        cliente_criado_auto: clienteCriadoAuto,
       }).eq('id', r.id)
       ok++
     } catch (e: any) {
@@ -303,7 +306,14 @@ async function syncComissoes(seguradoraId: string, seguradoraNome: string, userI
         status: 'recebido',
         origem: 'importacao',
         registrado_por: userId,
-        obs: `Importado do módulo Seguradoras • apólice ${r.numero_apolice || '-'}`,
+        obs: [
+          `Apólice ${r.numero_apolice || '-'}`,
+          `Cliente ${r.cliente_nome || '-'}`,
+          `Seguradora ${seguradoraNome}`,
+          `Valor R$ ${valor.toFixed(2)}`,
+          r.competencia ? `Competência ${r.competencia}` : null,
+          r.parcela ? `Parcela ${r.parcela}/${r.total_parcelas ?? '-'}` : null,
+        ].filter(Boolean).join(' • '),
       }).select('id').single()
       if (errCom) throw errCom
       const comissao_id = (nova as any).id

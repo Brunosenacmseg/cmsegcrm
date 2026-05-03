@@ -7,11 +7,13 @@ import { createClient } from '@/lib/supabase/client'
 declare global { interface Window { XLSX: any } }
 
 type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes'
-const ABAS: { tipo: Tipo; label: string; emoji: string }[] = [
-  { tipo: 'apolices',      label: 'Apólices',      emoji: '📋' },
-  { tipo: 'sinistros',     label: 'Sinistros',     emoji: '🛡️' },
-  { tipo: 'inadimplencia', label: 'Inadimplência', emoji: '⏰' },
-  { tipo: 'comissoes',     label: 'Comissões',     emoji: '💰' },
+type Aba = Tipo | 'relatorio_clientes'
+const ABAS: { tipo: Aba; label: string; emoji: string }[] = [
+  { tipo: 'apolices',           label: 'Apólices',                emoji: '📋' },
+  { tipo: 'sinistros',          label: 'Sinistros',               emoji: '🛡️' },
+  { tipo: 'inadimplencia',      label: 'Inadimplência',           emoji: '⏰' },
+  { tipo: 'comissoes',          label: 'Comissões',               emoji: '💰' },
+  { tipo: 'relatorio_clientes', label: 'Relatório (criados)',     emoji: '🆕' },
 ]
 const TABELAS: Record<Tipo, string> = {
   apolices:      'seg_stage_apolices',
@@ -66,8 +68,9 @@ export default function SeguradoraDetalhePage() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const [seguradora, setSeguradora] = useState<any>(null)
-  const [aba, setAba] = useState<Tipo>('apolices')
+  const [aba, setAba] = useState<Aba>('apolices')
   const [linhas, setLinhas] = useState<any[]>([])
+  const [criadosAuto, setCriadosAuto] = useState<any[]>([])
   const [contagens, setContagens] = useState<Record<string, { pend: number; ok: number; err: number }>>({})
   const [importando, setImportando] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
@@ -103,7 +106,16 @@ export default function SeguradoraDetalhePage() {
 
   async function carregarLinhas() {
     if (!params?.id) return
-    const t = TABELAS[aba]
+    if (aba === 'relatorio_clientes') {
+      const { data } = await supabase.from('seg_stage_apolices')
+        .select('*, clientes(id, nome, cpf_cnpj)')
+        .eq('seguradora_id', params.id).eq('cliente_criado_auto', true)
+        .order('sincronizado_em', { ascending: false }).limit(500)
+      setCriadosAuto(data || [])
+      setLinhas([])
+      return
+    }
+    const t = TABELAS[aba as Tipo]
     const { data } = await supabase.from(t).select('*')
       .eq('seguradora_id', params.id).order('created_at', { ascending: false }).limit(200)
     setLinhas(data || [])
@@ -220,17 +232,19 @@ export default function SeguradoraDetalhePage() {
               fontSize: 14,
             }}>
               {a.emoji} {a.label}
-              <span style={{ marginLeft: 8, fontSize: 11, color: '#777' }}>
-                {c.pend > 0 && <span style={{ color: '#f0a020' }}>● {c.pend} pend</span>}
-                {c.ok > 0 && <span style={{ marginLeft: 6, color: '#4caf50' }}>✓ {c.ok}</span>}
-                {c.err > 0 && <span style={{ marginLeft: 6, color: '#e05252' }}>✗ {c.err}</span>}
-              </span>
+              {a.tipo !== 'relatorio_clientes' && (
+                <span style={{ marginLeft: 8, fontSize: 11, color: '#777' }}>
+                  {c.pend > 0 && <span style={{ color: '#f0a020' }}>● {c.pend} pend</span>}
+                  {c.ok > 0 && <span style={{ marginLeft: 6, color: '#4caf50' }}>✓ {c.ok}</span>}
+                  {c.err > 0 && <span style={{ marginLeft: 6, color: '#e05252' }}>✗ {c.err}</span>}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
 
-      {isAdmin && (
+      {isAdmin && aba !== 'relatorio_clientes' && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             ref={inputRef}
@@ -263,14 +277,63 @@ export default function SeguradoraDetalhePage() {
         </div>
       )}
 
-      <p style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
-        Aceitos: XLSX, CSV. (PDF em breve.) Após importar, clique em <strong>Sincronizar</strong> para vincular ao cliente/apólice e
-        {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
-         aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
-         aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
-         ' criar/atualizar a apólice e vincular ao cliente.'}
-      </p>
+      {aba !== 'relatorio_clientes' && (
+        <p style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+          Aceitos: XLSX, CSV. (PDF em breve.) Após importar, clique em <strong>Sincronizar</strong> para vincular ao cliente/apólice e
+          {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
+           aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
+           aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
+           ' criar/atualizar a apólice e vincular ao cliente.'}
+        </p>
+      )}
+      {aba === 'relatorio_clientes' && (
+        <p style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+          Apólices importadas em que o <strong>cliente foi criado automaticamente</strong> porque não existia no CRM.
+          Use esta lista para conferir os cadastros gerados.
+        </p>
+      )}
 
+      {aba === 'relatorio_clientes' ? (
+        <div style={{ border: '1px solid #222', borderRadius: 8, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#1a1a1a' }}>
+                <th style={th}>Cliente criado</th>
+                <th style={th}>CPF/CNPJ</th>
+                <th style={th}>Apólice</th>
+                <th style={th}>Produto</th>
+                <th style={th}>Vigência</th>
+                <th style={th}>Sincronizado em</th>
+                <th style={th}>Conferir</th>
+              </tr>
+            </thead>
+            <tbody>
+              {criadosAuto.map(l => (
+                <tr key={l.id} style={{ borderTop: '1px solid #222' }}>
+                  <td style={td}>{l.clientes?.nome || l.cliente_nome || '-'}</td>
+                  <td style={td}>{l.clientes?.cpf_cnpj || l.cpf_cnpj || '-'}</td>
+                  <td style={td}>{l.numero || '-'}</td>
+                  <td style={td}>{l.produto || '-'}</td>
+                  <td style={td}>{l.vigencia_ini || '-'} → {l.vigencia_fim || '-'}</td>
+                  <td style={td}>{l.sincronizado_em ? new Date(l.sincronizado_em).toLocaleString('pt-BR') : '-'}</td>
+                  <td style={td}>
+                    {l.cliente_id && (
+                      <Link href={`/dashboard/clientes/${l.cliente_id}`} style={{ color: '#4a80f0', fontSize: 12 }}>
+                        Abrir cliente →
+                      </Link>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!criadosAuto.length && (
+                <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#777' }}>
+                  Nenhum cliente foi criado automaticamente nesta seguradora
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div style={{ border: '1px solid #222', borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -327,6 +390,7 @@ export default function SeguradoraDetalhePage() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   )
 }
