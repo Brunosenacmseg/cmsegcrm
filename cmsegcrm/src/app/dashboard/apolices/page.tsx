@@ -56,29 +56,30 @@ export default function ApolicesPage() {
     // Fonte da verdade: tabela apolices. Trazemos junto cliente, vendedor
     // do user e dados do negócio espelho (etapa/vendedor legado quando
     // existir) para preservar a UI atual.
+    // Fonte da verdade: tabela apolices. Sem joins aninhados pra evitar
+    // conflitos de FK no PostgREST — vendedor_legado é resolvido em JS
+    // via lookup no array `vleg`.
     let query = supabase
       .from('apolices')
-      .select('*, clientes(id,nome,tipo), users(id,nome), negocios(id,etapa,vendedor_id,vendedor_legado_id,users!negocios_vendedor_id_fkey(id,nome),vendedores_legado(id,nome))')
+      .select('*, clientes(id,nome,tipo), users(id,nome)')
       .order('vigencia_fim', { ascending: true, nullsFirst: false })
 
     if (visibleIds) query = (query as any).in('vendedor_id', visibleIds)
 
-    const [{ data }, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
+    const [resApo, { data: usr }, { data: vleg }, { data: segs }] = await Promise.all([
       query,
       supabase.from('users').select('id, nome').order('nome'),
       supabase.from('vendedores_legado').select('id, nome').eq('ativo', true).order('nome'),
       supabase.from('seguradoras').select('nome').eq('ativo', true).order('nome'),
     ])
-    // Achata o registro pra que o resto da página (que foi escrita pra
-    // negócios) leia os mesmos campos.
-    const items = (data || []).map((a:any) => ({
+    if (resApo.error) {
+      console.error('Erro ao carregar apólices:', resApo.error)
+      alert('Erro ao carregar apólices: ' + resApo.error.message)
+    }
+    const items = (resApo.data || []).map((a:any) => ({
       ...a,
-      vencimento:        a.vigencia_fim,
-      etapa:             a.status || a.negocios?.etapa || 'ativo',
-      vendedor_id:       a.vendedor_id || a.negocios?.vendedor_id || null,
-      vendedor_legado_id: a.negocios?.vendedor_legado_id || null,
-      users:             a.users || a.negocios?.users || null,
-      vendedores_legado: a.negocios?.vendedores_legado || null,
+      vencimento: a.vigencia_fim,
+      etapa:      a.status || 'ativo',
     }))
     setNegocios(items)
     setUsuarios(usr || [])
