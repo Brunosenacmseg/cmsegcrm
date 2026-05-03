@@ -251,6 +251,19 @@ export async function POST(request: NextRequest) {
       } : null
 
       if (inst) {
+        // Idempotência: se a Evolution reenviar o mesmo webhook, ignora.
+        if (data.key?.id) {
+          const { data: existente } = await supabase
+            .from('whatsapp_mensagens')
+            .select('id')
+            .eq('instancia_id', inst.id)
+            .eq('evolution_id', data.key.id)
+            .maybeSingle()
+          if (existente) {
+            return NextResponse.json({ ok: true, dedup: true })
+          }
+        }
+
         let clienteId: string | null = null
         if (remotoNumero && remotoNumero.length >= 8) {
           const { data: cliente } = await supabase
@@ -285,7 +298,7 @@ export async function POST(request: NextRequest) {
         }
         const conteudoFinal = conteudoTexto || rotuloMidia[meta.tipo] || '[mídia]'
 
-        await supabase.from('whatsapp_mensagens').insert({
+        const { error: insErr } = await supabase.from('whatsapp_mensagens').insert({
           instancia_id:   inst.id,
           cliente_id:     clienteId,
           remoto_jid:     remotoJid,
@@ -302,6 +315,10 @@ export async function POST(request: NextRequest) {
           midia_duracao:  meta.duracao,
           transcricao:    transcricao,
         })
+        // Conflito do índice único = webhook duplicado em corrida; ignora.
+        if (insErr && (insErr as any).code === '23505') {
+          return NextResponse.json({ ok: true, dedup: true })
+        }
 
         // Auto-resposta com agente IA. Se for áudio, usa transcrição como
         // entrada; se for outra mídia sem caption, ignora.
