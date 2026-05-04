@@ -206,7 +206,11 @@ export default function FichaClientePage() {
                         borderLeft:`4px solid ${fc.cor||'var(--gold)'}`
                       }}>
                         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                          <div style={{fontSize:14,fontWeight:600}}>{n.produto} {n.placa?'· '+n.placa:''}</div>
+                          <div
+                            onClick={() => router.push(`/dashboard/funis?card=${n.id}`)}
+                            style={{fontSize:14,fontWeight:600,cursor:'pointer',color:'var(--gold)',textDecoration:'underline',textUnderlineOffset:3}}
+                            title="Abrir negociação"
+                          >{n.produto} {n.placa?'· '+n.placa:''}</div>
                           <div style={{fontSize:14,fontWeight:700,color:'var(--gold)'}}>{n.premio?'R$ '+n.premio.toLocaleString('pt-BR')+'/ano':'—'}</div>
                         </div>
                         <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:8}}>
@@ -269,9 +273,14 @@ export default function FichaClientePage() {
                 </div>
                 {h.descricao && <div style={{fontSize:12,color:'var(--text-muted)',lineHeight:1.5}}>{h.descricao}</div>}
                 {h.negocios && (
-                  <div style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11,
+                  <div
+                    onClick={() => h.negocio_id && router.push(`/dashboard/funis?card=${h.negocio_id}`)}
+                    style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11,
                     background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',
-                    borderRadius:6,padding:'2px 8px',marginTop:4,color:'var(--text-muted)'}}>
+                    borderRadius:6,padding:'2px 8px',marginTop:4,color:'var(--text-muted)',
+                    cursor: h.negocio_id ? 'pointer' : 'default'}}
+                    title={h.negocio_id ? 'Abrir negociação' : ''}
+                  >
                     {h.negocios.funis?.emoji} {h.negocios.funis?.nome} · {h.negocios.produto}
                   </div>
                 )}
