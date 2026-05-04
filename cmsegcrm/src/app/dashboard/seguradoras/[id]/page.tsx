@@ -475,6 +475,12 @@ export default function SeguradoraDetalhePage() {
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [detalheRow, setDetalheRow] = useState<any | null>(null)
+  // Batch upload de PDFs: progresso por arquivo
+  const [batchProgress, setBatchProgress] = useState<{
+    total: number; concluidos: number; sucesso: number; erros: number;
+    arquivoAtual: string | null;
+    detalhes: Array<{ nome: string; status: 'ok' | 'err'; msg: string }>;
+  } | null>(null)
 
   useEffect(() => { init() }, [params?.id])
   useEffect(() => { carregarLinhas() }, [params?.id, aba])
@@ -529,54 +535,82 @@ export default function SeguradoraDetalhePage() {
   }
 
   async function onSelecionarArquivo(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
     setMsg(null)
-    const lower = file.name.toLowerCase()
     const isEzze = /ezze/i.test(seguradora?.nome || '')
 
-    // PDF: importação por apólice OU proposta (qualquer seguradora). Envia
-    // bytes em base64 e o parser roda no servidor. A seguradora é detectada
-    // automaticamente do conteúdo do PDF — o nome cadastrado serve só como
-    // fallback. As tabs Sinistros/Inadimplência/Comissões continuam exigindo
-    // planilha estruturada (XLSX/CSV/RET).
-    if (lower.endsWith('.pdf')) {
+    // ── BATCH PDF: 1 ou mais PDFs ──────────────────────────────
+    // Processa sequencialmente (upload + parse no servidor) e mostra progresso.
+    // Mantém XLSX/CSV/RET como fluxo single-file abaixo (cada arquivo já é um lote).
+    const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'))
+    const naoPdfs = files.filter(f => !f.name.toLowerCase().endsWith('.pdf'))
+
+    if (pdfs.length > 0) {
       if (aba !== 'apolices' && aba !== 'propostas') {
         setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices e propostas.' })
         e.target.value = ''
         return
       }
-      setImportando(true)
-      try {
-        const buf = await file.arrayBuffer()
-        const pdfBase64 = bufferToBase64(buf)
-        const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
-          method: 'POST',
-          headers: await authHeaders(),
-          body: JSON.stringify({
-            tipo: aba,
-            formato: 'pdf',
-            nome_arquivo: file.name,
-            pdf_base64: pdfBase64,
-          }),
-        })
-        const j = await r.json()
-        if (!r.ok) throw new Error(j?.erro || 'falha na importação')
-        const segLabel = isEzze ? 'Ezze' : (seguradora?.nome || 'PDF')
-        setMsg({
-          tipo: 'ok',
-          texto: `PDF ${segLabel} (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
-        })
-        await carregarContagens()
-        await carregarLinhas()
-      } catch (err: any) {
-        setMsg({ tipo: 'err', texto: err?.message || String(err) })
-      } finally {
-        setImportando(false)
-        if (inputRef.current) inputRef.current.value = ''
+      if (naoPdfs.length > 0) {
+        setMsg({ tipo: 'err', texto: `Selecione APENAS PDFs ou APENAS planilhas, não os dois ao mesmo tempo. Ignorando ${naoPdfs.length} arquivo(s) não-PDF.` })
       }
+      setImportando(true)
+      setBatchProgress({ total: pdfs.length, concluidos: 0, sucesso: 0, erros: 0, arquivoAtual: null, detalhes: [] })
+      const segLabel = isEzze ? 'Ezze' : (seguradora?.nome || 'PDF')
+
+      for (const file of pdfs) {
+        setBatchProgress(p => p && { ...p, arquivoAtual: file.name })
+        try {
+          const buf = await file.arrayBuffer()
+          const pdfBase64 = bufferToBase64(buf)
+          const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
+            method: 'POST',
+            headers: await authHeaders(),
+            body: JSON.stringify({
+              tipo: aba,
+              formato: 'pdf',
+              nome_arquivo: file.name,
+              pdf_base64: pdfBase64,
+            }),
+          })
+          const j = await r.json()
+          if (!r.ok) throw new Error(j?.erro || 'falha na importação')
+          setBatchProgress(p => p && {
+            ...p,
+            concluidos: p.concluidos + 1,
+            sucesso: p.sucesso + 1,
+            detalhes: [...p.detalhes, { nome: file.name, status: 'ok', msg: `${j.inseridos} linha(s) — ${j.pdf_layout || 'layout?'}` }],
+          })
+        } catch (err: any) {
+          setBatchProgress(p => p && {
+            ...p,
+            concluidos: p.concluidos + 1,
+            erros: p.erros + 1,
+            detalhes: [...p.detalhes, { nome: file.name, status: 'err', msg: err?.message || String(err) }],
+          })
+        }
+      }
+
+      setImportando(false)
+      if (inputRef.current) inputRef.current.value = ''
+      await carregarContagens()
+      await carregarLinhas()
+      // Mensagem agregada
+      setBatchProgress(p => p && { ...p, arquivoAtual: null })
+      const tipoMsg = pdfs.length === 1 ? 'ok' : 'ok'
+      // (mantém o painel de progresso aberto p/ usuário ver o detalhe arquivo-a-arquivo)
+      setMsg({
+        tipo: tipoMsg,
+        texto: `PDF ${segLabel}: ${pdfs.length} arquivo(s) processado(s). Clique em "Sincronizar" para vincular ao CRM.`,
+      })
       return
     }
+
+    // ── SINGLE FILE: XLSX/CSV/XML/ZIP/RET (mantém comportamento original) ──
+    const file = naoPdfs[0]
+    if (!file) return
+    const lower = file.name.toLowerCase()
     setImportando(true)
     try {
       const buf = await file.arrayBuffer()
@@ -684,6 +718,55 @@ export default function SeguradoraDetalhePage() {
           }}>{msg.texto}</div>
         )}
 
+        {/* Painel de progresso do batch upload de PDFs */}
+        {batchProgress && (
+          <div style={{
+            padding:14, borderRadius:8, marginBottom:14,
+            background:'rgba(74,128,240,0.08)', border:'1px solid rgba(74,128,240,0.25)',
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>
+                {batchProgress.arquivoAtual
+                  ? `Processando ${batchProgress.concluidos + 1}/${batchProgress.total}: ${batchProgress.arquivoAtual}`
+                  : `Concluído: ${batchProgress.sucesso} sucesso, ${batchProgress.erros} erro(s) — ${batchProgress.total} arquivo(s)`}
+              </div>
+              {!batchProgress.arquivoAtual && (
+                <button
+                  onClick={() => setBatchProgress(null)}
+                  style={{ background:'none', border:'1px solid var(--border)', color:'var(--text-muted)', padding:'3px 10px', borderRadius:6, cursor:'pointer', fontSize:11 }}
+                >Fechar</button>
+              )}
+            </div>
+            {/* Barra de progresso */}
+            <div style={{ height:6, background:'rgba(255,255,255,0.05)', borderRadius:3, overflow:'hidden', marginBottom:10 }}>
+              <div style={{
+                height:'100%',
+                width: `${(batchProgress.concluidos / batchProgress.total) * 100}%`,
+                background: batchProgress.erros > 0 ? 'linear-gradient(90deg, var(--teal), #f0a020)' : 'var(--teal)',
+                transition:'width 0.3s',
+              }} />
+            </div>
+            {/* Lista de detalhes (último 5 — collapsible se quiser ver todos) */}
+            {batchProgress.detalhes.length > 0 && (
+              <details>
+                <summary style={{ cursor:'pointer', fontSize:11, color:'var(--text-muted)', marginBottom:6 }}>
+                  📋 Ver detalhes ({batchProgress.detalhes.length} arquivo(s) processado(s))
+                </summary>
+                <div style={{ maxHeight:160, overflow:'auto', fontSize:11, fontFamily:'monospace' }}>
+                  {batchProgress.detalhes.map((d, i) => (
+                    <div key={i} style={{
+                      padding:'3px 0', borderBottom:'1px solid rgba(255,255,255,0.04)',
+                      color: d.status === 'ok' ? 'var(--teal)' : 'var(--red)',
+                    }}>
+                      {d.status === 'ok' ? '✓' : '✗'} {d.nome} — {d.msg}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
         <div style={{ display:'flex', gap:4, borderBottom:'1px solid var(--border)', marginBottom:18, flexWrap:'wrap' }}>
           {ABAS.map(a => {
             const c = contagens[a.tipo] || { pend:0, ok:0, err:0 }
@@ -715,9 +798,11 @@ export default function SeguradoraDetalhePage() {
             <input
               ref={inputRef}
               type="file"
+              multiple
               accept=".xlsx,.xls,.csv,.xml,.zip,.ret,.com,.cbs,.vdn,.sre,.xpp,.xpi,.ire,.app,.api,.pdf"
               onChange={onSelecionarArquivo}
               disabled={importando}
+              title="Selecione 1 ou mais PDFs (apólices/propostas) — para planilhas, 1 por vez"
               style={{
                 flex:'1 1 280px', maxWidth:380, padding:'7px 10px',
                 background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)',
