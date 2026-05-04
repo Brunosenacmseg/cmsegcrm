@@ -1017,7 +1017,7 @@ function FunisPage() {
 
           <div style={{width:1,height:20,background:'rgba(255,255,255,0.15)'}} />
 
-          {funiAtual && (
+          {funiAtual && profile?.role === 'admin' && (
             <select
               disabled={!selecionados.size || bulkLoading}
               onChange={e => { if (e.target.value) bulkMoverEtapa(e.target.value); e.target.value = '' }}
@@ -1043,26 +1043,32 @@ function FunisPage() {
             {usuarios.map((u:any) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
 
-          <button onClick={()=>bulkMudarStatus('ganho')} disabled={!selecionados.size || bulkLoading}
-            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.5)',background:'rgba(28,181,160,0.15)',color:'#1cb5a0',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
-            ✓ Marcar Ganho
-          </button>
-          <button onClick={()=>bulkMudarStatus('perdido')} disabled={!selecionados.size || bulkLoading}
-            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.5)',background:'rgba(224,82,82,0.15)',color:'#e05252',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
-            ✕ Marcar Perdido
-          </button>
-          <button onClick={()=>bulkMudarStatus('em_andamento')} disabled={!selecionados.size || bulkLoading}
-            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
-            ↺ Em andamento
-          </button>
+          {profile?.role === 'admin' && (
+            <>
+              <button onClick={()=>bulkMudarStatus('ganho')} disabled={!selecionados.size || bulkLoading}
+                style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.5)',background:'rgba(28,181,160,0.15)',color:'#1cb5a0',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
+                ✓ Marcar Ganho
+              </button>
+              <button onClick={()=>bulkMudarStatus('perdido')} disabled={!selecionados.size || bulkLoading}
+                style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.5)',background:'rgba(224,82,82,0.15)',color:'#e05252',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
+                ✕ Marcar Perdido
+              </button>
+              <button onClick={()=>bulkMudarStatus('em_andamento')} disabled={!selecionados.size || bulkLoading}
+                style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
+                ↺ Em andamento
+              </button>
+            </>
+          )}
 
           <div style={{flex:1}} />
 
-          <button onClick={exportarSelecao} disabled={bulkLoading}
-            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:'pointer',fontWeight:600}}
-            title={selecionados.size ? 'Exporta selecionadas' : 'Exporta todas as visíveis'}>
-            📥 Exportar {selecionados.size ? `(${selecionados.size})` : 'visíveis'}
-          </button>
+          {profile?.role === 'admin' && (
+            <button onClick={exportarSelecao} disabled={bulkLoading}
+              style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.06)',color:'#fff',cursor:'pointer',fontWeight:600}}
+              title={selecionados.size ? 'Exporta selecionadas' : 'Exporta todas as visíveis'}>
+              📥 Exportar {selecionados.size ? `(${selecionados.size})` : 'visíveis'}
+            </button>
+          )}
           {profile?.role === 'admin' && (
             <button onClick={bulkExcluir} disabled={!selecionados.size || bulkLoading}
               style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.6)',background:'rgba(224,82,82,0.2)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
