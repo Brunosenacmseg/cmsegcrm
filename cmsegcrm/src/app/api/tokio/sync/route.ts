@@ -267,19 +267,32 @@ function extrairApolice(bloco: string) {
   const cpfCnpj  = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
   const tpPessoa = getTag(bloco, ['tpPessoa'])
   const email    = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
-  const ddd      = getTag(bloco, ['ddd'])
-  const numTel   = getTag(bloco, ['numero'])  // dentro do telefone — sem garantia
+  // Telefone vem como <Telefone><ddd>11</ddd><numero>99999</numero></Telefone>
+  const blocoTel = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+  const ddd      = getTag(blocoTel || bloco, ['ddd'])
+  const numTel   = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone', 'numTelefone'])
+
+  // Endereço
+  const blocoEnd  = (getBlocks(bloco, ['Endereco', 'endereco'])[0]) || ''
+  const endereco  = getTag(blocoEnd, ['logradouro', 'endereco'])
+  const numeroEnd = getTag(blocoEnd, ['numero', 'nrEndereco'])
+  const complemento = getTag(blocoEnd, ['complemento'])
+  const bairro    = getTag(blocoEnd, ['bairro'])
+  const cidade    = getTag(blocoEnd, ['cidade', 'municipio'])
+  const uf        = getTag(blocoEnd, ['uf', 'estado'])
+  const cep       = getTag(blocoEnd, ['cep'])
+
   const ramo     = getTag(bloco, ['ramo'])
   const produto  = getTag(bloco, ['Produto', 'produto'])
   const numApolice    = getTag(bloco, ['numApoIice', 'numApolice', 'numeroApolice'])
   const numProposta   = getTag(bloco, ['NumProposta', 'numProposta'])
   const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
   const tpComplemento = getTag(bloco, ['tpComplemento'])
-  const tipoSeguro    = getTag(bloco, ['TipoSeguro'])
-  const statusApolice = getTag(bloco, ['StatusApoliceEndosso', 'StatusProposta'])
+  const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+  const statusApolice = getTag(bloco, ['StatusApoliceEndosso', 'StatusProposta', 'statusApolice'])
   const dtCanc        = toDate(getTag(bloco, ['dtCancelamento']))
   const dtRecusa      = toDate(getTag(bloco, ['dtRecusa']))
-  const motivoRecusa  = getTag(bloco, ['motivoDeRecusa'])
+  const motivoRecusa  = getTag(bloco, ['motivoDeRecusa', 'motivoRecusa'])
 
   const vigIni  = toDate(getTag(bloco, ['dtInicioVigenciaApolice']))
   const vigFim  = toDate(getTag(bloco, ['dtFimVigenciaApolice']))
@@ -307,20 +320,27 @@ function extrairApolice(bloco: string) {
   const anoModelo       = getTag(blocoAuto, ['anoModelo'])
   const anoFabricacao   = getTag(blocoAuto, ['anoFabricacao'])
   const chassi          = getTag(blocoAuto, ['chassi'])
+  const combustivel     = getTag(blocoAuto, ['combustivel', 'tipoCombustivel'])
+  const cor             = getTag(blocoAuto, ['cor'])
+  const zerokm          = getTag(blocoAuto, ['zeroKm', 'zerokm'])
 
   // Corretor lider (para futuramente vincular vendedor)
   const blocoCorretor   = (getBlocks(bloco, ['Corretor'])[0]) || bloco
   const cdCorretor      = getTag(blocoCorretor, ['cdCorretor'])
+  const nmCorretor      = getTag(blocoCorretor, ['nmCorretor', 'NmCorretor'])
 
   return {
-    nome, cpfCnpj, tpPessoa, email, ddd, numTel, ramo, produto,
+    nome, cpfCnpj, tpPessoa, email, ddd, numTel,
+    endereco, numeroEnd, complemento, bairro, cidade, uf, cep,
+    ramo, produto,
     numApolice, numProposta, numEndosso, tpComplemento, tipoSeguro, statusApolice,
     dtCanc, dtRecusa, motivoRecusa,
     vigIni, vigFim, emissao, vigIniEnd, vigFimEnd, emissaoEnd,
     formaCobranca, qtdParc, premioLiq, iof, premioTotal, custoApolice,
     pcComissao, vlrComissao,
     placa, modelo, fabricante, anoModelo, anoFabricacao, chassi,
-    cdCorretor,
+    combustivel, cor, zerokm,
+    cdCorretor, nmCorretor,
   }
 }
 
@@ -330,7 +350,7 @@ function extrairApolice(bloco: string) {
 // `numEndosso` está preenchido, o registro é endosso → também
 // inserimos em public.endossos. Cancelamentos com qtdeParcelas=0
 // têm valores zerados.
-async function processarApolices(xml: string) {
+async function processarApolices(xml: string, importacaoId?: string | null) {
   // Cada registro completo é a sequência DadosSegurado +
   // DadosSeguro + Cobranca + Comissao + Item. A âncora confiável
   // é <DadosSegurado>, que sempre marca o início de uma apólice.
@@ -408,12 +428,89 @@ async function processarApolices(xml: string) {
         comissao_pct:      pcComissaoFinal,
         qtd_parcelas:      c.qtdParc,
         tipo_pagamento:    c.formaCobranca || null,
-        dados_tokio:       { ...dadosBrutos, chassi: c.chassi, cancelamento },
+        // Campos extras da Tokio (migration 071_)
+        tipo_seguro:          c.tipoSeguro || null,
+        status_apolice_tokio: c.statusApolice || null,
+        motivo_recusa:        c.motivoRecusa || null,
+        data_cancelamento:    c.dtCanc || null,
+        data_recusa:          c.dtRecusa || null,
+        vigencia_ini_endosso: c.vigIniEnd || null,
+        vigencia_fim_endosso: c.vigFimEnd || null,
+        emissao_endosso:      c.emissaoEnd || null,
+        chassi:               c.chassi || null,
+        fabricante:           c.fabricante || null,
+        ano_fabricacao:       c.anoFabricacao || null,
+        email_segurado:       c.email || null,
+        ddd_segurado:         c.ddd || null,
+        telefone_segurado:    c.numTel || null,
+        tipo_complemento:     c.tpComplemento || null,
+        custo_apolice:        cancelamento ? 0 : c.custoApolice,
+        valor_comissao:       vlrComissaoFinal,
+        cd_corretor:          c.cdCorretor || null,
+        nm_corretor:          c.nmCorretor || null,
+        dados_tokio:          { ...dadosBrutos, cancelamento },
       }
       const { data: apolice, error: errApol } = await supabaseAdmin().from('apolices').upsert(payload, {
         onConflict: 'numero', ignoreDuplicates: false,
       }).select('id, cliente_id').single()
       if (errApol) { erros++; msgs.push(`${numero}: ${errApol.message?.slice(0,80)}`); continue }
+
+      // Salva cópia raw com TODOS os campos (1 linha por apolice+endosso)
+      await supabaseAdmin().from('tokio_apolices_raw').upsert({
+        num_apolice:          c.numApolice || null,
+        num_proposta:         c.numProposta || null,
+        num_endosso:          c.numEndosso || '',
+        ramo:                 c.ramo || null,
+        produto:              c.produto || null,
+        tipo_seguro:          c.tipoSeguro || null,
+        status_apolice:       c.statusApolice || null,
+        tp_complemento:       c.tpComplemento || null,
+        cpf_cnpj:             c.cpfCnpj || null,
+        nome_segurado:        c.nome || null,
+        tp_pessoa:            c.tpPessoa || null,
+        email:                c.email || null,
+        ddd:                  c.ddd || null,
+        telefone:             c.numTel || null,
+        endereco:             c.endereco || null,
+        numero:               c.numeroEnd || null,
+        complemento:          c.complemento || null,
+        bairro:               c.bairro || null,
+        cidade:               c.cidade || null,
+        uf:                   c.uf || null,
+        cep:                  c.cep || null,
+        data_emissao:         c.emissao || null,
+        vigencia_ini:         c.vigIni || null,
+        vigencia_fim:         c.vigFim || null,
+        vigencia_ini_endosso: c.vigIniEnd || null,
+        vigencia_fim_endosso: c.vigFimEnd || null,
+        emissao_endosso:      c.emissaoEnd || null,
+        data_cancelamento:    c.dtCanc || null,
+        data_recusa:          c.dtRecusa || null,
+        motivo_recusa:        c.motivoRecusa || null,
+        forma_cobranca:       c.formaCobranca || null,
+        qtd_parcelas:         c.qtdParc,
+        premio_liquido:       c.premioLiq,
+        valor_iof:            c.iof,
+        premio_total:         c.premioTotal,
+        custo_apolice:        c.custoApolice,
+        pc_comissao:          c.pcComissao,
+        vlr_comissao:         c.vlrComissao,
+        placa:                c.placa || null,
+        chassi:               c.chassi || null,
+        modelo:               c.modelo || null,
+        fabricante:           c.fabricante || null,
+        ano_modelo:           c.anoModelo || null,
+        ano_fabricacao:       c.anoFabricacao || null,
+        combustivel:          c.combustivel || null,
+        cor:                  c.cor || null,
+        zerokm:               c.zerokm || null,
+        cd_corretor:          c.cdCorretor || null,
+        nm_corretor:          c.nmCorretor || null,
+        apolice_id:           apolice?.id || null,
+        cliente_id:           apolice?.cliente_id || clienteId || null,
+        importacao_id:        importacaoId || null,
+        dados_brutos:         { bloco_xml: bloco.slice(0, 8000), cancelamento },
+      }, { onConflict: 'num_apolice,num_endosso' })
 
       // ── Se tiver endosso, registrar em public.endossos ──
       if (c.numEndosso) {
@@ -452,7 +549,7 @@ async function processarApolices(xml: string) {
 
 // ─── PROCESSAR PARCELAS PAGAS / A PAGAR ──────────────────────
 // Layout: <período> com dtInicioPeriodo/dtFimPeriodo + N <parcela>
-async function processarParcelas(xml: string) {
+async function processarParcelas(xml: string, importacaoId?: string | null) {
   const blocks = getBlocks(xml, ['parcela'])
   const lista = blocks.length ? blocks : [xml]
   let importados = 0, erros = 0
@@ -460,22 +557,38 @@ async function processarParcelas(xml: string) {
 
   for (const bloco of lista) {
     try {
-      const numApolice  = getTag(bloco, ['numApolice', 'numeroApolice'])
-      const numEndosso  = getTag(bloco, ['numendosso', 'numEndosso'])
-      const cpfCnpj     = digits(getTag(bloco, ['CPFCnpj']))
-      const nome        = getTag(bloco, ['nomeSegurado'])
-      const produto     = getTag(bloco, ['Produto'])
-      const numParcela  = getTag(bloco, ['numParcela'])
-      const totParcelas = getTag(bloco, ['qtdeParcela'])
-      const venc        = toDate(getTag(bloco, ['dtVencimento']))
-      const dataPag     = toDate(getTag(bloco, ['dtPagamento']))
-      const dataBaixa   = toDate(getTag(bloco, ['dtBaixa']))
-      const formaCobr   = getTag(bloco, ['dsFormaCobranca'])
-      const valor       = num(getTag(bloco, ['vlrPremioParcela'])) || 0
-      const vlrJuros    = num(getTag(bloco, ['vlrJuros'])) || 0
-      const vlrIOF      = num(getTag(bloco, ['vlrIOF'])) || 0
-      const vlrComissao = num(getTag(bloco, ['vlrComissao'])) || 0
-      const status      = getTag(bloco, ['StatusApoliceEndosso', 'situacaoParcela', 'status']).toLowerCase()
+      const numApolice    = getTag(bloco, ['numApolice', 'numeroApolice'])
+      const numEndosso    = getTag(bloco, ['numendosso', 'numEndosso'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj']))
+      const nome          = getTag(bloco, ['nomeSegurado', 'nome'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const numParcela    = parseInt(getTag(bloco, ['numParcela']) || '') || null
+      const totParcelas   = parseInt(getTag(bloco, ['qtdeParcela']) || '') || null
+      const venc          = toDate(getTag(bloco, ['dtVencimento']))
+      const dataPag       = toDate(getTag(bloco, ['dtPagamento']))
+      const dataBaixa     = toDate(getTag(bloco, ['dtBaixa']))
+      const dataEmissao   = toDate(getTag(bloco, ['dtEmissao', 'dtEmissaoApolice']))
+      const dataComp      = toDate(getTag(bloco, ['dtCompetencia', 'dataCompetencia']))
+      const formaCobr     = getTag(bloco, ['dsFormaCobranca'])
+      const valor         = num(getTag(bloco, ['vlrPremioParcela'])) || 0
+      const vlrJuros      = num(getTag(bloco, ['vlrJuros'])) || 0
+      const vlrIOF        = num(getTag(bloco, ['vlrIOF'])) || 0
+      const vlrComissao   = num(getTag(bloco, ['vlrComissao'])) || 0
+      const vlrLiquido    = num(getTag(bloco, ['vlrLiquido']))
+      const vlrDesconto   = num(getTag(bloco, ['vlrDesconto']))
+      const vlrMulta      = num(getTag(bloco, ['vlrMulta']))
+      const vlrTotal      = num(getTag(bloco, ['vlrTotal']))
+      const banco         = getTag(bloco, ['bancoCobranca', 'banco'])
+      const agencia       = getTag(bloco, ['agencia'])
+      const conta         = getTag(bloco, ['conta'])
+      const numBoleto     = getTag(bloco, ['numBoleto', 'numeroBoleto'])
+      const numNotaFiscal = getTag(bloco, ['numNotaFiscal', 'numeroNotaFiscal', 'numNF'])
+      const status        = getTag(bloco, ['StatusApoliceEndosso', 'situacaoParcela', 'status']).toLowerCase()
+      const situacao      = getTag(bloco, ['situacaoParcela', 'StatusApoliceEndosso'])
+      const cdCorretor    = getTag(bloco, ['cdCorretor', 'CdCorretor'])
+      const nmCorretor    = getTag(bloco, ['nmCorretor', 'NmCorretor'])
       if (!venc) { msgs.push(`sem vencimento (apólice ${numApolice})`); erros++; continue }
 
       const apolice = await buscarApolicePorNumero(numApolice)
@@ -484,7 +597,7 @@ async function processarParcelas(xml: string) {
 
       const pago = !!dataPag || !!dataBaixa || ['paga','pago','liquidada','quitada'].includes(status)
 
-      const conta = {
+      const conta_pagar = {
         tipo:        'conta',
         nome:        `Tokio Marine — Apólice ${numApolice} parc ${numParcela}/${totParcelas}`,
         valor,
@@ -501,14 +614,58 @@ async function processarParcelas(xml: string) {
         .select('id').ilike('nome', `%Apólice ${numApolice} parc ${numParcela}/%`)
         .eq('vencimento', venc).maybeSingle()
 
+      let contaPagarId: string | null = null
       if (existing?.id) {
+        contaPagarId = (existing as any).id
         await supabaseAdmin().from('contas_pagar').update({
-          status: conta.status, data_pagamento: conta.data_pagamento, valor: conta.valor,
-        }).eq('id', existing.id)
+          status: conta_pagar.status, data_pagamento: conta_pagar.data_pagamento, valor: conta_pagar.valor,
+        }).eq('id', (existing as any).id)
       } else {
-        const { error } = await supabaseAdmin().from('contas_pagar').insert(conta)
+        const { data: novaConta, error } = await supabaseAdmin().from('contas_pagar').insert(conta_pagar).select('id').single()
         if (error) { erros++; msgs.push(error.message?.slice(0,80)); continue }
+        contaPagarId = (novaConta as any)?.id || null
       }
+
+      // Salva cópia raw com TODOS os campos
+      await supabaseAdmin().from('tokio_parcelas').upsert({
+        num_apolice:        numApolice || null,
+        num_endosso:        numEndosso || null,
+        num_proposta:       numProposta || null,
+        ramo:               ramo || null,
+        produto:            produto || null,
+        cpf_cnpj:           cpfCnpj || null,
+        nome_segurado:      nome || null,
+        num_parcela:        numParcela,
+        qtde_parcela:       totParcelas,
+        data_vencimento:    venc,
+        data_pagamento:     dataPag,
+        data_baixa:         dataBaixa,
+        data_emissao:       dataEmissao,
+        data_competencia:   dataComp,
+        vlr_premio_parcela: valor,
+        vlr_juros:          vlrJuros,
+        vlr_iof:            vlrIOF,
+        vlr_comissao:       vlrComissao,
+        vlr_liquido:        vlrLiquido,
+        vlr_desconto:       vlrDesconto,
+        vlr_multa:          vlrMulta,
+        vlr_total:          vlrTotal,
+        forma_cobranca:     formaCobr || null,
+        banco_cobranca:     banco || null,
+        agencia:            agencia || null,
+        conta:              conta || null,
+        num_boleto:         numBoleto || null,
+        num_nota_fiscal:    numNotaFiscal || null,
+        status_parcela:     status || null,
+        situacao_parcela:   situacao || null,
+        cd_corretor:        cdCorretor || null,
+        nm_corretor:        nmCorretor || null,
+        apolice_id:         apolice?.id || null,
+        cliente_id:         clienteId || null,
+        conta_pagar_id:     contaPagarId,
+        importacao_id:      importacaoId || null,
+        dados_brutos:       { bloco_xml: bloco.slice(0, 4000) },
+      }, { onConflict: 'num_apolice,num_parcela,data_vencimento' })
 
       // Tarefa de aviso pra responsável (parcela vencendo em ≤7 dias)
       if (!pago && apolice?.vendedor_id && clienteId) {
@@ -533,20 +690,25 @@ async function processarParcelas(xml: string) {
 // Layout: <Extrato> com cabeçalho + <ApolicesComicionadas> com N
 // <DetalheComissao>. Cancelamentos (cdNatureza 2/3/4/9) entram com
 // valor negativo já no arquivo — mantemos como veio.
-async function processarComissoes(xml: string) {
-  const numExtrato  = getTag(xml, ['numExtrato'])
-  const cdCorretor  = getTag(xml, ['CdCorretor'])
-  const nmCorretor  = getTag(xml, ['NmCorretor'])
-  const dtPagto     = toDate(getTag(xml, ['dtPagamento']))
-  const vlrTotal    = num(getTag(xml, ['vlrTotal']))
-  const vlrLiquido  = num(getTag(xml, ['vlrLiquido']))
-  const vlrBruto    = num(getTag(xml, ['vlrBruto']))
+async function processarComissoes(xml: string, importacaoId?: string | null) {
+  const numExtrato     = getTag(xml, ['numExtrato'])
+  const cdCorretor     = getTag(xml, ['CdCorretor', 'cdCorretor'])
+  const nmCorretor     = getTag(xml, ['NmCorretor', 'nmCorretor'])
+  const dtPagto        = toDate(getTag(xml, ['dtPagamento']))
+  const dtEmissao      = toDate(getTag(xml, ['dtEmissao']))
+  const vlrTotal       = num(getTag(xml, ['vlrTotal']))
+  const vlrLiquido     = num(getTag(xml, ['vlrLiquido']))
+  const vlrBruto       = num(getTag(xml, ['vlrBruto']))
+  const vlrDescontos   = num(getTag(xml, ['vlrDescontos', 'vlrDesconto']))
+  const vlrAcrescimos  = num(getTag(xml, ['vlrAcrescimos', 'vlrAcrescimo']))
+  const vlrIss         = num(getTag(xml, ['vlrIss', 'vlrISS']))
+  const vlrIrrf        = num(getTag(xml, ['vlrIrrf', 'vlrIRRF']))
 
   const detalhes = getBlocks(xml, ['DetalheComissao'])
   let importados = 0, erros = 0
   const msgs: string[] = []
 
-  // Importação master
+  // Importação master legada (mantida)
   const { data: imp } = await supabaseAdmin().from('importacoes_comissao').insert({
     nome_arquivo: `tokio-extrato-${numExtrato || Date.now()}.xml`,
     competencia: dtPagto ? dtPagto.slice(0,7) : new Date().toISOString().slice(0,7),
@@ -555,34 +717,61 @@ async function processarComissoes(xml: string) {
     status: 'processado',
   }).select('id').single()
 
+  // Cabeçalho do extrato — uma linha em tokio_extrato_comissoes
+  const { data: extratoRow } = await supabaseAdmin().from('tokio_extrato_comissoes').upsert({
+    num_extrato:    numExtrato || `auto-${Date.now()}`,
+    cd_corretor:    cdCorretor || null,
+    nm_corretor:    nmCorretor || null,
+    data_pagamento: dtPagto,
+    data_emissao:   dtEmissao,
+    competencia:    dtPagto ? dtPagto.slice(0,7) : null,
+    vlr_total:      vlrTotal,
+    vlr_bruto:      vlrBruto,
+    vlr_liquido:    vlrLiquido,
+    vlr_descontos:  vlrDescontos,
+    vlr_acrescimos: vlrAcrescimos,
+    vlr_iss:        vlrIss,
+    vlr_irrf:       vlrIrrf,
+    qtd_detalhes:   detalhes.length,
+    importacao_id:  importacaoId || null,
+    dados_brutos:   { xml_preview: xml.slice(0, 4000) },
+  }, { onConflict: 'num_extrato' }).select('id').single()
+  const extratoId = (extratoRow as any)?.id || null
+
   for (const bloco of detalhes) {
     try {
-      const numApolice  = getTag(bloco, ['numApolice'])
-      const numEndosso  = getTag(bloco, ['numEndosso'])
-      const produto     = getTag(bloco, ['Produto'])
-      const cpfCnpj     = digits(getTag(bloco, ['CPFCnpj']))
-      const nome        = getTag(bloco, ['nomeSegurado'])
-      const numParcela  = parseInt(getTag(bloco, ['numParcela']) || '1') || 1
-      const qtdParcela  = parseInt(getTag(bloco, ['qtdeParcela']) || '1') || 1
-      const pcComissao  = num(getTag(bloco, ['pcComissao']))
-      const valor       = num(getTag(bloco, ['vlrComissaoParcela'])) || 0
-      const vlrPremio   = num(getTag(bloco, ['vlrPremio']))
-      const cdNatureza  = getTag(bloco, ['cdNatureza'])
-      const cdTipoPagto = getTag(bloco, ['cdTipoPagto'])
-      const statusApol  = getTag(bloco, ['StatusApolice'])
+      const numApolice    = getTag(bloco, ['numApolice'])
+      const numEndosso    = getTag(bloco, ['numEndosso'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj']))
+      const nome          = getTag(bloco, ['nomeSegurado', 'nome'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const numParcela    = parseInt(getTag(bloco, ['numParcela']) || '1') || 1
+      const qtdParcela    = parseInt(getTag(bloco, ['qtdeParcela']) || '1') || 1
+      const pcComissao    = num(getTag(bloco, ['pcComissao']))
+      const valor         = num(getTag(bloco, ['vlrComissaoParcela'])) || 0
+      const vlrPremio     = num(getTag(bloco, ['vlrPremio']))
+      const vlrPremioLiq  = num(getTag(bloco, ['vlrPremioLiquido']))
+      const vlrIof        = num(getTag(bloco, ['vlrIOF']))
+      const cdNatureza    = getTag(bloco, ['cdNatureza'])
+      const dsNatureza    = getTag(bloco, ['dsNatureza'])
+      const cdTipoPagto   = getTag(bloco, ['cdTipoPagto'])
+      const dsTipoPagto   = getTag(bloco, ['dsTipoPagto'])
+      const statusApol    = getTag(bloco, ['StatusApolice', 'statusApolice'])
+      const dtEmissaoDet  = toDate(getTag(bloco, ['dtEmissao']))
+      const dtPagtoDet    = toDate(getTag(bloco, ['dtPagamento'])) || dtPagto
+      const dtMovimento   = toDate(getTag(bloco, ['dtMovimento']))
+      const dtCompetencia = toDate(getTag(bloco, ['dtCompetencia']))
 
       const apolice = await buscarApolicePorNumero(numApolice)
       const vendedorId = apolice?.vendedor_id
-      if (!vendedorId) {
-        msgs.push(`apólice ${numApolice}: sem vendedor — comissão R$${valor} não lançada`)
-        erros++
-        continue
-      }
 
       const obs = [
         cpfCnpj && `CPF/CNPJ ${cpfCnpj}`,
-        nome,
-        produto,
+        nome, produto,
         cdTipoPagto && `Tipo ${cdTipoPagto}`,
         cdNatureza && `Natureza ${cdNatureza}`,
         numEndosso && `Endosso ${numEndosso}`,
@@ -591,23 +780,67 @@ async function processarComissoes(xml: string) {
         vlrPremio != null && `Prêmio R$ ${vlrPremio}`,
       ].filter(Boolean).join(' | ')
 
-      const { error } = await supabaseAdmin().from('comissoes_recebidas').insert({
-        apolice_id:       apolice?.id || null,
-        cliente_id:       apolice?.cliente_id || null,
-        vendedor_id:      vendedorId,
-        valor:            Math.abs(valor),  // tabela tem CHECK >= 0; status indica se foi recuperação
-        competencia:      dtPagto ? dtPagto.slice(0,7) : '',
-        data_recebimento: dtPagto,
-        parcela:          numParcela,
-        total_parcelas:   qtdParcela,
-        seguradora:       'Tokio Marine',
-        produto:          produto || null,
-        status:           valor < 0 ? 'cancelado' : 'recebido',
-        origem:           'importacao',
-        importacao_id:    imp?.id || null,
-        obs,
+      let comissaoRecebidaId: string | null = null
+      if (vendedorId) {
+        const { data: insRow, error } = await supabaseAdmin().from('comissoes_recebidas').insert({
+          apolice_id:       apolice?.id || null,
+          cliente_id:       apolice?.cliente_id || null,
+          vendedor_id:      vendedorId,
+          valor:            Math.abs(valor),
+          competencia:      dtPagtoDet ? dtPagtoDet.slice(0,7) : '',
+          data_recebimento: dtPagtoDet,
+          parcela:          numParcela,
+          total_parcelas:   qtdParcela,
+          seguradora:       'Tokio Marine',
+          produto:          produto || null,
+          status:           valor < 0 ? 'cancelado' : 'recebido',
+          origem:           'importacao',
+          importacao_id:    (imp as any)?.id || null,
+          obs,
+        }).select('id').single()
+        if (error) { msgs.push(`${numApolice}: ${error.message?.slice(0,80)} (raw salvo)`) }
+        comissaoRecebidaId = (insRow as any)?.id || null
+      } else {
+        msgs.push(`apólice ${numApolice}: sem vendedor — só salvo em tokio_detalhe_comissao`)
+      }
+
+      // Salva sempre o detalhe raw com TODOS os campos
+      await supabaseAdmin().from('tokio_detalhe_comissao').insert({
+        extrato_id:           extratoId,
+        num_extrato:          numExtrato || null,
+        num_apolice:          numApolice || null,
+        num_endosso:          numEndosso || null,
+        num_proposta:         numProposta || null,
+        ramo:                 ramo || null,
+        produto:              produto || null,
+        tipo_seguro:          tipoSeguro || null,
+        cpf_cnpj:             cpfCnpj || null,
+        nome_segurado:        nome || null,
+        tp_pessoa:            tpPessoa || null,
+        num_parcela:          numParcela,
+        qtde_parcela:         qtdParcela,
+        pc_comissao:          pcComissao,
+        vlr_comissao_parcela: valor,
+        vlr_premio:           vlrPremio,
+        vlr_premio_liquido:   vlrPremioLiq,
+        vlr_iof:              vlrIof,
+        cd_natureza:          cdNatureza || null,
+        ds_natureza:          dsNatureza || null,
+        cd_tipo_pagto:        cdTipoPagto || null,
+        ds_tipo_pagto:        dsTipoPagto || null,
+        status_apolice:       statusApol || null,
+        data_emissao:         dtEmissaoDet,
+        data_pagamento:       dtPagtoDet,
+        data_movimento:       dtMovimento,
+        data_competencia:     dtCompetencia,
+        cd_corretor:          cdCorretor || null,
+        nm_corretor:          nmCorretor || null,
+        apolice_id:           apolice?.id || null,
+        cliente_id:           apolice?.cliente_id || null,
+        comissao_recebida_id: comissaoRecebidaId,
+        importacao_id:        importacaoId || null,
+        dados_brutos:         { bloco_xml: bloco.slice(0, 4000) },
       })
-      if (error) { erros++; msgs.push(`${numApolice}: ${error.message?.slice(0,80)}`); continue }
       importados++
     } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
   }
@@ -630,17 +863,52 @@ async function processarSinistros(xml: string, importacaoId?: string | null) {
       const numSinistro   = getTag(bloco, ['numSinistro', 'numeroSinistro', 'nrSinistro'])
       const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
       const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
       const ramo          = getTag(bloco, ['ramo'])
       const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
       const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
       const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const email         = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel      = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const ddd           = getTag(blocoTel || bloco, ['ddd'])
+      const telefone      = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
       const dtAviso       = toDate(getTag(bloco, ['dtAviso', 'dtAvisoSinistro', 'dataAviso']))
       const dtOcorrencia  = toDate(getTag(bloco, ['dtOcorrencia', 'dataOcorrencia']))
+      const dtComunicacao = toDate(getTag(bloco, ['dtComunicacao', 'dataComunicacao']))
+      const dtAbertura    = toDate(getTag(bloco, ['dtAbertura', 'dataAbertura']))
       const dtEncerra     = toDate(getTag(bloco, ['dtEncerramento', 'dataEncerramento']))
+      const dtPagamento   = toDate(getTag(bloco, ['dtPagamento', 'dataPagamento']))
       const situacao      = getTag(bloco, ['situacao', 'StatusSinistro', 'statusSinistro'])
+      const fase          = getTag(bloco, ['fase', 'fasesinistro', 'faseSinistro'])
       const causa         = getTag(bloco, ['causa', 'dsCausa', 'natureza'])
+      const grupoCausa    = getTag(bloco, ['grupoCausa', 'cdGrupoCausa'])
+      const localOcorr    = getTag(bloco, ['localOcorrencia', 'enderecoOcorrencia', 'endereco'])
+      const ufOcorr       = getTag(bloco, ['ufOcorrencia', 'uf'])
+      const cidadeOcorr   = getTag(bloco, ['cidadeOcorrencia', 'cidade', 'municipio'])
+      const cepOcorr      = getTag(bloco, ['cepOcorrencia', 'cep'])
       const vlrIndeniz    = num(getTag(bloco, ['vlrIndenizacao', 'valorIndenizacao']))
       const vlrReserva    = num(getTag(bloco, ['vlrReserva', 'valorReserva']))
+      const vlrFranquia   = num(getTag(bloco, ['vlrFranquia']))
+      const vlrPag        = num(getTag(bloco, ['vlrPagamento']))
+      const vlrDespesas   = num(getTag(bloco, ['vlrDespesas', 'vlrDespesa']))
+      // Veículo do sinistro (auto)
+      const blocoAuto     = (getBlocks(bloco, ['DadosVeiculo', 'DadosSeguroAutomovel'])[0]) || ''
+      const placa         = getTag(blocoAuto, ['cdPlaca', 'placa'])
+      const chassi        = getTag(blocoAuto, ['chassi'])
+      const modelo        = getTag(blocoAuto, ['dsModelo', 'modelo'])
+      const fabricante    = getTag(blocoAuto, ['fabricante'])
+      const anoModelo     = getTag(blocoAuto, ['anoModelo'])
+      // Regulador / Vistoriador
+      const regulador     = getTag(bloco, ['regulador', 'nmRegulador'])
+      const vistoriador   = getTag(bloco, ['vistoriador', 'nmVistoriador'])
+      const nrProtocolo   = getTag(bloco, ['nrProtocolo', 'numProtocolo', 'numeroProtocolo'])
+      const observacao    = getTag(bloco, ['observacao', 'obs'])
+      // Corretor
+      const blocoCor      = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor    = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor    = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
 
       if (!numSinistro && !numApolice) { msgs.push('sinistro sem identificador'); erros++; continue }
 
@@ -649,25 +917,55 @@ async function processarSinistros(xml: string, importacaoId?: string | null) {
         || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numSinistro, numApolice } })
 
       const dadosBrutos = {
-        numSinistro, numApolice, numEndosso, ramo, produto,
+        numSinistro, numApolice, numEndosso, numProposta, ramo, produto, tipoSeguro,
         cpfCnpj, nome, situacao, causa, vlrIndenizacao: vlrIndeniz, vlrReserva,
+        bloco_xml: bloco.slice(0, 4000),
       }
 
       const payload: any = {
         numero_sinistro:   numSinistro || null,
         numero_apolice:    numApolice || null,
         numero_endosso:    numEndosso || null,
+        num_proposta:      numProposta || null,
         ramo:              ramo || null,
         produto:           produto || null,
+        tipo_seguro:       tipoSeguro || null,
         cpf_cnpj:          cpfCnpj || null,
         nome_segurado:     nome || null,
+        tp_pessoa:         tpPessoa || null,
+        email:             email || null,
+        ddd:               ddd || null,
+        telefone:          telefone || null,
         data_aviso:        dtAviso,
         data_ocorrencia:   dtOcorrencia,
+        data_comunicacao:  dtComunicacao,
+        data_abertura:     dtAbertura,
         data_encerramento: dtEncerra,
+        data_pagamento:    dtPagamento,
         situacao:          situacao || null,
+        fase:              fase || null,
         causa:             causa || null,
+        grupo_causa:       grupoCausa || null,
+        local_ocorrencia:  localOcorr || null,
+        uf_ocorrencia:     ufOcorr || null,
+        cidade_ocorrencia: cidadeOcorr || null,
+        cep_ocorrencia:    cepOcorr || null,
         valor_indenizacao: vlrIndeniz,
         valor_reserva:     vlrReserva,
+        vlr_franquia:      vlrFranquia,
+        vlr_pagamento:     vlrPag,
+        vlr_despesas:      vlrDespesas,
+        placa:             placa || null,
+        chassi:            chassi || null,
+        modelo:            modelo || null,
+        fabricante:        fabricante || null,
+        ano_modelo:        anoModelo || null,
+        regulador:         regulador || null,
+        vistoriador:       vistoriador || null,
+        nr_protocolo:      nrProtocolo || null,
+        observacao:        observacao || null,
+        cd_corretor:       cdCorretor || null,
+        nm_corretor:       nmCorretor || null,
         apolice_id:        apolice?.id || null,
         cliente_id:        clienteId || null,
         importacao_id:     importacaoId || null,
@@ -722,14 +1020,37 @@ async function processarRenovacoes(xml: string, importacaoId?: string | null) {
       const numRenovacao  = getTag(bloco, ['numRenovacao', 'numeroRenovacao'])
       const ramo          = getTag(bloco, ['ramo'])
       const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
       const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
       const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
-      const vigIni        = toDate(getTag(bloco, ['dtInicioVigencia', 'dtInicioVigenciaApolice', 'dtVigenciaInicio']))
-      const vigFim        = toDate(getTag(bloco, ['dtFimVigencia', 'dtFimVigenciaApolice', 'dtVigenciaFim']))
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const email         = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel      = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const telefone      = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
+      const vigIniAtual   = toDate(getTag(bloco, ['dtInicioVigenciaAtual', 'dtInicioVigenciaAnterior']))
+      const vigFimAtual   = toDate(getTag(bloco, ['dtFimVigenciaAtual', 'dtFimVigenciaAnterior']))
+      const vigIni        = toDate(getTag(bloco, ['dtInicioVigencia', 'dtInicioVigenciaApolice', 'dtVigenciaInicio', 'dtInicioVigenciaRenovacao']))
+      const vigFim        = toDate(getTag(bloco, ['dtFimVigencia', 'dtFimVigenciaApolice', 'dtVigenciaFim', 'dtFimVigenciaRenovacao']))
       const dtRenovacao   = toDate(getTag(bloco, ['dtRenovacao', 'dataRenovacao']))
+      const dtEmissao     = toDate(getTag(bloco, ['dtEmissao', 'dtEmissaoApolice']))
       const premioAtual   = num(getTag(bloco, ['vlrPremioAtual', 'vlrPremioAnterior']))
       const premioNovo    = num(getTag(bloco, ['vlrPremioRenovacao', 'vlrPremioNovo', 'vlrPremioTotal']))
+      const pcComissao    = num(getTag(bloco, ['pcComissao']))
+      const vlrComissao   = num(getTag(bloco, ['vlrComissao']))
+      const qtdParc       = parseInt(getTag(bloco, ['qtdeParcelas']) || '') || null
+      const formaPag      = getTag(bloco, ['formaPagamento', 'dsFormaCobranca'])
       const statusRen     = getTag(bloco, ['statusRenovacao', 'situacaoRenovacao', 'StatusApoliceEndosso'])
+      const situacaoRen   = getTag(bloco, ['situacaoRenovacao'])
+      const blocoAuto     = (getBlocks(bloco, ['DadosSeguroAutomovel'])[0]) || ''
+      const placa         = getTag(blocoAuto, ['cdPlaca', 'placa'])
+      const chassi        = getTag(blocoAuto, ['chassi'])
+      const modelo        = getTag(blocoAuto, ['dsModelo', 'modelo'])
+      const fabricante    = getTag(blocoAuto, ['fabricante'])
+      const anoModelo     = getTag(blocoAuto, ['anoModelo'])
+      const observacao    = getTag(bloco, ['observacao', 'obs'])
+      const blocoCor      = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor    = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor    = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
 
       if (!numApolice && !numProposta) { msgs.push('renovação sem identificador'); erros++; continue }
 
@@ -738,23 +1059,43 @@ async function processarRenovacoes(xml: string, importacaoId?: string | null) {
         || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numApolice, numProposta } })
 
       const payload: any = {
-        numero_apolice:   numApolice || null,
-        numero_proposta:  numProposta || null,
-        numero_renovacao: numRenovacao || null,
-        ramo:             ramo || null,
-        produto:          produto || null,
-        cpf_cnpj:         cpfCnpj || null,
-        nome_segurado:    nome || null,
-        vigencia_ini:     vigIni,
-        vigencia_fim:     vigFim,
-        data_renovacao:   dtRenovacao,
-        premio_atual:     premioAtual,
-        premio_renovacao: premioNovo,
-        status_renovacao: statusRen || null,
-        apolice_id:       apolice?.id || null,
-        cliente_id:       clienteId || null,
-        importacao_id:    importacaoId || null,
-        dados_brutos:     { numApolice, numProposta, numRenovacao, ramo, produto, statusRen },
+        numero_apolice:     numApolice || null,
+        numero_proposta:    numProposta || null,
+        numero_renovacao:   numRenovacao || null,
+        ramo:               ramo || null,
+        produto:            produto || null,
+        tipo_seguro:        tipoSeguro || null,
+        cpf_cnpj:           cpfCnpj || null,
+        nome_segurado:      nome || null,
+        tp_pessoa:          tpPessoa || null,
+        email:              email || null,
+        telefone:           telefone || null,
+        vigencia_ini:       vigIni,
+        vigencia_fim:       vigFim,
+        vigencia_ini_atual: vigIniAtual,
+        vigencia_fim_atual: vigFimAtual,
+        data_renovacao:     dtRenovacao,
+        data_emissao:       dtEmissao,
+        premio_atual:       premioAtual,
+        premio_renovacao:   premioNovo,
+        pc_comissao:        pcComissao,
+        vlr_comissao:       vlrComissao,
+        qtd_parcelas:       qtdParc,
+        forma_pagamento:    formaPag || null,
+        status_renovacao:   statusRen || null,
+        situacao_renovacao: situacaoRen || null,
+        placa:              placa || null,
+        chassi:             chassi || null,
+        modelo:             modelo || null,
+        fabricante:         fabricante || null,
+        ano_modelo:         anoModelo || null,
+        observacao:         observacao || null,
+        cd_corretor:        cdCorretor || null,
+        nm_corretor:        nmCorretor || null,
+        apolice_id:         apolice?.id || null,
+        cliente_id:         clienteId || null,
+        importacao_id:      importacaoId || null,
+        dados_brutos:       { bloco_xml: bloco.slice(0, 4000) },
       }
 
       // Dedup por (numero_apolice, vigencia_fim) quando temos os dois
@@ -801,14 +1142,27 @@ async function processarPendencias(xml: string, importacaoId?: string | null) {
       const numEndosso   = getTag(bloco, ['numEndosso', 'numeroEndosso'])
       const ramo         = getTag(bloco, ['ramo'])
       const produto      = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro   = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
       const cpfCnpj      = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
       const nome         = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa     = getTag(bloco, ['tpPessoa'])
+      const email        = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel     = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const telefone     = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
       const tipoPend     = getTag(bloco, ['tipoPendencia', 'tpPendencia', 'tipo'])
-      const descricao    = getTag(bloco, ['descricao', 'dsPendencia', 'observacao'])
+      const descricao    = getTag(bloco, ['descricao', 'dsPendencia'])
       const dtAbertura   = toDate(getTag(bloco, ['dtAbertura', 'dataAbertura']))
-      const dtLimite     = toDate(getTag(bloco, ['dtLimite', 'dataLimite', 'dtVencimento']))
+      const dtLimite     = toDate(getTag(bloco, ['dtLimite', 'dataLimite']))
+      const dtVencimento = toDate(getTag(bloco, ['dtVencimento']))
       const dtResolucao  = toDate(getTag(bloco, ['dtResolucao', 'dataResolucao']))
       const situacao     = getTag(bloco, ['situacao', 'StatusPendencia', 'status'])
+      const responsavel  = getTag(bloco, ['responsavel', 'nmResponsavel'])
+      const areaResp     = getTag(bloco, ['areaResponsavel', 'area'])
+      const prioridade   = getTag(bloco, ['prioridade'])
+      const observacao   = getTag(bloco, ['observacao', 'obs'])
+      const blocoCor     = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor   = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor   = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
 
       if (!numApolice && !numProposta) { msgs.push('pendência sem identificador'); erros++; continue }
 
@@ -817,23 +1171,34 @@ async function processarPendencias(xml: string, importacaoId?: string | null) {
         || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numApolice, numProposta, tipoPend } })
 
       const payload: any = {
-        numero_apolice:  numApolice || null,
-        numero_proposta: numProposta || null,
-        numero_endosso:  numEndosso || null,
-        ramo:            ramo || null,
-        produto:         produto || null,
-        cpf_cnpj:        cpfCnpj || null,
-        nome_segurado:   nome || null,
-        tipo_pendencia:  tipoPend || null,
-        descricao:       descricao || null,
-        data_abertura:   dtAbertura,
-        data_limite:     dtLimite,
-        data_resolucao:  dtResolucao,
-        situacao:        situacao || null,
-        apolice_id:      apolice?.id || null,
-        cliente_id:      clienteId || null,
-        importacao_id:   importacaoId || null,
-        dados_brutos:    { numApolice, numProposta, numEndosso, ramo, produto, situacao },
+        numero_apolice:    numApolice || null,
+        numero_proposta:   numProposta || null,
+        numero_endosso:    numEndosso || null,
+        ramo:              ramo || null,
+        produto:           produto || null,
+        tipo_seguro:       tipoSeguro || null,
+        cpf_cnpj:          cpfCnpj || null,
+        nome_segurado:     nome || null,
+        tp_pessoa:         tpPessoa || null,
+        email:             email || null,
+        telefone:          telefone || null,
+        tipo_pendencia:    tipoPend || null,
+        descricao:         descricao || null,
+        data_abertura:     dtAbertura,
+        data_limite:       dtLimite,
+        data_vencimento:   dtVencimento,
+        data_resolucao:    dtResolucao,
+        situacao:          situacao || null,
+        responsavel:       responsavel || null,
+        area_responsavel:  areaResp || null,
+        prioridade:        prioridade || null,
+        observacao:        observacao || null,
+        cd_corretor:       cdCorretor || null,
+        nm_corretor:       nmCorretor || null,
+        apolice_id:        apolice?.id || null,
+        cliente_id:        clienteId || null,
+        importacao_id:     importacaoId || null,
+        dados_brutos:      { bloco_xml: bloco.slice(0, 4000) },
       }
       const { error } = await supabaseAdmin().from('tokio_pendencias').insert(payload)
       if (error) { erros++; msgs.push(`${numApolice||numProposta}: ${error.message?.slice(0,80)}`); continue }
@@ -865,35 +1230,59 @@ async function processarRecusas(xml: string, importacaoId?: string | null) {
 
   for (const bloco of lista) {
     try {
-      const numProposta  = getTag(bloco, ['numProposta', 'NumProposta'])
-      const numApolice   = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
-      const numEndosso   = getTag(bloco, ['numEndosso', 'numeroEndosso'])
-      const ramo         = getTag(bloco, ['ramo'])
-      const produto      = getTag(bloco, ['Produto', 'produto'])
-      const cpfCnpj      = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
-      const nome         = getTag(bloco, ['nome', 'nomeSegurado'])
-      const dtRecusa     = toDate(getTag(bloco, ['dtRecusa', 'dataRecusa']))
-      const motivo       = getTag(bloco, ['motivoDeRecusa', 'motivoRecusa', 'motivo'])
-      const obs          = getTag(bloco, ['observacao', 'obs'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const email         = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel      = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const telefone      = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
+      const dtRecusa      = toDate(getTag(bloco, ['dtRecusa', 'dataRecusa']))
+      const dtSolicitacao = toDate(getTag(bloco, ['dtSolicitacao', 'dataSolicitacao']))
+      const motivo        = getTag(bloco, ['motivoDeRecusa', 'motivoRecusa', 'motivo'])
+      const codigoMotivo  = getTag(bloco, ['cdMotivo', 'codigoMotivo'])
+      const dsMotivo      = getTag(bloco, ['descricaoMotivo', 'dsMotivo'])
+      const areaRecusante = getTag(bloco, ['areaRecusante', 'area'])
+      const statusRecusa  = getTag(bloco, ['statusRecusa', 'situacao'])
+      const obs           = getTag(bloco, ['observacao', 'obs'])
+      const blocoCor      = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor    = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor    = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
 
       if (!numProposta && !numApolice) { msgs.push('recusa sem identificador'); erros++; continue }
 
       const clienteId = await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numProposta, numApolice, motivo } })
 
       const payload: any = {
-        numero_proposta: numProposta || null,
-        numero_apolice:  numApolice || null,
-        numero_endosso:  numEndosso || null,
-        ramo:            ramo || null,
-        produto:         produto || null,
-        cpf_cnpj:        cpfCnpj || null,
-        nome_segurado:   nome || null,
-        data_recusa:     dtRecusa,
-        motivo_recusa:   motivo || null,
-        observacao:      obs || null,
-        cliente_id:      clienteId || null,
-        importacao_id:   importacaoId || null,
-        dados_brutos:    { numProposta, numApolice, numEndosso, ramo, produto },
+        numero_proposta:  numProposta || null,
+        numero_apolice:   numApolice || null,
+        numero_endosso:   numEndosso || null,
+        ramo:             ramo || null,
+        produto:          produto || null,
+        tipo_seguro:      tipoSeguro || null,
+        cpf_cnpj:         cpfCnpj || null,
+        nome_segurado:    nome || null,
+        tp_pessoa:        tpPessoa || null,
+        email:            email || null,
+        telefone:         telefone || null,
+        data_recusa:      dtRecusa,
+        data_solicitacao: dtSolicitacao,
+        motivo_recusa:    motivo || null,
+        codigo_motivo:    codigoMotivo || null,
+        descricao_motivo: dsMotivo || null,
+        area_recusante:   areaRecusante || null,
+        status_recusa:    statusRecusa || null,
+        observacao:       obs || null,
+        cd_corretor:      cdCorretor || null,
+        nm_corretor:      nmCorretor || null,
+        cliente_id:       clienteId || null,
+        importacao_id:    importacaoId || null,
+        dados_brutos:     { bloco_xml: bloco.slice(0, 4000) },
       }
       const { error } = await supabaseAdmin().from('tokio_recusas').insert(payload)
       if (error) { erros++; msgs.push(`${numProposta||numApolice}: ${error.message?.slice(0,80)}`); continue }
@@ -955,9 +1344,9 @@ async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) 
   const importacaoId = (importacao as any)?.id || null
 
   let resultado: { importados: number; erros: number; msgs: string[] }
-  if      (tipo === 'APOLICES'  || tipo === 'ENDOSSOS') resultado = await processarApolices(xml)
-  else if (tipo === 'PARCELAS')   resultado = await processarParcelas(xml)
-  else if (tipo === 'COMISSOES')  resultado = await processarComissoes(xml)
+  if      (tipo === 'APOLICES'  || tipo === 'ENDOSSOS') resultado = await processarApolices(xml, importacaoId)
+  else if (tipo === 'PARCELAS')   resultado = await processarParcelas(xml, importacaoId)
+  else if (tipo === 'COMISSOES')  resultado = await processarComissoes(xml, importacaoId)
   else if (tipo === 'SINISTRO')   resultado = await processarSinistros(xml, importacaoId)
   else if (tipo === 'RENOVACAO')  resultado = await processarRenovacoes(xml, importacaoId)
   else if (tipo === 'PENDENCIA')  resultado = await processarPendencias(xml, importacaoId)
