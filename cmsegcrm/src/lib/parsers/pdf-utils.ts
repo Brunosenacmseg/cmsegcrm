@@ -122,8 +122,10 @@ export function pickChassi(block: string): string | null {
 }
 
 // Captura intervalo "DD/MM/AAAA até DD/MM/AAAA" (vigência). Retorna {ini, fim} ISO.
+// IMPORTANTE: usa `[^/\n]` em vez de `[^\d]` entre as datas para tolerar números
+// no meio do texto (ex.: "11/03/2026 às 24H de 11/03/2027" — "24" é dígito).
 export function pickVigencia(text: string): { ini: string | null; fim: string | null } {
-  const re = /(\d{2}\/\d{2}\/\d{4})[^\d]{1,40}?(\d{2}\/\d{2}\/\d{4})/
+  const re = /(\d{2}\/\d{2}\/\d{4})[^/\n]{1,80}?(\d{2}\/\d{2}\/\d{4})/
   const m = re.exec(text)
   return { ini: toIso(m?.[1]), fim: toIso(m?.[2]) }
 }

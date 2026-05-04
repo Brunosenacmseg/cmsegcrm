@@ -474,6 +474,7 @@ export default function SeguradoraDetalhePage() {
   const [sincronizando, setSincronizando] = useState(false)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [detalheRow, setDetalheRow] = useState<any | null>(null)
 
   useEffect(() => { init() }, [params?.id])
   useEffect(() => { carregarLinhas() }, [params?.id, aba])
@@ -819,6 +820,7 @@ export default function SeguradoraDetalhePage() {
                   {aba === 'inadimplencia' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Parcela</th><th style={th}>Vencimento</th><th style={th}>Valor</th><th style={th}>Atraso</th></>}
                   {aba === 'comissoes' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Competência</th><th style={th}>Parcela</th><th style={th}>Valor</th></>}
                   <th style={th}>Erro</th>
+                  <th style={th}></th>
                 </tr>
               </thead>
               <tbody>
@@ -863,6 +865,13 @@ export default function SeguradoraDetalhePage() {
                       <td style={td}>{fmt(l.comissao_valor)}</td>
                     </>}
                     <td style={{ ...td, color:'var(--red)', fontSize:11 }}>{l.erro_msg || ''}</td>
+                    <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }}>
+                      <button
+                        onClick={() => setDetalheRow(l)}
+                        style={{ background:'none', border:'1px solid var(--border)', color:'var(--text-muted)', padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11 }}
+                        title="Ver todos os campos extraídos"
+                      >👁 Detalhes</button>
+                    </td>
                   </tr>
                 ))}
                 {!linhas.length && (
@@ -875,6 +884,65 @@ export default function SeguradoraDetalhePage() {
           </div>
         )}
       </div>
+
+      {/* Modal "Ver detalhes" — mostra TODOS os campos extraídos da linha de staging */}
+      {detalheRow && (
+        <div
+          onClick={() => setDetalheRow(null)}
+          style={{
+            position:'fixed', inset:0, background:'rgba(0,0,0,0.6)',
+            display:'flex', alignItems:'center', justifyContent:'center', zIndex:50,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8,
+              maxWidth:900, width:'90vw', maxHeight:'85vh', overflow:'auto', padding:24,
+            }}
+          >
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+              <h3 style={{ margin:0, color:'var(--text)' }}>
+                Detalhes da linha importada
+                <span style={{ fontSize:12, color:'var(--text-muted)', marginLeft:8 }}>
+                  ({Object.keys(detalheRow).filter(k => detalheRow[k] != null && detalheRow[k] !== '' && k !== 'pdf_texto_bruto' && k !== 'dados').length} campos preenchidos)
+                </span>
+              </h3>
+              <button
+                onClick={() => setDetalheRow(null)}
+                style={{ background:'none', border:'1px solid var(--border)', color:'var(--text)', padding:'4px 12px', borderRadius:6, cursor:'pointer' }}
+              >Fechar</button>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px', fontSize:12 }}>
+              {Object.entries(detalheRow)
+                .filter(([k, v]) => v != null && v !== '' && k !== 'pdf_texto_bruto' && k !== 'dados' && k !== 'id' && k !== 'seguradora_id' && k !== 'importacao_id')
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([k, v]) => (
+                  <div key={k} style={{ padding:'4px 0', borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ color:'var(--text-muted)', fontFamily:'monospace', fontSize:11 }}>{k}: </span>
+                    <span style={{ color:'var(--text)', wordBreak:'break-word' }}>
+                      {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                    </span>
+                  </div>
+                ))}
+            </div>
+
+            {detalheRow.pdf_texto_bruto && (
+              <details style={{ marginTop:20 }}>
+                <summary style={{ cursor:'pointer', color:'var(--text-muted)', fontSize:12, marginBottom:8 }}>
+                  📄 Texto bruto extraído do PDF (debug — primeiros 6KB)
+                </summary>
+                <pre style={{
+                  background:'var(--bg-soft, rgba(255,255,255,0.03))', padding:12, borderRadius:6,
+                  fontSize:11, lineHeight:1.4, whiteSpace:'pre-wrap', maxHeight:400, overflow:'auto',
+                  color:'var(--text-muted)',
+                }}>{detalheRow.pdf_texto_bruto}</pre>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
