@@ -108,6 +108,44 @@ function decodificarLatin(buf: ArrayBuffer): string {
   return new TextDecoder('windows-1252').decode(new Uint8Array(buf))
 }
 
+// Parser .APP/.API tipo 50 — segurado principal (com nome + CPF/CNPJ).
+// Layout 120 bytes/linha, posições 1-indexed conforme spec da Porto.
+// Filtro: pos 1-2 = "00" E pos 18-21 = "0050" E pos 22 = "1"
+function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
+  if (l.length !== 120) return {}
+  const subs = (a: number, b: number) => l.substring(a - 1, b)
+
+  // Filtros
+  if (subs(1, 2) !== '00') return {}        // só registros de detalhe
+  if (subs(18, 21) !== '0050') return {}    // só tipo 50 (segurado)
+  if (subs(22, 22) !== '1') return {}       // só ocorrência principal (nome+CPF)
+
+  const numero_apolice = subs(3, 13).replace(/^0+/, '') || subs(3, 13)
+  const endosso = subs(18, 19)
+  const cliente_nome = subs(31, 80).trim()
+  const tipoPessoa = subs(81, 81) // 'F' ou 'J'
+  const doc14 = subs(85, 98)
+  const cpf_cnpj = tipoPessoa === 'F' ? doc14.slice(0, 11) : doc14
+
+  // Data Nascimento (PF) — DD/MM/AAAA — só preenche se for válida
+  let data_nascimento: string | null = null
+  if (tipoPessoa === 'F') {
+    const dn = subs(100, 109).trim()
+    const m = dn.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    if (m) data_nascimento = `${m[3]}-${m[2]}-${m[1]}`
+  }
+
+  return {
+    numero_apolice,
+    endosso,
+    cliente_nome,
+    tipo_pessoa: tipoPessoa,
+    cpf_cnpj,
+    data_nascimento,
+    sexo: tipoPessoa === 'F' ? subs(116, 116).trim() : null,
+  }
+}
+
 // Lê arquivo .RET (Porto). É um ZIP contendo um payload CNAB
 // (250 bytes/linha em CP1252). Extrai e devolve as linhas crus em
 // `linha_raw`, junto com o tipo deduzido pela extensão interna
@@ -139,38 +177,37 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
   if (tipoArquivo === 'CBS' || texto.length < 200) {
     throw new Error(`Arquivo .CBS é uma mensagem da Porto, não dado: "${texto.slice(0, 150).trim()}"`)
   }
-  // Outros tipos (.APP/.API/.SRE/.IRE/.VDN/.XPP/.XPI) ainda não têm parser
-  // de campos. Aguardando posições oficiais do manual.
-  if (tipoArquivo && tipoArquivo !== 'COM') {
-    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Atualmente só .COM (Comissões) está pronto. Aguardando posições oficiais.`)
+  // Tipos com parser implementado: COM (250b), APP/API (120b)
+  // Outros (.SRE/.IRE/.VDN/.XPP/.XPI) ainda aguardam posições.
+  if (tipoArquivo && !['COM', 'APP', 'API'].includes(tipoArquivo)) {
+    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Disponíveis: .COM (Comissões), .APP/.API (Apólices). Aguardando posições oficiais dos demais.`)
   }
 
-  // Quebra em linhas. Tenta vários separadores; se nada bater, força
-  // chunks fixos de 250 chars (alguns layouts CNAB não têm separador).
+  // Tamanho da linha varia por tipo
+  const tamLinha = tipoArquivo === 'APP' || tipoArquivo === 'API' ? 120 : 250
+
+  // Quebra em linhas. Tenta separadores; se nada bater, chunks fixos.
   let linhas = texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-  // Filtra vazias
   linhas = linhas.filter(l => l.length > 0)
-  // Se a maioria não tem 250, talvez não tenha separador — quebra fixo
-  const com250 = linhas.filter(l => l.length === 250).length
-  if (linhas.length === 0 || com250 / Math.max(linhas.length, 1) < 0.5) {
-    // Força chunks de 250
+  const corretas = linhas.filter(l => l.length === tamLinha).length
+  if (linhas.length === 0 || corretas / Math.max(linhas.length, 1) < 0.5) {
     const limpo = texto.replace(/[\r\n]/g, '')
     linhas = []
-    for (let i = 0; i + 250 <= limpo.length; i += 250) linhas.push(limpo.substr(i, 250))
+    for (let i = 0; i + tamLinha <= limpo.length; i += tamLinha) linhas.push(limpo.substr(i, tamLinha))
   }
-  // Mantém só as de 250 (descarta header/trailer com tamanhos diferentes)
-  const linhas250 = linhas.filter(l => l.length === 250)
-  if (linhas250.length === 0) {
-    throw new Error(`Porto: nenhuma linha de 250 chars encontrada. Diagnóstico: total=${linhas.length}, tamanhos=${[...new Set(linhas.slice(0,5).map(l=>l.length))].join(',')}, primeiros chars: "${(linhas[0]||'').slice(0,40)}..."`)
+  const linhasOK = linhas.filter(l => l.length === tamLinha)
+  if (linhasOK.length === 0) {
+    throw new Error(`Porto .${tipoArquivo}: nenhuma linha de ${tamLinha} chars encontrada. total=${linhas.length}, tamanhos=${[...new Set(linhas.slice(0,5).map(l=>l.length))].join(',')}`)
   }
-  // Para .COM: só envia linhas de detalhe (com nº apólice válido).
-  // Outros tipos: envia tudo guardando linha_raw para análise posterior.
+
   const rows: Record<string, any>[] = []
-  for (let i = 0; i < linhas250.length; i++) {
-    const l = linhas250[i]
-    const parsed = tipoArquivo === 'COM' ? parseLinhaPortoCOM(l) : {}
-    // Pula header/trailer do .COM
-    if (tipoArquivo === 'COM' && !(parsed as any).numero_apolice) continue
+  for (let i = 0; i < linhasOK.length; i++) {
+    const l = linhasOK[i]
+    let parsed: Record<string, any> = {}
+    if (tipoArquivo === 'COM') parsed = parseLinhaPortoCOM(l)
+    else if (tipoArquivo === 'APP' || tipoArquivo === 'API') parsed = parseLinhaPortoAPPAPI(l)
+    // Pula linhas que não foram reconhecidas como detalhe
+    if (!(parsed as any).numero_apolice) continue
     rows.push({
       linha_num: i + 1,
       tipo_arquivo: tipoArquivo,
@@ -178,6 +215,9 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
       linha_raw: l,
       ...parsed,
     })
+  }
+  if (rows.length === 0) {
+    throw new Error(`Porto .${tipoArquivo}: ${linhasOK.length} linhas lidas, nenhuma é registro de detalhe (verifique se o filtro do layout está correto).`)
   }
   return { rows, tipoArquivo }
 }
