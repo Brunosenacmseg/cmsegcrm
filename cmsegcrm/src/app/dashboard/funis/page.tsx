@@ -974,13 +974,15 @@ function FunisPage() {
           )}
         </div>
 
+        {(profile?.role === 'admin' || profile?.role === 'lider') && (
+          <button onClick={() => { if (modoSelecao) sairModoSelecao(); else setModoSelecao(true) }}
+            style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background: modoSelecao?'rgba(74,128,240,0.15)':'rgba(255,255,255,0.04)',color: modoSelecao?'#4a80f0':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+            title="Modo seleção em massa">
+            {modoSelecao ? '✕ Sair da seleção' : '☑ Selecionar em massa'}
+          </button>
+        )}
         {profile?.role === 'admin' && (
           <>
-            <button onClick={() => { if (modoSelecao) sairModoSelecao(); else setModoSelecao(true) }}
-              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background: modoSelecao?'rgba(74,128,240,0.15)':'rgba(255,255,255,0.04)',color: modoSelecao?'#4a80f0':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
-              title="Modo seleção em massa (admin)">
-              {modoSelecao ? '✕ Sair da seleção' : '☑ Selecionar em massa'}
-            </button>
             <button onClick={normalizarFunis}
               style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
               title="Encontra negociações duplicadas (mesmo cliente, mesmo funil, mesmo título) e unifica em uma só (admin)">
@@ -998,8 +1000,8 @@ function FunisPage() {
         </button>
       </div>
 
-      {/* Barra de ações em massa (admin) */}
-      {profile?.role === 'admin' && modoSelecao && (
+      {/* Barra de ações em massa (admin/lider) */}
+      {(profile?.role === 'admin' || profile?.role === 'lider') && modoSelecao && (
         <div style={{padding:'10px 20px',background:'#0f1729',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',position:'sticky',top:0,zIndex:50}}>
           <span style={{fontSize:13,color:'#fff',fontWeight:600}}>
             {selecionados.size} selecionada(s)
@@ -1061,10 +1063,12 @@ function FunisPage() {
             title={selecionados.size ? 'Exporta selecionadas' : 'Exporta todas as visíveis'}>
             📥 Exportar {selecionados.size ? `(${selecionados.size})` : 'visíveis'}
           </button>
-          <button onClick={bulkExcluir} disabled={!selecionados.size || bulkLoading}
-            style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.6)',background:'rgba(224,82,82,0.2)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
-            🗑 Excluir selecionadas
-          </button>
+          {profile?.role === 'admin' && (
+            <button onClick={bulkExcluir} disabled={!selecionados.size || bulkLoading}
+              style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.6)',background:'rgba(224,82,82,0.2)',color:'#fff',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
+              🗑 Excluir selecionadas
+            </button>
+          )}
           {bulkLoading && <span style={{fontSize:11,color:'#aaa'}}>⏳ aplicando…</span>}
         </div>
       )}
