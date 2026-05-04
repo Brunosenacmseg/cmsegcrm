@@ -25,7 +25,7 @@ export default function ContasPagarPage() {
   const [categorias, setCategorias] = useState<any[]>([])
 
   const [modal, setModal] = useState(false)
-  const empty = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', categoria_id:'', file:null as File|null }
+  const empty = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', categoria_id:'', files: [] as File[] }
   const [form, setForm] = useState<any>(empty)
   const [salvando, setSalvando] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -51,35 +51,30 @@ export default function ContasPagarPage() {
 
   async function carregar() {
     let q = supabase.from('contas_pagar')
-      .select('*, criado:criado_por(nome), aprovado:aprovado_por(nome), pago:pago_por(nome), anexo:anexo_id(path,bucket,nome_arquivo), categoria:categoria_id(codigo,nome)')
+      .select('*, criado:criado_por(nome), aprovado:aprovado_por(nome), pago:pago_por(nome), anexo:anexo_id(id,path,bucket,nome_arquivo), anexos_extra:anexos!conta_pagar_id(id,path,bucket,nome_arquivo), categoria:categoria_id(codigo,nome)')
       .eq('tipo', aba)
       .order('vencimento', { ascending: true })
     if (filtroStatus !== 'todos') q = q.eq('status', filtroStatus)
     const { data } = await q
-    setContas(data || [])
+    const merged = (data || []).map((c: any) => {
+      const lista: any[] = []
+      const seen = new Set<string>()
+      if (c.anexo) { lista.push(c.anexo); seen.add(c.anexo.id) }
+      for (const a of (c.anexos_extra || [])) {
+        if (!seen.has(a.id)) { lista.push(a); seen.add(a.id) }
+      }
+      return { ...c, anexos_lista: lista }
+    })
+    setContas(merged)
   }
 
   async function salvar() {
     if (!form.nome.trim() || !form.valor || !form.vencimento) return
     if (!profile?.id) return
     setSalvando(true)
-    let anexoId: string | null = null
     try {
-      if (form.file) {
-        const ts = Date.now()
-        const safe = form.file.name.replace(/[^\w.\-]/g,'_')
-        const path = `contas_pagar/${profile.id}/${ts}_${safe}`
-        const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, form.file)
-        if (errUp) { alert('Erro upload PDF: '+errUp.message); setSalvando(false); return }
-        const { data: anx } = await supabase.from('anexos').insert({
-          bucket:'cmsegcrm', path, nome_arquivo: form.file.name,
-          tipo_mime: form.file.type, tamanho_kb: Math.round(form.file.size/1024),
-          categoria: 'outro', user_id: profile.id,
-        }).select('id').single()
-        anexoId = anx?.id || null
-      }
       const valor = parseFloat(String(form.valor).replace(/[R$\s.]/g,'').replace(',','.'))
-      const { error } = await supabase.from('contas_pagar').insert({
+      const { data: conta, error } = await supabase.from('contas_pagar').insert({
         tipo: aba,
         nome: form.nome.trim(),
         valor,
@@ -87,10 +82,25 @@ export default function ContasPagarPage() {
         descricao: form.descricao || null,
         fornecedor: form.fornecedor || null,
         categoria_id: form.categoria_id || null,
-        anexo_id: anexoId,
         criado_por: profile.id,
-      })
-      if (error) { alert('Erro: '+error.message); return }
+      }).select('id').single()
+      if (error || !conta) { alert('Erro: '+(error?.message||'falha ao criar conta')); return }
+
+      const arquivos: File[] = form.files || []
+      for (const file of arquivos) {
+        const ts = Date.now()
+        const safe = file.name.replace(/[^\w.\-]/g,'_')
+        const path = `contas_pagar/${profile.id}/${ts}_${safe}`
+        const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, file)
+        if (errUp) { alert(`Erro upload "${file.name}": `+errUp.message); continue }
+        await supabase.from('anexos').insert({
+          bucket:'cmsegcrm', path, nome_arquivo: file.name,
+          tipo_mime: file.type, tamanho_kb: Math.round(file.size/1024),
+          categoria: 'outro', user_id: profile.id,
+          conta_pagar_id: conta.id,
+        })
+      }
+
       setModal(false); setForm(empty)
       await carregar()
     } finally { setSalvando(false) }
@@ -250,9 +260,13 @@ export default function ContasPagarPage() {
                   {c.obs_admin && <div style={{fontSize:11,padding:'5px 8px',background:'rgba(255,255,255,0.04)',borderRadius:6,marginBottom:8,fontStyle:'italic'}}>💬 {c.obs_admin}</div>}
 
                   <div style={{display:'flex',gap:6,marginTop:'auto',flexWrap:'wrap'}}>
-                    {c.anexo && (
-                      <button onClick={()=>baixarAnexo(c.anexo)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>📄 Ver PDF</button>
-                    )}
+                    {(c.anexos_lista || []).map((a: any, i: number) => (
+                      <button key={a.id} onClick={()=>baixarAnexo(a)}
+                        title={a.nome_arquivo}
+                        style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        📄 {(c.anexos_lista.length > 1) ? `PDF ${i+1}` : 'Ver PDF'}
+                      </button>
+                    ))}
                     {isAdmin && c.status === 'pendente' && (
                       <>
                         {aba === 'compra_aprovacao' && (
@@ -361,11 +375,25 @@ export default function ContasPagarPage() {
                   placeholder="Razão social/CNPJ" style={inp} />
               </div>
               <div>
-                <label style={lbl}>Anexar PDF/Boleto</label>
-                <input ref={fileRef} type="file" accept="application/pdf,image/*"
-                  onChange={e=>setForm((f:any)=>({...f,file:e.target.files?.[0]||null}))}
+                <label style={lbl}>Anexar PDF/Boleto (vários)</label>
+                <input ref={fileRef} type="file" accept="application/pdf,image/*" multiple
+                  onChange={e=>{
+                    const novos = Array.from(e.target.files || [])
+                    setForm((f:any)=>({...f, files: [...(f.files||[]), ...novos]}))
+                    if (fileRef.current) fileRef.current.value = ''
+                  }}
                   style={{...inp,padding:'7px 13px'}} />
-                {form.file && <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>{form.file.name} · {Math.round(form.file.size/1024)} KB</div>}
+                {form.files?.length > 0 && (
+                  <div style={{marginTop:6,display:'flex',flexDirection:'column',gap:3}}>
+                    {form.files.map((f: File, i: number) => (
+                      <div key={i} style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📄 {f.name} · {Math.round(f.size/1024)} KB</span>
+                        <button type="button" onClick={()=>setForm((fr:any)=>({...fr, files: fr.files.filter((_:any,idx:number)=>idx!==i)}))}
+                          style={{padding:'1px 6px',borderRadius:4,fontSize:10,border:'1px solid var(--border)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
