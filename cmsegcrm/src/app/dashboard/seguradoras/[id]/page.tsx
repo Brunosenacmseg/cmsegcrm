@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-declare global { interface Window { XLSX: any } }
+declare global { interface Window { XLSX: any; JSZip: any } }
 
 type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes'
 type Aba = Tipo | 'relatorio_clientes'
@@ -28,6 +28,17 @@ async function loadXLSX() {
   await new Promise<void>((res, rej) => {
     const s = document.createElement('script')
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+    s.onload = () => res(); s.onerror = rej
+    document.head.appendChild(s)
+  })
+}
+
+async function loadJSZip() {
+  if (typeof window === 'undefined') return
+  if (window.JSZip) return
+  await new Promise<void>((res, rej) => {
+    const s = document.createElement('script')
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
     s.onload = () => res(); s.onerror = rej
     document.head.appendChild(s)
   })
@@ -65,6 +76,79 @@ function lerArquivo(buf: ArrayBuffer): Record<string, any>[] {
 function decodificarLatin(buf: ArrayBuffer): string {
   // TextDecoder com windows-1252 cobre o conjunto Latin1 + extras (€, etc.)
   return new TextDecoder('windows-1252').decode(new Uint8Array(buf))
+}
+
+// Lê arquivo .RET (Porto). É um ZIP contendo um payload CNAB
+// (250 bytes/linha em CP1252). Extrai e devolve as linhas crus em
+// `linha_raw`, junto com o tipo deduzido pela extensão interna
+// (.COM, .CBS, .VDN, .SRE, .XPP, .XPI, .IRE, .APP, .API).
+//
+// Os parsers de layout específicos (mapeamento de posições) são
+// ativados conforme o layout oficial da Porto for documentado.
+async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ rows: Record<string, any>[]; tipoArquivo: string | null }> {
+  await loadJSZip()
+  let texto = ''
+  let nomeInterno = nomeOriginal
+  // Tenta como ZIP primeiro
+  try {
+    const zip = await window.JSZip.loadAsync(buf)
+    const nomes = Object.keys(zip.files).filter((k: string) => !zip.files[k].dir)
+    if (nomes.length === 0) throw new Error('zip vazio')
+    nomeInterno = nomes[0]
+    const innerBuf: ArrayBuffer = await zip.files[nomeInterno].async('arraybuffer')
+    texto = decodificarLatin(innerBuf)
+  } catch {
+    // Não é ZIP — assume texto plano em CP1252
+    texto = decodificarLatin(buf)
+  }
+  // Identifica tipo pela extensão (.COM, .CBS, etc.)
+  const m = nomeInterno.toLowerCase().match(/\.([a-z]{3})$/)
+  const tipoArquivo = m ? m[1].toUpperCase() : null
+
+  // Quebra em linhas (LF ou CRLF). Mantém apenas linhas com 250 chars
+  // (estrutura CNAB esperada).
+  const linhas = texto.replace(/\r\n/g, '\n').split('\n').filter(l => l.length === 250)
+  // Por enquanto guarda tudo bruto; parser de cada layout vem em PR seguinte
+  // quando tivermos o spec/amostras reais.
+  const rows = linhas.map((l, i) => ({
+    linha_num: i + 1,
+    tipo_arquivo: tipoArquivo,
+    nome_interno: nomeInterno,
+    linha_raw: l,
+    // Heurística geral por extensão (será substituída por mapping fixo
+    // assim que tivermos as posições oficiais):
+    ...(tipoArquivo === 'COM' ? parseLinhaPortoCOM(l) : {}),
+  }))
+  return { rows, tipoArquivo }
+}
+
+// Parser tentativo do layout COM (Comissões Porto). As posições abaixo
+// são CHUTES baseados em layouts CNAB típicos — ATENÇÃO: serão revistas
+// quando o usuário fornecer 5+ linhas reais decodificadas em CP1252 ou
+// o manual oficial da Porto.
+function parseLinhaPortoCOM(l: string): Record<string, any> {
+  if (l.length !== 250) return {}
+  // Layout TENTATIVO (preliminary guess) — baseado em padrões CNAB
+  const tipo = l.substring(0, 1).trim()              // tipo de registro
+  if (tipo !== '1') return {}                         // só registros de detalhe
+  return {
+    // Estes nomes seguem o que o backend já reconhece via heurística:
+    numero_apolice: l.substring(1, 13).trim(),
+    cpf_cnpj:       l.substring(13, 27).trim(),
+    cliente_nome:   l.substring(27, 67).trim(),
+    competencia:    l.substring(67, 73).trim(),
+    valor_premio:   parseValorCNAB(l.substring(73, 88)),
+    pc_comissao:    parseValorCNAB(l.substring(88, 95), 4),
+    valor_comissao: parseValorCNAB(l.substring(95, 110)),
+  }
+}
+
+// Valor CNAB: número como string com `decimais` casas implícitas.
+// Ex: "000000000123450" com 2 decimais = 1234.50
+function parseValorCNAB(s: string, decimais = 2): number {
+  const n = Number(s.trim())
+  if (!isFinite(n)) return 0
+  return n / Math.pow(10, decimais)
 }
 
 // Lê Tokio XML (Comissoes). Extrai cada <DetalheComissao> como uma linha.
@@ -180,11 +264,6 @@ export default function SeguradoraDetalhePage() {
       e.target.value = ''
       return
     }
-    if (lower.endsWith('.ret')) {
-      setMsg({ tipo: 'err', texto: 'Arquivos .RET (Porto) precisam do layout fixo CNAB para serem parseados. Em breve — preciso do manual de layout da Porto pra mapear as colunas.' })
-      e.target.value = ''
-      return
-    }
     setImportando(true)
     try {
       const buf = await file.arrayBuffer()
@@ -194,6 +273,13 @@ export default function SeguradoraDetalhePage() {
       if (lower.endsWith('.xml')) {
         formato = 'xml'
         linhasArq = lerTokioXML(buf)
+      } else if (lower.endsWith('.ret') || lower.endsWith('.com') || lower.endsWith('.cbs') || lower.endsWith('.vdn') || lower.endsWith('.sre') || lower.endsWith('.xpp') || lower.endsWith('.xpi') || lower.endsWith('.ire') || lower.endsWith('.app') || lower.endsWith('.api')) {
+        formato = 'ret' as any
+        const r = await lerPortoRET(buf, file.name)
+        linhasArq = r.rows
+        if (r.tipoArquivo && r.tipoArquivo !== 'COM' && aba === 'comissoes') {
+          setMsg({ tipo: 'err', texto: `Arquivo Porto tipo .${r.tipoArquivo} ainda não tem parser de campos. Por enquanto, só .COM (Comissões) está com mapeamento tentativo. As linhas brutas serão guardadas em 'dados'.` })
+        }
       } else {
         formato = lower.endsWith('.csv') ? 'csv' : 'xlsx'
         await loadXLSX()
@@ -312,7 +398,7 @@ export default function SeguradoraDetalhePage() {
             <input
               ref={inputRef}
               type="file"
-              accept=".xlsx,.xls,.csv,.xml,.pdf"
+              accept=".xlsx,.xls,.csv,.xml,.ret,.com,.cbs,.vdn,.sre,.xpp,.xpi,.ire,.app,.api,.pdf"
               onChange={onSelecionarArquivo}
               disabled={importando}
               style={{
