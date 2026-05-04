@@ -620,6 +620,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :
     tipo === 'sinistros'     ? mapSinistro :
     tipo === 'inadimplencia' ? mapInadimplencia :
+    tipo === 'propostas'     ? mapProposta :
     (tipo === 'comissoes' && isEzze) ? mapComissaoEzze :
                                 mapComissao
   const payloads = linhas.map(r => mapper(r, params.id, importacao_id))
