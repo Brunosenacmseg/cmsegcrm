@@ -189,16 +189,15 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
     texto = decodificarLatin(buf)
   }
   // Identifica tipo pela extensão (.COM, .CBS, etc.)
-  // Identifica tipo pela extensão. Prioriza o nome ORIGINAL do arquivo
-  // (que costuma ter a extensão do tipo Porto: .COM, .APP, etc.).
-  // Cai pro nome interno do ZIP se o externo não tiver.
+  // Identifica tipo procurando 1 dos 9 sufixos Porto conhecidos no nome,
+  // ignorando o wrapper .ret. Aceita ".COM", "_E.COM", "_ECOM", "_ECOM.ret".
   function extTipo(nome: string): string | null {
     const lower = nome.toLowerCase()
-    const m = lower.match(/\.([a-z]{3})(?:\.ret)?$/)
-    if (m) return m[1].toUpperCase()
-    // Tenta o sufixo após underscore: J8FXUJ004839_ECOM
-    const m2 = lower.match(/_e?([a-z]{3})$/)
-    if (m2) return m2[1].toUpperCase()
+    const TIPOS = ['com','cbs','vdn','sre','xpp','xpi','ire','app','api']
+    for (const t of TIPOS) {
+      const re = new RegExp(`(?:[._]e?${t})(?:\\.ret)?$`, 'i')
+      if (re.test(lower)) return t.toUpperCase()
+    }
     return null
   }
   const tipoArquivo = extTipo(nomeOriginal) || extTipo(nomeInterno)
