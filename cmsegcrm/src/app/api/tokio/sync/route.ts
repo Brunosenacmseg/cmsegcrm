@@ -13,10 +13,17 @@ function supabaseAdmin() {
 
 // ─── Webservice Tokio Marine ─────────────────────────────────
 // Endpoints podem ser sobrescritos via env (TOKIO_BASE / TOKIO_LOGIN_PATH).
-// Default tenta o caminho informado pelo cliente; ajuste se a Tokio
-// retornar 404.
+// Default segue a documentação oficial do wscorretor:
+//   POST  /Corretor/Login        → autenticação (retorna token)
+//   GET   /Corretor/getApolice   → propostas, apólices e endossos
+//   GET   /Corretor/getParcela   → parcelas pagas ao corretor
+//   GET   /Corretor/getExtratoComiss → extrato de comissões
+//   GET   /Corretor/getSinistro  → dados de sinistros
+//   GET   /Corretor/getRenovacao → dados de renovação
+//   GET   /Corretor/getPendencia → pendências do corretor
+//   GET   /Corretor/getRecusa    → recusas, apólices e endossos
 const TOKIO_BASE        = process.env.TOKIO_BASE        || 'https://servicos.tokiomarine.com.br/wscorretor/rest'
-const TOKIO_LOGIN_PATH  = process.env.TOKIO_LOGIN_PATH  || '/login'
+const TOKIO_LOGIN_PATH  = process.env.TOKIO_LOGIN_PATH  || '/Corretor/Login'
 const TOKIO_USER        = process.env.TOKIO_USER        || ''
 const TOKIO_PASSWORD    = process.env.TOKIO_PASSWORD    || ''
 const TOKIO_SERVICE_KEY = process.env.TOKIO_SERVICE_KEY || ''
@@ -98,7 +105,13 @@ async function tokioLogin(force = false): Promise<string> {
 async function tokioGet(servico: string, params: Record<string,string|number> = {}): Promise<string> {
   let token = await tokioLogin()
   const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
-  const url = `${TOKIO_BASE}/${servico}${qs ? `?${qs}` : ''}`
+  // `servico` aceita tanto o nome curto ("getApolice") quanto o caminho
+  // completo ("/Corretor/getApolice"). Quando vier curto, prefixamos
+  // com /Corretor/ conforme documentação oficial.
+  const path = servico.startsWith('/') ? servico
+             : servico.startsWith('Corretor/') ? `/${servico}`
+             : `/Corretor/${servico}`
+  const url = `${TOKIO_BASE}${path}${qs ? `?${qs}` : ''}`
   const headers = (t: string) => ({
     ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
@@ -601,19 +614,335 @@ async function processarComissoes(xml: string) {
   return { importados, erros, msgs }
 }
 
+// ─── PROCESSAR SINISTROS ─────────────────────────────────────
+// Layout esperado do getSinistro: blocos <DadosSinistro> ou
+// <Sinistro> contendo numSinistro, numApolice, dtAviso,
+// dtOcorrencia, vlrIndenizacao, etc. Como a Tokio mistura nomes
+// de tags, aceitamos múltiplos aliases.
+async function processarSinistros(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosSinistro', 'Sinistro', 'sinistro'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosSinistro', 'Sinistro'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numSinistro   = getTag(bloco, ['numSinistro', 'numeroSinistro', 'nrSinistro'])
+      const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const dtAviso       = toDate(getTag(bloco, ['dtAviso', 'dtAvisoSinistro', 'dataAviso']))
+      const dtOcorrencia  = toDate(getTag(bloco, ['dtOcorrencia', 'dataOcorrencia']))
+      const dtEncerra     = toDate(getTag(bloco, ['dtEncerramento', 'dataEncerramento']))
+      const situacao      = getTag(bloco, ['situacao', 'StatusSinistro', 'statusSinistro'])
+      const causa         = getTag(bloco, ['causa', 'dsCausa', 'natureza'])
+      const vlrIndeniz    = num(getTag(bloco, ['vlrIndenizacao', 'valorIndenizacao']))
+      const vlrReserva    = num(getTag(bloco, ['vlrReserva', 'valorReserva']))
+
+      if (!numSinistro && !numApolice) { msgs.push('sinistro sem identificador'); erros++; continue }
+
+      const apolice = numApolice ? await buscarApolicePorNumero(numApolice) : null
+      const clienteId = apolice?.cliente_id
+        || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numSinistro, numApolice } })
+
+      const dadosBrutos = {
+        numSinistro, numApolice, numEndosso, ramo, produto,
+        cpfCnpj, nome, situacao, causa, vlrIndenizacao: vlrIndeniz, vlrReserva,
+      }
+
+      const payload: any = {
+        numero_sinistro:   numSinistro || null,
+        numero_apolice:    numApolice || null,
+        numero_endosso:    numEndosso || null,
+        ramo:              ramo || null,
+        produto:           produto || null,
+        cpf_cnpj:          cpfCnpj || null,
+        nome_segurado:     nome || null,
+        data_aviso:        dtAviso,
+        data_ocorrencia:   dtOcorrencia,
+        data_encerramento: dtEncerra,
+        situacao:          situacao || null,
+        causa:             causa || null,
+        valor_indenizacao: vlrIndeniz,
+        valor_reserva:     vlrReserva,
+        apolice_id:        apolice?.id || null,
+        cliente_id:        clienteId || null,
+        importacao_id:     importacaoId || null,
+        dados_brutos:      dadosBrutos,
+      }
+
+      // Sem numSinistro não há como deduplicar — insere sempre
+      if (numSinistro) {
+        const { error } = await supabaseAdmin().from('tokio_sinistros').upsert(payload, { onConflict: 'numero_sinistro' })
+        if (error) { erros++; msgs.push(`${numSinistro}: ${error.message?.slice(0,80)}`); continue }
+      } else {
+        const { error } = await supabaseAdmin().from('tokio_sinistros').insert(payload)
+        if (error) { erros++; msgs.push(`${numApolice}: ${error.message?.slice(0,80)}`); continue }
+      }
+
+      // Histórico no cliente, se vinculado
+      if (clienteId) {
+        await supabaseAdmin().from('historico').insert({
+          cliente_id: clienteId, tipo: 'red',
+          titulo: `🚨 Sinistro Tokio: ${numSinistro || numApolice}`,
+          descricao: `${causa || situacao || 'Sinistro registrado'} | Apólice ${numApolice || '—'}`,
+        })
+      }
+      // Notificar vendedor da apólice
+      if (apolice?.vendedor_id) {
+        await supabaseAdmin().from('notificacoes').insert({
+          user_id: apolice.vendedor_id, tipo: 'sistema',
+          titulo: `🚨 Sinistro Tokio: ${numSinistro || numApolice}`,
+          descricao: `${causa || situacao || 'Novo sinistro recebido'}`,
+          link: '/dashboard/seguradoras',
+        })
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR RENOVAÇÕES ────────────────────────────────────
+// Layout: blocos <DadosRenovacao> ou <Renovacao> com numApolice,
+// vigências antigas, novas e prêmio renovado.
+async function processarRenovacoes(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosRenovacao', 'Renovacao', 'renovacao'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosRenovacao', 'Renovacao'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numRenovacao  = getTag(bloco, ['numRenovacao', 'numeroRenovacao'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const vigIni        = toDate(getTag(bloco, ['dtInicioVigencia', 'dtInicioVigenciaApolice', 'dtVigenciaInicio']))
+      const vigFim        = toDate(getTag(bloco, ['dtFimVigencia', 'dtFimVigenciaApolice', 'dtVigenciaFim']))
+      const dtRenovacao   = toDate(getTag(bloco, ['dtRenovacao', 'dataRenovacao']))
+      const premioAtual   = num(getTag(bloco, ['vlrPremioAtual', 'vlrPremioAnterior']))
+      const premioNovo    = num(getTag(bloco, ['vlrPremioRenovacao', 'vlrPremioNovo', 'vlrPremioTotal']))
+      const statusRen     = getTag(bloco, ['statusRenovacao', 'situacaoRenovacao', 'StatusApoliceEndosso'])
+
+      if (!numApolice && !numProposta) { msgs.push('renovação sem identificador'); erros++; continue }
+
+      const apolice = numApolice ? await buscarApolicePorNumero(numApolice) : null
+      const clienteId = apolice?.cliente_id
+        || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numApolice, numProposta } })
+
+      const payload: any = {
+        numero_apolice:   numApolice || null,
+        numero_proposta:  numProposta || null,
+        numero_renovacao: numRenovacao || null,
+        ramo:             ramo || null,
+        produto:          produto || null,
+        cpf_cnpj:         cpfCnpj || null,
+        nome_segurado:    nome || null,
+        vigencia_ini:     vigIni,
+        vigencia_fim:     vigFim,
+        data_renovacao:   dtRenovacao,
+        premio_atual:     premioAtual,
+        premio_renovacao: premioNovo,
+        status_renovacao: statusRen || null,
+        apolice_id:       apolice?.id || null,
+        cliente_id:       clienteId || null,
+        importacao_id:    importacaoId || null,
+        dados_brutos:     { numApolice, numProposta, numRenovacao, ramo, produto, statusRen },
+      }
+
+      // Dedup por (numero_apolice, vigencia_fim) quando temos os dois
+      if (numApolice && vigFim) {
+        const { error } = await supabaseAdmin().from('tokio_renovacoes').upsert(payload, { onConflict: 'numero_apolice,vigencia_fim' })
+        if (error) { erros++; msgs.push(`${numApolice}: ${error.message?.slice(0,80)}`); continue }
+      } else {
+        const { error } = await supabaseAdmin().from('tokio_renovacoes').insert(payload)
+        if (error) { erros++; msgs.push(`${numApolice||numProposta}: ${error.message?.slice(0,80)}`); continue }
+      }
+
+      // Tarefa de renovação para o vendedor (vence próximo)
+      if (apolice?.vendedor_id && clienteId && vigFim) {
+        const dias = Math.floor((new Date(vigFim).getTime() - Date.now()) / 86400000)
+        if (dias <= 60 && dias >= -30) {
+          await supabaseAdmin().from('tarefas').insert({
+            titulo: `🔁 Renovação Tokio: Apólice ${numApolice}`,
+            descricao: `Vence em ${vigFim} (${dias}d) | Prêmio renovação R$ ${premioNovo ?? '—'}`,
+            tipo: 'ligacao', status: 'pendente',
+            cliente_id: clienteId,
+            responsavel_id: apolice.vendedor_id, criado_por: apolice.vendedor_id,
+          })
+        }
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR PENDÊNCIAS ────────────────────────────────────
+// Layout: blocos <DadosPendencia> ou <Pendencia> com tipo,
+// descrição, datas de abertura/limite/resolução.
+async function processarPendencias(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosPendencia', 'Pendencia', 'pendencia'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosPendencia', 'Pendencia'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numApolice   = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numProposta  = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numEndosso   = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const ramo         = getTag(bloco, ['ramo'])
+      const produto      = getTag(bloco, ['Produto', 'produto'])
+      const cpfCnpj      = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome         = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tipoPend     = getTag(bloco, ['tipoPendencia', 'tpPendencia', 'tipo'])
+      const descricao    = getTag(bloco, ['descricao', 'dsPendencia', 'observacao'])
+      const dtAbertura   = toDate(getTag(bloco, ['dtAbertura', 'dataAbertura']))
+      const dtLimite     = toDate(getTag(bloco, ['dtLimite', 'dataLimite', 'dtVencimento']))
+      const dtResolucao  = toDate(getTag(bloco, ['dtResolucao', 'dataResolucao']))
+      const situacao     = getTag(bloco, ['situacao', 'StatusPendencia', 'status'])
+
+      if (!numApolice && !numProposta) { msgs.push('pendência sem identificador'); erros++; continue }
+
+      const apolice = numApolice ? await buscarApolicePorNumero(numApolice) : null
+      const clienteId = apolice?.cliente_id
+        || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numApolice, numProposta, tipoPend } })
+
+      const payload: any = {
+        numero_apolice:  numApolice || null,
+        numero_proposta: numProposta || null,
+        numero_endosso:  numEndosso || null,
+        ramo:            ramo || null,
+        produto:         produto || null,
+        cpf_cnpj:        cpfCnpj || null,
+        nome_segurado:   nome || null,
+        tipo_pendencia:  tipoPend || null,
+        descricao:       descricao || null,
+        data_abertura:   dtAbertura,
+        data_limite:     dtLimite,
+        data_resolucao:  dtResolucao,
+        situacao:        situacao || null,
+        apolice_id:      apolice?.id || null,
+        cliente_id:      clienteId || null,
+        importacao_id:   importacaoId || null,
+        dados_brutos:    { numApolice, numProposta, numEndosso, ramo, produto, situacao },
+      }
+      const { error } = await supabaseAdmin().from('tokio_pendencias').insert(payload)
+      if (error) { erros++; msgs.push(`${numApolice||numProposta}: ${error.message?.slice(0,80)}`); continue }
+
+      // Tarefa para o vendedor da apólice
+      if (apolice?.vendedor_id && clienteId && !dtResolucao) {
+        await supabaseAdmin().from('tarefas').insert({
+          titulo: `⚠️ Pendência Tokio: Apólice ${numApolice || numProposta}`,
+          descricao: `${tipoPend || 'Pendência'}${descricao ? ' | ' + descricao.slice(0,140) : ''}${dtLimite ? ' | Limite ' + dtLimite : ''}`,
+          tipo: 'ligacao', status: 'pendente',
+          cliente_id: clienteId,
+          responsavel_id: apolice.vendedor_id, criado_por: apolice.vendedor_id,
+        })
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR RECUSAS ───────────────────────────────────────
+// Layout: blocos <DadosRecusa> ou <Recusa> com numProposta,
+// motivoDeRecusa, dtRecusa.
+async function processarRecusas(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosRecusa', 'Recusa', 'recusa'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosRecusa', 'Recusa', 'DadosSegurado'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numProposta  = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numApolice   = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numEndosso   = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const ramo         = getTag(bloco, ['ramo'])
+      const produto      = getTag(bloco, ['Produto', 'produto'])
+      const cpfCnpj      = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome         = getTag(bloco, ['nome', 'nomeSegurado'])
+      const dtRecusa     = toDate(getTag(bloco, ['dtRecusa', 'dataRecusa']))
+      const motivo       = getTag(bloco, ['motivoDeRecusa', 'motivoRecusa', 'motivo'])
+      const obs          = getTag(bloco, ['observacao', 'obs'])
+
+      if (!numProposta && !numApolice) { msgs.push('recusa sem identificador'); erros++; continue }
+
+      const clienteId = await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numProposta, numApolice, motivo } })
+
+      const payload: any = {
+        numero_proposta: numProposta || null,
+        numero_apolice:  numApolice || null,
+        numero_endosso:  numEndosso || null,
+        ramo:            ramo || null,
+        produto:         produto || null,
+        cpf_cnpj:        cpfCnpj || null,
+        nome_segurado:   nome || null,
+        data_recusa:     dtRecusa,
+        motivo_recusa:   motivo || null,
+        observacao:      obs || null,
+        cliente_id:      clienteId || null,
+        importacao_id:   importacaoId || null,
+        dados_brutos:    { numProposta, numApolice, numEndosso, ramo, produto },
+      }
+      const { error } = await supabaseAdmin().from('tokio_recusas').insert(payload)
+      if (error) { erros++; msgs.push(`${numProposta||numApolice}: ${error.message?.slice(0,80)}`); continue }
+
+      if (clienteId) {
+        await supabaseAdmin().from('historico').insert({
+          cliente_id: clienteId, tipo: 'red',
+          titulo: `🚫 Recusa Tokio: ${numProposta || numApolice}`,
+          descricao: `${motivo || 'Recusa registrada'}${obs ? ' | ' + obs.slice(0,140) : ''}`,
+        })
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
 // ─── DETECÇÃO AUTOMÁTICA DE TIPO ─────────────────────────────
 function detectarTipo(xml: string, nomeArquivo: string): string {
   const n = (nomeArquivo||'').toLowerCase()
   if (n.includes('extrato') || n.includes('comiss')) return 'COMISSOES'
   if (n.includes('parcel'))  return 'PARCELAS'
+  if (n.includes('sinistro')) return 'SINISTRO'
+  if (n.includes('renovac'))  return 'RENOVACAO'
+  if (n.includes('pendenc'))  return 'PENDENCIA'
+  if (n.includes('recusa'))   return 'RECUSA'
   if (n.includes('endosso')) return 'APOLICES'   // mesmo arquivo da apólice
   if (n.includes('apolice') || n.includes('proposta')) return 'APOLICES'
 
   const has = (re: RegExp) => re.test(xml)
   if (has(/<(?:[A-Za-z0-9_]+:)?Extrato\b/i) || has(/<(?:[A-Za-z0-9_]+:)?DetalheComissao\b/i)) return 'COMISSOES'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosSinistro\b/i) || has(/<(?:[A-Za-z0-9_]+:)?numSinistro\b/i)) return 'SINISTRO'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosRenovacao\b/i) || has(/<(?:[A-Za-z0-9_]+:)?Renovacao\b/i)) return 'RENOVACAO'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosPendencia\b/i) || has(/<(?:[A-Za-z0-9_]+:)?Pendencia\b/i)) return 'PENDENCIA'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosRecusa\b/i) || has(/<(?:[A-Za-z0-9_]+:)?motivoDeRecusa\b/i)) return 'RECUSA'
   if (has(/<(?:[A-Za-z0-9_]+:)?período\b/i) || has(/<(?:[A-Za-z0-9_]+:)?periodo\b/i) || has(/<(?:[A-Za-z0-9_]+:)?dtVencimento\b/i)) return 'PARCELAS'
   if (has(/<(?:[A-Za-z0-9_]+:)?DadosSeguro\b/i)) return 'APOLICES'
   return 'OUTRO'
+}
+
+// ─── MAPA DE SERVIÇOS DO WEBSERVICE ──────────────────────────
+const SERVICO_MAP: Record<string, { endpoint: string; tipo: string }> = {
+  APOLICES:  { endpoint: 'getApolice',       tipo: 'APOLICES'  },
+  PARCELAS:  { endpoint: 'getParcela',       tipo: 'PARCELAS'  },
+  COMISSOES: { endpoint: 'getExtratoComiss', tipo: 'COMISSOES' },
+  SINISTRO:  { endpoint: 'getSinistro',      tipo: 'SINISTRO'  },
+  RENOVACAO: { endpoint: 'getRenovacao',     tipo: 'RENOVACAO' },
+  PENDENCIA: { endpoint: 'getPendencia',     tipo: 'PENDENCIA' },
+  RECUSA:    { endpoint: 'getRecusa',        tipo: 'RECUSA'    },
 }
 
 async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) {
@@ -623,21 +952,26 @@ async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) 
     qtd_registros: (xml.match(/</g) || []).length,
     status: 'processando',
   }).select().single()
+  const importacaoId = (importacao as any)?.id || null
 
   let resultado: { importados: number; erros: number; msgs: string[] }
   if      (tipo === 'APOLICES'  || tipo === 'ENDOSSOS') resultado = await processarApolices(xml)
-  else if (tipo === 'PARCELAS')  resultado = await processarParcelas(xml)
-  else if (tipo === 'COMISSOES') resultado = await processarComissoes(xml)
+  else if (tipo === 'PARCELAS')   resultado = await processarParcelas(xml)
+  else if (tipo === 'COMISSOES')  resultado = await processarComissoes(xml)
+  else if (tipo === 'SINISTRO')   resultado = await processarSinistros(xml, importacaoId)
+  else if (tipo === 'RENOVACAO')  resultado = await processarRenovacoes(xml, importacaoId)
+  else if (tipo === 'PENDENCIA')  resultado = await processarPendencias(xml, importacaoId)
+  else if (tipo === 'RECUSA')     resultado = await processarRecusas(xml, importacaoId)
   else resultado = { importados: 0, erros: 0, msgs: ['Tipo não reconhecido — informe manualmente.'] }
 
-  if (importacao?.id) {
+  if (importacaoId) {
     await supabaseAdmin().from('importacoes_tokio').update({
       status: resultado.erros === 0 ? 'concluido' : 'parcial',
       qtd_importados: resultado.importados,
       qtd_erros: resultado.erros,
       erros: resultado.msgs.slice(0, 10),
       concluido_em: new Date().toISOString(),
-    }).eq('id', importacao.id)
+    }).eq('id', importacaoId)
   }
   return resultado
 }
@@ -757,18 +1091,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Busca dados via webservice. params: { servico: 'getApolice'|'getParcela'|'getExtrato', ...filtros }
+    // Busca dados via webservice. params: { servico: 'APOLICES'|'PARCELAS'|..., ...filtros }
     if (action === 'sincronizar') {
-      const servicoMap: Record<string, { endpoint: string; tipo: string }> = {
-        APOLICES:  { endpoint: 'getApolice',   tipo: 'APOLICES'  },
-        PARCELAS:  { endpoint: 'getParcela',   tipo: 'PARCELAS'  },
-        COMISSOES: { endpoint: 'getExtrato',   tipo: 'COMISSOES' },
-        SINISTRO:  { endpoint: 'getSinistro',  tipo: 'OUTRO'     },
-        RENOVACAO: { endpoint: 'getRenovacao', tipo: 'OUTRO'     },
-        PENDENCIA: { endpoint: 'getPendencia', tipo: 'OUTRO'     },
-        RECUSA:    { endpoint: 'getRecusa',    tipo: 'APOLICES'  },
-      }
-      const cfg = servicoMap[String(params.servico||'').toUpperCase()]
+      const cfg = SERVICO_MAP[String(params.servico||'').toUpperCase()]
       if (!cfg) return NextResponse.json({ error: 'parametro `servico` invalido. Use APOLICES|PARCELAS|COMISSOES|SINISTRO|RENOVACAO|PENDENCIA|RECUSA' }, { status: 400 })
 
       const filtros: Record<string,string> = {}
@@ -779,10 +1104,6 @@ export async function POST(request: NextRequest) {
       try {
         const xml = await tokioGet(cfg.endpoint, filtros)
         const nome = `tokio-${cfg.endpoint}-${Date.now()}.xml`
-        // Se o servico nao tem parser dedicado, apenas devolve o conteúdo para inspecao
-        if (cfg.tipo === 'OUTRO') {
-          return NextResponse.json({ ok: true, servico: cfg.endpoint, tamanho: xml.length, preview: xml.slice(0,1200) })
-        }
         const resultado = await processarArquivo(nome, xml, cfg.tipo)
         return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, ...resultado })
       } catch (err: any) {
