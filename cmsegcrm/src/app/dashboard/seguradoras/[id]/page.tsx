@@ -170,13 +170,96 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
   }
 }
 
-// Lê arquivo .RET (Porto). É um ZIP contendo um payload CNAB
-// (250 bytes/linha em CP1252). Extrai e devolve as linhas crus em
-// `linha_raw`, junto com o tipo deduzido pela extensão interna
-// (.COM, .CBS, .VDN, .SRE, .XPP, .XPI, .IRE, .APP, .API).
-//
-// Os parsers de layout específicos (mapeamento de posições) são
-// ativados conforme o layout oficial da Porto for documentado.
+// Parser .IRE — registros hierárquicos por proposta.
+// Estrutura: pos 1-2 "01" + pos 3-10 nº proposta + pos 11-12 tipo.
+// Tipo 09 = segurado (nome, CPF, data nasc); tipo 64 = parcela.
+function parseLinhaPortoIRE(l: string): Record<string, any> {
+  if (l.length < 12) return {}
+  if (l.substring(0, 2) !== '01') return {}
+  const numero_proposta = l.substring(2, 10)
+  const tipo_registro = l.substring(10, 12)
+  const resto = l.substring(12)
+
+  const base: Record<string, any> = { numero_proposta, tipo_registro }
+
+  if (tipo_registro === '09') {
+    // Heurística: pega F ou J após o nome, depois CPF/CNPJ
+    const m = resto.match(/^(.{1,60}?)([FJ])(.+)$/s)
+    if (!m) return base
+    const cliente_nome = m[1].trim()
+    const tipo_pessoa = m[2]
+    const tail = m[3]
+    // CPF (11d) ou CNPJ (14d) — pega a sequência de dígitos com tamanho certo
+    const reCpf = /(\d{11})(?!\d)/
+    const reCnpj = /(\d{14})(?!\d)/
+    let cpf_cnpj: string | null = null
+    if (tipo_pessoa === 'J') {
+      const mc = tail.match(reCnpj)
+      cpf_cnpj = mc ? mc[1] : null
+    } else {
+      const mc = tail.match(reCpf)
+      cpf_cnpj = mc ? mc[1] : null
+    }
+    // Data nascimento DD/MM/AAAA
+    const mDt = tail.match(/(\d{2}\/\d{2}\/\d{4})/)
+    let data_nascimento: string | null = null
+    if (mDt) {
+      const [d, mo, y] = mDt[1].split('/').map(s => parseInt(s, 10))
+      if (y >= 1900 && y <= 2999 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        data_nascimento = `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+      }
+    }
+    // RG e órgão (ex: "SSPSP")
+    const mOrgao = tail.match(/([A-Z]{3}[A-Z]{2})/)
+    return {
+      ...base,
+      cliente_nome,
+      tipo_pessoa,
+      cpf_cnpj,
+      data_nascimento,
+      orgao_rg: mOrgao ? mOrgao[1] : null,
+    }
+  }
+
+  if (tipo_registro === '64') {
+    // pos 13-14 (resto[0..2]) = bloco fixo "01"
+    // pos 15-16 (resto[2..4]) = nº parcela "01", "02"...
+    const numero_parcela = parseInt(resto.substring(2, 4), 10) || null
+    // Data vencimento DD/MM/AAAA
+    const mDt = resto.match(/(\d{2}\/\d{2}\/\d{4})/)
+    let vencimento: string | null = null
+    if (mDt) {
+      const [d, mo, y] = mDt[1].split('/').map(s => parseInt(s, 10))
+      if (y >= 1900 && y <= 2999 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        vencimento = `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+      }
+    }
+    // Valor: pega 11 dígitos após a data, divide por 100 (centavos)
+    let valor: number | null = null
+    if (mDt) {
+      const after = resto.slice(resto.indexOf(mDt[1]) + 10)
+      const mv = after.match(/^(\d{11,15})/)
+      if (mv) {
+        const n = parseInt(mv[1], 10)
+        if (isFinite(n)) valor = n / 100
+      }
+    }
+    // CPF do segurado no fim (11d)
+    const mCpf = resto.match(/(\d{11})(?:\s|$)/)
+    return {
+      ...base,
+      numero_apolice: numero_proposta, // usa proposta como nº apólice na inadimplência
+      parcela: numero_parcela,
+      vencimento,
+      valor,
+      cpf_cnpj: mCpf ? mCpf[1] : null,
+    }
+  }
+
+  // Outros tipos: só guarda crus por enquanto
+  return base
+}
+
 async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionada?: string): Promise<{ rows: Record<string, any>[]; tipoArquivo: string | null }> {
   await loadJSZip()
   let texto = ''
@@ -219,37 +302,54 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
   if (tipoArquivo === 'CBS' || texto.length < 200) {
     throw new Error(`Arquivo .CBS é uma mensagem da Porto, não dado: "${texto.slice(0, 150).trim()}"`)
   }
-  // Tipos com parser implementado: COM (250b), APP/API (120b)
-  // Outros (.SRE/.IRE/.VDN/.XPP/.XPI) ainda aguardam posições.
-  if (tipoArquivo && !['COM', 'APP', 'API'].includes(tipoArquivo)) {
-    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Disponíveis: .COM (Comissões), .APP/.API (Apólices). Aguardando posições oficiais dos demais.`)
+  // Tipos com parser implementado: COM (250b), APP/API (120b), IRE (variável)
+  if (tipoArquivo && !['COM', 'APP', 'API', 'IRE'].includes(tipoArquivo)) {
+    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Disponíveis: .COM, .APP/.API, .IRE. Aguardando posições oficiais dos demais.`)
   }
 
-  // Tamanho da linha varia por tipo
+  // Tamanho da linha varia por tipo. IRE tem largura variável (cada
+  // tipo de registro tem tamanho próprio).
+  const variavel = tipoArquivo === 'IRE'
   const tamLinha = tipoArquivo === 'APP' || tipoArquivo === 'API' ? 120 : 250
 
-  // Quebra em linhas. Tenta separadores; se nada bater, chunks fixos.
+  // Quebra em linhas. Tenta separadores; se nada bater (e não é IRE),
+  // força chunks fixos.
   let linhas = texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
   linhas = linhas.filter(l => l.length > 0)
-  const corretas = linhas.filter(l => l.length === tamLinha).length
-  if (linhas.length === 0 || corretas / Math.max(linhas.length, 1) < 0.5) {
-    const limpo = texto.replace(/[\r\n]/g, '')
-    linhas = []
-    for (let i = 0; i + tamLinha <= limpo.length; i += tamLinha) linhas.push(limpo.substr(i, tamLinha))
+  if (!variavel) {
+    const corretas = linhas.filter(l => l.length === tamLinha).length
+    if (linhas.length === 0 || corretas / Math.max(linhas.length, 1) < 0.5) {
+      const limpo = texto.replace(/[\r\n]/g, '')
+      linhas = []
+      for (let i = 0; i + tamLinha <= limpo.length; i += tamLinha) linhas.push(limpo.substr(i, tamLinha))
+    }
+    linhas = linhas.filter(l => l.length === tamLinha)
   }
-  const linhasOK = linhas.filter(l => l.length === tamLinha)
-  if (linhasOK.length === 0) {
-    throw new Error(`Porto .${tipoArquivo}: nenhuma linha de ${tamLinha} chars encontrada. total=${linhas.length}, tamanhos=${[...new Set(linhas.slice(0,5).map(l=>l.length))].join(',')}`)
+  if (linhas.length === 0) {
+    throw new Error(`Porto .${tipoArquivo}: nenhuma linha encontrada. total=${linhas.length}`)
   }
 
+  // Filtra por tipo_registro quando .IRE conforme a aba ativa
+  const tipoRegistroFiltro = tipoArquivo === 'IRE'
+    ? (abaSelecionada === 'apolices'      ? '09'
+      : abaSelecionada === 'inadimplencia' ? '64'
+      : null)
+    : null
+
   const rows: Record<string, any>[] = []
-  for (let i = 0; i < linhasOK.length; i++) {
-    const l = linhasOK[i]
+  for (let i = 0; i < linhas.length; i++) {
+    const l = linhas[i]
     let parsed: Record<string, any> = {}
     if (tipoArquivo === 'COM') parsed = parseLinhaPortoCOM(l)
     else if (tipoArquivo === 'APP' || tipoArquivo === 'API') parsed = parseLinhaPortoAPPAPI(l)
-    // Pula linhas que não foram reconhecidas como detalhe
-    if (!(parsed as any).numero_apolice) continue
+    else if (tipoArquivo === 'IRE') parsed = parseLinhaPortoIRE(l)
+    // Filtros pós-parse
+    if (tipoRegistroFiltro && (parsed as any).tipo_registro !== tipoRegistroFiltro) continue
+    if (tipoArquivo === 'COM' && !(parsed as any).numero_apolice) continue
+    if (tipoArquivo === 'APP' || tipoArquivo === 'API') {
+      if (!(parsed as any).numero_apolice) continue
+    }
+    if (tipoArquivo === 'IRE' && !(parsed as any).tipo_registro) continue
     rows.push({
       linha_num: i + 1,
       tipo_arquivo: tipoArquivo,
