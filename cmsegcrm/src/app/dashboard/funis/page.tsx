@@ -47,6 +47,7 @@ function FunisPage() {
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
   const [filtroEquipe, setFiltroEquipe]   = useState<string>('')
+  const [filtroBusca, setFiltroBusca]     = useState<string>('')
   const [equipes, setEquipes]             = useState<any[]>([])
   const [equipeMembros, setEquipeMembros] = useState<Record<string,string[]>>({})
   const [visibleIds, setVisibleIds] = useState<string[] | null>(null)
@@ -663,10 +664,20 @@ function FunisPage() {
     return true
   }
 
+  const buscaNorm = filtroBusca.trim().toLowerCase()
+  function passaFiltroBusca(n: any): boolean {
+    if (!buscaNorm) return true
+    const titulo = String(n.titulo || '').toLowerCase()
+    const cliente = String(n.clientes?.nome || '').toLowerCase()
+    const cpf = String(n.clientes?.cpf_cnpj || n.cpf_cnpj || '').toLowerCase()
+    return titulo.includes(buscaNorm) || cliente.includes(buscaNorm) || cpf.includes(buscaNorm)
+  }
+
   const negociosFunil = negocios.filter(n =>
     n.funil_id === funilAtivo &&
     (filtroStatus === 'todos' || (n.status || 'em_andamento') === filtroStatus) &&
-    passaFiltroData(n)
+    passaFiltroData(n) &&
+    passaFiltroBusca(n)
   ).slice().sort((a,b) => {
     if (ordenacao === 'recentes')   return String(b.created_at||'').localeCompare(String(a.created_at||''))
     if (ordenacao === 'antigos')    return String(a.created_at||'').localeCompare(String(b.created_at||''))
@@ -846,6 +857,25 @@ function FunisPage() {
             </button>
           </>
         )}
+
+        {/* Busca por nome da negociação (também busca cliente/CPF) */}
+        <div style={{position:'relative',display:'flex',alignItems:'center',minWidth:240,flex:'0 1 320px'}}>
+          <span style={{position:'absolute',left:10,fontSize:13,color:'var(--text-muted)',pointerEvents:'none'}}>🔍</span>
+          <input
+            type="text"
+            value={filtroBusca}
+            onChange={e=>setFiltroBusca(e.target.value)}
+            placeholder="Buscar negociação por nome, cliente ou CPF/CNPJ"
+            title="Buscar negociação por nome, cliente ou CPF/CNPJ"
+            style={{width:'100%',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',borderRadius:8,padding:'7px 28px 7px 30px',fontSize:12,outline:'none',fontFamily:'DM Sans,sans-serif'}}
+          />
+          {filtroBusca && (
+            <button onClick={()=>setFiltroBusca('')}
+              title="Limpar busca"
+              style={{position:'absolute',right:6,border:'none',background:'transparent',color:'var(--text-muted)',cursor:'pointer',fontSize:14,padding:'0 4px',lineHeight:1}}>×</button>
+          )}
+        </div>
+
         <div style={{flex:1}}/>
 
         {/* Modo de visão: Kanban / Negociações */}
