@@ -736,6 +736,20 @@ function FunisPage() {
     limparSelecao()
   }
 
+  async function bulkTrocarVendedor(novoVendedor: string) {
+    if (!selecionados.size) return
+    const vendedor = usuarios.find(u => u.id === novoVendedor) || null
+    const nomeVend = vendedor?.nome || 'Sem responsável'
+    if (!confirm(`Atribuir ${selecionados.size} negociação(ões) para "${nomeVend}"?`)) return
+    setBulkLoading(true)
+    const ids = Array.from(selecionados)
+    const { error } = await supabase.from('negocios').update({ vendedor_id: novoVendedor || null }).in('id', ids)
+    setBulkLoading(false)
+    if (error) { alert('Erro ao atribuir responsável: ' + error.message); return }
+    setNegocios(prev => prev.map(n => ids.includes(n.id) ? { ...n, vendedor_id: novoVendedor || null, users: vendedor } : n))
+    limparSelecao()
+  }
+
   async function bulkMudarStatus(status: 'ganho'|'perdido'|'em_andamento') {
     if (!selecionados.size) return
     if (!confirm(`Marcar ${selecionados.size} negociação(ões) como ${status.toUpperCase()}?`)) return
@@ -1011,6 +1025,21 @@ function FunisPage() {
               {(funiAtual.etapas || []).map((et:string) => <option key={et} value={et}>{et}</option>)}
             </select>
           )}
+
+          <select
+            disabled={!selecionados.size || bulkLoading}
+            onChange={e => {
+              const v = e.target.value
+              if (!v) return
+              bulkTrocarVendedor(v === '__none__' ? '' : v)
+              e.target.value = ''
+            }}
+            defaultValue=""
+            style={{padding:'5px 8px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'#fff',color:'#222',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
+            <option value="">👤 Atribuir responsável…</option>
+            <option value="__none__">— Sem responsável —</option>
+            {usuarios.map((u:any) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
 
           <button onClick={()=>bulkMudarStatus('ganho')} disabled={!selecionados.size || bulkLoading}
             style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.5)',background:'rgba(28,181,160,0.15)',color:'#1cb5a0',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4,fontWeight:600}}>
