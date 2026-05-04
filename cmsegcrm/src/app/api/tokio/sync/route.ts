@@ -173,7 +173,15 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
   const path = servico.startsWith('/') ? servico
              : servico.startsWith('Corretor/') ? `/${servico}`
              : `/Corretor/${servico}`
-  const url = `${TOKIO_BASE}${path}`
+  // O servidor disparou NPE em `Map.size()` mesmo com body preenchido,
+  // o que sugere que o controller espera os params em outro lugar
+  // (query string, ou aninhado num wrapper). Mandamos pelos 3
+  // caminhos para cobrir qualquer convenção:
+  //   1. Query string ?dataInicio=...&dataFim=...
+  //   2. Body JSON top-level
+  //   3. Body JSON aninhado em wrappers comuns (filtro/filtros/request/data)
+  const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
+  const url = `${TOKIO_BASE}${path}${qs ? `?${qs}` : ''}`
   const headers = (t: string) => ({
     ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
@@ -194,10 +202,14 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
     'Service-Key':  TOKIO_SERVICE_KEY,
     ...(cookieJar ? { 'Cookie': cookieJar } : {}),
   })
-  // Servidor responde 405 a GET — exige POST com filtros no body.
-  // Mantemos a função com nome "tokioGet" por compatibilidade, mas
-  // o método é POST e os params vão no JSON.
-  const body = JSON.stringify(params || {})
+  const bodyObj: any = {
+    ...params,
+    filtro:  { ...params },
+    filtros: { ...params },
+    request: { ...params },
+    data:    { ...params },
+  }
+  const body = JSON.stringify(bodyObj)
   let r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
   if (r.status === 401) {
     // Token expirou — refaz login uma vez
