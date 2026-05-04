@@ -283,7 +283,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
   // ignorando o wrapper .ret. Aceita ".COM", "_E.COM", "_ECOM", "_ECOM.ret".
   function extTipo(nome: string): string | null {
     const lower = nome.toLowerCase()
-    const TIPOS = ['com','cbs','vdn','sre','xpp','xpi','ire','app','api']
+    const TIPOS = ['com','cbs','vdn','sre','xpp','xpi','ire','app','api','si2','sin']
     for (const t of TIPOS) {
       const re = new RegExp(`(?:[._]e?${t})(?:\\.ret)?$`, 'i')
       if (re.test(lower)) return t.toUpperCase()
@@ -306,7 +306,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
   }
   // Tipos com parser implementado: COM (250b), APP/API (120b), IRE (variável)
   if (tipoArquivo && !['COM', 'APP', 'API', 'IRE'].includes(tipoArquivo)) {
-    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Disponíveis: .COM, .APP/.API, .IRE. Aguardando posições oficiais dos demais.`)
+    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado (.SI2/.SIN para sinistros precisa do layout). Disponíveis: .COM, .APP/.API, .IRE.`)
   }
 
   // Tamanho da linha varia por tipo. IRE tem largura variável (cada
@@ -355,7 +355,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
     rows.push({
       linha_num: i + 1,
       tipo_arquivo: tipoArquivo,
-      nome_interno: nomeInterno,
+      _arquivo: nomeInterno,
       linha_raw: l,
       ...parsed,
     })
