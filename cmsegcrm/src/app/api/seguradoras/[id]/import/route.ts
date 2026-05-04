@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { parseEzzeApolicePdf } from '@/lib/parsers/ezze-apolice-pdf'
 import { parseApolicePdf } from '@/lib/parsers/apolice-pdf'
+import { parsePropostaPdf } from '@/lib/parsers/proposta-pdf'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
@@ -24,13 +25,14 @@ function admin() {
   return _sa
 }
 
-type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes'
-const TIPOS: Tipo[] = ['apolices', 'sinistros', 'inadimplencia', 'comissoes']
+type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes' | 'propostas'
+const TIPOS: Tipo[] = ['apolices', 'sinistros', 'inadimplencia', 'comissoes', 'propostas']
 const TABELAS: Record<Tipo, string> = {
   apolices: 'seg_stage_apolices',
   sinistros: 'seg_stage_sinistros',
   inadimplencia: 'seg_stage_inadimplencia',
   comissoes: 'seg_stage_comissoes',
+  propostas: 'seg_stage_propostas',
 }
 
 const norm = (s: string) =>
@@ -217,6 +219,170 @@ function mapApolicePdf(row: any, seguradora_id: string, importacao_id: string) {
 }
 // Alias retrocompat (ainda referenciado em algumas partes do código).
 const mapApoliceEzze = mapApolicePdf
+
+// mapPropostaPdf: mapeia uma linha devolvida pelo `parsePropostaPdf` para
+// as colunas de seg_stage_propostas. A maioria dos campos é idêntica aos da
+// apólice (já que reaproveitamos os parsers), mas o mapper precisa apontar
+// pra coluna `numero` diferente (= proposta) e setar `status_proposta`.
+function mapPropostaPdf(row: any, seguradora_id: string, importacao_id: string) {
+  const premioTotal = num(row.premio_total)
+  const premioLiquido = num(row.premio_liquido)
+  return {
+    seguradora_id, importacao_id,
+    numero:                   sStr(row.numero ?? row.proposta),
+    cpf_cnpj:                 cleanDoc(row.cpf_cnpj),
+    cliente_nome:             sStr(row.cliente_nome),
+    produto:                  sStr(row.produto),
+    ramo_codigo:              sStr(row.ramo_codigo),
+    ramo_descricao:           sStr(row.ramo_descricao ?? row.ramo),
+    tipo_seguro:              sStr(row.tipo_seguro),
+    classe_bonus:             nInt(row.classe_bonus),
+    codigo_ci:                sStr(row.codigo_ci),
+    status_proposta:          sStr(row.status_proposta) ?? 'em_analise',
+    numero_cotacao:           sStr(row.numero_cotacao),
+    data_emissao:             date(row.data_emissao),
+    data_validade:            date(row.data_validade),
+    data_calculo:             date(row.data_calculo),
+    versao:                   sStr(row.versao),
+    rule_id:                  sStr(row.rule_id),
+    vigencia_ini:             date(row.vigencia_ini),
+    vigencia_fim:             date(row.vigencia_fim),
+    // Segurado
+    segurado_nome_social:     sStr(row.segurado_nome_social ?? row.nome_social),
+    segurado_email:           sStr(row.segurado_email),
+    segurado_telefone:        sStr(row.segurado_telefone),
+    segurado_telefone2:       sStr(row.segurado_telefone2),
+    segurado_cep:             sStr(row.segurado_cep),
+    segurado_endereco:        sStr(row.segurado_endereco),
+    segurado_numero:          sStr(row.segurado_numero),
+    segurado_complemento:     sStr(row.segurado_complemento),
+    segurado_bairro:          sStr(row.segurado_bairro),
+    segurado_cidade:          sStr(row.segurado_cidade),
+    segurado_uf:              sStr(row.segurado_uf),
+    segurado_estado_civil:    sStr(row.segurado_estado_civil),
+    data_nascimento:          date(row.data_nascimento),
+    sexo:                     sStr(row.sexo),
+    segurado_doc_identidade:  sStr(row.segurado_doc_identidade),
+    segurado_doc_orgao_exp:   sStr(row.segurado_doc_orgao_exp),
+    segurado_doc_data_exp:    date(row.segurado_doc_data_exp),
+    segurado_naturalidade:    sStr(row.segurado_naturalidade),
+    segurado_nacionalidade:   sStr(row.segurado_nacionalidade),
+    segurado_profissao:       sStr(row.segurado_profissao),
+    segurado_renda:           num(row.segurado_renda),
+    segurado_pais_nascimento: sStr(row.segurado_pais_nascimento),
+    // Condutor
+    condutor_nome:            sStr(row.condutor_nome),
+    condutor_cpf:             cleanDoc(row.condutor_cpf),
+    condutor_data_nasc:       date(row.condutor_data_nasc),
+    condutor_idade:           nInt(row.condutor_idade),
+    condutor_sexo:            sStr(row.condutor_sexo),
+    condutor_estado_civil:    sStr(row.condutor_estado_civil),
+    condutor_vinculo:         sStr(row.condutor_vinculo),
+    condutor_cobertura_jovem: sStr(row.condutor_cobertura_jovem),
+    tipo_residencia:          sStr(row.tipo_residencia),
+    residentes_18_24:         sStr(row.residentes_18_24),
+    // Veículo
+    marca:                    sStr(row.marca),
+    modelo:                   sStr(row.modelo),
+    ano_fabricacao:           sStr(row.ano_fabricacao),
+    ano_modelo:               sStr(row.ano_modelo),
+    placa:                    sStr(row.placa),
+    chassi:                   sStr(row.chassi),
+    chassi_remarcado:         sStr(row.chassi_remarcado),
+    cod_fipe:                 sStr(row.cod_fipe),
+    combustivel:              sStr(row.combustivel),
+    cor:                      sStr(row.cor),
+    renavam:                  sStr(row.renavam),
+    zero_km:                  sStr(row.zero_km),
+    blindagem:                sStr(row.blindagem),
+    kit_gas:                  sStr(row.kit_gas),
+    cambio_automatico:        sStr(row.cambio_automatico),
+    pcd:                      sStr(row.pcd),
+    isento_fiscal:            sStr(row.isento_fiscal),
+    nr_portas:                nInt(row.nr_portas),
+    lotacao:                  nInt(row.lotacao ?? row.nr_passageiros),
+    tipo_utilizacao:          sStr(row.tipo_utilizacao),
+    categoria_tarifaria:      sStr(row.categoria_tarifaria),
+    cep_pernoite:             sStr(row.cep_pernoite),
+    cep_circulacao:           sStr(row.cep_circulacao),
+    pernoite_garagem:         sStr(row.pernoite_garagem),
+    utilizacao_veiculo:       sStr(row.utilizacao_veiculo),
+    dispositivo_antifurto:    sStr(row.dispositivo_antifurto),
+    rastreador:               sStr(row.rastreador),
+    acessorios:               sStr(row.acessorios),
+    // Coberturas / serviços
+    coberturas:               row.coberturas ?? null,
+    coberturas_adicionais:    row.coberturas_adicionais ?? null,
+    franquias:                row.franquias ?? null,
+    servicos:                 row.servicos ?? null,
+    assistencias:             row.assistencias ?? null,
+    clausulas:                row.clausulas ?? null,
+    descontos_aplicados:      row.descontos_aplicados ?? null,
+    // Prêmio
+    premio_liquido:           premioLiquido,
+    premio_auto:              num(row.premio_auto),
+    premio_rcf:               num(row.premio_rcf),
+    premio_rcv:               num(row.premio_rcv),
+    premio_app:               num(row.premio_app),
+    premio_acessorios:        num(row.premio_acessorios),
+    premio_blindagem:         num(row.premio_blindagem),
+    premio_kit_gas:           num(row.premio_kit_gas),
+    encargos:                 num(row.encargos),
+    custo_apolice:            num(row.custo_apolice),
+    adicional_fracionamento:  num(row.adicional_fracionamento),
+    iof:                      num(row.iof),
+    juros:                    num(row.juros),
+    taxa_juros:               num(row.taxa_juros),
+    descontos:                num(row.descontos),
+    premio_total:             premioTotal,
+    premio:                   premioTotal ?? premioLiquido,
+    // Pagamento
+    forma_pagamento:          sStr(row.forma_pagamento),
+    qtd_parcelas:             nInt(row.qtd_parcelas),
+    valor_parcela:            num(row.valor_parcela),
+    valor_primeira_parcela:   num(row.valor_primeira_parcela),
+    valor_demais_parcelas:    num(row.valor_demais_parcelas),
+    cartao_mascarado:         sStr(row.cartao_mascarado),
+    bandeira_cartao:          sStr(row.bandeira_cartao),
+    validade_cartao:          sStr(row.validade_cartao),
+    titular_cartao:           sStr(row.titular_cartao),
+    cpf_titular_pagto:        cleanDoc(row.cpf_titular_pagto),
+    banco_pagto:              sStr(row.banco_pagto),
+    agencia_pagto:            sStr(row.agencia_pagto),
+    conta_pagto:              sStr(row.conta_pagto),
+    dia_vencimento:           nInt(row.dia_vencimento),
+    parcelas:                 row.parcelas ?? null,
+    // Histórico anterior
+    seguradora_anterior:      sStr(row.seguradora_anterior),
+    apolice_anterior:         sStr(row.apolice_anterior),
+    fim_vigencia_anterior:    date(row.fim_vigencia_anterior),
+    sinistro_ult_vigencia:    sStr(row.sinistro_ult_vigencia),
+    bonus_unico:              sStr(row.bonus_unico),
+    renovacao_seguradora:     sStr(row.renovacao_seguradora),
+    // Corretor
+    corretor_nome:            sStr(row.corretor_nome),
+    corretor_cnpj:            cleanDoc(row.corretor_cnpj),
+    corretor_susep:           sStr(row.corretor_susep),
+    corretor_codigo:          sStr(row.corretor_codigo),
+    corretor_email:           sStr(row.corretor_email),
+    corretor_telefone:        sStr(row.corretor_telefone),
+    corretor_endereco:        sStr(row.corretor_endereco),
+    corretor_filial:          sStr(row.corretor_filial),
+    corretor_inspetoria:      sStr(row.corretor_inspetoria),
+    corretor_participacao:    num(row.corretor_participacao),
+    // Sucursal / seguradora
+    sucursal_codigo:          sStr(row.sucursal_codigo),
+    sucursal_nome:            sStr(row.sucursal_nome),
+    processo_susep:           sStr(row.processo_susep),
+    congenere:                sStr(row.congenere),
+    tipo_operacao:            sStr(row.tipo_operacao),
+    // Universais / debug
+    seguradora_origem:        sStr(row.seguradora_origem),
+    layout_pdf:               sStr(row.layout_pdf),
+    pdf_texto_bruto:          sStr(row.pdf_texto_bruto),
+    dados:                    row,
+  }
+}
 function mapSinistro(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
@@ -370,23 +536,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const isEzze = /ezze/i.test(segNome)
 
   if (formato === 'pdf') {
-    if (tipo !== 'apolices') {
+    if (tipo !== 'apolices' && tipo !== 'propostas') {
       return NextResponse.json({
-        erro: 'Importação por PDF só está disponível para apólices.',
+        erro: 'Importação por PDF só está disponível para apólices e propostas.',
       }, { status: 400 })
     }
     const b64 = String(body?.pdf_base64 || '').trim()
     if (!b64) return NextResponse.json({ erro: 'pdf_base64 ausente no body' }, { status: 400 })
     try {
       const buf = Buffer.from(b64, 'base64')
-      // Mantém o parser Ezze legado quando a seguradora cadastrada é Ezze
-      // (preserva todos os campos extras que o parser dela já extrai), e usa
-      // o parser unificado para todas as outras (Tokio, Allianz, Bradesco, etc.).
-      if (isEzze) {
+      if (tipo === 'propostas') {
+        // Propostas têm parser dedicado (proposta-pdf.ts) que reaproveita a
+        // detecção de seguradora e os parsers de apólice como base.
+        const r = await parsePropostaPdf(buf, segNome)
+        pdfLayout = r.layout
+        linhas = r.rows
+      } else if (isEzze) {
+        // Apólice da Ezze: mantém parser legado (extrai franquias detalhadas).
         const r = await parseEzzeApolicePdf(buf)
         pdfLayout = r.layout
         linhas = r.rows.map(row => ({ ...row, seguradora_origem: 'ezze' }))
       } else {
+        // Apólice de qualquer outra seguradora: dispatcher unificado.
         const r = await parseApolicePdf(buf, segNome)
         pdfLayout = r.layout
         linhas = r.rows
@@ -412,6 +583,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const importacao_id = (imp as any).id as string
   const tabela = TABELAS[tipo]
   const mapper =
+    (tipo === 'propostas' && formato === 'pdf') ? mapPropostaPdf :
+    tipo === 'propostas'     ? mapPropostaPdf :
     (tipo === 'apolices' && formato === 'pdf') ? mapApolicePdf :
     tipo === 'apolices'      ? mapApolice :
     (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :

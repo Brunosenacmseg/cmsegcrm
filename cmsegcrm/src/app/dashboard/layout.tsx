@@ -19,6 +19,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/mural',        icon:'📣', label:'Mural' },
   { href:'/dashboard/clientes',     icon:'👥', label:'Clientes' },
   { href:'/dashboard/apolices',     icon:'📋', label:'Apólices' },
+  { href:'/dashboard/propostas',    icon:'📝', label:'Propostas' },
   { href:'/dashboard/tarefas',      icon:'✅', label:'Tarefas', badge:'tarefas' },
   { href:'/dashboard/metas',        icon:'🎯', label:'Metas' },
   { href:'/dashboard/renovacoes',   icon:'🔄', label:'Renovações' },

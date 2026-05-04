@@ -6,10 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 
 declare global { interface Window { XLSX: any; JSZip: any } }
 
-type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes'
+type Tipo = 'apolices' | 'propostas' | 'sinistros' | 'inadimplencia' | 'comissoes'
 type Aba = Tipo | 'relatorio_clientes'
 const ABAS: { tipo: Aba; label: string; emoji: string }[] = [
   { tipo: 'apolices',           label: 'Apólices',                emoji: '📋' },
+  { tipo: 'propostas',          label: 'Propostas',               emoji: '📝' },
   { tipo: 'sinistros',          label: 'Sinistros',               emoji: '🛡️' },
   { tipo: 'inadimplencia',      label: 'Inadimplência',           emoji: '⏰' },
   { tipo: 'comissoes',          label: 'Comissões',               emoji: '💰' },
@@ -17,6 +18,7 @@ const ABAS: { tipo: Aba; label: string; emoji: string }[] = [
 ]
 const TABELAS: Record<Tipo, string> = {
   apolices:      'seg_stage_apolices',
+  propostas:     'seg_stage_propostas',
   sinistros:     'seg_stage_sinistros',
   inadimplencia: 'seg_stage_inadimplencia',
   comissoes:     'seg_stage_comissoes',
@@ -532,12 +534,14 @@ export default function SeguradoraDetalhePage() {
     const lower = file.name.toLowerCase()
     const isEzze = /ezze/i.test(seguradora?.nome || '')
 
-    // PDF: importação por apólice (qualquer seguradora). Envia bytes em base64
-    // e o parser roda no servidor. A seguradora é detectada automaticamente
-    // do conteúdo do PDF — o nome cadastrado serve só como fallback.
+    // PDF: importação por apólice OU proposta (qualquer seguradora). Envia
+    // bytes em base64 e o parser roda no servidor. A seguradora é detectada
+    // automaticamente do conteúdo do PDF — o nome cadastrado serve só como
+    // fallback. As tabs Sinistros/Inadimplência/Comissões continuam exigindo
+    // planilha estruturada (XLSX/CSV/RET).
     if (lower.endsWith('.pdf')) {
-      if (aba !== 'apolices') {
-        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices.' })
+      if (aba !== 'apolices' && aba !== 'propostas') {
+        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices e propostas.' })
         e.target.value = ''
         return
       }
