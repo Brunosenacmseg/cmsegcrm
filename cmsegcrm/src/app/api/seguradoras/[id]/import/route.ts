@@ -146,6 +146,61 @@ function mapComissao(row: any, seguradora_id: string, importacao_id: string) {
   }
 }
 
+// Mapeamento dedicado para Ezze Seguros.
+// Colunas da planilha: NomeCorretor, DataPagamento, NumeroRecibo, NomeTipoPagamento,
+// NomeSegurado, NumeroApolice, NumeroEndosso, NumeroParcela, ValorBruto, ValorLiquido, NomeProduto
+// O mapeamento genérico falha aqui porque "NomeCorretor"/"NomeTipoPagamento" colidem
+// com o hint "nome" e os campos "ValorBruto"/"ValorLiquido" não casam com os hints
+// padrão de prêmio/comissão. Aqui usamos lookup exato pelas colunas conhecidas.
+function getCI(row: Record<string, any>, key: string): any {
+  const target = norm(key)
+  for (const k of Object.keys(row)) {
+    if (norm(k) === target) return row[k]
+  }
+  return null
+}
+// Mapeamento dedicado para sinistros da Ezze Seguros.
+// Colunas: Sinistro, Sinistrado, Apólice, Cliente, Ramo, Data da comunicação, Causa, Situação
+// O hint genérico "data aviso" não casa com "Data da comunicação", então mapeamos
+// explicitamente. Cliente vira o cliente_nome (titular da apólice) e Sinistrado/Ramo
+// ficam preservados em `dados`.
+function mapSinistroEzze(row: any, seguradora_id: string, importacao_id: string) {
+  return {
+    seguradora_id, importacao_id,
+    numero_sinistro:   sStr(getCI(row, 'Sinistro')),
+    numero_apolice:    sStr(getCI(row, 'Apólice') ?? getCI(row, 'Apolice')),
+    cpf_cnpj:          null,
+    cliente_nome:      sStr(getCI(row, 'Cliente') ?? getCI(row, 'Sinistrado')),
+    data_aviso:        date(getCI(row, 'Data da comunicação') ?? getCI(row, 'Data da comunicacao')),
+    data_ocorrencia:   null,
+    data_encerramento: null,
+    valor_indenizacao: null,
+    causa:             sStr(getCI(row, 'Causa')),
+    situacao:          sStr(getCI(row, 'Situação') ?? getCI(row, 'Situacao')),
+    dados: row, // preserva Sinistrado e Ramo
+  }
+}
+
+function mapComissaoEzze(row: any, seguradora_id: string, importacao_id: string) {
+  const dataPag = date(getCI(row, 'DataPagamento'))
+  const competencia = dataPag ? dataPag.slice(0, 7) : null // YYYY-MM
+  return {
+    seguradora_id, importacao_id,
+    numero_apolice: sStr(getCI(row, 'NumeroApolice')),
+    cpf_cnpj:       null, // planilha Ezze não traz CPF/CNPJ
+    cliente_nome:   sStr(getCI(row, 'NomeSegurado')),
+    produto:        sStr(getCI(row, 'NomeProduto')),
+    competencia,
+    data_pagamento: dataPag,
+    parcela:        nInt(getCI(row, 'NumeroParcela')),
+    total_parcelas: null,
+    premio:         null, // Ezze não envia prêmio na planilha de comissões
+    comissao_pct:   null,
+    comissao_valor: num(getCI(row, 'ValorBruto')), // comissão bruta paga
+    dados: row, // preserva NomeCorretor, NumeroRecibo, NomeTipoPagamento, NumeroEndosso, ValorLiquido
+  }
+}
+
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
@@ -169,8 +224,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (formato === 'pdf') return NextResponse.json({ erro: 'PDF ainda não suportado — em breve' }, { status: 400 })
   if (!linhas.length) return NextResponse.json({ erro: 'sem linhas' }, { status: 400 })
 
-  const { data: seg } = await admin().from('seguradoras').select('id').eq('id', params.id).single()
+  const { data: seg } = await admin().from('seguradoras').select('id, nome').eq('id', params.id).single()
   if (!seg) return NextResponse.json({ erro: 'seguradora não encontrada' }, { status: 404 })
+  const segNome = String((seg as any).nome || '')
+  const isEzze = /ezze/i.test(segNome)
 
   // cria registro de importação
   const { data: imp, error: impErr } = await admin().from('seg_importacoes').insert({
@@ -187,8 +244,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const tabela = TABELAS[tipo]
   const mapper =
     tipo === 'apolices'      ? mapApolice :
+    (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :
     tipo === 'sinistros'     ? mapSinistro :
     tipo === 'inadimplencia' ? mapInadimplencia :
+    (tipo === 'comissoes' && isEzze) ? mapComissaoEzze :
                                 mapComissao
   const payloads = linhas.map(r => mapper(r, params.id, importacao_id))
 
