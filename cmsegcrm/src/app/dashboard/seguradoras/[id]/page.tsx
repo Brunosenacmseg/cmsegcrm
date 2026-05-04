@@ -172,7 +172,7 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
 //
 // Os parsers de layout específicos (mapeamento de posições) são
 // ativados conforme o layout oficial da Porto for documentado.
-async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ rows: Record<string, any>[]; tipoArquivo: string | null }> {
+async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionada?: string): Promise<{ rows: Record<string, any>[]; tipoArquivo: string | null }> {
   await loadJSZip()
   let texto = ''
   let nomeInterno = nomeOriginal
@@ -200,7 +200,15 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
     }
     return null
   }
-  const tipoArquivo = extTipo(nomeOriginal) || extTipo(nomeInterno)
+  let tipoArquivo = extTipo(nomeOriginal) || extTipo(nomeInterno)
+  // Fallback: usa a aba selecionada para inferir tipo quando o nome do
+  // arquivo é genérico (ex: 'J8FXUJ004839.RET' sem indicação do tipo).
+  if (!tipoArquivo && abaSelecionada) {
+    if (abaSelecionada === 'comissoes')      tipoArquivo = 'COM'
+    else if (abaSelecionada === 'apolices')  tipoArquivo = 'APP'
+    else if (abaSelecionada === 'inadimplencia') tipoArquivo = 'IRE'
+    // sinistros não tem mapping — fica null para erro explícito
+  }
 
   // .CBS = mensagem de status/erro curta — não é dado.
   if (tipoArquivo === 'CBS' || texto.length < 200) {
@@ -461,7 +469,7 @@ export default function SeguradoraDetalhePage() {
         linhasArq = await lerZipPlanilhas(buf)
       } else if (lower.endsWith('.ret') || lower.endsWith('.com') || lower.endsWith('.cbs') || lower.endsWith('.vdn') || lower.endsWith('.sre') || lower.endsWith('.xpp') || lower.endsWith('.xpi') || lower.endsWith('.ire') || lower.endsWith('.app') || lower.endsWith('.api')) {
         formato = 'ret' as any
-        const r = await lerPortoRET(buf, file.name)
+        const r = await lerPortoRET(buf, file.name, aba)
         linhasArq = r.rows
         if (r.tipoArquivo && r.tipoArquivo !== 'COM' && aba === 'comissoes') {
           setMsg({ tipo: 'err', texto: `Arquivo Porto tipo .${r.tipoArquivo} ainda não tem parser de campos. Por enquanto, só .COM (Comissões) está com mapeamento tentativo. As linhas brutas serão guardadas em 'dados'.` })
