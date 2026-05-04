@@ -105,20 +105,40 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
   const m = nomeInterno.toLowerCase().match(/\.([a-z]{3})$/)
   const tipoArquivo = m ? m[1].toUpperCase() : null
 
-  // Quebra em linhas (LF ou CRLF). Mantém apenas linhas com 250 chars
-  // (estrutura CNAB esperada).
-  const linhas = texto.replace(/\r\n/g, '\n').split('\n').filter(l => l.length === 250)
-  // Por enquanto guarda tudo bruto; parser de cada layout vem em PR seguinte
-  // quando tivermos o spec/amostras reais.
-  const rows = linhas.map((l, i) => ({
-    linha_num: i + 1,
-    tipo_arquivo: tipoArquivo,
-    nome_interno: nomeInterno,
-    linha_raw: l,
-    // Heurística geral por extensão (será substituída por mapping fixo
-    // assim que tivermos as posições oficiais):
-    ...(tipoArquivo === 'COM' ? parseLinhaPortoCOM(l) : {}),
-  }))
+  // Quebra em linhas. Tenta vários separadores; se nada bater, força
+  // chunks fixos de 250 chars (alguns layouts CNAB não têm separador).
+  let linhas = texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  // Filtra vazias
+  linhas = linhas.filter(l => l.length > 0)
+  // Se a maioria não tem 250, talvez não tenha separador — quebra fixo
+  const com250 = linhas.filter(l => l.length === 250).length
+  if (linhas.length === 0 || com250 / Math.max(linhas.length, 1) < 0.5) {
+    // Força chunks de 250
+    const limpo = texto.replace(/[\r\n]/g, '')
+    linhas = []
+    for (let i = 0; i + 250 <= limpo.length; i += 250) linhas.push(limpo.substr(i, 250))
+  }
+  // Mantém só as de 250 (descarta header/trailer com tamanhos diferentes)
+  const linhas250 = linhas.filter(l => l.length === 250)
+  if (linhas250.length === 0) {
+    throw new Error(`Porto: nenhuma linha de 250 chars encontrada. Diagnóstico: total=${linhas.length}, tamanhos=${[...new Set(linhas.slice(0,5).map(l=>l.length))].join(',')}, primeiros chars: "${(linhas[0]||'').slice(0,40)}..."`)
+  }
+  // Para .COM: só envia linhas de detalhe (com nº apólice válido).
+  // Outros tipos: envia tudo guardando linha_raw para análise posterior.
+  const rows: Record<string, any>[] = []
+  for (let i = 0; i < linhas250.length; i++) {
+    const l = linhas250[i]
+    const parsed = tipoArquivo === 'COM' ? parseLinhaPortoCOM(l) : {}
+    // Pula header/trailer do .COM
+    if (tipoArquivo === 'COM' && !(parsed as any).numero_apolice) continue
+    rows.push({
+      linha_num: i + 1,
+      tipo_arquivo: tipoArquivo,
+      nome_interno: nomeInterno,
+      linha_raw: l,
+      ...parsed,
+    })
+  }
   return { rows, tipoArquivo }
 }
 
@@ -147,16 +167,16 @@ function parseLinhaPortoCOM(l: string): Record<string, any> {
   const comBase = parseInt(comStr, 10) / 100
   const valor_comissao = isFinite(comBase) ? (comSign === '-' ? -comBase : comBase) : 0
 
-  // Data Movimento (73-81): 8 dígitos YYYYMMDD
+  // Data Movimento (73-81): 8 dígitos YYYYMMDD — tratada como data_pagamento
   const dMov = subs(73, 80).trim()
-  const data_movimento = /^\d{8}$/.test(dMov) ? `${dMov.slice(0,4)}-${dMov.slice(4,6)}-${dMov.slice(6,8)}` : null
+  const data_pagamento = /^\d{8}$/.test(dMov) ? `${dMov.slice(0,4)}-${dMov.slice(4,6)}-${dMov.slice(6,8)}` : null
 
   // Data Emissão (89-97): 8 dígitos YYYYMMDD
   const dEmi = subs(89, 96).trim()
   const data_emissao = /^\d{8}$/.test(dEmi) ? `${dEmi.slice(0,4)}-${dEmi.slice(4,6)}-${dEmi.slice(6,8)}` : null
 
-  // Competência derivada da data de movimento
-  const competencia = data_movimento ? data_movimento.slice(0, 7) : null
+  // Competência derivada da data de pagamento
+  const competencia = data_pagamento ? data_pagamento.slice(0, 7) : null
 
   return {
     numero_apolice,
@@ -164,7 +184,7 @@ function parseLinhaPortoCOM(l: string): Record<string, any> {
     cpf_cnpj: null,                  // não existe no layout — cruzar pelo nome+apólice
     valor_premio,
     valor_comissao,
-    data_movimento,
+    data_pagamento,
     data_emissao,
     competencia,
   }
