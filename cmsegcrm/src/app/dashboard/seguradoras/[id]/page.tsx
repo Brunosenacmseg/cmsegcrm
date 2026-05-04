@@ -33,6 +33,16 @@ async function loadXLSX() {
   })
 }
 
+function bufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)))
+  }
+  return btoa(bin)
+}
+
 async function loadJSZip() {
   if (typeof window === 'undefined') return
   if (window.JSZip) return
@@ -379,9 +389,43 @@ export default function SeguradoraDetalhePage() {
     if (!file) return
     setMsg(null)
     const lower = file.name.toLowerCase()
+    const isEzze = /ezze/i.test(seguradora?.nome || '')
+
+    // PDF: somente apólices da Ezze. Envia bytes em base64 e o parser roda no servidor.
     if (lower.endsWith('.pdf')) {
-      setMsg({ tipo: 'err', texto: 'Importação por PDF está em desenvolvimento. Use XLSX, CSV ou XML por enquanto.' })
-      e.target.value = ''
+      if (!isEzze || aba !== 'apolices') {
+        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices da Ezze Seguros.' })
+        e.target.value = ''
+        return
+      }
+      setImportando(true)
+      try {
+        const buf = await file.arrayBuffer()
+        const pdfBase64 = bufferToBase64(buf)
+        const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify({
+            tipo: aba,
+            formato: 'pdf',
+            nome_arquivo: file.name,
+            pdf_base64: pdfBase64,
+          }),
+        })
+        const j = await r.json()
+        if (!r.ok) throw new Error(j?.erro || 'falha na importação')
+        setMsg({
+          tipo: 'ok',
+          texto: `PDF Ezze (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
+        })
+        await carregarContagens()
+        await carregarLinhas()
+      } catch (err: any) {
+        setMsg({ tipo: 'err', texto: err?.message || String(err) })
+      } finally {
+        setImportando(false)
+        if (inputRef.current) inputRef.current.value = ''
+      }
       return
     }
     setImportando(true)

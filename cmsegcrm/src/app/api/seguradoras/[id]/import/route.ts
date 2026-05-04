@@ -1,14 +1,21 @@
 // Importa linhas (já parseadas no cliente) para o staging do módulo seguradoras.
 // Body: { tipo: 'apolices'|'sinistros'|'inadimplencia'|'comissoes',
-//         formato: 'xlsx'|'csv'|'pdf',
+//         formato: 'xlsx'|'csv'|'xml'|'pdf'|'ret',
 //         nome_arquivo?: string,
-//         linhas: Record<string, any>[] }
+//         linhas?: Record<string, any>[],   // padrão para xlsx/csv/xml/ret
+//         pdf_base64?: string }              // somente quando formato='pdf'
+//
+// PDF é parseado no servidor (apenas Ezze, tipo='apolices'). Layouts suportados:
+// Auto Individual e RC Transporte de Passageiros (este último gera 1 linha por veículo).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { parseEzzeApolicePdf } from '@/lib/parsers/ezze-apolice-pdf'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
+// pdf-parse precisa do runtime Node (Buffer, fs)
+export const runtime = 'nodejs'
 
 let _sa: ReturnType<typeof createClient> | null = null
 function admin() {
@@ -223,16 +230,35 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const body = await req.json().catch(() => null) as any
   const tipo = body?.tipo as Tipo
-  const formato = (body?.formato as 'xlsx'|'csv'|'xml'|'pdf') || 'xlsx'
-  const linhas: any[] = Array.isArray(body?.linhas) ? body.linhas : []
+  const formato = (body?.formato as 'xlsx'|'csv'|'xml'|'pdf'|'ret') || 'xlsx'
+  let linhas: any[] = Array.isArray(body?.linhas) ? body.linhas : []
+  let pdfLayout: string | null = null
   if (!TIPOS.includes(tipo)) return NextResponse.json({ erro: 'tipo inválido' }, { status: 400 })
-  if (formato === 'pdf') return NextResponse.json({ erro: 'PDF ainda não suportado — em breve' }, { status: 400 })
-  if (!linhas.length) return NextResponse.json({ erro: 'sem linhas' }, { status: 400 })
 
   const { data: seg } = await admin().from('seguradoras').select('id, nome').eq('id', params.id).single()
   if (!seg) return NextResponse.json({ erro: 'seguradora não encontrada' }, { status: 404 })
   const segNome = String((seg as any).nome || '')
   const isEzze = /ezze/i.test(segNome)
+
+  if (formato === 'pdf') {
+    if (!isEzze || tipo !== 'apolices') {
+      return NextResponse.json({
+        erro: 'Importação por PDF só está disponível para apólices da Ezze Seguros.',
+      }, { status: 400 })
+    }
+    const b64 = String(body?.pdf_base64 || '').trim()
+    if (!b64) return NextResponse.json({ erro: 'pdf_base64 ausente no body' }, { status: 400 })
+    try {
+      const buf = Buffer.from(b64, 'base64')
+      const r = await parseEzzeApolicePdf(buf)
+      pdfLayout = r.layout
+      linhas = r.rows
+    } catch (e: any) {
+      return NextResponse.json({ erro: `Falha ao ler PDF: ${e?.message || e}` }, { status: 400 })
+    }
+  }
+
+  if (!linhas.length) return NextResponse.json({ erro: 'sem linhas' }, { status: 400 })
 
   // cria registro de importação
   const { data: imp, error: impErr } = await admin().from('seg_importacoes').insert({
@@ -276,5 +302,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     qtd_pendentes: inseridos,
   }).eq('id', importacao_id)
 
-  return NextResponse.json({ ok: true, importacao_id, inseridos })
+  return NextResponse.json({ ok: true, importacao_id, inseridos, pdf_layout: pdfLayout })
 }
