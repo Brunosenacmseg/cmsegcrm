@@ -121,13 +121,23 @@ function mapSinistro(row: any, seguradora_id: string, importacao_id: string) {
 function mapInadimplencia(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
-    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice'])),
-    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento'])),
-    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome'])),
-    parcela:        nInt(pick(row, ['parcela','nr parcela'])),
-    vencimento:     date(pick(row, ['vencimento','data vencimento'])),
-    valor:          num(pick(row, ['valor','valor parcela','valor em aberto','valor devido'])),
-    dias_atraso:    nInt(pick(row, ['dias atraso','dias em atraso','atraso'])),
+    ramo:                  sStr(pick(row, ['ramo'])),
+    numero_apolice:        sStr(pick(row, ['apolice','numero apolice','nr apolice'])),
+    item_adesao:           sStr(pick(row, ['item adesao','item/adesao','adesao'])),
+    recibo:                sStr(pick(row, ['recibo','numero recibo','nr recibo'])),
+    premio:                num(pick(row, ['premio','prêmio','premio total','valor'])),
+    // Comissao IGNORADA — usuario pediu pra nao importar
+    vencimento:            date(pick(row, ['data vencimento','vencimento'])),
+    previsao_cancelamento: date(pick(row, ['previsao cancelamento','previsão cancelamento','data cancelamento'])),
+    cliente_nome:          sStr(pick(row, ['nome','segurado','cliente'])),
+    cpf_cnpj:              cleanDoc(pick(row, ['cpf cnpj','cpf - cnpj','cpf/cnpj','cpf','cnpj','documento'])),
+    sexo:                  sStr(pick(row, ['sexo','genero'])),
+    // Item IGNORADO — usuario pediu pra nao importar
+    parcelas:              sStr(pick(row, ['parcelas','parcela','nr parcela'])),
+    // Campos legados (sem hint na planilha Allianz; ficam null)
+    parcela:               nInt(pick(row, ['parcela','nr parcela'])),
+    valor:                 num(pick(row, ['valor parcela','valor em aberto','valor devido'])),
+    dias_atraso:           nInt(pick(row, ['dias atraso','dias em atraso','atraso'])),
     dados: row,
   }
 }
