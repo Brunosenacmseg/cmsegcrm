@@ -120,12 +120,20 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
   if (subs(18, 21) !== '0050') return {}    // só tipo 50 (segurado)
   if (subs(22, 22) !== '1') return {}       // só ocorrência principal (nome+CPF)
 
-  const numero_apolice = subs(3, 13).replace(/^0+/, '') || subs(3, 13)
+  // Validado pelos dados reais (não pelo spec):
+  //   - pos 3-13 (11d): código interno da Porto (NÃO é a apólice)
+  //   - pos 23-30 (8d): nº de apólice REAL
+  //   - PF: 3 zeros em 82-84, CPF em 85-95
+  //   - PJ: 4 zeros em 82-85, CNPJ em 86-99
+  const codigo_interno = subs(3, 13).replace(/^0+/, '')
+  const numero_apolice = subs(23, 30).replace(/^0+/, '') || subs(23, 30)
   const endosso = subs(18, 19)
   const cliente_nome = subs(31, 80).trim()
-  const tipoPessoa = subs(81, 81) // 'F' ou 'J'
-  const doc14 = subs(85, 98)
-  const cpf_cnpj = tipoPessoa === 'F' ? doc14.slice(0, 11) : doc14
+  const tipoPessoa = subs(81, 81)
+  let cpf_cnpj = ''
+  if (tipoPessoa === 'F') cpf_cnpj = subs(85, 95).trim()
+  else if (tipoPessoa === 'J') cpf_cnpj = subs(86, 99).trim()
+  else cpf_cnpj = subs(85, 98).trim()
 
   // Data Nascimento (PF) — DD/MM/AAAA — só preenche se for válida
   let data_nascimento: string | null = null
@@ -137,6 +145,7 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
 
   return {
     numero_apolice,
+    codigo_interno,
     endosso,
     cliente_nome,
     tipo_pessoa: tipoPessoa,
@@ -170,8 +179,19 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
     texto = decodificarLatin(buf)
   }
   // Identifica tipo pela extensão (.COM, .CBS, etc.)
-  const m = nomeInterno.toLowerCase().match(/\.([a-z]{3})$/)
-  const tipoArquivo = m ? m[1].toUpperCase() : null
+  // Identifica tipo pela extensão. Prioriza o nome ORIGINAL do arquivo
+  // (que costuma ter a extensão do tipo Porto: .COM, .APP, etc.).
+  // Cai pro nome interno do ZIP se o externo não tiver.
+  function extTipo(nome: string): string | null {
+    const lower = nome.toLowerCase()
+    const m = lower.match(/\.([a-z]{3})(?:\.ret)?$/)
+    if (m) return m[1].toUpperCase()
+    // Tenta o sufixo após underscore: J8FXUJ004839_ECOM
+    const m2 = lower.match(/_e?([a-z]{3})$/)
+    if (m2) return m2[1].toUpperCase()
+    return null
+  }
+  const tipoArquivo = extTipo(nomeOriginal) || extTipo(nomeInterno)
 
   // .CBS = mensagem de status/erro curta — não é dado.
   if (tipoArquivo === 'CBS' || texto.length < 200) {
