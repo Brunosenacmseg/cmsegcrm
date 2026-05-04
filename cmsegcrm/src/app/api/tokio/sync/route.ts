@@ -60,18 +60,28 @@ function mergeCookies(setCookieHeader: string | null) {
   }
 }
 
-async function tokioLogin(force = false): Promise<string> {
-  if (!force && tokenCache && tokenCache.exp > Date.now()) return tokenCache.token
-  if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
-    throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
-  }
-  // Handshake Imperva: GET inicial pra captar cookies de sessão antes do POST
-  try {
-    const warm = await fetch(TOKIO_BASE, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) })
-    mergeCookies(warm.headers.get('set-cookie'))
-  } catch {}
+// Path do login que efetivamente funcionou (descoberto em runtime).
+// A documentação oficial diz `/Corretor/Login`, mas o servidor real
+// (Spring Boot 3.x) responde 404 nesse path em alguns ambientes.
+// Quando o configurado falha, varremos algumas variações conhecidas.
+let resolvedLoginPath: string | null = null
 
-  const r = await fetch(`${TOKIO_BASE}${TOKIO_LOGIN_PATH}`, {
+const LOGIN_PATH_CANDIDATES = [
+  '/Corretor/Login',
+  '/Corretor/login',
+  '/Corretor/Autenticar',
+  '/Corretor/autenticar',
+  '/Corretor/auth',
+  '/Corretor/authenticate',
+  '/Corretor/token',
+  '/Corretor/getToken',
+  '/Corretor/Acessar',
+  '/Login',
+  '/login',
+]
+
+async function tentarLoginEmPath(path: string): Promise<{ ok: boolean; status: number; body: string }> {
+  const r = await fetch(`${TOKIO_BASE}${path}`, {
     method: 'POST',
     headers: {
       ...BROWSER_HEADERS,
@@ -87,19 +97,57 @@ async function tokioLogin(force = false): Promise<string> {
     signal: AbortSignal.timeout(25000),
   })
   mergeCookies(r.headers.get('set-cookie'))
-  if (!r.ok) throw new Error(`Tokio Login HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
-  const txt = await r.text()
-  // Resposta pode ser JSON {"token":"..."} ou string crua
-  let token = ''
-  try {
-    const j = JSON.parse(txt)
-    token = j.token || j.access_token || j.accessToken || j.Token || ''
-  } catch {
-    token = txt.replace(/^"|"$/g, '').trim()
+  const body = await r.text()
+  return { ok: r.ok, status: r.status, body }
+}
+
+async function tokioLogin(force = false): Promise<string> {
+  if (!force && tokenCache && tokenCache.exp > Date.now()) return tokenCache.token
+  if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
+    throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
   }
-  if (!token) throw new Error(`Tokio Login: token não encontrado na resposta: ${txt.slice(0,200)}`)
-  tokenCache = { token, exp: Date.now() + 25 * 60 * 1000 }   // 25 min de validade
-  return token
+  // Handshake Imperva: GET inicial pra captar cookies de sessão antes do POST
+  try {
+    const warm = await fetch(TOKIO_BASE, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) })
+    mergeCookies(warm.headers.get('set-cookie'))
+  } catch {}
+
+  // Ordem de tentativa: path já descoberto > configurado via env > candidatos
+  const ordem: string[] = []
+  if (resolvedLoginPath) ordem.push(resolvedLoginPath)
+  if (TOKIO_LOGIN_PATH && !ordem.includes(TOKIO_LOGIN_PATH)) ordem.push(TOKIO_LOGIN_PATH)
+  for (const p of LOGIN_PATH_CANDIDATES) if (!ordem.includes(p)) ordem.push(p)
+
+  let ultimo: { status: number; body: string; path: string } | null = null
+  for (const path of ordem) {
+    let res
+    try {
+      res = await tentarLoginEmPath(path)
+    } catch (err: any) {
+      ultimo = { status: 0, body: err.message?.slice(0, 200) || 'erro de rede', path }
+      continue
+    }
+    ultimo = { status: res.status, body: res.body.slice(0, 200), path }
+    // 404/405 -> path errado, próximo
+    if (res.status === 404 || res.status === 405) continue
+    // Não autorizado já significa que o path existe (mas creds erradas)
+    if (!res.ok) {
+      throw new Error(`Tokio Login HTTP ${res.status} em ${path}: ${res.body.slice(0,200)}`)
+    }
+    // Sucesso — extrai token
+    let token = ''
+    try {
+      const j = JSON.parse(res.body)
+      token = j.token || j.access_token || j.accessToken || j.Token || ''
+    } catch {
+      token = res.body.replace(/^"|"$/g, '').trim()
+    }
+    if (!token) throw new Error(`Tokio Login: token não encontrado em ${path}: ${res.body.slice(0,200)}`)
+    resolvedLoginPath = path
+    tokenCache = { token, exp: Date.now() + 25 * 60 * 1000 }
+    return token
+  }
+  throw new Error(`Tokio Login: nenhum path aceito. Última tentativa ${ultimo?.path} HTTP ${ultimo?.status}: ${ultimo?.body}`)
 }
 
 async function tokioGet(servico: string, params: Record<string,string|number> = {}): Promise<string> {
@@ -1380,6 +1428,7 @@ export async function POST(request: NextRequest) {
         supabase_role: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configurado' : 'FALTA',
         ws_base:        TOKIO_BASE,
         ws_login_path:  TOKIO_LOGIN_PATH,
+        ws_login_path_resolvido: resolvedLoginPath || '(nenhum login bem sucedido nesta instância ainda)',
         ws_user:        TOKIO_USER ? `sim (${TOKIO_USER.slice(0,8)}…)` : 'NÃO CONFIGURADO',
         ws_password:    TOKIO_PASSWORD ? 'sim' : 'NÃO CONFIGURADA',
         ws_service_key: TOKIO_SERVICE_KEY ? `sim (${TOKIO_SERVICE_KEY.length} chars)` : 'NÃO CONFIGURADA',
@@ -1474,7 +1523,7 @@ export async function POST(request: NextRequest) {
     if (action === 'testar_login') {
       try {
         const token = await tokioLogin(true)
-        return NextResponse.json({ ok: true, token_preview: token.slice(0,20) + '…', expira_em: '~25min' })
+        return NextResponse.json({ ok: true, token_preview: token.slice(0,20) + '…', expira_em: '~25min', login_path: resolvedLoginPath })
       } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 })
       }
