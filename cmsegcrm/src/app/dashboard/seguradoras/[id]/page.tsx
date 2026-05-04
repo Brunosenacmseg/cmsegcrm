@@ -6,10 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 
 declare global { interface Window { XLSX: any; JSZip: any } }
 
-type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes'
+type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes' | 'propostas'
 type Aba = Tipo | 'relatorio_clientes'
 const ABAS: { tipo: Aba; label: string; emoji: string }[] = [
   { tipo: 'apolices',           label: 'Apólices',                emoji: '📋' },
+  { tipo: 'propostas',          label: 'Propostas',               emoji: '📝' },
   { tipo: 'sinistros',          label: 'Sinistros',               emoji: '🛡️' },
   { tipo: 'inadimplencia',      label: 'Inadimplência',           emoji: '⏰' },
   { tipo: 'comissoes',          label: 'Comissões',               emoji: '💰' },
@@ -20,6 +21,7 @@ const TABELAS: Record<Tipo, string> = {
   sinistros:     'seg_stage_sinistros',
   inadimplencia: 'seg_stage_inadimplencia',
   comissoes:     'seg_stage_comissoes',
+  propostas:     'seg_stage_propostas',
 }
 
 async function loadXLSX() {
@@ -749,6 +751,7 @@ export default function SeguradoraDetalhePage() {
             {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
              aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
              aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
+             aba === 'propostas' ? ' registrar a proposta no histórico do cliente (criando o cadastro se necessário).' :
              ' criar/atualizar a apólice e vincular ao cliente.'}
           </p>
         )}
@@ -806,6 +809,7 @@ export default function SeguradoraDetalhePage() {
                 <tr>
                   <th style={th}>Status</th>
                   {aba === 'apolices' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>CPF/CNPJ</th><th style={th}>Vigência</th><th style={th}>Prêmio</th></>}
+                  {aba === 'propostas' && <><th style={th}>Proposta</th><th style={th}>Cliente</th><th style={th}>CPF/CNPJ</th><th style={th}>Produto</th><th style={th}>Prêmio</th><th style={th}>Situação</th></>}
                   {aba === 'sinistros' && <><th style={th}>Sinistro</th><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Data</th><th style={th}>Valor</th></>}
                   {aba === 'inadimplencia' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Parcela</th><th style={th}>Vencimento</th><th style={th}>Valor</th><th style={th}>Atraso</th></>}
                   {aba === 'comissoes' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Competência</th><th style={th}>Parcela</th><th style={th}>Valor</th></>}
@@ -822,6 +826,14 @@ export default function SeguradoraDetalhePage() {
                       <td style={tdMuted}>{l.cpf_cnpj || '—'}</td>
                       <td style={tdMuted}>{l.vigencia_ini || '—'} → {l.vigencia_fim || '—'}</td>
                       <td style={td}>{fmt(l.premio)}</td>
+                    </>}
+                    {aba === 'propostas' && <>
+                      <td style={tdMono}>{l.numero_proposta || '—'}</td>
+                      <td style={td}>{l.cliente_nome || '—'}</td>
+                      <td style={tdMuted}>{l.cpf_cnpj || '—'}</td>
+                      <td style={td}>{l.produto || '—'}</td>
+                      <td style={td}>{fmt(l.premio)}</td>
+                      <td style={tdMuted}>{l.situacao || '—'}</td>
                     </>}
                     {aba === 'sinistros' && <>
                       <td style={tdMono}>{l.numero_sinistro || '—'}</td>

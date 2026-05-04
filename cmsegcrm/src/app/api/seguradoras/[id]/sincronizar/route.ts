@@ -19,7 +19,7 @@ function admin() {
   return _sa
 }
 
-type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes'
+type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes' | 'propostas'
 
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
@@ -342,13 +342,70 @@ async function syncComissoes(seguradoraId: string, seguradoraNome: string, userI
   return { ok, erro }
 }
 
+// Sincroniza propostas: localiza/cria cliente e vincula apolice (se ja emitida).
+// Nao cria registros em outras tabelas — proposta e um documento intermediario.
+// O usuario pode usar a aba de Propostas para acompanhar o pipeline.
+async function syncPropostas(seguradoraId: string, seguradoraNome: string) {
+  const { data: rows } = await admin().from('seg_stage_propostas')
+    .select('*').eq('seguradora_id', seguradoraId).eq('status', 'pendente').limit(2000)
+  let ok = 0, erro = 0
+  for (const r of (rows || []) as any[]) {
+    try {
+      let cliente_id = await localizarCliente(r.cpf_cnpj, r.numero_apolice)
+      let clienteCriadoAuto = false
+      if (!cliente_id && r.cliente_nome) {
+        const { data: novo, error: errCli } = await admin().from('clientes').insert({
+          nome: r.cliente_nome,
+          cpf_cnpj: r.cpf_cnpj || null,
+          tipo: r.cpf_cnpj && r.cpf_cnpj.length > 11 ? 'PJ' : 'PF',
+          fonte: `import:${seguradoraNome}`,
+        }).select('id').single()
+        if (errCli) throw errCli
+        cliente_id = (novo as any).id
+        clienteCriadoAuto = true
+      }
+      if (!cliente_id) throw new Error('cliente nao localizado e sem nome para criar')
+
+      const apo = await localizarApolice(r.numero_apolice)
+      const apolice_id = apo?.id || null
+
+      if (cliente_id) {
+        await admin().from('historico').insert({
+          cliente_id, tipo: 'gold',
+          titulo: `Proposta importada (${seguradoraNome})`,
+          descricao: [
+            r.numero_proposta ? `Proposta ${r.numero_proposta}` : null,
+            r.numero_apolice  ? `Apolice ${r.numero_apolice}`   : null,
+            r.produto         ? `Produto ${r.produto}`          : null,
+            r.premio != null  ? `Premio R$ ${Number(r.premio).toFixed(2)}` : null,
+            r.situacao        ? `Situacao ${r.situacao}`        : null,
+          ].filter(Boolean).join(' • '),
+        })
+      }
+
+      await admin().from('seg_stage_propostas').update({
+        status: 'sincronizado', sincronizado_em: new Date().toISOString(),
+        cliente_id, apolice_id, erro_msg: null,
+        cliente_criado_auto: clienteCriadoAuto,
+      }).eq('id', r.id)
+      ok++
+    } catch (e: any) {
+      await admin().from('seg_stage_propostas').update({
+        status: 'erro', erro_msg: String(e?.message || e),
+      }).eq('id', r.id)
+      erro++
+    }
+  }
+  return { ok, erro }
+}
+
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ck = await checarAdmin(req)
   if (!ck.ok) return NextResponse.json({ erro: ck.erro }, { status: 401 })
 
   const body = await req.json().catch(() => null) as any
   const tipo = body?.tipo as Tipo
-  if (!['apolices','sinistros','inadimplencia','comissoes'].includes(tipo))
+  if (!['apolices','sinistros','inadimplencia','comissoes','propostas'].includes(tipo))
     return NextResponse.json({ erro: 'tipo inválido' }, { status: 400 })
 
   const { data: seg } = await admin().from('seguradoras').select('id, nome').eq('id', params.id).single()
@@ -360,6 +417,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (tipo === 'apolices')           r = await syncApolices(params.id, segNome)
     else if (tipo === 'sinistros')     r = await syncSinistros(params.id, segNome)
     else if (tipo === 'inadimplencia') r = await syncInadimplencia(params.id, segNome)
+    else if (tipo === 'propostas')     r = await syncPropostas(params.id, segNome)
     else                                r = await syncComissoes(params.id, segNome, ck.userId)
     return NextResponse.json({ ok: true, sincronizados: r.ok, erros: r.erro })
   } catch (e: any) {
