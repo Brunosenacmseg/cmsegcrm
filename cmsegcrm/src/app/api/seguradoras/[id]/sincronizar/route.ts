@@ -281,7 +281,8 @@ async function syncComissoes(seguradoraId: string, seguradoraNome: string, userI
       const apo = await localizarApolice(r.numero_apolice)
       const apolice_id = apo?.id || null
       const valor = Number(r.comissao_valor || 0)
-      if (!(valor >= 0)) throw new Error('valor de comissão inválido')
+      // Permite negativos (estorno por cancelamento). So rejeita NaN/Infinity.
+      if (!isFinite(valor)) throw new Error('valor de comissão inválido')
 
       // vendedor: do registered_por (admin que importou) — pode ajustar depois
       // tenta usar vendedor da apólice/negócio se houver
