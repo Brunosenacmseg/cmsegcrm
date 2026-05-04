@@ -72,6 +72,36 @@ function lerArquivo(buf: ArrayBuffer): Record<string, any>[] {
   return out
 }
 
+// Allianz (e outras) entregam arquivos zipados com varios XLSX/CSV dentro.
+// Descompacta e processa cada planilha, concatenando todas as linhas.
+async function lerZipPlanilhas(buf: ArrayBuffer): Promise<Record<string, any>[]> {
+  await loadJSZip()
+  await loadXLSX()
+  const zip = await window.JSZip.loadAsync(buf)
+  const arquivos = Object.keys(zip.files).filter((k: string) => {
+    if (zip.files[k].dir) return false
+    const lk = k.toLowerCase()
+    return lk.endsWith('.xlsx') || lk.endsWith('.xls') || lk.endsWith('.csv')
+  })
+  if (arquivos.length === 0) throw new Error('ZIP nao contem .xlsx, .xls ou .csv')
+  const out: Record<string, any>[] = []
+  for (const nome of arquivos) {
+    const innerBuf: ArrayBuffer = await zip.files[nome].async('arraybuffer')
+    try {
+      const linhas = lerArquivo(innerBuf)
+      // Marca origem pra rastreabilidade quando o ZIP tem multiplos arquivos
+      for (const r of linhas) {
+        if (!r._arquivo_origem) r._arquivo_origem = nome
+      }
+      out.push(...linhas)
+    } catch (e) {
+      // Pula arquivo individual que nao conseguiu ler em vez de matar o ZIP todo
+      console.warn(`[zip] falha ao ler ${nome}:`, e)
+    }
+  }
+  return out
+}
+
 // Decoder Latin1/Windows-1252 → string (para .RET da Porto).
 function decodificarLatin(buf: ArrayBuffer): string {
   // TextDecoder com windows-1252 cobre o conjunto Latin1 + extras (€, etc.)
@@ -312,6 +342,9 @@ export default function SeguradoraDetalhePage() {
       if (lower.endsWith('.xml')) {
         formato = 'xml'
         linhasArq = lerTokioXML(buf)
+      } else if (lower.endsWith('.zip')) {
+        formato = 'xlsx'
+        linhasArq = await lerZipPlanilhas(buf)
       } else if (lower.endsWith('.ret') || lower.endsWith('.com') || lower.endsWith('.cbs') || lower.endsWith('.vdn') || lower.endsWith('.sre') || lower.endsWith('.xpp') || lower.endsWith('.xpi') || lower.endsWith('.ire') || lower.endsWith('.app') || lower.endsWith('.api')) {
         formato = 'ret' as any
         const r = await lerPortoRET(buf, file.name)
@@ -437,7 +470,7 @@ export default function SeguradoraDetalhePage() {
             <input
               ref={inputRef}
               type="file"
-              accept=".xlsx,.xls,.csv,.xml,.ret,.com,.cbs,.vdn,.sre,.xpp,.xpi,.ire,.app,.api,.pdf"
+              accept=".xlsx,.xls,.csv,.xml,.zip,.ret,.com,.cbs,.vdn,.sre,.xpp,.xpi,.ire,.app,.api,.pdf"
               onChange={onSelecionarArquivo}
               disabled={importando}
               style={{
@@ -475,7 +508,7 @@ export default function SeguradoraDetalhePage() {
 
         {aba !== 'relatorio_clientes' && (
           <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:12 }}>
-            Aceitos: XLSX, CSV. (PDF em breve.) Após importar, clique em <strong style={{ color:'var(--text)' }}>Sincronizar</strong> para vincular ao cliente/apólice e
+            Aceitos: XLSX, CSV, XML (Tokio), ZIP (Allianz — descompacta XLSX/CSV automaticamente), .RET/.COM (Porto). Após importar, clique em <strong style={{ color:'var(--text)' }}>Sincronizar</strong> para vincular ao cliente/apólice e
             {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
              aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
              aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
