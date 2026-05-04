@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 
 declare global { interface Window { XLSX: any; JSZip: any } }
 
-type Tipo = 'apolices' | 'sinistros' | 'inadimplencia' | 'comissoes' | 'propostas'
+type Tipo = 'apolices' | 'propostas' | 'sinistros' | 'inadimplencia' | 'comissoes'
 type Aba = Tipo | 'relatorio_clientes'
 const ABAS: { tipo: Aba; label: string; emoji: string }[] = [
   { tipo: 'apolices',           label: 'Apólices',                emoji: '📋' },
@@ -18,10 +18,10 @@ const ABAS: { tipo: Aba; label: string; emoji: string }[] = [
 ]
 const TABELAS: Record<Tipo, string> = {
   apolices:      'seg_stage_apolices',
+  propostas:     'seg_stage_propostas',
   sinistros:     'seg_stage_sinistros',
   inadimplencia: 'seg_stage_inadimplencia',
   comissoes:     'seg_stage_comissoes',
-  propostas:     'seg_stage_propostas',
 }
 
 async function loadXLSX() {
@@ -534,10 +534,14 @@ export default function SeguradoraDetalhePage() {
     const lower = file.name.toLowerCase()
     const isEzze = /ezze/i.test(seguradora?.nome || '')
 
-    // PDF: somente apólices da Ezze. Envia bytes em base64 e o parser roda no servidor.
+    // PDF: importação por apólice OU proposta (qualquer seguradora). Envia
+    // bytes em base64 e o parser roda no servidor. A seguradora é detectada
+    // automaticamente do conteúdo do PDF — o nome cadastrado serve só como
+    // fallback. As tabs Sinistros/Inadimplência/Comissões continuam exigindo
+    // planilha estruturada (XLSX/CSV/RET).
     if (lower.endsWith('.pdf')) {
-      if (!isEzze || aba !== 'apolices') {
-        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices da Ezze Seguros.' })
+      if (aba !== 'apolices' && aba !== 'propostas') {
+        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices e propostas.' })
         e.target.value = ''
         return
       }
@@ -557,9 +561,10 @@ export default function SeguradoraDetalhePage() {
         })
         const j = await r.json()
         if (!r.ok) throw new Error(j?.erro || 'falha na importação')
+        const segLabel = isEzze ? 'Ezze' : (seguradora?.nome || 'PDF')
         setMsg({
           tipo: 'ok',
-          texto: `PDF Ezze (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
+          texto: `PDF ${segLabel} (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
         })
         await carregarContagens()
         await carregarLinhas()
