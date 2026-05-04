@@ -1611,6 +1611,84 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Diagnóstico exaustivo: tenta um serviço com várias combinações
+    // de método + Content-Type + body para descobrir qual o servidor
+    // aceita. Devolve a tabela completa de resultados.
+    if (action === 'diagnose_servico') {
+      const cfg = SERVICO_MAP[String(params.servico||'APOLICES').toUpperCase()]
+      if (!cfg) return NextResponse.json({ error: 'servico invalido' }, { status: 400 })
+      try {
+        const token = await tokioLogin()
+        const url = `${TOKIO_BASE}/Corretor/${cfg.endpoint}`
+        const hojeIso = new Date().toISOString().slice(0, 10)
+        const ini = String(params.dataInicio || new Date(Date.now() - 30*86400000).toISOString().slice(0,10))
+        const fim = String(params.dataFim    || hojeIso)
+        const baseHeaders: Record<string,string> = {
+          ...BROWSER_HEADERS,
+          'Accept':       'application/xml, application/json, text/xml',
+          'auth_token':   token,
+          'authToken':    token,
+          'Auth-Token':   token,
+          'Authorization': `Bearer ${token}`,
+          'token':        token,
+          'service_key':  TOKIO_SERVICE_KEY,
+          'serviceKey':   TOKIO_SERVICE_KEY,
+          'Service-Key':  TOKIO_SERVICE_KEY,
+        }
+        if (cdCorretorCache) {
+          baseHeaders['cd_corretor'] = cdCorretorCache
+          baseHeaders['cdCorretor'] = cdCorretorCache
+        }
+        const qs = `?dataInicio=${ini}&dataFim=${fim}` + (cdCorretorCache ? `&cdCorretor=${cdCorretorCache}` : '')
+
+        type Try = { nome: string; status: number; resposta: string }
+        const tentativas: Try[] = []
+
+        async function tentar(nome: string, init: RequestInit, urlOverride?: string) {
+          try {
+            const r = await fetch(urlOverride || url, { signal: AbortSignal.timeout(20000), ...init })
+            const txt = (await r.text()).slice(0, 400)
+            tentativas.push({ nome, status: r.status, resposta: txt })
+          } catch (err: any) {
+            tentativas.push({ nome, status: 0, resposta: `erro: ${err.message?.slice(0,200)}` })
+          }
+        }
+
+        // 1. POST sem body
+        await tentar('1. POST sem body', { method: 'POST', headers: baseHeaders })
+        // 2. POST body vazio "{}"
+        await tentar('2. POST body {}', { method: 'POST', headers: { ...baseHeaders, 'Content-Type': 'application/json' }, body: '{}' })
+        // 3. POST body "null"
+        await tentar('3. POST body null', { method: 'POST', headers: { ...baseHeaders, 'Content-Type': 'application/json' }, body: 'null' })
+        // 4. POST body com filtros top-level
+        await tentar('4. POST JSON top-level', { method: 'POST', headers: { ...baseHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ dataInicio: ini, dataFim: fim, cdCorretor: cdCorretorCache }) })
+        // 5. POST body só com cdCorretor
+        await tentar('5. POST JSON {cdCorretor}', { method: 'POST', headers: { ...baseHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ cdCorretor: cdCorretorCache }) })
+        // 6. POST form-urlencoded
+        await tentar('6. POST form-encoded', { method: 'POST', headers: { ...baseHeaders, 'Content-Type': 'application/x-www-form-urlencoded' }, body: `dataInicio=${ini}&dataFim=${fim}` + (cdCorretorCache ? `&cdCorretor=${cdCorretorCache}` : '') })
+        // 7. POST com query string + body vazio
+        await tentar('7. POST QS + body{}', { method: 'POST', headers: { ...baseHeaders, 'Content-Type': 'application/json' }, body: '{}' }, url + qs)
+        // 8. POST com query string + sem body
+        await tentar('8. POST QS sem body', { method: 'POST', headers: baseHeaders }, url + qs)
+        // 9. GET com query string (já vimos 405 antes mas mantemos pra confirmar)
+        await tentar('9. GET QS', { method: 'GET', headers: baseHeaders }, url + qs)
+        // 10. PUT body JSON
+        await tentar('10. PUT JSON', { method: 'PUT', headers: { ...baseHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ dataInicio: ini, dataFim: fim }) })
+
+        return NextResponse.json({
+          ok: true,
+          servico: cfg.endpoint,
+          url,
+          token_preview: token.slice(0,20) + '…',
+          cd_corretor: cdCorretorCache,
+          tentativas,
+          resumo: tentativas.map(t => `${t.nome}: HTTP ${t.status} | ${t.resposta.slice(0,120)}`),
+        })
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 })
+      }
+    }
+
     // Busca dados via webservice. params: { servico: 'APOLICES'|'PARCELAS'|..., ...filtros }
     if (action === 'sincronizar') {
       const cfg = SERVICO_MAP[String(params.servico||'').toUpperCase()]
