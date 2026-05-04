@@ -379,9 +379,46 @@ export default function SeguradoraDetalhePage() {
     if (!file) return
     setMsg(null)
     const lower = file.name.toLowerCase()
+    const isAllianz = /allianz/i.test(String(seguradora?.nome || ''))
+
+    // Allianz aceita PDF de apólice — vai pro endpoint dedicado que extrai
+    // texto, casa cliente por CPF/CNPJ, faz upsert na apólice e guarda o
+    // arquivo como anexo. Outras seguradoras ainda não têm parser de PDF.
     if (lower.endsWith('.pdf')) {
-      setMsg({ tipo: 'err', texto: 'Importação por PDF está em desenvolvimento. Use XLSX, CSV ou XML por enquanto.' })
-      e.target.value = ''
+      if (!isAllianz) {
+        setMsg({ tipo: 'err', texto: 'Importação por PDF disponível apenas para Allianz no momento.' })
+        e.target.value = ''
+        return
+      }
+      if (aba !== 'apolices') {
+        setMsg({ tipo: 'err', texto: 'PDF Allianz só pode ser importado na aba "Apólices".' })
+        e.target.value = ''
+        return
+      }
+      setImportando(true)
+      try {
+        const fd = new FormData()
+        fd.append('file', file)
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+        const r = await fetch('/api/allianz/import-pdf', { method: 'POST', headers, body: fd })
+        const j = await r.json()
+        if (!r.ok) throw new Error(j?.erro || 'falha ao importar PDF')
+        const w = (j.warnings || []) as string[]
+        const wtxt = w.length ? ` • ${w.length} aviso${w.length>1?'s':''}` : ''
+        setMsg({
+          tipo: w.length ? 'err' : 'ok',
+          texto: `PDF Allianz (${j.produto}) importado. Apólice ${j.dados_extraidos?.numero_apolice || '—'} ${j.tipo === 'renovada' ? 'renovada' : 'emitida'}.${wtxt}${w.length ? '\n• ' + w.slice(0,3).join('\n• ') : ''}`,
+        })
+        await carregarContagens()
+        await carregarLinhas()
+      } catch (err: any) {
+        setMsg({ tipo: 'err', texto: err?.message || String(err) })
+      } finally {
+        setImportando(false)
+        if (inputRef.current) inputRef.current.value = ''
+      }
       return
     }
     setImportando(true)
@@ -560,7 +597,7 @@ export default function SeguradoraDetalhePage() {
 
         {aba !== 'relatorio_clientes' && (
           <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:12 }}>
-            Aceitos: XLSX, CSV, XML (Tokio), ZIP (Allianz — descompacta XLSX/CSV automaticamente), .RET/.COM (Porto). Após importar, clique em <strong style={{ color:'var(--text)' }}>Sincronizar</strong> para vincular ao cliente/apólice e
+            Aceitos: XLSX, CSV, XML (Tokio), ZIP (Allianz — descompacta XLSX/CSV automaticamente), .RET/.COM (Porto), PDF (Allianz — apólice avulsa, na aba Apólices). Após importar, clique em <strong style={{ color:'var(--text)' }}>Sincronizar</strong> para vincular ao cliente/apólice e
             {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
              aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
              aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
