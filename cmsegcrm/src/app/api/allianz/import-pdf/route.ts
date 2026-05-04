@@ -10,14 +10,18 @@
 //                apolice_anterior detectada, senão 'emitida')
 //
 // Etapas (modo=salvar):
-//  1. Extrai texto do PDF, identifica produto, monta `dados_extraidos`.
-//  2. Localiza ou cria cliente por CPF/CNPJ (cria com status 'Allianz - PDF').
-//  3. Faz upsert em `apolices` (chave: numero) com os campos parseados.
-//  4. Insere snapshot em `allianz_apolices_relatorio` (raw layer p/ auditoria).
-//  5. Insere parcelas em `allianz_parcelas_emitidas`.
-//  6. Faz upload do PDF no storage (`cmsegcrm`/apolices/<id>/...) e cria
-//     anexo (categoria='apolice') vinculado.
-//  7. Loga em `allianz_importacoes`.
+//  1. Extrai texto do PDF, identifica produto, monta `dados_extraidos`
+//     com TODOS os campos relevantes (cliente, vigência, coberturas,
+//     parcelas, cláusulas, condutor, local segurado, etc.).
+//  2. Localiza ou cria cliente por CPF/CNPJ.
+//  3. Faz upsert em `apolices` com todos os campos parseados.
+//  4. Substitui filhos em `apolice_itens_auto` (Auto), `apolice_coberturas`,
+//     `apolice_clausulas`, `apolice_locais` (PME/Residência) e
+//     `apolice_motoristas` (condutor Auto).
+//  5. Snapshot bruto em `allianz_apolices_relatorio`.
+//  6. Parcelas em `allianz_parcelas_emitidas`.
+//  7. Sobe o PDF no storage e cria anexo (categoria='apolice').
+//  8. Loga em `allianz_importacoes`.
 //
 // Devolve { ok, produto, dados_extraidos, apolice_id, anexo_id, warnings[] }.
 
@@ -28,6 +32,11 @@ import {
   mapApolicePayload,
   mapApoliceRelatorioPayload,
   mapParcelasPayload,
+  mapCoberturasPayload,
+  mapClausulasPayload,
+  mapItemAutoPayload,
+  mapLocalSeguradoPayload,
+  mapMotoristaPayload,
   produtoLabel,
   type AllianzPDFExtraido,
 } from '@/lib/allianz-pdf'
@@ -97,9 +106,11 @@ async function upsertApolice(
   negocio_id: string | null,
   warnings: string[],
 ): Promise<string | null> {
+  const payload: any = mapApolicePayload(d, cliente_id)
+  if (negocio_id) payload.negocio_id = negocio_id
+
   // 1. Se veio apolice_id, atualiza essa
   if (apoliceIdInput) {
-    const payload = mapApolicePayload(d, cliente_id)
     const { error } = await admin().from('apolices').update(payload).eq('id', apoliceIdInput)
     if (error) {
       warnings.push(`Falha ao atualizar apólice: ${error.message}`)
@@ -116,7 +127,6 @@ async function upsertApolice(
       .eq('numero', d.numero_apolice)
       .maybeSingle()
     if (jaExiste) {
-      const payload = mapApolicePayload(d, cliente_id)
       const { error } = await admin().from('apolices').update(payload).eq('id', (jaExiste as any).id)
       if (error) warnings.push(`Falha ao atualizar apólice: ${error.message}`)
       return (jaExiste as any).id
@@ -124,14 +134,28 @@ async function upsertApolice(
   }
 
   // 3. Cria nova
-  const payload: any = mapApolicePayload(d, cliente_id)
-  if (negocio_id) payload.negocio_id = negocio_id
   const { data: nova, error } = await admin().from('apolices').insert(payload).select('id').single()
   if (error || !nova) {
     warnings.push(`Falha ao criar apólice: ${error?.message || 'desconhecido'}`)
     return null
   }
   return (nova as any).id
+}
+
+/**
+ * Substitui as linhas filhas (delete + insert) — assim o reimport do
+ * mesmo PDF não duplica coberturas/cláusulas/etc.
+ */
+async function replaceChildren<T extends Record<string, any>>(
+  table: string,
+  apolice_id: string,
+  rows: T[],
+  warnings: string[],
+) {
+  await admin().from(table).delete().eq('apolice_id', apolice_id)
+  if (!rows.length) return
+  const { error } = await admin().from(table).insert(rows)
+  if (error) warnings.push(`Falha ao gravar ${table}: ${error.message}`)
 }
 
 async function gravarPDFAnexo(
@@ -182,7 +206,7 @@ export async function POST(req: NextRequest) {
   let form: FormData
   try {
     form = await req.formData()
-  } catch (e: any) {
+  } catch {
     return NextResponse.json({ erro: 'Esperado multipart/form-data' }, { status: 400 })
   }
 
@@ -231,9 +255,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
     if (neg && (neg as any).cliente_id) cliente_id = (neg as any).cliente_id as string
   }
-  if (!cliente_id) {
-    cliente_id = await localizarOuCriarCliente(dados, warnings)
-  }
+  if (!cliente_id) cliente_id = await localizarOuCriarCliente(dados, warnings)
   if (!cliente_id) {
     return NextResponse.json({
       ok: false,
@@ -256,7 +278,18 @@ export async function POST(req: NextRequest) {
     }, { status: 500 })
   }
 
-  // 4. relatório bruto Allianz (audit / fonte da verdade do PDF)
+  // 4. linhas filhas (substitui — idempotente)
+  const itemAuto = mapItemAutoPayload(dados, apoliceId)
+  if (itemAuto) await replaceChildren('apolice_itens_auto', apoliceId, [itemAuto], warnings)
+  const motorista = mapMotoristaPayload(dados, apoliceId)
+  if (motorista) await replaceChildren('apolice_motoristas', apoliceId, [motorista], warnings)
+  const local = mapLocalSeguradoPayload(dados, apoliceId)
+  if (local) await replaceChildren('apolice_locais', apoliceId, [local], warnings)
+
+  await replaceChildren('apolice_coberturas', apoliceId, mapCoberturasPayload(dados, apoliceId), warnings)
+  await replaceChildren('apolice_clausulas', apoliceId, mapClausulasPayload(dados, apoliceId), warnings)
+
+  // 5. relatório bruto Allianz (audit / fonte da verdade do PDF)
   const tipoRel: 'emitida' | 'renovada' =
     tipoForm || (dados.apolice_anterior ? 'renovada' : 'emitida')
   try {
@@ -271,7 +304,7 @@ export async function POST(req: NextRequest) {
     warnings.push('Falha ao gravar relatório Allianz: ' + (e?.message || 'desconhecido'))
   }
 
-  // 5. parcelas
+  // 6. parcelas
   const parcelas = mapParcelasPayload(dados)
   if (parcelas.length) {
     try {
@@ -286,14 +319,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 6. PDF como anexo
-  // Reset stream antes do upload (já consumimos o buffer acima)
+  // 7. PDF como anexo
   const fileForUpload = new File([buf], file.name, { type: file.type || 'application/pdf' })
   const anexo_id = await gravarPDFAnexo(
     fileForUpload, apoliceId, cliente_id, negocioId, auth.userId, warnings,
   )
 
-  // 7. log
+  // 8. log
   try {
     await admin().from('allianz_importacoes').insert({
       user_id: auth.userId,
@@ -314,6 +346,9 @@ export async function POST(req: NextRequest) {
     cliente_id,
     anexo_id,
     tipo: tipoRel,
+    qtd_coberturas: dados.coberturas.length,
+    qtd_clausulas: dados.clausulas.length,
+    qtd_parcelas: dados.parcelas.length,
     dados_extraidos: { ...dados, texto_bruto: undefined },
     warnings,
   })
