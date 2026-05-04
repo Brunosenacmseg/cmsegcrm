@@ -33,6 +33,16 @@ async function loadXLSX() {
   })
 }
 
+function bufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)))
+  }
+  return btoa(bin)
+}
+
 async function loadJSZip() {
   if (typeof window === 'undefined') return
   if (window.JSZip) return
@@ -120,23 +130,37 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
   if (subs(18, 21) !== '0050') return {}    // só tipo 50 (segurado)
   if (subs(22, 22) !== '1') return {}       // só ocorrência principal (nome+CPF)
 
-  const numero_apolice = subs(3, 13).replace(/^0+/, '') || subs(3, 13)
+  // Validado pelos dados reais (não pelo spec):
+  //   - pos 3-13 (11d): código interno da Porto (NÃO é a apólice)
+  //   - pos 23-30 (8d): nº de apólice REAL
+  //   - PF: 3 zeros em 82-84, CPF em 85-95
+  //   - PJ: 4 zeros em 82-85, CNPJ em 86-99
+  const codigo_interno = subs(3, 13).replace(/^0+/, '')
+  const numero_apolice = subs(23, 30).replace(/^0+/, '') || subs(23, 30)
   const endosso = subs(18, 19)
   const cliente_nome = subs(31, 80).trim()
-  const tipoPessoa = subs(81, 81) // 'F' ou 'J'
-  const doc14 = subs(85, 98)
-  const cpf_cnpj = tipoPessoa === 'F' ? doc14.slice(0, 11) : doc14
+  const tipoPessoa = subs(81, 81)
+  let cpf_cnpj = ''
+  if (tipoPessoa === 'F') cpf_cnpj = subs(85, 95).trim()
+  else if (tipoPessoa === 'J') cpf_cnpj = subs(86, 99).trim()
+  else cpf_cnpj = subs(85, 98).trim()
 
-  // Data Nascimento (PF) — DD/MM/AAAA — só preenche se for válida
+  // Data Nascimento (PF) — DD/MM/AAAA — só preenche se for válida e real
   let data_nascimento: string | null = null
   if (tipoPessoa === 'F') {
     const dn = subs(100, 109).trim()
     const m = dn.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-    if (m) data_nascimento = `${m[3]}-${m[2]}-${m[1]}`
+    if (m) {
+      const y = parseInt(m[3], 10), mo = parseInt(m[2], 10), d = parseInt(m[1], 10)
+      if (y >= 1900 && y <= 2999 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        data_nascimento = `${m[3]}-${m[2]}-${m[1]}`
+      }
+    }
   }
 
   return {
     numero_apolice,
+    codigo_interno,
     endosso,
     cliente_nome,
     tipo_pessoa: tipoPessoa,
@@ -153,7 +177,7 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
 //
 // Os parsers de layout específicos (mapeamento de posições) são
 // ativados conforme o layout oficial da Porto for documentado.
-async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ rows: Record<string, any>[]; tipoArquivo: string | null }> {
+async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionada?: string): Promise<{ rows: Record<string, any>[]; tipoArquivo: string | null }> {
   await loadJSZip()
   let texto = ''
   let nomeInterno = nomeOriginal
@@ -170,8 +194,26 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
     texto = decodificarLatin(buf)
   }
   // Identifica tipo pela extensão (.COM, .CBS, etc.)
-  const m = nomeInterno.toLowerCase().match(/\.([a-z]{3})$/)
-  const tipoArquivo = m ? m[1].toUpperCase() : null
+  // Identifica tipo procurando 1 dos 9 sufixos Porto conhecidos no nome,
+  // ignorando o wrapper .ret. Aceita ".COM", "_E.COM", "_ECOM", "_ECOM.ret".
+  function extTipo(nome: string): string | null {
+    const lower = nome.toLowerCase()
+    const TIPOS = ['com','cbs','vdn','sre','xpp','xpi','ire','app','api']
+    for (const t of TIPOS) {
+      const re = new RegExp(`(?:[._]e?${t})(?:\\.ret)?$`, 'i')
+      if (re.test(lower)) return t.toUpperCase()
+    }
+    return null
+  }
+  let tipoArquivo = extTipo(nomeOriginal) || extTipo(nomeInterno)
+  // Fallback: usa a aba selecionada para inferir tipo quando o nome do
+  // arquivo é genérico (ex: 'J8FXUJ004839.RET' sem indicação do tipo).
+  if (!tipoArquivo && abaSelecionada) {
+    if (abaSelecionada === 'comissoes')      tipoArquivo = 'COM'
+    else if (abaSelecionada === 'apolices')  tipoArquivo = 'APP'
+    else if (abaSelecionada === 'inadimplencia') tipoArquivo = 'IRE'
+    // sinistros não tem mapping — fica null para erro explícito
+  }
 
   // .CBS = mensagem de status/erro curta — não é dado.
   if (tipoArquivo === 'CBS' || texto.length < 200) {
@@ -247,13 +289,22 @@ function parseLinhaPortoCOM(l: string): Record<string, any> {
   const comBase = parseInt(comStr, 10) / 100
   const valor_comissao = isFinite(comBase) ? (comSign === '-' ? -comBase : comBase) : 0
 
+  // Helper: valida YYYYMMDD e converte → ISO. Retorna null se '00000000'
+  // ou inválida (ano 0, mês 0, dia 0, etc.).
+  function ymd8ToIso(s: string): string | null {
+    if (!/^\d{8}$/.test(s)) return null
+    const y = parseInt(s.slice(0, 4), 10)
+    const m = parseInt(s.slice(4, 6), 10)
+    const d = parseInt(s.slice(6, 8), 10)
+    if (y < 1900 || y > 2999 || m < 1 || m > 12 || d < 1 || d > 31) return null
+    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
+  }
+
   // Data Movimento (73-81): 8 dígitos YYYYMMDD — tratada como data_pagamento
-  const dMov = subs(73, 80).trim()
-  const data_pagamento = /^\d{8}$/.test(dMov) ? `${dMov.slice(0,4)}-${dMov.slice(4,6)}-${dMov.slice(6,8)}` : null
+  const data_pagamento = ymd8ToIso(subs(73, 80).trim())
 
   // Data Emissão (89-97): 8 dígitos YYYYMMDD
-  const dEmi = subs(89, 96).trim()
-  const data_emissao = /^\d{8}$/.test(dEmi) ? `${dEmi.slice(0,4)}-${dEmi.slice(4,6)}-${dEmi.slice(6,8)}` : null
+  const data_emissao = ymd8ToIso(subs(89, 96).trim())
 
   // Competência derivada da data de pagamento
   const competencia = data_pagamento ? data_pagamento.slice(0, 7) : null
@@ -379,38 +430,63 @@ export default function SeguradoraDetalhePage() {
     if (!file) return
     setMsg(null)
     const lower = file.name.toLowerCase()
-    const isAllianz = /allianz/i.test(String(seguradora?.nome || ''))
+    const segNome = String(seguradora?.nome || '')
+    const isAllianz = /allianz/i.test(segNome)
+    const isEzze    = /ezze/i.test(segNome)
 
-    // Allianz aceita PDF de apólice — vai pro endpoint dedicado que extrai
-    // texto, casa cliente por CPF/CNPJ, faz upsert na apólice e guarda o
-    // arquivo como anexo. Outras seguradoras ainda não têm parser de PDF.
+    // PDF de apólice: Allianz e Ezze têm parsers dedicados.
+    //  • Allianz vai pro endpoint /api/allianz/import-pdf (multipart) que
+    //    extrai texto, casa cliente por CPF/CNPJ, faz upsert na apólice
+    //    e salva em apolice_itens_auto/coberturas/clausulas/locais/motoristas.
+    //  • Ezze envia bytes em base64 pro endpoint genérico /api/seguradoras/[id]/import,
+    //    que dispara o parser Ezze no servidor.
     if (lower.endsWith('.pdf')) {
-      if (!isAllianz) {
-        setMsg({ tipo: 'err', texto: 'Importação por PDF disponível apenas para Allianz no momento.' })
-        e.target.value = ''
-        return
-      }
-      if (aba !== 'apolices') {
-        setMsg({ tipo: 'err', texto: 'PDF Allianz só pode ser importado na aba "Apólices".' })
+      if (aba !== 'apolices' || (!isAllianz && !isEzze)) {
+        setMsg({
+          tipo: 'err',
+          texto: 'Importação por PDF disponível apenas para apólices da Allianz ou Ezze Seguros.',
+        })
         e.target.value = ''
         return
       }
       setImportando(true)
       try {
-        const fd = new FormData()
-        fd.append('file', file)
-        const { data: { session } } = await supabase.auth.getSession()
-        const headers: Record<string, string> = {}
-        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-        const r = await fetch('/api/allianz/import-pdf', { method: 'POST', headers, body: fd })
-        const j = await r.json()
-        if (!r.ok) throw new Error(j?.erro || 'falha ao importar PDF')
-        const w = (j.warnings || []) as string[]
-        const wtxt = w.length ? ` • ${w.length} aviso${w.length>1?'s':''}` : ''
-        setMsg({
-          tipo: w.length ? 'err' : 'ok',
-          texto: `PDF Allianz (${j.produto}) importado. Apólice ${j.dados_extraidos?.numero_apolice || '—'} ${j.tipo === 'renovada' ? 'renovada' : 'emitida'}.${wtxt}${w.length ? '\n• ' + w.slice(0,3).join('\n• ') : ''}`,
-        })
+        if (isAllianz) {
+          const fd = new FormData()
+          fd.append('file', file)
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: Record<string, string> = {}
+          if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+          const r = await fetch('/api/allianz/import-pdf', { method: 'POST', headers, body: fd })
+          const j = await r.json()
+          if (!r.ok) throw new Error(j?.erro || 'falha ao importar PDF')
+          const w = (j.warnings || []) as string[]
+          const wtxt = w.length ? ` • ${w.length} aviso${w.length>1?'s':''}` : ''
+          setMsg({
+            tipo: w.length ? 'err' : 'ok',
+            texto: `PDF Allianz (${j.produto}) importado. Apólice ${j.dados_extraidos?.numero_apolice || '—'} ${j.tipo === 'renovada' ? 'renovada' : 'emitida'}.${wtxt}${w.length ? '\n• ' + w.slice(0,3).join('\n• ') : ''}`,
+          })
+        } else {
+          // Ezze
+          const buf = await file.arrayBuffer()
+          const pdfBase64 = bufferToBase64(buf)
+          const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
+            method: 'POST',
+            headers: await authHeaders(),
+            body: JSON.stringify({
+              tipo: aba,
+              formato: 'pdf',
+              nome_arquivo: file.name,
+              pdf_base64: pdfBase64,
+            }),
+          })
+          const j = await r.json()
+          if (!r.ok) throw new Error(j?.erro || 'falha na importação')
+          setMsg({
+            tipo: 'ok',
+            texto: `PDF Ezze (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
+          })
+        }
         await carregarContagens()
         await carregarLinhas()
       } catch (err: any) {
@@ -435,7 +511,7 @@ export default function SeguradoraDetalhePage() {
         linhasArq = await lerZipPlanilhas(buf)
       } else if (lower.endsWith('.ret') || lower.endsWith('.com') || lower.endsWith('.cbs') || lower.endsWith('.vdn') || lower.endsWith('.sre') || lower.endsWith('.xpp') || lower.endsWith('.xpi') || lower.endsWith('.ire') || lower.endsWith('.app') || lower.endsWith('.api')) {
         formato = 'ret' as any
-        const r = await lerPortoRET(buf, file.name)
+        const r = await lerPortoRET(buf, file.name, aba)
         linhasArq = r.rows
         if (r.tipoArquivo && r.tipoArquivo !== 'COM' && aba === 'comissoes') {
           setMsg({ tipo: 'err', texto: `Arquivo Porto tipo .${r.tipoArquivo} ainda não tem parser de campos. Por enquanto, só .COM (Comissões) está com mapeamento tentativo. As linhas brutas serão guardadas em 'dados'.` })

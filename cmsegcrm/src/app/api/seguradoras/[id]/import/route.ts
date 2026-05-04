@@ -1,14 +1,21 @@
 // Importa linhas (já parseadas no cliente) para o staging do módulo seguradoras.
 // Body: { tipo: 'apolices'|'sinistros'|'inadimplencia'|'comissoes',
-//         formato: 'xlsx'|'csv'|'pdf',
+//         formato: 'xlsx'|'csv'|'xml'|'pdf'|'ret',
 //         nome_arquivo?: string,
-//         linhas: Record<string, any>[] }
+//         linhas?: Record<string, any>[],   // padrão para xlsx/csv/xml/ret
+//         pdf_base64?: string }              // somente quando formato='pdf'
+//
+// PDF é parseado no servidor (apenas Ezze, tipo='apolices'). Layouts suportados:
+// Auto Individual e RC Transporte de Passageiros (este último gera 1 linha por veículo).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { parseEzzeApolicePdf } from '@/lib/parsers/ezze-apolice-pdf'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
+// pdf-parse precisa do runtime Node (Buffer, fs)
+export const runtime = 'nodejs'
 
 let _sa: ReturnType<typeof createClient> | null = null
 function admin() {
@@ -84,9 +91,9 @@ const cleanDoc = (v: any) => {
 function mapApolice(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
-    numero:        sStr(pick(row, ['apolice','numero apolice','nr apolice','numero da apolice','n apolice'])),
-    cpf_cnpj:      cleanDoc(pick(row, ['cpf','cnpj','documento','cpf/cnpj','cpf cnpj'])),
-    cliente_nome:  sStr(pick(row, ['segurado','cliente','nome'])),
+    numero:        sStr(pick(row, ['apolice','numero apolice','nr apolice','numero da apolice','n apolice','numero_apolice'])),
+    cpf_cnpj:      cleanDoc(pick(row, ['cpf','cnpj','documento','cpf/cnpj','cpf cnpj','cpf_cnpj'])),
+    cliente_nome:  sStr(pick(row, ['segurado','cliente','nome','cliente_nome'])),
     produto:       sStr(pick(row, ['produto','ramo'])),
     premio:        num(pick(row, ['premio','prêmio','premio total','valor'])),
     comissao_pct:  num(pick(row, ['% comissao','percentual comissao','comissao %','aliquota'])),
@@ -94,7 +101,105 @@ function mapApolice(row: any, seguradora_id: string, importacao_id: string) {
     vigencia_fim:  date(pick(row, ['vigencia final','fim vigencia','vigencia fim','fim','vencimento'])),
     placa:         sStr(pick(row, ['placa'])),
     status_apolice: sStr(pick(row, ['status','situacao'])),
+    // Campos extras .APP/.API tipo 50
+    codigo_interno:  sStr(pick(row, ['codigo_interno','codigo interno','cod interno'])),
+    endosso:         sStr(pick(row, ['endosso','numero endosso'])),
+    tipo_pessoa:     sStr(pick(row, ['tipo_pessoa','tipo pessoa'])),
+    data_nascimento: date(pick(row, ['data_nascimento','data nascimento','nascimento','dt nascimento'])),
+    sexo:            sStr(pick(row, ['sexo','genero'])),
     dados: row,
+  }
+}
+
+// mapApoliceEzze: o parser de PDF da Ezze (src/lib/parsers/ezze-apolice-pdf.ts)
+// já devolve as chaves no formato snake_case esperado pelas colunas de
+// seg_stage_apolices (vide migration 070_seg_stage_apolices_ezze_pdf.sql),
+// então é basicamente passthrough — só precisamos converter tipos numéricos
+// e injetar seguradora_id/importacao_id, e ainda preencher `premio` (coluna
+// legada da tabela) com o premio_total para manter compatibilidade.
+function mapApoliceEzze(row: any, seguradora_id: string, importacao_id: string) {
+  const premioTotal = num(row.premio_total)
+  const premioLiquido = num(row.premio_liquido)
+  return {
+    seguradora_id, importacao_id,
+    // Campos legados / "core"
+    numero:         sStr(row.numero),
+    cpf_cnpj:       cleanDoc(row.cpf_cnpj),
+    cliente_nome:   sStr(row.cliente_nome),
+    produto:        sStr(row.produto),
+    premio:         premioTotal ?? premioLiquido,
+    comissao_pct:   null, // Ezze não envia comissão na apólice
+    vigencia_ini:   date(row.vigencia_ini),
+    vigencia_fim:   date(row.vigencia_fim),
+    placa:          sStr(row.placa),
+    status_apolice: sStr(row.status_apolice),
+    // Cabeçalho expandido
+    endosso:                  sStr(row.endosso),
+    proposta:                 sStr(row.proposta),
+    versao:                   sStr(row.versao),
+    rule_id:                  sStr(row.rule_id),
+    codigo_ci:                sStr(row.codigo_ci),
+    tipo_seguro:              sStr(row.tipo_seguro),
+    classe_bonus:             nInt(row.classe_bonus),
+    data_emissao:             date(row.data_emissao),
+    tipo_apolice:             sStr(row.tipo_apolice),
+    // Segurado expandido
+    segurado_nome_social:     sStr(row.segurado_nome_social),
+    segurado_email:           sStr(row.segurado_email),
+    segurado_telefone:        sStr(row.segurado_telefone),
+    segurado_cep:             sStr(row.segurado_cep),
+    segurado_cidade:          sStr(row.segurado_cidade),
+    segurado_uf:              sStr(row.segurado_uf),
+    segurado_estado_civil:    sStr(row.segurado_estado_civil),
+    segurado_endereco:        sStr(row.segurado_endereco),
+    // Corretor
+    corretor_nome:            sStr(row.corretor_nome),
+    corretor_cnpj:            cleanDoc(row.corretor_cnpj),
+    corretor_susep:           sStr(row.corretor_susep),
+    corretor_email:           sStr(row.corretor_email),
+    corretor_telefone:        sStr(row.corretor_telefone),
+    filial_ezze:              sStr(row.filial_ezze),
+    // Questionário
+    utilizacao_veiculo:       sStr(row.utilizacao_veiculo),
+    principal_condutor:       sStr(row.principal_condutor),
+    condutor_nome:            sStr(row.condutor_nome),
+    condutor_cpf:             cleanDoc(row.condutor_cpf),
+    condutor_estado_civil:    sStr(row.condutor_estado_civil),
+    condutor_cobertura_jovem: sStr(row.condutor_cobertura_jovem),
+    // Veículo
+    marca:                    sStr(row.marca),
+    modelo:                   sStr(row.modelo),
+    ano_modelo:               sStr(row.ano_modelo),
+    cod_fipe:                 sStr(row.cod_fipe),
+    chassi:                   sStr(row.chassi),
+    zero_km:                  sStr(row.zero_km),
+    blindagem:                sStr(row.blindagem),
+    tipo_franquia_casco:      sStr(row.tipo_franquia_casco),
+    vistoria_previa:          sStr(row.vistoria_previa),
+    rastreador_obrigatorio:   sStr(row.rastreador_obrigatorio),
+    nr_passageiros:           nInt(row.nr_passageiros),
+    tipo_veiculo:             sStr(row.tipo_veiculo),
+    // Prêmio
+    premio_liquido:           premioLiquido,
+    adicional_fracionamento:  num(row.adicional_fracionamento),
+    custo_apolice:            num(row.custo_apolice),
+    iof:                      num(row.iof),
+    premio_total:             premioTotal,
+    // Pagamento + tabelas
+    forma_pagamento:          sStr(row.forma_pagamento),
+    parcelas:                 row.parcelas ?? null,
+    coberturas:               row.coberturas ?? null,
+    servicos:                 row.servicos ?? null,
+    franquias:                row.franquias ?? null,
+    // RC Transporte (campos extras)
+    ramo_codigo:              sStr(row.ramo_codigo),
+    sucursal:                 sStr(row.sucursal),
+    faturamento:              sStr(row.faturamento),
+    item_veiculo:             nInt(row.item_veiculo),
+    // Debug / referência
+    layout_pdf:               sStr(row.layout_pdf),
+    pdf_texto_bruto:          sStr(row.pdf_texto_bruto),
+    dados:                    row,
   }
 }
 function mapSinistro(row: any, seguradora_id: string, importacao_id: string) {
@@ -144,19 +249,25 @@ function mapInadimplencia(row: any, seguradora_id: string, importacao_id: string
 function mapComissao(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
-    // Inclui aliases Tokio: numApolice, CPFCnpj, nomeSegurado, vlrPremio,
-    // vlrComissaoParcela, pcComissao, qtdeParcela, numParcela, dtPagamento
-    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice','numapolice'])),
-    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento','cpfcnpj'])),
-    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome','nomesegurado'])),
+    // Inclui aliases Tokio (numApolice, CPFCnpj, nomeSegurado, vlrPremio...)
+    // E aliases Porto (numero_apolice, valor_premio, valor_comissao...)
+    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice','numapolice','numero_apolice'])),
+    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento','cpfcnpj','cpf_cnpj'])),
+    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome','nomesegurado','cliente_nome'])),
     produto:        sStr(pick(row, ['produto','ramo'])),
     competencia:    sStr(pick(row, ['competencia','competência','referencia','mes referencia'])),
-    data_pagamento: date(pick(row, ['pagamento','data pagamento','data credito','dtpagamento'])),
+    data_pagamento: date(pick(row, ['pagamento','data pagamento','data credito','dtpagamento','data_pagamento'])),
+    data_emissao:   date(pick(row, ['data_emissao','data emissao','dt emissao'])),
+    codigo_interno: sStr(pick(row, ['codigo_interno','codigo interno','cod interno'])),
+    tipo_documento: sStr(pick(row, ['tipo_documento','tipo doc','tipo documento'])),
+    numero_proposta: sStr(pick(row, ['numero_proposta','proposta','nr proposta'])),
+    descricao_operacao: sStr(pick(row, ['descricao_operacao','descricao operacao','operacao'])),
+    pc_comissao:    num(pick(row, ['pc_comissao','pc comissao'])),
     parcela:        nInt(pick(row, ['parcela','nr parcela','numparcela'])),
     total_parcelas: nInt(pick(row, ['total parcelas','qtd parcelas','qtdeparcela'])),
-    premio:         num(pick(row, ['premio','prêmio','premio liquido','vlrpremio'])),
+    premio:         num(pick(row, ['premio','prêmio','premio liquido','vlrpremio','valor_premio'])),
     comissao_pct:   num(pick(row, ['% comissao','percentual comissao','aliquota','pccomissao'])),
-    comissao_valor: num(pick(row, ['valor comissao','comissao','comissão','valor comissão','vlrcomissaoparcela'])),
+    comissao_valor: num(pick(row, ['valor comissao','comissao','comissão','valor comissão','vlrcomissaoparcela','valor_comissao'])),
     dados: row,
   }
 }
@@ -233,16 +344,35 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const body = await req.json().catch(() => null) as any
   const tipo = body?.tipo as Tipo
-  const formato = (body?.formato as 'xlsx'|'csv'|'xml'|'pdf') || 'xlsx'
-  const linhas: any[] = Array.isArray(body?.linhas) ? body.linhas : []
+  const formato = (body?.formato as 'xlsx'|'csv'|'xml'|'pdf'|'ret') || 'xlsx'
+  let linhas: any[] = Array.isArray(body?.linhas) ? body.linhas : []
+  let pdfLayout: string | null = null
   if (!TIPOS.includes(tipo)) return NextResponse.json({ erro: 'tipo inválido' }, { status: 400 })
-  if (formato === 'pdf') return NextResponse.json({ erro: 'PDF ainda não suportado — em breve' }, { status: 400 })
-  if (!linhas.length) return NextResponse.json({ erro: 'sem linhas' }, { status: 400 })
 
   const { data: seg } = await admin().from('seguradoras').select('id, nome').eq('id', params.id).single()
   if (!seg) return NextResponse.json({ erro: 'seguradora não encontrada' }, { status: 404 })
   const segNome = String((seg as any).nome || '')
   const isEzze = /ezze/i.test(segNome)
+
+  if (formato === 'pdf') {
+    if (!isEzze || tipo !== 'apolices') {
+      return NextResponse.json({
+        erro: 'Importação por PDF só está disponível para apólices da Ezze Seguros.',
+      }, { status: 400 })
+    }
+    const b64 = String(body?.pdf_base64 || '').trim()
+    if (!b64) return NextResponse.json({ erro: 'pdf_base64 ausente no body' }, { status: 400 })
+    try {
+      const buf = Buffer.from(b64, 'base64')
+      const r = await parseEzzeApolicePdf(buf)
+      pdfLayout = r.layout
+      linhas = r.rows
+    } catch (e: any) {
+      return NextResponse.json({ erro: `Falha ao ler PDF: ${e?.message || e}` }, { status: 400 })
+    }
+  }
+
+  if (!linhas.length) return NextResponse.json({ erro: 'sem linhas' }, { status: 400 })
 
   // cria registro de importação
   const { data: imp, error: impErr } = await admin().from('seg_importacoes').insert({
@@ -258,6 +388,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const importacao_id = (imp as any).id as string
   const tabela = TABELAS[tipo]
   const mapper =
+    (tipo === 'apolices' && isEzze && formato === 'pdf') ? mapApoliceEzze :
     tipo === 'apolices'      ? mapApolice :
     (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :
     tipo === 'sinistros'     ? mapSinistro :
@@ -286,5 +417,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     qtd_pendentes: inseridos,
   }).eq('id', importacao_id)
 
-  return NextResponse.json({ ok: true, importacao_id, inseridos })
+  return NextResponse.json({ ok: true, importacao_id, inseridos, pdf_layout: pdfLayout })
 }

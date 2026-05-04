@@ -13,10 +13,17 @@ function supabaseAdmin() {
 
 // ─── Webservice Tokio Marine ─────────────────────────────────
 // Endpoints podem ser sobrescritos via env (TOKIO_BASE / TOKIO_LOGIN_PATH).
-// Default tenta o caminho informado pelo cliente; ajuste se a Tokio
-// retornar 404.
+// Default segue a documentação oficial do wscorretor:
+//   POST  /Corretor/Login        → autenticação (retorna token)
+//   GET   /Corretor/getApolice   → propostas, apólices e endossos
+//   GET   /Corretor/getParcela   → parcelas pagas ao corretor
+//   GET   /Corretor/getExtratoComiss → extrato de comissões
+//   GET   /Corretor/getSinistro  → dados de sinistros
+//   GET   /Corretor/getRenovacao → dados de renovação
+//   GET   /Corretor/getPendencia → pendências do corretor
+//   GET   /Corretor/getRecusa    → recusas, apólices e endossos
 const TOKIO_BASE        = process.env.TOKIO_BASE        || 'https://servicos.tokiomarine.com.br/wscorretor/rest'
-const TOKIO_LOGIN_PATH  = process.env.TOKIO_LOGIN_PATH  || '/login'
+const TOKIO_LOGIN_PATH  = process.env.TOKIO_LOGIN_PATH  || '/Corretor/Login'
 const TOKIO_USER        = process.env.TOKIO_USER        || ''
 const TOKIO_PASSWORD    = process.env.TOKIO_PASSWORD    || ''
 const TOKIO_SERVICE_KEY = process.env.TOKIO_SERVICE_KEY || ''
@@ -53,18 +60,28 @@ function mergeCookies(setCookieHeader: string | null) {
   }
 }
 
-async function tokioLogin(force = false): Promise<string> {
-  if (!force && tokenCache && tokenCache.exp > Date.now()) return tokenCache.token
-  if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
-    throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
-  }
-  // Handshake Imperva: GET inicial pra captar cookies de sessão antes do POST
-  try {
-    const warm = await fetch(TOKIO_BASE, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) })
-    mergeCookies(warm.headers.get('set-cookie'))
-  } catch {}
+// Path do login que efetivamente funcionou (descoberto em runtime).
+// A documentação oficial diz `/Corretor/Login`, mas o servidor real
+// (Spring Boot 3.x) responde 404 nesse path em alguns ambientes.
+// Quando o configurado falha, varremos algumas variações conhecidas.
+let resolvedLoginPath: string | null = null
 
-  const r = await fetch(`${TOKIO_BASE}${TOKIO_LOGIN_PATH}`, {
+const LOGIN_PATH_CANDIDATES = [
+  '/Corretor/Login',
+  '/Corretor/login',
+  '/Corretor/Autenticar',
+  '/Corretor/autenticar',
+  '/Corretor/auth',
+  '/Corretor/authenticate',
+  '/Corretor/token',
+  '/Corretor/getToken',
+  '/Corretor/Acessar',
+  '/Login',
+  '/login',
+]
+
+async function tentarLoginEmPath(path: string): Promise<{ ok: boolean; status: number; body: string }> {
+  const r = await fetch(`${TOKIO_BASE}${path}`, {
     method: 'POST',
     headers: {
       ...BROWSER_HEADERS,
@@ -80,25 +97,69 @@ async function tokioLogin(force = false): Promise<string> {
     signal: AbortSignal.timeout(25000),
   })
   mergeCookies(r.headers.get('set-cookie'))
-  if (!r.ok) throw new Error(`Tokio Login HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
-  const txt = await r.text()
-  // Resposta pode ser JSON {"token":"..."} ou string crua
-  let token = ''
-  try {
-    const j = JSON.parse(txt)
-    token = j.token || j.access_token || j.accessToken || j.Token || ''
-  } catch {
-    token = txt.replace(/^"|"$/g, '').trim()
+  const body = await r.text()
+  return { ok: r.ok, status: r.status, body }
+}
+
+async function tokioLogin(force = false): Promise<string> {
+  if (!force && tokenCache && tokenCache.exp > Date.now()) return tokenCache.token
+  if (!TOKIO_USER || !TOKIO_PASSWORD || !TOKIO_SERVICE_KEY) {
+    throw new Error('Credenciais Tokio não configuradas (TOKIO_USER/TOKIO_PASSWORD/TOKIO_SERVICE_KEY).')
   }
-  if (!token) throw new Error(`Tokio Login: token não encontrado na resposta: ${txt.slice(0,200)}`)
-  tokenCache = { token, exp: Date.now() + 25 * 60 * 1000 }   // 25 min de validade
-  return token
+  // Handshake Imperva: GET inicial pra captar cookies de sessão antes do POST
+  try {
+    const warm = await fetch(TOKIO_BASE, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(10000) })
+    mergeCookies(warm.headers.get('set-cookie'))
+  } catch {}
+
+  // Ordem de tentativa: path já descoberto > configurado via env > candidatos
+  const ordem: string[] = []
+  if (resolvedLoginPath) ordem.push(resolvedLoginPath)
+  if (TOKIO_LOGIN_PATH && !ordem.includes(TOKIO_LOGIN_PATH)) ordem.push(TOKIO_LOGIN_PATH)
+  for (const p of LOGIN_PATH_CANDIDATES) if (!ordem.includes(p)) ordem.push(p)
+
+  let ultimo: { status: number; body: string; path: string } | null = null
+  for (const path of ordem) {
+    let res
+    try {
+      res = await tentarLoginEmPath(path)
+    } catch (err: any) {
+      ultimo = { status: 0, body: err.message?.slice(0, 200) || 'erro de rede', path }
+      continue
+    }
+    ultimo = { status: res.status, body: res.body.slice(0, 200), path }
+    // 404/405 -> path errado, próximo
+    if (res.status === 404 || res.status === 405) continue
+    // Não autorizado já significa que o path existe (mas creds erradas)
+    if (!res.ok) {
+      throw new Error(`Tokio Login HTTP ${res.status} em ${path}: ${res.body.slice(0,200)}`)
+    }
+    // Sucesso — extrai token
+    let token = ''
+    try {
+      const j = JSON.parse(res.body)
+      token = j.token || j.access_token || j.accessToken || j.Token || ''
+    } catch {
+      token = res.body.replace(/^"|"$/g, '').trim()
+    }
+    if (!token) throw new Error(`Tokio Login: token não encontrado em ${path}: ${res.body.slice(0,200)}`)
+    resolvedLoginPath = path
+    tokenCache = { token, exp: Date.now() + 25 * 60 * 1000 }
+    return token
+  }
+  throw new Error(`Tokio Login: nenhum path aceito. Última tentativa ${ultimo?.path} HTTP ${ultimo?.status}: ${ultimo?.body}`)
 }
 
 async function tokioGet(servico: string, params: Record<string,string|number> = {}): Promise<string> {
   let token = await tokioLogin()
   const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
-  const url = `${TOKIO_BASE}/${servico}${qs ? `?${qs}` : ''}`
+  // `servico` aceita tanto o nome curto ("getApolice") quanto o caminho
+  // completo ("/Corretor/getApolice"). Quando vier curto, prefixamos
+  // com /Corretor/ conforme documentação oficial.
+  const path = servico.startsWith('/') ? servico
+             : servico.startsWith('Corretor/') ? `/${servico}`
+             : `/Corretor/${servico}`
+  const url = `${TOKIO_BASE}${path}${qs ? `?${qs}` : ''}`
   const headers = (t: string) => ({
     ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
@@ -254,19 +315,32 @@ function extrairApolice(bloco: string) {
   const cpfCnpj  = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
   const tpPessoa = getTag(bloco, ['tpPessoa'])
   const email    = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
-  const ddd      = getTag(bloco, ['ddd'])
-  const numTel   = getTag(bloco, ['numero'])  // dentro do telefone — sem garantia
+  // Telefone vem como <Telefone><ddd>11</ddd><numero>99999</numero></Telefone>
+  const blocoTel = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+  const ddd      = getTag(blocoTel || bloco, ['ddd'])
+  const numTel   = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone', 'numTelefone'])
+
+  // Endereço
+  const blocoEnd  = (getBlocks(bloco, ['Endereco', 'endereco'])[0]) || ''
+  const endereco  = getTag(blocoEnd, ['logradouro', 'endereco'])
+  const numeroEnd = getTag(blocoEnd, ['numero', 'nrEndereco'])
+  const complemento = getTag(blocoEnd, ['complemento'])
+  const bairro    = getTag(blocoEnd, ['bairro'])
+  const cidade    = getTag(blocoEnd, ['cidade', 'municipio'])
+  const uf        = getTag(blocoEnd, ['uf', 'estado'])
+  const cep       = getTag(blocoEnd, ['cep'])
+
   const ramo     = getTag(bloco, ['ramo'])
   const produto  = getTag(bloco, ['Produto', 'produto'])
   const numApolice    = getTag(bloco, ['numApoIice', 'numApolice', 'numeroApolice'])
   const numProposta   = getTag(bloco, ['NumProposta', 'numProposta'])
   const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
   const tpComplemento = getTag(bloco, ['tpComplemento'])
-  const tipoSeguro    = getTag(bloco, ['TipoSeguro'])
-  const statusApolice = getTag(bloco, ['StatusApoliceEndosso', 'StatusProposta'])
+  const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+  const statusApolice = getTag(bloco, ['StatusApoliceEndosso', 'StatusProposta', 'statusApolice'])
   const dtCanc        = toDate(getTag(bloco, ['dtCancelamento']))
   const dtRecusa      = toDate(getTag(bloco, ['dtRecusa']))
-  const motivoRecusa  = getTag(bloco, ['motivoDeRecusa'])
+  const motivoRecusa  = getTag(bloco, ['motivoDeRecusa', 'motivoRecusa'])
 
   const vigIni  = toDate(getTag(bloco, ['dtInicioVigenciaApolice']))
   const vigFim  = toDate(getTag(bloco, ['dtFimVigenciaApolice']))
@@ -294,20 +368,27 @@ function extrairApolice(bloco: string) {
   const anoModelo       = getTag(blocoAuto, ['anoModelo'])
   const anoFabricacao   = getTag(blocoAuto, ['anoFabricacao'])
   const chassi          = getTag(blocoAuto, ['chassi'])
+  const combustivel     = getTag(blocoAuto, ['combustivel', 'tipoCombustivel'])
+  const cor             = getTag(blocoAuto, ['cor'])
+  const zerokm          = getTag(blocoAuto, ['zeroKm', 'zerokm'])
 
   // Corretor lider (para futuramente vincular vendedor)
   const blocoCorretor   = (getBlocks(bloco, ['Corretor'])[0]) || bloco
   const cdCorretor      = getTag(blocoCorretor, ['cdCorretor'])
+  const nmCorretor      = getTag(blocoCorretor, ['nmCorretor', 'NmCorretor'])
 
   return {
-    nome, cpfCnpj, tpPessoa, email, ddd, numTel, ramo, produto,
+    nome, cpfCnpj, tpPessoa, email, ddd, numTel,
+    endereco, numeroEnd, complemento, bairro, cidade, uf, cep,
+    ramo, produto,
     numApolice, numProposta, numEndosso, tpComplemento, tipoSeguro, statusApolice,
     dtCanc, dtRecusa, motivoRecusa,
     vigIni, vigFim, emissao, vigIniEnd, vigFimEnd, emissaoEnd,
     formaCobranca, qtdParc, premioLiq, iof, premioTotal, custoApolice,
     pcComissao, vlrComissao,
     placa, modelo, fabricante, anoModelo, anoFabricacao, chassi,
-    cdCorretor,
+    combustivel, cor, zerokm,
+    cdCorretor, nmCorretor,
   }
 }
 
@@ -317,7 +398,7 @@ function extrairApolice(bloco: string) {
 // `numEndosso` está preenchido, o registro é endosso → também
 // inserimos em public.endossos. Cancelamentos com qtdeParcelas=0
 // têm valores zerados.
-async function processarApolices(xml: string) {
+async function processarApolices(xml: string, importacaoId?: string | null) {
   // Cada registro completo é a sequência DadosSegurado +
   // DadosSeguro + Cobranca + Comissao + Item. A âncora confiável
   // é <DadosSegurado>, que sempre marca o início de uma apólice.
@@ -395,12 +476,89 @@ async function processarApolices(xml: string) {
         comissao_pct:      pcComissaoFinal,
         qtd_parcelas:      c.qtdParc,
         tipo_pagamento:    c.formaCobranca || null,
-        dados_tokio:       { ...dadosBrutos, chassi: c.chassi, cancelamento },
+        // Campos extras da Tokio (migration 071_)
+        tipo_seguro:          c.tipoSeguro || null,
+        status_apolice_tokio: c.statusApolice || null,
+        motivo_recusa:        c.motivoRecusa || null,
+        data_cancelamento:    c.dtCanc || null,
+        data_recusa:          c.dtRecusa || null,
+        vigencia_ini_endosso: c.vigIniEnd || null,
+        vigencia_fim_endosso: c.vigFimEnd || null,
+        emissao_endosso:      c.emissaoEnd || null,
+        chassi:               c.chassi || null,
+        fabricante:           c.fabricante || null,
+        ano_fabricacao:       c.anoFabricacao || null,
+        email_segurado:       c.email || null,
+        ddd_segurado:         c.ddd || null,
+        telefone_segurado:    c.numTel || null,
+        tipo_complemento:     c.tpComplemento || null,
+        custo_apolice:        cancelamento ? 0 : c.custoApolice,
+        valor_comissao:       vlrComissaoFinal,
+        cd_corretor:          c.cdCorretor || null,
+        nm_corretor:          c.nmCorretor || null,
+        dados_tokio:          { ...dadosBrutos, cancelamento },
       }
       const { data: apolice, error: errApol } = await supabaseAdmin().from('apolices').upsert(payload, {
         onConflict: 'numero', ignoreDuplicates: false,
       }).select('id, cliente_id').single()
       if (errApol) { erros++; msgs.push(`${numero}: ${errApol.message?.slice(0,80)}`); continue }
+
+      // Salva cópia raw com TODOS os campos (1 linha por apolice+endosso)
+      await supabaseAdmin().from('tokio_apolices_raw').upsert({
+        num_apolice:          c.numApolice || null,
+        num_proposta:         c.numProposta || null,
+        num_endosso:          c.numEndosso || '',
+        ramo:                 c.ramo || null,
+        produto:              c.produto || null,
+        tipo_seguro:          c.tipoSeguro || null,
+        status_apolice:       c.statusApolice || null,
+        tp_complemento:       c.tpComplemento || null,
+        cpf_cnpj:             c.cpfCnpj || null,
+        nome_segurado:        c.nome || null,
+        tp_pessoa:            c.tpPessoa || null,
+        email:                c.email || null,
+        ddd:                  c.ddd || null,
+        telefone:             c.numTel || null,
+        endereco:             c.endereco || null,
+        numero:               c.numeroEnd || null,
+        complemento:          c.complemento || null,
+        bairro:               c.bairro || null,
+        cidade:               c.cidade || null,
+        uf:                   c.uf || null,
+        cep:                  c.cep || null,
+        data_emissao:         c.emissao || null,
+        vigencia_ini:         c.vigIni || null,
+        vigencia_fim:         c.vigFim || null,
+        vigencia_ini_endosso: c.vigIniEnd || null,
+        vigencia_fim_endosso: c.vigFimEnd || null,
+        emissao_endosso:      c.emissaoEnd || null,
+        data_cancelamento:    c.dtCanc || null,
+        data_recusa:          c.dtRecusa || null,
+        motivo_recusa:        c.motivoRecusa || null,
+        forma_cobranca:       c.formaCobranca || null,
+        qtd_parcelas:         c.qtdParc,
+        premio_liquido:       c.premioLiq,
+        valor_iof:            c.iof,
+        premio_total:         c.premioTotal,
+        custo_apolice:        c.custoApolice,
+        pc_comissao:          c.pcComissao,
+        vlr_comissao:         c.vlrComissao,
+        placa:                c.placa || null,
+        chassi:               c.chassi || null,
+        modelo:               c.modelo || null,
+        fabricante:           c.fabricante || null,
+        ano_modelo:           c.anoModelo || null,
+        ano_fabricacao:       c.anoFabricacao || null,
+        combustivel:          c.combustivel || null,
+        cor:                  c.cor || null,
+        zerokm:               c.zerokm || null,
+        cd_corretor:          c.cdCorretor || null,
+        nm_corretor:          c.nmCorretor || null,
+        apolice_id:           apolice?.id || null,
+        cliente_id:           apolice?.cliente_id || clienteId || null,
+        importacao_id:        importacaoId || null,
+        dados_brutos:         { bloco_xml: bloco.slice(0, 8000), cancelamento },
+      }, { onConflict: 'num_apolice,num_endosso' })
 
       // ── Se tiver endosso, registrar em public.endossos ──
       if (c.numEndosso) {
@@ -439,7 +597,7 @@ async function processarApolices(xml: string) {
 
 // ─── PROCESSAR PARCELAS PAGAS / A PAGAR ──────────────────────
 // Layout: <período> com dtInicioPeriodo/dtFimPeriodo + N <parcela>
-async function processarParcelas(xml: string) {
+async function processarParcelas(xml: string, importacaoId?: string | null) {
   const blocks = getBlocks(xml, ['parcela'])
   const lista = blocks.length ? blocks : [xml]
   let importados = 0, erros = 0
@@ -447,22 +605,38 @@ async function processarParcelas(xml: string) {
 
   for (const bloco of lista) {
     try {
-      const numApolice  = getTag(bloco, ['numApolice', 'numeroApolice'])
-      const numEndosso  = getTag(bloco, ['numendosso', 'numEndosso'])
-      const cpfCnpj     = digits(getTag(bloco, ['CPFCnpj']))
-      const nome        = getTag(bloco, ['nomeSegurado'])
-      const produto     = getTag(bloco, ['Produto'])
-      const numParcela  = getTag(bloco, ['numParcela'])
-      const totParcelas = getTag(bloco, ['qtdeParcela'])
-      const venc        = toDate(getTag(bloco, ['dtVencimento']))
-      const dataPag     = toDate(getTag(bloco, ['dtPagamento']))
-      const dataBaixa   = toDate(getTag(bloco, ['dtBaixa']))
-      const formaCobr   = getTag(bloco, ['dsFormaCobranca'])
-      const valor       = num(getTag(bloco, ['vlrPremioParcela'])) || 0
-      const vlrJuros    = num(getTag(bloco, ['vlrJuros'])) || 0
-      const vlrIOF      = num(getTag(bloco, ['vlrIOF'])) || 0
-      const vlrComissao = num(getTag(bloco, ['vlrComissao'])) || 0
-      const status      = getTag(bloco, ['StatusApoliceEndosso', 'situacaoParcela', 'status']).toLowerCase()
+      const numApolice    = getTag(bloco, ['numApolice', 'numeroApolice'])
+      const numEndosso    = getTag(bloco, ['numendosso', 'numEndosso'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj']))
+      const nome          = getTag(bloco, ['nomeSegurado', 'nome'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const numParcela    = parseInt(getTag(bloco, ['numParcela']) || '') || null
+      const totParcelas   = parseInt(getTag(bloco, ['qtdeParcela']) || '') || null
+      const venc          = toDate(getTag(bloco, ['dtVencimento']))
+      const dataPag       = toDate(getTag(bloco, ['dtPagamento']))
+      const dataBaixa     = toDate(getTag(bloco, ['dtBaixa']))
+      const dataEmissao   = toDate(getTag(bloco, ['dtEmissao', 'dtEmissaoApolice']))
+      const dataComp      = toDate(getTag(bloco, ['dtCompetencia', 'dataCompetencia']))
+      const formaCobr     = getTag(bloco, ['dsFormaCobranca'])
+      const valor         = num(getTag(bloco, ['vlrPremioParcela'])) || 0
+      const vlrJuros      = num(getTag(bloco, ['vlrJuros'])) || 0
+      const vlrIOF        = num(getTag(bloco, ['vlrIOF'])) || 0
+      const vlrComissao   = num(getTag(bloco, ['vlrComissao'])) || 0
+      const vlrLiquido    = num(getTag(bloco, ['vlrLiquido']))
+      const vlrDesconto   = num(getTag(bloco, ['vlrDesconto']))
+      const vlrMulta      = num(getTag(bloco, ['vlrMulta']))
+      const vlrTotal      = num(getTag(bloco, ['vlrTotal']))
+      const banco         = getTag(bloco, ['bancoCobranca', 'banco'])
+      const agencia       = getTag(bloco, ['agencia'])
+      const conta         = getTag(bloco, ['conta'])
+      const numBoleto     = getTag(bloco, ['numBoleto', 'numeroBoleto'])
+      const numNotaFiscal = getTag(bloco, ['numNotaFiscal', 'numeroNotaFiscal', 'numNF'])
+      const status        = getTag(bloco, ['StatusApoliceEndosso', 'situacaoParcela', 'status']).toLowerCase()
+      const situacao      = getTag(bloco, ['situacaoParcela', 'StatusApoliceEndosso'])
+      const cdCorretor    = getTag(bloco, ['cdCorretor', 'CdCorretor'])
+      const nmCorretor    = getTag(bloco, ['nmCorretor', 'NmCorretor'])
       if (!venc) { msgs.push(`sem vencimento (apólice ${numApolice})`); erros++; continue }
 
       const apolice = await buscarApolicePorNumero(numApolice)
@@ -471,7 +645,7 @@ async function processarParcelas(xml: string) {
 
       const pago = !!dataPag || !!dataBaixa || ['paga','pago','liquidada','quitada'].includes(status)
 
-      const conta = {
+      const conta_pagar = {
         tipo:        'conta',
         nome:        `Tokio Marine — Apólice ${numApolice} parc ${numParcela}/${totParcelas}`,
         valor,
@@ -488,14 +662,58 @@ async function processarParcelas(xml: string) {
         .select('id').ilike('nome', `%Apólice ${numApolice} parc ${numParcela}/%`)
         .eq('vencimento', venc).maybeSingle()
 
+      let contaPagarId: string | null = null
       if (existing?.id) {
+        contaPagarId = (existing as any).id
         await supabaseAdmin().from('contas_pagar').update({
-          status: conta.status, data_pagamento: conta.data_pagamento, valor: conta.valor,
-        }).eq('id', existing.id)
+          status: conta_pagar.status, data_pagamento: conta_pagar.data_pagamento, valor: conta_pagar.valor,
+        }).eq('id', (existing as any).id)
       } else {
-        const { error } = await supabaseAdmin().from('contas_pagar').insert(conta)
+        const { data: novaConta, error } = await supabaseAdmin().from('contas_pagar').insert(conta_pagar).select('id').single()
         if (error) { erros++; msgs.push(error.message?.slice(0,80)); continue }
+        contaPagarId = (novaConta as any)?.id || null
       }
+
+      // Salva cópia raw com TODOS os campos
+      await supabaseAdmin().from('tokio_parcelas').upsert({
+        num_apolice:        numApolice || null,
+        num_endosso:        numEndosso || null,
+        num_proposta:       numProposta || null,
+        ramo:               ramo || null,
+        produto:            produto || null,
+        cpf_cnpj:           cpfCnpj || null,
+        nome_segurado:      nome || null,
+        num_parcela:        numParcela,
+        qtde_parcela:       totParcelas,
+        data_vencimento:    venc,
+        data_pagamento:     dataPag,
+        data_baixa:         dataBaixa,
+        data_emissao:       dataEmissao,
+        data_competencia:   dataComp,
+        vlr_premio_parcela: valor,
+        vlr_juros:          vlrJuros,
+        vlr_iof:            vlrIOF,
+        vlr_comissao:       vlrComissao,
+        vlr_liquido:        vlrLiquido,
+        vlr_desconto:       vlrDesconto,
+        vlr_multa:          vlrMulta,
+        vlr_total:          vlrTotal,
+        forma_cobranca:     formaCobr || null,
+        banco_cobranca:     banco || null,
+        agencia:            agencia || null,
+        conta:              conta || null,
+        num_boleto:         numBoleto || null,
+        num_nota_fiscal:    numNotaFiscal || null,
+        status_parcela:     status || null,
+        situacao_parcela:   situacao || null,
+        cd_corretor:        cdCorretor || null,
+        nm_corretor:        nmCorretor || null,
+        apolice_id:         apolice?.id || null,
+        cliente_id:         clienteId || null,
+        conta_pagar_id:     contaPagarId,
+        importacao_id:      importacaoId || null,
+        dados_brutos:       { bloco_xml: bloco.slice(0, 4000) },
+      }, { onConflict: 'num_apolice,num_parcela,data_vencimento' })
 
       // Tarefa de aviso pra responsável (parcela vencendo em ≤7 dias)
       if (!pago && apolice?.vendedor_id && clienteId) {
@@ -520,20 +738,25 @@ async function processarParcelas(xml: string) {
 // Layout: <Extrato> com cabeçalho + <ApolicesComicionadas> com N
 // <DetalheComissao>. Cancelamentos (cdNatureza 2/3/4/9) entram com
 // valor negativo já no arquivo — mantemos como veio.
-async function processarComissoes(xml: string) {
-  const numExtrato  = getTag(xml, ['numExtrato'])
-  const cdCorretor  = getTag(xml, ['CdCorretor'])
-  const nmCorretor  = getTag(xml, ['NmCorretor'])
-  const dtPagto     = toDate(getTag(xml, ['dtPagamento']))
-  const vlrTotal    = num(getTag(xml, ['vlrTotal']))
-  const vlrLiquido  = num(getTag(xml, ['vlrLiquido']))
-  const vlrBruto    = num(getTag(xml, ['vlrBruto']))
+async function processarComissoes(xml: string, importacaoId?: string | null) {
+  const numExtrato     = getTag(xml, ['numExtrato'])
+  const cdCorretor     = getTag(xml, ['CdCorretor', 'cdCorretor'])
+  const nmCorretor     = getTag(xml, ['NmCorretor', 'nmCorretor'])
+  const dtPagto        = toDate(getTag(xml, ['dtPagamento']))
+  const dtEmissao      = toDate(getTag(xml, ['dtEmissao']))
+  const vlrTotal       = num(getTag(xml, ['vlrTotal']))
+  const vlrLiquido     = num(getTag(xml, ['vlrLiquido']))
+  const vlrBruto       = num(getTag(xml, ['vlrBruto']))
+  const vlrDescontos   = num(getTag(xml, ['vlrDescontos', 'vlrDesconto']))
+  const vlrAcrescimos  = num(getTag(xml, ['vlrAcrescimos', 'vlrAcrescimo']))
+  const vlrIss         = num(getTag(xml, ['vlrIss', 'vlrISS']))
+  const vlrIrrf        = num(getTag(xml, ['vlrIrrf', 'vlrIRRF']))
 
   const detalhes = getBlocks(xml, ['DetalheComissao'])
   let importados = 0, erros = 0
   const msgs: string[] = []
 
-  // Importação master
+  // Importação master legada (mantida)
   const { data: imp } = await supabaseAdmin().from('importacoes_comissao').insert({
     nome_arquivo: `tokio-extrato-${numExtrato || Date.now()}.xml`,
     competencia: dtPagto ? dtPagto.slice(0,7) : new Date().toISOString().slice(0,7),
@@ -542,34 +765,61 @@ async function processarComissoes(xml: string) {
     status: 'processado',
   }).select('id').single()
 
+  // Cabeçalho do extrato — uma linha em tokio_extrato_comissoes
+  const { data: extratoRow } = await supabaseAdmin().from('tokio_extrato_comissoes').upsert({
+    num_extrato:    numExtrato || `auto-${Date.now()}`,
+    cd_corretor:    cdCorretor || null,
+    nm_corretor:    nmCorretor || null,
+    data_pagamento: dtPagto,
+    data_emissao:   dtEmissao,
+    competencia:    dtPagto ? dtPagto.slice(0,7) : null,
+    vlr_total:      vlrTotal,
+    vlr_bruto:      vlrBruto,
+    vlr_liquido:    vlrLiquido,
+    vlr_descontos:  vlrDescontos,
+    vlr_acrescimos: vlrAcrescimos,
+    vlr_iss:        vlrIss,
+    vlr_irrf:       vlrIrrf,
+    qtd_detalhes:   detalhes.length,
+    importacao_id:  importacaoId || null,
+    dados_brutos:   { xml_preview: xml.slice(0, 4000) },
+  }, { onConflict: 'num_extrato' }).select('id').single()
+  const extratoId = (extratoRow as any)?.id || null
+
   for (const bloco of detalhes) {
     try {
-      const numApolice  = getTag(bloco, ['numApolice'])
-      const numEndosso  = getTag(bloco, ['numEndosso'])
-      const produto     = getTag(bloco, ['Produto'])
-      const cpfCnpj     = digits(getTag(bloco, ['CPFCnpj']))
-      const nome        = getTag(bloco, ['nomeSegurado'])
-      const numParcela  = parseInt(getTag(bloco, ['numParcela']) || '1') || 1
-      const qtdParcela  = parseInt(getTag(bloco, ['qtdeParcela']) || '1') || 1
-      const pcComissao  = num(getTag(bloco, ['pcComissao']))
-      const valor       = num(getTag(bloco, ['vlrComissaoParcela'])) || 0
-      const vlrPremio   = num(getTag(bloco, ['vlrPremio']))
-      const cdNatureza  = getTag(bloco, ['cdNatureza'])
-      const cdTipoPagto = getTag(bloco, ['cdTipoPagto'])
-      const statusApol  = getTag(bloco, ['StatusApolice'])
+      const numApolice    = getTag(bloco, ['numApolice'])
+      const numEndosso    = getTag(bloco, ['numEndosso'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj']))
+      const nome          = getTag(bloco, ['nomeSegurado', 'nome'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const numParcela    = parseInt(getTag(bloco, ['numParcela']) || '1') || 1
+      const qtdParcela    = parseInt(getTag(bloco, ['qtdeParcela']) || '1') || 1
+      const pcComissao    = num(getTag(bloco, ['pcComissao']))
+      const valor         = num(getTag(bloco, ['vlrComissaoParcela'])) || 0
+      const vlrPremio     = num(getTag(bloco, ['vlrPremio']))
+      const vlrPremioLiq  = num(getTag(bloco, ['vlrPremioLiquido']))
+      const vlrIof        = num(getTag(bloco, ['vlrIOF']))
+      const cdNatureza    = getTag(bloco, ['cdNatureza'])
+      const dsNatureza    = getTag(bloco, ['dsNatureza'])
+      const cdTipoPagto   = getTag(bloco, ['cdTipoPagto'])
+      const dsTipoPagto   = getTag(bloco, ['dsTipoPagto'])
+      const statusApol    = getTag(bloco, ['StatusApolice', 'statusApolice'])
+      const dtEmissaoDet  = toDate(getTag(bloco, ['dtEmissao']))
+      const dtPagtoDet    = toDate(getTag(bloco, ['dtPagamento'])) || dtPagto
+      const dtMovimento   = toDate(getTag(bloco, ['dtMovimento']))
+      const dtCompetencia = toDate(getTag(bloco, ['dtCompetencia']))
 
       const apolice = await buscarApolicePorNumero(numApolice)
       const vendedorId = apolice?.vendedor_id
-      if (!vendedorId) {
-        msgs.push(`apólice ${numApolice}: sem vendedor — comissão R$${valor} não lançada`)
-        erros++
-        continue
-      }
 
       const obs = [
         cpfCnpj && `CPF/CNPJ ${cpfCnpj}`,
-        nome,
-        produto,
+        nome, produto,
         cdTipoPagto && `Tipo ${cdTipoPagto}`,
         cdNatureza && `Natureza ${cdNatureza}`,
         numEndosso && `Endosso ${numEndosso}`,
@@ -578,23 +828,520 @@ async function processarComissoes(xml: string) {
         vlrPremio != null && `Prêmio R$ ${vlrPremio}`,
       ].filter(Boolean).join(' | ')
 
-      const { error } = await supabaseAdmin().from('comissoes_recebidas').insert({
-        apolice_id:       apolice?.id || null,
-        cliente_id:       apolice?.cliente_id || null,
-        vendedor_id:      vendedorId,
-        valor:            Math.abs(valor),  // tabela tem CHECK >= 0; status indica se foi recuperação
-        competencia:      dtPagto ? dtPagto.slice(0,7) : '',
-        data_recebimento: dtPagto,
-        parcela:          numParcela,
-        total_parcelas:   qtdParcela,
-        seguradora:       'Tokio Marine',
-        produto:          produto || null,
-        status:           valor < 0 ? 'cancelado' : 'recebido',
-        origem:           'importacao',
-        importacao_id:    imp?.id || null,
-        obs,
+      let comissaoRecebidaId: string | null = null
+      if (vendedorId) {
+        const { data: insRow, error } = await supabaseAdmin().from('comissoes_recebidas').insert({
+          apolice_id:       apolice?.id || null,
+          cliente_id:       apolice?.cliente_id || null,
+          vendedor_id:      vendedorId,
+          valor:            Math.abs(valor),
+          competencia:      dtPagtoDet ? dtPagtoDet.slice(0,7) : '',
+          data_recebimento: dtPagtoDet,
+          parcela:          numParcela,
+          total_parcelas:   qtdParcela,
+          seguradora:       'Tokio Marine',
+          produto:          produto || null,
+          status:           valor < 0 ? 'cancelado' : 'recebido',
+          origem:           'importacao',
+          importacao_id:    (imp as any)?.id || null,
+          obs,
+        }).select('id').single()
+        if (error) { msgs.push(`${numApolice}: ${error.message?.slice(0,80)} (raw salvo)`) }
+        comissaoRecebidaId = (insRow as any)?.id || null
+      } else {
+        msgs.push(`apólice ${numApolice}: sem vendedor — só salvo em tokio_detalhe_comissao`)
+      }
+
+      // Salva sempre o detalhe raw com TODOS os campos
+      await supabaseAdmin().from('tokio_detalhe_comissao').insert({
+        extrato_id:           extratoId,
+        num_extrato:          numExtrato || null,
+        num_apolice:          numApolice || null,
+        num_endosso:          numEndosso || null,
+        num_proposta:         numProposta || null,
+        ramo:                 ramo || null,
+        produto:              produto || null,
+        tipo_seguro:          tipoSeguro || null,
+        cpf_cnpj:             cpfCnpj || null,
+        nome_segurado:        nome || null,
+        tp_pessoa:            tpPessoa || null,
+        num_parcela:          numParcela,
+        qtde_parcela:         qtdParcela,
+        pc_comissao:          pcComissao,
+        vlr_comissao_parcela: valor,
+        vlr_premio:           vlrPremio,
+        vlr_premio_liquido:   vlrPremioLiq,
+        vlr_iof:              vlrIof,
+        cd_natureza:          cdNatureza || null,
+        ds_natureza:          dsNatureza || null,
+        cd_tipo_pagto:        cdTipoPagto || null,
+        ds_tipo_pagto:        dsTipoPagto || null,
+        status_apolice:       statusApol || null,
+        data_emissao:         dtEmissaoDet,
+        data_pagamento:       dtPagtoDet,
+        data_movimento:       dtMovimento,
+        data_competencia:     dtCompetencia,
+        cd_corretor:          cdCorretor || null,
+        nm_corretor:          nmCorretor || null,
+        apolice_id:           apolice?.id || null,
+        cliente_id:           apolice?.cliente_id || null,
+        comissao_recebida_id: comissaoRecebidaId,
+        importacao_id:        importacaoId || null,
+        dados_brutos:         { bloco_xml: bloco.slice(0, 4000) },
       })
-      if (error) { erros++; msgs.push(`${numApolice}: ${error.message?.slice(0,80)}`); continue }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR SINISTROS ─────────────────────────────────────
+// Layout esperado do getSinistro: blocos <DadosSinistro> ou
+// <Sinistro> contendo numSinistro, numApolice, dtAviso,
+// dtOcorrencia, vlrIndenizacao, etc. Como a Tokio mistura nomes
+// de tags, aceitamos múltiplos aliases.
+async function processarSinistros(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosSinistro', 'Sinistro', 'sinistro'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosSinistro', 'Sinistro'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numSinistro   = getTag(bloco, ['numSinistro', 'numeroSinistro', 'nrSinistro'])
+      const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const email         = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel      = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const ddd           = getTag(blocoTel || bloco, ['ddd'])
+      const telefone      = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
+      const dtAviso       = toDate(getTag(bloco, ['dtAviso', 'dtAvisoSinistro', 'dataAviso']))
+      const dtOcorrencia  = toDate(getTag(bloco, ['dtOcorrencia', 'dataOcorrencia']))
+      const dtComunicacao = toDate(getTag(bloco, ['dtComunicacao', 'dataComunicacao']))
+      const dtAbertura    = toDate(getTag(bloco, ['dtAbertura', 'dataAbertura']))
+      const dtEncerra     = toDate(getTag(bloco, ['dtEncerramento', 'dataEncerramento']))
+      const dtPagamento   = toDate(getTag(bloco, ['dtPagamento', 'dataPagamento']))
+      const situacao      = getTag(bloco, ['situacao', 'StatusSinistro', 'statusSinistro'])
+      const fase          = getTag(bloco, ['fase', 'fasesinistro', 'faseSinistro'])
+      const causa         = getTag(bloco, ['causa', 'dsCausa', 'natureza'])
+      const grupoCausa    = getTag(bloco, ['grupoCausa', 'cdGrupoCausa'])
+      const localOcorr    = getTag(bloco, ['localOcorrencia', 'enderecoOcorrencia', 'endereco'])
+      const ufOcorr       = getTag(bloco, ['ufOcorrencia', 'uf'])
+      const cidadeOcorr   = getTag(bloco, ['cidadeOcorrencia', 'cidade', 'municipio'])
+      const cepOcorr      = getTag(bloco, ['cepOcorrencia', 'cep'])
+      const vlrIndeniz    = num(getTag(bloco, ['vlrIndenizacao', 'valorIndenizacao']))
+      const vlrReserva    = num(getTag(bloco, ['vlrReserva', 'valorReserva']))
+      const vlrFranquia   = num(getTag(bloco, ['vlrFranquia']))
+      const vlrPag        = num(getTag(bloco, ['vlrPagamento']))
+      const vlrDespesas   = num(getTag(bloco, ['vlrDespesas', 'vlrDespesa']))
+      // Veículo do sinistro (auto)
+      const blocoAuto     = (getBlocks(bloco, ['DadosVeiculo', 'DadosSeguroAutomovel'])[0]) || ''
+      const placa         = getTag(blocoAuto, ['cdPlaca', 'placa'])
+      const chassi        = getTag(blocoAuto, ['chassi'])
+      const modelo        = getTag(blocoAuto, ['dsModelo', 'modelo'])
+      const fabricante    = getTag(blocoAuto, ['fabricante'])
+      const anoModelo     = getTag(blocoAuto, ['anoModelo'])
+      // Regulador / Vistoriador
+      const regulador     = getTag(bloco, ['regulador', 'nmRegulador'])
+      const vistoriador   = getTag(bloco, ['vistoriador', 'nmVistoriador'])
+      const nrProtocolo   = getTag(bloco, ['nrProtocolo', 'numProtocolo', 'numeroProtocolo'])
+      const observacao    = getTag(bloco, ['observacao', 'obs'])
+      // Corretor
+      const blocoCor      = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor    = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor    = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
+
+      if (!numSinistro && !numApolice) { msgs.push('sinistro sem identificador'); erros++; continue }
+
+      const apolice = numApolice ? await buscarApolicePorNumero(numApolice) : null
+      const clienteId = apolice?.cliente_id
+        || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numSinistro, numApolice } })
+
+      const dadosBrutos = {
+        numSinistro, numApolice, numEndosso, numProposta, ramo, produto, tipoSeguro,
+        cpfCnpj, nome, situacao, causa, vlrIndenizacao: vlrIndeniz, vlrReserva,
+        bloco_xml: bloco.slice(0, 4000),
+      }
+
+      const payload: any = {
+        numero_sinistro:   numSinistro || null,
+        numero_apolice:    numApolice || null,
+        numero_endosso:    numEndosso || null,
+        num_proposta:      numProposta || null,
+        ramo:              ramo || null,
+        produto:           produto || null,
+        tipo_seguro:       tipoSeguro || null,
+        cpf_cnpj:          cpfCnpj || null,
+        nome_segurado:     nome || null,
+        tp_pessoa:         tpPessoa || null,
+        email:             email || null,
+        ddd:               ddd || null,
+        telefone:          telefone || null,
+        data_aviso:        dtAviso,
+        data_ocorrencia:   dtOcorrencia,
+        data_comunicacao:  dtComunicacao,
+        data_abertura:     dtAbertura,
+        data_encerramento: dtEncerra,
+        data_pagamento:    dtPagamento,
+        situacao:          situacao || null,
+        fase:              fase || null,
+        causa:             causa || null,
+        grupo_causa:       grupoCausa || null,
+        local_ocorrencia:  localOcorr || null,
+        uf_ocorrencia:     ufOcorr || null,
+        cidade_ocorrencia: cidadeOcorr || null,
+        cep_ocorrencia:    cepOcorr || null,
+        valor_indenizacao: vlrIndeniz,
+        valor_reserva:     vlrReserva,
+        vlr_franquia:      vlrFranquia,
+        vlr_pagamento:     vlrPag,
+        vlr_despesas:      vlrDespesas,
+        placa:             placa || null,
+        chassi:            chassi || null,
+        modelo:            modelo || null,
+        fabricante:        fabricante || null,
+        ano_modelo:        anoModelo || null,
+        regulador:         regulador || null,
+        vistoriador:       vistoriador || null,
+        nr_protocolo:      nrProtocolo || null,
+        observacao:        observacao || null,
+        cd_corretor:       cdCorretor || null,
+        nm_corretor:       nmCorretor || null,
+        apolice_id:        apolice?.id || null,
+        cliente_id:        clienteId || null,
+        importacao_id:     importacaoId || null,
+        dados_brutos:      dadosBrutos,
+      }
+
+      // Sem numSinistro não há como deduplicar — insere sempre
+      if (numSinistro) {
+        const { error } = await supabaseAdmin().from('tokio_sinistros').upsert(payload, { onConflict: 'numero_sinistro' })
+        if (error) { erros++; msgs.push(`${numSinistro}: ${error.message?.slice(0,80)}`); continue }
+      } else {
+        const { error } = await supabaseAdmin().from('tokio_sinistros').insert(payload)
+        if (error) { erros++; msgs.push(`${numApolice}: ${error.message?.slice(0,80)}`); continue }
+      }
+
+      // Histórico no cliente, se vinculado
+      if (clienteId) {
+        await supabaseAdmin().from('historico').insert({
+          cliente_id: clienteId, tipo: 'red',
+          titulo: `🚨 Sinistro Tokio: ${numSinistro || numApolice}`,
+          descricao: `${causa || situacao || 'Sinistro registrado'} | Apólice ${numApolice || '—'}`,
+        })
+      }
+      // Notificar vendedor da apólice
+      if (apolice?.vendedor_id) {
+        await supabaseAdmin().from('notificacoes').insert({
+          user_id: apolice.vendedor_id, tipo: 'sistema',
+          titulo: `🚨 Sinistro Tokio: ${numSinistro || numApolice}`,
+          descricao: `${causa || situacao || 'Novo sinistro recebido'}`,
+          link: '/dashboard/seguradoras',
+        })
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR RENOVAÇÕES ────────────────────────────────────
+// Layout: blocos <DadosRenovacao> ou <Renovacao> com numApolice,
+// vigências antigas, novas e prêmio renovado.
+async function processarRenovacoes(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosRenovacao', 'Renovacao', 'renovacao'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosRenovacao', 'Renovacao'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numRenovacao  = getTag(bloco, ['numRenovacao', 'numeroRenovacao'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const email         = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel      = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const telefone      = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
+      const vigIniAtual   = toDate(getTag(bloco, ['dtInicioVigenciaAtual', 'dtInicioVigenciaAnterior']))
+      const vigFimAtual   = toDate(getTag(bloco, ['dtFimVigenciaAtual', 'dtFimVigenciaAnterior']))
+      const vigIni        = toDate(getTag(bloco, ['dtInicioVigencia', 'dtInicioVigenciaApolice', 'dtVigenciaInicio', 'dtInicioVigenciaRenovacao']))
+      const vigFim        = toDate(getTag(bloco, ['dtFimVigencia', 'dtFimVigenciaApolice', 'dtVigenciaFim', 'dtFimVigenciaRenovacao']))
+      const dtRenovacao   = toDate(getTag(bloco, ['dtRenovacao', 'dataRenovacao']))
+      const dtEmissao     = toDate(getTag(bloco, ['dtEmissao', 'dtEmissaoApolice']))
+      const premioAtual   = num(getTag(bloco, ['vlrPremioAtual', 'vlrPremioAnterior']))
+      const premioNovo    = num(getTag(bloco, ['vlrPremioRenovacao', 'vlrPremioNovo', 'vlrPremioTotal']))
+      const pcComissao    = num(getTag(bloco, ['pcComissao']))
+      const vlrComissao   = num(getTag(bloco, ['vlrComissao']))
+      const qtdParc       = parseInt(getTag(bloco, ['qtdeParcelas']) || '') || null
+      const formaPag      = getTag(bloco, ['formaPagamento', 'dsFormaCobranca'])
+      const statusRen     = getTag(bloco, ['statusRenovacao', 'situacaoRenovacao', 'StatusApoliceEndosso'])
+      const situacaoRen   = getTag(bloco, ['situacaoRenovacao'])
+      const blocoAuto     = (getBlocks(bloco, ['DadosSeguroAutomovel'])[0]) || ''
+      const placa         = getTag(blocoAuto, ['cdPlaca', 'placa'])
+      const chassi        = getTag(blocoAuto, ['chassi'])
+      const modelo        = getTag(blocoAuto, ['dsModelo', 'modelo'])
+      const fabricante    = getTag(blocoAuto, ['fabricante'])
+      const anoModelo     = getTag(blocoAuto, ['anoModelo'])
+      const observacao    = getTag(bloco, ['observacao', 'obs'])
+      const blocoCor      = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor    = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor    = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
+
+      if (!numApolice && !numProposta) { msgs.push('renovação sem identificador'); erros++; continue }
+
+      const apolice = numApolice ? await buscarApolicePorNumero(numApolice) : null
+      const clienteId = apolice?.cliente_id
+        || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numApolice, numProposta } })
+
+      const payload: any = {
+        numero_apolice:     numApolice || null,
+        numero_proposta:    numProposta || null,
+        numero_renovacao:   numRenovacao || null,
+        ramo:               ramo || null,
+        produto:            produto || null,
+        tipo_seguro:        tipoSeguro || null,
+        cpf_cnpj:           cpfCnpj || null,
+        nome_segurado:      nome || null,
+        tp_pessoa:          tpPessoa || null,
+        email:              email || null,
+        telefone:           telefone || null,
+        vigencia_ini:       vigIni,
+        vigencia_fim:       vigFim,
+        vigencia_ini_atual: vigIniAtual,
+        vigencia_fim_atual: vigFimAtual,
+        data_renovacao:     dtRenovacao,
+        data_emissao:       dtEmissao,
+        premio_atual:       premioAtual,
+        premio_renovacao:   premioNovo,
+        pc_comissao:        pcComissao,
+        vlr_comissao:       vlrComissao,
+        qtd_parcelas:       qtdParc,
+        forma_pagamento:    formaPag || null,
+        status_renovacao:   statusRen || null,
+        situacao_renovacao: situacaoRen || null,
+        placa:              placa || null,
+        chassi:             chassi || null,
+        modelo:             modelo || null,
+        fabricante:         fabricante || null,
+        ano_modelo:         anoModelo || null,
+        observacao:         observacao || null,
+        cd_corretor:        cdCorretor || null,
+        nm_corretor:        nmCorretor || null,
+        apolice_id:         apolice?.id || null,
+        cliente_id:         clienteId || null,
+        importacao_id:      importacaoId || null,
+        dados_brutos:       { bloco_xml: bloco.slice(0, 4000) },
+      }
+
+      // Dedup por (numero_apolice, vigencia_fim) quando temos os dois
+      if (numApolice && vigFim) {
+        const { error } = await supabaseAdmin().from('tokio_renovacoes').upsert(payload, { onConflict: 'numero_apolice,vigencia_fim' })
+        if (error) { erros++; msgs.push(`${numApolice}: ${error.message?.slice(0,80)}`); continue }
+      } else {
+        const { error } = await supabaseAdmin().from('tokio_renovacoes').insert(payload)
+        if (error) { erros++; msgs.push(`${numApolice||numProposta}: ${error.message?.slice(0,80)}`); continue }
+      }
+
+      // Tarefa de renovação para o vendedor (vence próximo)
+      if (apolice?.vendedor_id && clienteId && vigFim) {
+        const dias = Math.floor((new Date(vigFim).getTime() - Date.now()) / 86400000)
+        if (dias <= 60 && dias >= -30) {
+          await supabaseAdmin().from('tarefas').insert({
+            titulo: `🔁 Renovação Tokio: Apólice ${numApolice}`,
+            descricao: `Vence em ${vigFim} (${dias}d) | Prêmio renovação R$ ${premioNovo ?? '—'}`,
+            tipo: 'ligacao', status: 'pendente',
+            cliente_id: clienteId,
+            responsavel_id: apolice.vendedor_id, criado_por: apolice.vendedor_id,
+          })
+        }
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR PENDÊNCIAS ────────────────────────────────────
+// Layout: blocos <DadosPendencia> ou <Pendencia> com tipo,
+// descrição, datas de abertura/limite/resolução.
+async function processarPendencias(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosPendencia', 'Pendencia', 'pendencia'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosPendencia', 'Pendencia'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numApolice   = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numProposta  = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numEndosso   = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const ramo         = getTag(bloco, ['ramo'])
+      const produto      = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro   = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj      = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome         = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa     = getTag(bloco, ['tpPessoa'])
+      const email        = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel     = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const telefone     = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
+      const tipoPend     = getTag(bloco, ['tipoPendencia', 'tpPendencia', 'tipo'])
+      const descricao    = getTag(bloco, ['descricao', 'dsPendencia'])
+      const dtAbertura   = toDate(getTag(bloco, ['dtAbertura', 'dataAbertura']))
+      const dtLimite     = toDate(getTag(bloco, ['dtLimite', 'dataLimite']))
+      const dtVencimento = toDate(getTag(bloco, ['dtVencimento']))
+      const dtResolucao  = toDate(getTag(bloco, ['dtResolucao', 'dataResolucao']))
+      const situacao     = getTag(bloco, ['situacao', 'StatusPendencia', 'status'])
+      const responsavel  = getTag(bloco, ['responsavel', 'nmResponsavel'])
+      const areaResp     = getTag(bloco, ['areaResponsavel', 'area'])
+      const prioridade   = getTag(bloco, ['prioridade'])
+      const observacao   = getTag(bloco, ['observacao', 'obs'])
+      const blocoCor     = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor   = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor   = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
+
+      if (!numApolice && !numProposta) { msgs.push('pendência sem identificador'); erros++; continue }
+
+      const apolice = numApolice ? await buscarApolicePorNumero(numApolice) : null
+      const clienteId = apolice?.cliente_id
+        || await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numApolice, numProposta, tipoPend } })
+
+      const payload: any = {
+        numero_apolice:    numApolice || null,
+        numero_proposta:   numProposta || null,
+        numero_endosso:    numEndosso || null,
+        ramo:              ramo || null,
+        produto:           produto || null,
+        tipo_seguro:       tipoSeguro || null,
+        cpf_cnpj:          cpfCnpj || null,
+        nome_segurado:     nome || null,
+        tp_pessoa:         tpPessoa || null,
+        email:             email || null,
+        telefone:          telefone || null,
+        tipo_pendencia:    tipoPend || null,
+        descricao:         descricao || null,
+        data_abertura:     dtAbertura,
+        data_limite:       dtLimite,
+        data_vencimento:   dtVencimento,
+        data_resolucao:    dtResolucao,
+        situacao:          situacao || null,
+        responsavel:       responsavel || null,
+        area_responsavel:  areaResp || null,
+        prioridade:        prioridade || null,
+        observacao:        observacao || null,
+        cd_corretor:       cdCorretor || null,
+        nm_corretor:       nmCorretor || null,
+        apolice_id:        apolice?.id || null,
+        cliente_id:        clienteId || null,
+        importacao_id:     importacaoId || null,
+        dados_brutos:      { bloco_xml: bloco.slice(0, 4000) },
+      }
+      const { error } = await supabaseAdmin().from('tokio_pendencias').insert(payload)
+      if (error) { erros++; msgs.push(`${numApolice||numProposta}: ${error.message?.slice(0,80)}`); continue }
+
+      // Tarefa para o vendedor da apólice
+      if (apolice?.vendedor_id && clienteId && !dtResolucao) {
+        await supabaseAdmin().from('tarefas').insert({
+          titulo: `⚠️ Pendência Tokio: Apólice ${numApolice || numProposta}`,
+          descricao: `${tipoPend || 'Pendência'}${descricao ? ' | ' + descricao.slice(0,140) : ''}${dtLimite ? ' | Limite ' + dtLimite : ''}`,
+          tipo: 'ligacao', status: 'pendente',
+          cliente_id: clienteId,
+          responsavel_id: apolice.vendedor_id, criado_por: apolice.vendedor_id,
+        })
+      }
+      importados++
+    } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
+  }
+  return { importados, erros, msgs }
+}
+
+// ─── PROCESSAR RECUSAS ───────────────────────────────────────
+// Layout: blocos <DadosRecusa> ou <Recusa> com numProposta,
+// motivoDeRecusa, dtRecusa.
+async function processarRecusas(xml: string, importacaoId?: string | null) {
+  const blocos = getBlocks(xml, ['DadosRecusa', 'Recusa', 'recusa'])
+  const lista = blocos.length ? blocos : splitByAnchor(xml, ['DadosRecusa', 'Recusa', 'DadosSegurado'])
+  let importados = 0, erros = 0
+  const msgs: string[] = []
+
+  for (const bloco of lista) {
+    try {
+      const numProposta   = getTag(bloco, ['numProposta', 'NumProposta'])
+      const numApolice    = getTag(bloco, ['numApolice', 'numApoIice', 'numeroApolice'])
+      const numEndosso    = getTag(bloco, ['numEndosso', 'numeroEndosso'])
+      const ramo          = getTag(bloco, ['ramo'])
+      const produto       = getTag(bloco, ['Produto', 'produto'])
+      const tipoSeguro    = getTag(bloco, ['TipoSeguro', 'tipoSeguro'])
+      const cpfCnpj       = digits(getTag(bloco, ['CPFCnpj', 'cpfCnpj', 'cpf', 'cnpj']))
+      const nome          = getTag(bloco, ['nome', 'nomeSegurado'])
+      const tpPessoa      = getTag(bloco, ['tpPessoa'])
+      const email         = getTag(bloco, ['e-mail', 'dsEmail', 'email'])
+      const blocoTel      = (getBlocks(bloco, ['Telefone', 'telefone'])[0]) || ''
+      const telefone      = getTag(blocoTel, ['numero']) || getTag(bloco, ['nrTelefone'])
+      const dtRecusa      = toDate(getTag(bloco, ['dtRecusa', 'dataRecusa']))
+      const dtSolicitacao = toDate(getTag(bloco, ['dtSolicitacao', 'dataSolicitacao']))
+      const motivo        = getTag(bloco, ['motivoDeRecusa', 'motivoRecusa', 'motivo'])
+      const codigoMotivo  = getTag(bloco, ['cdMotivo', 'codigoMotivo'])
+      const dsMotivo      = getTag(bloco, ['descricaoMotivo', 'dsMotivo'])
+      const areaRecusante = getTag(bloco, ['areaRecusante', 'area'])
+      const statusRecusa  = getTag(bloco, ['statusRecusa', 'situacao'])
+      const obs           = getTag(bloco, ['observacao', 'obs'])
+      const blocoCor      = (getBlocks(bloco, ['Corretor'])[0]) || bloco
+      const cdCorretor    = getTag(blocoCor, ['cdCorretor'])
+      const nmCorretor    = getTag(blocoCor, ['nmCorretor', 'NmCorretor'])
+
+      if (!numProposta && !numApolice) { msgs.push('recusa sem identificador'); erros++; continue }
+
+      const clienteId = await obterOuCriarCliente({ cpfCnpj, nome, dadosBrutos: { numProposta, numApolice, motivo } })
+
+      const payload: any = {
+        numero_proposta:  numProposta || null,
+        numero_apolice:   numApolice || null,
+        numero_endosso:   numEndosso || null,
+        ramo:             ramo || null,
+        produto:          produto || null,
+        tipo_seguro:      tipoSeguro || null,
+        cpf_cnpj:         cpfCnpj || null,
+        nome_segurado:    nome || null,
+        tp_pessoa:        tpPessoa || null,
+        email:            email || null,
+        telefone:         telefone || null,
+        data_recusa:      dtRecusa,
+        data_solicitacao: dtSolicitacao,
+        motivo_recusa:    motivo || null,
+        codigo_motivo:    codigoMotivo || null,
+        descricao_motivo: dsMotivo || null,
+        area_recusante:   areaRecusante || null,
+        status_recusa:    statusRecusa || null,
+        observacao:       obs || null,
+        cd_corretor:      cdCorretor || null,
+        nm_corretor:      nmCorretor || null,
+        cliente_id:       clienteId || null,
+        importacao_id:    importacaoId || null,
+        dados_brutos:     { bloco_xml: bloco.slice(0, 4000) },
+      }
+      const { error } = await supabaseAdmin().from('tokio_recusas').insert(payload)
+      if (error) { erros++; msgs.push(`${numProposta||numApolice}: ${error.message?.slice(0,80)}`); continue }
+
+      if (clienteId) {
+        await supabaseAdmin().from('historico').insert({
+          cliente_id: clienteId, tipo: 'red',
+          titulo: `🚫 Recusa Tokio: ${numProposta || numApolice}`,
+          descricao: `${motivo || 'Recusa registrada'}${obs ? ' | ' + obs.slice(0,140) : ''}`,
+        })
+      }
       importados++
     } catch (err: any) { erros++; msgs.push(err.message?.slice(0,80)) }
   }
@@ -606,14 +1353,33 @@ function detectarTipo(xml: string, nomeArquivo: string): string {
   const n = (nomeArquivo||'').toLowerCase()
   if (n.includes('extrato') || n.includes('comiss')) return 'COMISSOES'
   if (n.includes('parcel'))  return 'PARCELAS'
+  if (n.includes('sinistro')) return 'SINISTRO'
+  if (n.includes('renovac'))  return 'RENOVACAO'
+  if (n.includes('pendenc'))  return 'PENDENCIA'
+  if (n.includes('recusa'))   return 'RECUSA'
   if (n.includes('endosso')) return 'APOLICES'   // mesmo arquivo da apólice
   if (n.includes('apolice') || n.includes('proposta')) return 'APOLICES'
 
   const has = (re: RegExp) => re.test(xml)
   if (has(/<(?:[A-Za-z0-9_]+:)?Extrato\b/i) || has(/<(?:[A-Za-z0-9_]+:)?DetalheComissao\b/i)) return 'COMISSOES'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosSinistro\b/i) || has(/<(?:[A-Za-z0-9_]+:)?numSinistro\b/i)) return 'SINISTRO'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosRenovacao\b/i) || has(/<(?:[A-Za-z0-9_]+:)?Renovacao\b/i)) return 'RENOVACAO'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosPendencia\b/i) || has(/<(?:[A-Za-z0-9_]+:)?Pendencia\b/i)) return 'PENDENCIA'
+  if (has(/<(?:[A-Za-z0-9_]+:)?DadosRecusa\b/i) || has(/<(?:[A-Za-z0-9_]+:)?motivoDeRecusa\b/i)) return 'RECUSA'
   if (has(/<(?:[A-Za-z0-9_]+:)?período\b/i) || has(/<(?:[A-Za-z0-9_]+:)?periodo\b/i) || has(/<(?:[A-Za-z0-9_]+:)?dtVencimento\b/i)) return 'PARCELAS'
   if (has(/<(?:[A-Za-z0-9_]+:)?DadosSeguro\b/i)) return 'APOLICES'
   return 'OUTRO'
+}
+
+// ─── MAPA DE SERVIÇOS DO WEBSERVICE ──────────────────────────
+const SERVICO_MAP: Record<string, { endpoint: string; tipo: string }> = {
+  APOLICES:  { endpoint: 'getApolice',       tipo: 'APOLICES'  },
+  PARCELAS:  { endpoint: 'getParcela',       tipo: 'PARCELAS'  },
+  COMISSOES: { endpoint: 'getExtratoComiss', tipo: 'COMISSOES' },
+  SINISTRO:  { endpoint: 'getSinistro',      tipo: 'SINISTRO'  },
+  RENOVACAO: { endpoint: 'getRenovacao',     tipo: 'RENOVACAO' },
+  PENDENCIA: { endpoint: 'getPendencia',     tipo: 'PENDENCIA' },
+  RECUSA:    { endpoint: 'getRecusa',        tipo: 'RECUSA'    },
 }
 
 async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) {
@@ -623,21 +1389,26 @@ async function processarArquivo(nomeArquivo: string, xml: string, tipo: string) 
     qtd_registros: (xml.match(/</g) || []).length,
     status: 'processando',
   }).select().single()
+  const importacaoId = (importacao as any)?.id || null
 
   let resultado: { importados: number; erros: number; msgs: string[] }
-  if      (tipo === 'APOLICES'  || tipo === 'ENDOSSOS') resultado = await processarApolices(xml)
-  else if (tipo === 'PARCELAS')  resultado = await processarParcelas(xml)
-  else if (tipo === 'COMISSOES') resultado = await processarComissoes(xml)
+  if      (tipo === 'APOLICES'  || tipo === 'ENDOSSOS') resultado = await processarApolices(xml, importacaoId)
+  else if (tipo === 'PARCELAS')   resultado = await processarParcelas(xml, importacaoId)
+  else if (tipo === 'COMISSOES')  resultado = await processarComissoes(xml, importacaoId)
+  else if (tipo === 'SINISTRO')   resultado = await processarSinistros(xml, importacaoId)
+  else if (tipo === 'RENOVACAO')  resultado = await processarRenovacoes(xml, importacaoId)
+  else if (tipo === 'PENDENCIA')  resultado = await processarPendencias(xml, importacaoId)
+  else if (tipo === 'RECUSA')     resultado = await processarRecusas(xml, importacaoId)
   else resultado = { importados: 0, erros: 0, msgs: ['Tipo não reconhecido — informe manualmente.'] }
 
-  if (importacao?.id) {
+  if (importacaoId) {
     await supabaseAdmin().from('importacoes_tokio').update({
       status: resultado.erros === 0 ? 'concluido' : 'parcial',
       qtd_importados: resultado.importados,
       qtd_erros: resultado.erros,
       erros: resultado.msgs.slice(0, 10),
       concluido_em: new Date().toISOString(),
-    }).eq('id', importacao.id)
+    }).eq('id', importacaoId)
   }
   return resultado
 }
@@ -657,6 +1428,7 @@ export async function POST(request: NextRequest) {
         supabase_role: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configurado' : 'FALTA',
         ws_base:        TOKIO_BASE,
         ws_login_path:  TOKIO_LOGIN_PATH,
+        ws_login_path_resolvido: resolvedLoginPath || '(nenhum login bem sucedido nesta instância ainda)',
         ws_user:        TOKIO_USER ? `sim (${TOKIO_USER.slice(0,8)}…)` : 'NÃO CONFIGURADO',
         ws_password:    TOKIO_PASSWORD ? 'sim' : 'NÃO CONFIGURADA',
         ws_service_key: TOKIO_SERVICE_KEY ? `sim (${TOKIO_SERVICE_KEY.length} chars)` : 'NÃO CONFIGURADA',
@@ -751,24 +1523,15 @@ export async function POST(request: NextRequest) {
     if (action === 'testar_login') {
       try {
         const token = await tokioLogin(true)
-        return NextResponse.json({ ok: true, token_preview: token.slice(0,20) + '…', expira_em: '~25min' })
+        return NextResponse.json({ ok: true, token_preview: token.slice(0,20) + '…', expira_em: '~25min', login_path: resolvedLoginPath })
       } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 })
       }
     }
 
-    // Busca dados via webservice. params: { servico: 'getApolice'|'getParcela'|'getExtrato', ...filtros }
+    // Busca dados via webservice. params: { servico: 'APOLICES'|'PARCELAS'|..., ...filtros }
     if (action === 'sincronizar') {
-      const servicoMap: Record<string, { endpoint: string; tipo: string }> = {
-        APOLICES:  { endpoint: 'getApolice',   tipo: 'APOLICES'  },
-        PARCELAS:  { endpoint: 'getParcela',   tipo: 'PARCELAS'  },
-        COMISSOES: { endpoint: 'getExtrato',   tipo: 'COMISSOES' },
-        SINISTRO:  { endpoint: 'getSinistro',  tipo: 'OUTRO'     },
-        RENOVACAO: { endpoint: 'getRenovacao', tipo: 'OUTRO'     },
-        PENDENCIA: { endpoint: 'getPendencia', tipo: 'OUTRO'     },
-        RECUSA:    { endpoint: 'getRecusa',    tipo: 'APOLICES'  },
-      }
-      const cfg = servicoMap[String(params.servico||'').toUpperCase()]
+      const cfg = SERVICO_MAP[String(params.servico||'').toUpperCase()]
       if (!cfg) return NextResponse.json({ error: 'parametro `servico` invalido. Use APOLICES|PARCELAS|COMISSOES|SINISTRO|RENOVACAO|PENDENCIA|RECUSA' }, { status: 400 })
 
       const filtros: Record<string,string> = {}
@@ -779,10 +1542,6 @@ export async function POST(request: NextRequest) {
       try {
         const xml = await tokioGet(cfg.endpoint, filtros)
         const nome = `tokio-${cfg.endpoint}-${Date.now()}.xml`
-        // Se o servico nao tem parser dedicado, apenas devolve o conteúdo para inspecao
-        if (cfg.tipo === 'OUTRO') {
-          return NextResponse.json({ ok: true, servico: cfg.endpoint, tamanho: xml.length, preview: xml.slice(0,1200) })
-        }
         const resultado = await processarArquivo(nome, xml, cfg.tipo)
         return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, ...resultado })
       } catch (err: any) {

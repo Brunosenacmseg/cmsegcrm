@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────
--- 071_apolices_campos_pdf_allianz.sql
+-- 072_apolices_campos_pdf_allianz.sql
 -- Adiciona em public.apolices os campos que aparecem nas apólices
 -- Allianz importadas via PDF e que ainda não tinham coluna dedicada.
 -- Os relacionamentos detalhados (itens auto, coberturas, motoristas,
