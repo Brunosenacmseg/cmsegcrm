@@ -18,6 +18,14 @@ function supabaseAdmin() {
 
 const GRAPH = 'https://graph.facebook.com/v19.0'
 
+function normalizeAdAccountId(v: string): string {
+  const t = (v || '').trim()
+  if (!t) return ''
+  if (/^act_\d+$/.test(t)) return t
+  const digits = t.replace(/^act_/i, '').replace(/\D/g, '')
+  return digits ? `act_${digits}` : ''
+}
+
 async function checarAdmin(req: NextRequest): Promise<{ ok: boolean; userId?: string; erro?: string }> {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
@@ -58,7 +66,10 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch {}
 
   const access_token      = (body.access_token      || '').trim()
-  const ad_account_id     = (body.ad_account_id     || '').trim()
+  const ad_account_id     = normalizeAdAccountId(body.ad_account_id || '')
+  if ((body.ad_account_id || '').trim() && !ad_account_id) {
+    return NextResponse.json({ error: 'ad_account_id inválido — informe o número da conta (ex: 123456789 ou act_123456789)' }, { status: 400 })
+  }
   const page_id           = (body.page_id           || '').trim()
   const app_id            = (body.app_id            || '').trim()
   const app_secret        = (body.app_secret        || '').trim()

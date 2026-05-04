@@ -47,11 +47,21 @@ async function paginar<T>(url: string): Promise<T[]> {
   return out
 }
 
+function normalizeAdAccountId(v: string): string {
+  const t = (v || '').trim()
+  if (!t) return ''
+  if (/^act_\d+$/.test(t)) return t
+  const digits = t.replace(/^act_/i, '').replace(/\D/g, '')
+  return digits ? `act_${digits}` : ''
+}
+
 async function getConfig() {
   const { data } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
   if (!data?.access_token) throw new Error('Meta não conectado — configure em /dashboard/integracoes/meta')
   if (!data.ad_account_id) throw new Error('ad_account_id não configurado')
-  return data
+  const normalized = normalizeAdAccountId(String(data.ad_account_id))
+  if (!normalized) throw new Error('ad_account_id inválido — formato esperado act_123456789')
+  return { ...data, ad_account_id: normalized }
 }
 
 // ─── Sincroniza campanhas ────────────────────────────────────────
