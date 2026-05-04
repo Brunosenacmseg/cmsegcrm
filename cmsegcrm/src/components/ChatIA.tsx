@@ -132,6 +132,7 @@ export default function ChatIA() {
           borderRadius: 20, display: 'flex', flexDirection: 'column',
           boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
           animation: 'slideUp 0.25s ease',
+          color: '#f5f5f7',
         }}>
 
           {/* Header */}
@@ -156,10 +157,10 @@ export default function ChatIA() {
                 )}
                 <div style={{
                   maxWidth: '78%', padding: '9px 13px', borderRadius: m.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                  background: m.role === 'user' ? 'linear-gradient(135deg, var(--gold), #e8a020)' : 'rgba(255,255,255,0.06)',
-                  color: m.role === 'user' ? '#000' : 'var(--text)',
+                  background: m.role === 'user' ? 'linear-gradient(135deg, var(--gold), #e8a020)' : 'rgba(255,255,255,0.08)',
+                  color: m.role === 'user' ? '#000' : '#f5f5f7',
                   fontSize: 13, lineHeight: 1.5,
-                  border: m.role === 'assistant' ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                  border: m.role === 'assistant' ? '1px solid rgba(255,255,255,0.1)' : 'none',
                 }}>
                   {formatarMensagem(m.content)}
                 </div>
@@ -204,7 +205,7 @@ export default function ChatIA() {
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
               placeholder="Pergunte sobre seguros ou seu CRM..."
               disabled={carregando}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', borderRadius: 20, padding: '9px 14px', color: 'var(--text)', fontSize: 13, fontFamily: 'DM Sans,sans-serif', outline: 'none' }}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', borderRadius: 20, padding: '9px 14px', color: '#f5f5f7', fontSize: 13, fontFamily: 'DM Sans,sans-serif', outline: 'none' }}
             />
             <button onClick={() => enviar()} disabled={carregando || !input.trim()}
               style={{ width: 38, height: 38, borderRadius: '50%', background: input.trim() && !carregando ? 'linear-gradient(135deg, var(--gold), #e8a020)' : 'rgba(255,255,255,0.08)', border: 'none', cursor: input.trim() && !carregando ? 'pointer' : 'default', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: input.trim() ? '#000' : 'var(--text-muted)', transition: 'all 0.2s' }}>
