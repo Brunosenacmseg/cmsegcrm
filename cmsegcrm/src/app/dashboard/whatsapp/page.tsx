@@ -194,6 +194,7 @@ export default function WhatsAppPage() {
   async function gerarQRCode() {
     if (!instancia) return
     setLoadingQR(true)
+    let ultimoErro = ''
     for (let i = 0; i < 10; i++) {
       const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'qrcode', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
       const data = await res.json()
@@ -203,10 +204,11 @@ export default function WhatsAppPage() {
         setLoadingQR(false)
         return
       }
+      if (data?.error) ultimoErro = data.error
       await new Promise(r => setTimeout(r, 3000))
     }
     setLoadingQR(false)
-    alert('Não foi possível gerar o QR Code.')
+    alert('Não foi possível gerar o QR Code.' + (ultimoErro ? `\n\nMotivo: ${ultimoErro}` : '\n\nVerifique se a Evolution API está acessível.'))
   }
 
   async function desconectar() {
@@ -246,9 +248,12 @@ export default function WhatsAppPage() {
     setModalConfig(false)
     const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'criar_instancia', evo_url:config.evo_url||undefined, api_key:config.api_key||undefined, instance:nomeInst }) })
     const data = await res.json()
-    if (data?.qrcode?.base64) {
-      await supabase.from('whatsapp_instancias').update({ qrcode:data.qrcode.base64, status:'qrcode' }).eq('id', inst.id)
-      setInstancia((prev: any) => ({ ...prev, qrcode:data.qrcode.base64, status:'qrcode' }))
+    const qrBase64 = data?.base64 || data?.qrcode?.base64
+    if (qrBase64) {
+      await supabase.from('whatsapp_instancias').update({ qrcode: qrBase64, status:'qrcode' }).eq('id', inst.id)
+      setInstancia((prev: any) => ({ ...prev, qrcode: qrBase64, status:'qrcode' }))
+    } else if (data?.error) {
+      alert('Não foi possível gerar o QR Code.\n\nMotivo: ' + data.error)
     }
   }
 
