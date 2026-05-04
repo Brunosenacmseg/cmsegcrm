@@ -464,7 +464,7 @@ function FunisPage() {
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
         produto, seguradora, cpf_cnpj, motivo_perda, obs,
         custom_fields, created_at, data_fechamento,
-        clientes(id,nome,cpf_cnpj,telefone),
+        clientes(id,nome,cpf_cnpj,telefone,email),
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
       if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
@@ -1203,8 +1203,20 @@ function FunisPage() {
 
                       {/* Cliente ou botão vincular */}
                       {neg.clientes ? (
-                        <div style={{fontSize:11,color:'var(--teal)',marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
-                          <span>👤</span> {neg.clientes.nome}
+                        <div style={{marginBottom:4}}>
+                          <div style={{fontSize:11,color:'var(--teal)',display:'flex',alignItems:'center',gap:4}}>
+                            <span>👤</span> {neg.clientes.nome}
+                          </div>
+                          {neg.clientes.telefone && (
+                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,paddingLeft:16,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.clientes.telefone}>
+                              <span>📞</span> {neg.clientes.telefone}
+                            </div>
+                          )}
+                          {neg.clientes.email && (
+                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,paddingLeft:16,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.clientes.email}>
+                              <span>✉️</span> {neg.clientes.email}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button onClick={e=>{e.stopPropagation();setNegocioVincular(neg);setVincularTab('buscar');setVincularBusca('');setVincularRes([]);setNovoClienteForm({nome:'',cpf_cnpj:neg.cpf_cnpj||'',telefone:'',email:''}); setModalVincular(true)}}
