@@ -3,10 +3,19 @@
 //  1. Auto Individual (cabeçalho "APÓLICE SEGURO AUTO INDIVIDUAL")
 //  2. RC Transporte / Carta Verde ("SEGURO DE RESPONSABILIDADE CIVIL DAS EMPRESAS DE TRANSPORTE…")
 //
-// Captura TODOS os campos relevantes em chaves "snake_case" alinhadas às colunas
-// de seg_stage_apolices (vide migration 070_seg_stage_apolices_ezze_pdf.sql),
-// para que mapApoliceEzze seja um passthrough direto. Texto bruto é incluído em
-// `pdf_texto_bruto` (truncado) para debug quando uma regex falhar.
+// IMPORTANTE — sobre o pdf-parse e o layout da Ezze:
+// O pdf-parse extrai texto na ordem em que os tokens estão no fluxo do PDF, e
+// para os PDFs da Ezze (gerados a partir de templates com colunas paralelas)
+// isso significa que o output vem como:
+//   1) todos os LABELS na ordem coluna-esquerda → coluna-direita
+//   2) todos os VALORES correspondentes na mesma ordem
+//   3) os HEADERS DE SEÇÃO ("Dados da Apólice", "Segurado", "Corretor",
+//      "Questionário…") aparecem só NO FIM da página
+// Por isso fatiar por header de seção (versões anteriores) NÃO funciona.
+// Esta versão usa extração por ÂNCORA: para cada campo, procura o label
+// específico no texto inteiro e extrai o valor adjacente, ou usa heurísticas
+// de posição independentes (1º all-caps name = segurado, 1º bloco de 11
+// dígitos = CPF segurado, etc.).
 //
 // Seções IGNORADAS (informativas, não fazem parte do contrato):
 //   - rodapé (SUSEP/CNPJ/processo/endereço da Ezze)
@@ -64,228 +73,205 @@ export function detectEzzeLayout(text: string): EzzeLayout {
   return 'unknown'
 }
 
-function splitSections(text: string, headers: { key: string; re: RegExp }[]): Record<string, string> {
-  const positions: { key: string; pos: number }[] = []
-  for (const h of headers) {
-    const m = h.re.exec(text)
-    if (m) positions.push({ key: h.key, pos: m.index })
-  }
-  positions.sort((a, b) => a.pos - b.pos)
-  const out: Record<string, string> = {}
-  for (let i = 0; i < positions.length; i++) {
-    const start = positions[i].pos
-    const end = i + 1 < positions.length ? positions[i + 1].pos : text.length
-    out[positions[i].key] = text.slice(start, end)
-  }
-  return out
-}
-
 function listBrNumbers(s: string): number[] {
   return [...s.matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)]
     .map(m => brNum(m[1]))
     .filter((n): n is number => n != null)
 }
 
-const SEG_LABELS = /^(?:nome|nome\s+social|cpf\/?cnpj|cpf|telefone|e-?mail|cep|cidade|uf|estado\s+civil|data\s+nascimento|sexo)\s*:?\s*$/i
+// Procura nomes em CAIXA ALTA com 2+ palavras no bloco/texto. Filtra
+// strings que ficam em CAPS no PDF mas não são nomes próprios (CORRETORA,
+// FIPE, MATRIZ, marcas de carro, palavras técnicas, etc.).
+const CAPS_BLACKLIST = /^(?:SEGURADO|CORRETOR|CORRETORA|CORRETORES|NOME|NOME\s+SOCIAL|CPF|CNPJ|TELEFONE|EMAIL|E\s*-?\s*MAIL|CEP|CIDADE|UF|ESTADO\s+CIVIL|DATA\s+EMISSAO|VIGENCIA|APOLICE|AP[OÓ]LICE|SEGURO|SEGUROS|EZZE|HDI|TOKIO|PORTO|ALLIANZ|BRADESCO|DARWIN|MAPFRE|SUSEP|FIPE|NOVO|VEICULO|VE[IÍ]CULO|MARCA|MODELO|CHASSI|PLACA|ANO\s+MODELO|MATRIZ|FILIAL|RAMO|SUCURSAL|CASADO|SOLTEIRO|DIVORCIADO|VI[UÚ]VO|UNI[AÃ]O\s+EST[AÁ]VEL|SIM|N[AÃ]O|RESERVA|HORAS|VIDROS|COMPREENSIVA|DANOS|ASSIST[EÊ]NCIA|CARRO|FRANQUIA|FRANQUIAS|COBERTURA|COBERTURAS|PARCELAMENTO|PR[EÊ]MIO|TOTAL|LIQUIDO|L[IÍ]QUIDO|IOF|VENCIMENTO|CASCO|VISTORIA|RASTREADOR|BLINDAGEM|FORD|VOLKSWAGEN|FIAT|CHEVROLET|GM|HYUNDAI|RENAULT|HONDA|TOYOTA|NISSAN|JEEP|PEUGEOT|CITROEN|VAN|SEDAN|HATCH|GUAIA[CÇ][AÃ]|JUNDIA[IÍ]|S[AÃ]O\s+PAULO|RIO|LTDA|SA|SAS|EIRELI|ME|EPP)\b/i
 
-function pickNomeFromBlock(block: string): string | null {
-  const lines = block.split('\n').map(l => l.trim()).filter(l => l.length >= 3)
-  // Pula a linha do header da seção (primeira linha com "Segurado" ou "SEGURADO")
-  const startIdx = lines.findIndex(l => /^segurado\b/i.test(l)) + 1
-  const candidates = startIdx > 0 ? lines.slice(startIdx) : lines
-
-  // 1) Primeira em CAIXA ALTA, sem dígitos/@, comprimento razoável
-  for (const l of candidates) {
-    if (SEG_LABELS.test(l)) continue
-    if (/[0-9@]/.test(l)) continue
-    if (/Casado|Solteiro|Divorciado|Vi[uú]vo|Uni[aã]o/i.test(l)) continue
-    if (l.length < 5 || l.length > 100) continue
-    if (/^[A-ZÀ-Ÿ][A-ZÀ-Ÿ\s'\-\.&]{4,99}$/.test(l)) return l
+function findAllUpperNames(text: string): string[] {
+  const re = /[A-ZÀ-Ÿ]{2,}(?:\s+[A-ZÀ-Ÿ\.\-']{2,}){1,5}/g
+  const out: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const s = m[0].trim()
+    if (s.length < 5 || s.length > 100) continue
+    const sNoPunct = s.replace(/[\.\-']/g, '')
+    if (CAPS_BLACKLIST.test(sNoPunct)) continue
+    out.push(s)
   }
-  // 2) Fallback: capitalizado
-  for (const l of candidates) {
-    if (SEG_LABELS.test(l)) continue
-    if (/[0-9@]/.test(l)) continue
-    if (/Casado|Solteiro|Divorciado|Vi[uú]vo|Uni[aã]o/i.test(l)) continue
-    if (l.length < 5 || l.length > 100) continue
-    if (/^[A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s'\-\.&]{4,99}$/.test(l)) return l
-  }
-  return null
+  return out
 }
 
-function pickDocFromBlock(block: string): string | null {
-  const cnpjFmt = block.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/)?.[1]
-  if (cnpjFmt) return cnpjFmt.replace(/\D/g, '')
-  const cpfFmt = block.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/)?.[1]
-  if (cpfFmt) return cpfFmt.replace(/\D/g, '')
-  const cnpj = block.match(/(?<!\d)(\d{14})(?!\d)/)?.[1]
-  if (cnpj) return cnpj
-  const cpf = block.match(/(?<!\d)(\d{11})(?!\d)/)?.[1]
-  if (cpf) return cpf
-  return null
+// Aceita formato com ou sem pontuação. Filtra zeros e identificadores genéricos.
+function findAllDocs(text: string): { cpfs: string[]; cnpjs: string[] } {
+  const cpfs = new Set<string>()
+  const cnpjs = new Set<string>()
+  // Formatados primeiro
+  for (const m of text.matchAll(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/g)) {
+    cnpjs.add(m[1].replace(/\D/g, ''))
+  }
+  for (const m of text.matchAll(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/g)) {
+    cpfs.add(m[1].replace(/\D/g, ''))
+  }
+  // Sem formatação (em ordem de aparição)
+  const cpfsOrder: string[] = []
+  const cnpjsOrder: string[] = []
+  for (const m of text.matchAll(/(?<!\d)(\d{11}|\d{14})(?!\d)/g)) {
+    const v = m[1]
+    if (v.length === 14 && !cnpjs.has(v)) { cnpjs.add(v); cnpjsOrder.push(v) }
+    if (v.length === 11 && !cpfs.has(v)) { cpfs.add(v); cpfsOrder.push(v) }
+    if (v.length === 11 && cpfs.has(v) && !cpfsOrder.includes(v)) cpfsOrder.push(v)
+    if (v.length === 14 && cnpjs.has(v) && !cnpjsOrder.includes(v)) cnpjsOrder.push(v)
+  }
+  // Ordena array de retorno por posição: prioriza ordem de aparição
+  // (não é trivial misturar formatados/não-formatados; mantém só Set + order)
+  return {
+    cpfs: cpfsOrder.length ? cpfsOrder : Array.from(cpfs),
+    cnpjs: cnpjsOrder.length ? cnpjsOrder : Array.from(cnpjs),
+  }
 }
 
 // ─────────────────── Auto Individual ───────────────────
 function parseAuto(rawText: string): EzzeApoliceRow {
   const text = rawText
-  const reFirst = (r: RegExp, src = text) => r.exec(src)?.[1]?.trim() ?? null
+  const reF = (r: RegExp, src = text) => r.exec(src)?.[1]?.trim() ?? null
 
-  const sections = splitSections(text, [
-    { key: 'dadosApolice', re: /Dados\s+da\s+Ap[oó]lice/i },
-    { key: 'segurado',     re: /\bSegurado\b/i },
-    { key: 'corretor',     re: /\bCorretor\b/i },
-    { key: 'questionario', re: /Question[aá]rio\s+de\s+Avalia/i },
-    { key: 'veiculo',      re: /Dados\s+do\s+Ve[ií]culo/i },
-    { key: 'cobertura',    re: /\bCoberturas?\b/i },
-    { key: 'premioTotal',  re: /Pr[eê]mio\s+Total/i },
-    { key: 'pagamento',    re: /Dados\s+de\s+Pagamento/i },
-    { key: 'servicos',     re: /\bServi[cç]os\b/i },
-    { key: 'franquias',    re: /\bFranquias\b/i },
-    { key: 'canais',       re: /Canais\s+de\s+Atendimento/i }, // marcador final — daqui em diante não capturamos
-    { key: 'disposicoes',  re: /Disposi[cç][õo]es\s+Gerais/i },
-  ])
+  // ── Cabeçalho da apólice (presente em toda página)
+  const numero       = reF(/N[ºo°]\s*Ap[oó]lice\s*:?\s*(\d+)/i)
+  const endosso      = reF(/Endosso\s*:?\s*\n?\s*(\d+)/i)
+  const proposta     = reF(/Proposta\s*:?\s*(\d+)/i)
+  const versao       = reF(/Vers[aã]o\s*:?\s*\n?\s*([\d.]+)/i)
+  const ruleId       = reF(/Rule\s*ID\s*:?\s*\n?\s*(\d+)/i)
+  const tipoApolice  = reF(/Ap[oó]lice\s*:\s*(Completo|Parcial|B[áa]sico)\b/i)
+  const codigoCi     = reF(/C[oó]digo\s*CI[\s\S]{0,60}?(\d{10,16})/i)
+                     ?? reF(/(\d{10,16})\s*\n?\s*C[oó]digo\s*CI/i)
 
-  // Cabeçalho de página (sempre presente, não precisa de seção)
-  const numero   = reFirst(/N[ºo°]\s*Ap[oó]lice\s*:?\s*(\d+)/i)
-  const endosso  = reFirst(/Endosso\s*:?\s*(\d+)/i)
-  const proposta = reFirst(/Proposta\s*:?\s*(\d+)/i)
-  const versao   = reFirst(/Vers[aã]o\s*:?\s*([\d.]+)/i)
-  const ruleId   = reFirst(/Rule\s*ID\s*:?\s*(\d+)/i)
-  const tipoApolice = reFirst(/Ap[oó]lice\s*:\s*(Completo|Parcial|B[áa]sico)\b/i)
+  // ── Tipo de Seguro / Classe Bônus
+  // Layout: "Classe bônus:Tipo de Seguro:\nSeguro Novo0\nDados da Apólice"
+  // Os 2 valores ficam concatenados ("Seguro Novo" + "0"). Extraímos cada um
+  // procurando o padrão correspondente no resto do texto.
+  const tipoSeguro = reF(/Tipo\s*de\s*Seguro[\s\S]{0,80}?\n([A-Za-zÀ-ÿ ]{2,40}?)(?=\d|\n|$)/i)
+  const classeBonusStr = reF(/Classe\s*b[oô]nus[\s\S]{0,120}?(\d+)\s*\n/i)
+                      ?? reF(/Classe\s*b[oô]nus[\s\S]{0,80}?(\d+)/i)
+  const classeBonus = classeBonusStr != null ? Number(classeBonusStr) : null
 
-  // Dados da Apólice
-  const dadosApolice = sections.dadosApolice ?? ''
-  const codigoCi    = reFirst(/C[oó]digo\s*CI\s*:?\s*(\d+)/i, dadosApolice) ?? reFirst(/C[oó]digo\s*CI\s*:?\s*(\d+)/i)
-  const tipoSeguro  = reFirst(/Tipo\s+de\s+Seguro\s*:?\s*\n*\s*([^\n]+?)(?:\s*Classe|\s*\n)/i, dadosApolice)
-  const classeBonusStr = reFirst(/Classe\s*b[oô]nus\s*:?\s*\n*\s*(\d+)/i, dadosApolice)
-  const classeBonus = classeBonusStr ? Number(classeBonusStr) : null
-  const dataEmissao = reFirst(/Data\s+da\s+Emiss[aã]o\s*:?\s*\n*\s*(\d{2}\/\d{2}\/\d{4})/i, dadosApolice)
-                   ?? reFirst(/Data\s+da\s+Emiss[aã]o\s*:?\s*\n*\s*(\d{2}\/\d{2}\/\d{4})/i)
-  const vig = /das?\s+\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s+dia\s+(\d{2}\/\d{2}\/\d{4})\s+at[eé]\s+\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s+dia\s+(\d{2}\/\d{2}\/\d{4})/i.exec(dadosApolice || text)
+  // ── Data Emissão (1º DD/MM/YYYY após "Data da Emissão")
+  const dataEmissao = reF(/Data\s*da\s*Emiss[aã]o[\s\S]{0,200}?(\d{2}\/\d{2}\/\d{4})/i)
 
-  // Segurado
-  const segBlock = sections.segurado ?? ''
-  const cliente_nome = pickNomeFromBlock(segBlock)
-  const cpf_cnpj     = pickDocFromBlock(segBlock)
-  const segurado_email = segBlock.match(/([\w.\-+]+@[\w.\-]+\.[A-Za-z]{2,})/)?.[1] ?? null
-  const segTelMatch = segBlock.match(/\(?\s*(\d{2})\s*\)?\s*(\d{4,5}-?\d{4})/)
-  const segurado_telefone = segTelMatch ? `(${segTelMatch[1]}) ${segTelMatch[2]}` : null
-  const segurado_cep = segBlock.match(/\b(\d{5}-?\d{3})\b/)?.[1] ?? null
-  const segurado_uf  = segBlock.match(/\b([A-Z]{2})\b\s*$/m)?.[1]
-                     ?? segBlock.match(/UF\s*:?\s*\n*\s*([A-Z]{2})/i)?.[1] ?? null
-  const estadoCivilMatch = segBlock.match(/Estado\s+Civil\s*:?\s*\n*\s*(Casado\s*\(a\)|Solteiro\s*\(a\)|Divorciado\s*\(a\)|Vi[uú]vo\s*\(a\)|Uni[aã]o\s+Est[aá]vel)/i)
-  const segurado_estado_civil = clean(estadoCivilMatch?.[1])
-  // Cidade: linha capitalizada que não é o nome do segurado, UF, label, estado civil
-  const segLines = segBlock.split('\n').map(l => l.trim()).filter(Boolean)
-  const segurado_cidade = segLines.find(l =>
-    !SEG_LABELS.test(l) && l !== cliente_nome && l !== segurado_uf &&
-    /^[A-ZÀ-Ÿ][A-Za-zÀ-ÿ' \-]{2,40}$/.test(l) &&
-    !/[0-9@]/.test(l) &&
-    !/Casado|Solteiro|Divorciado|Vi[uú]vo|Uni[aã]o/i.test(l) &&
-    l.length <= 50
-  ) ?? null
-  // Nome Social: a SEGUNDA linha em caixa alta no segBlock (a primeira é cliente_nome)
-  const segurado_nome_social = (() => {
-    let count = 0
-    for (const l of segLines) {
-      if (SEG_LABELS.test(l)) continue
-      if (/[0-9@]/.test(l)) continue
-      if (/^[A-ZÀ-Ÿ][A-ZÀ-Ÿ\s'\-\.&]{4,99}$/.test(l)) {
-        count++
-        if (count === 2) return l
-      }
-    }
-    return cliente_nome
-  })()
+  // ── Vigência: "das 00:00 do dia DD/MM/YYYY até 23:59 do dia DD/MM/YYYY"
+  // Aparece com whitespace normal mesmo nesse layout (é frase contínua).
+  const vig = /das?\s*\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s*dia\s*(\d{2}\/\d{2}\/\d{4})\s*at[eé]\s*\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s*dia\s*(\d{2}\/\d{2}\/\d{4})/i.exec(text)
 
-  // Corretor
-  const corBlock = sections.corretor ?? ''
-  const COR_LABELS = /^(?:corretor|cpf\/?cnpj|susep|telefone|e-?mail|filial\s+ezze)\s*:?\s*$/i
-  const corLines = corBlock.split('\n').map(l => l.trim()).filter(Boolean)
-  const corretor_nome = corLines.find(l =>
-    !COR_LABELS.test(l) && /(LTDA|S\/?A|S\.A\.|CORRETORA|EIRELI|\bME\b)/i.test(l) && !/[0-9@]/.test(l)
-  ) ?? corLines.find(l =>
-    !COR_LABELS.test(l) && /^[A-ZÀ-Ÿ][A-Za-zÀ-ÿ&\s'\.\-]{4,100}$/.test(l) && !/[0-9@]/.test(l)
-  ) ?? null
-  const corretor_cnpj = pickDocFromBlock(corBlock)
-  const corNums = [...corBlock.matchAll(/(?<!\d)(\d{6,14})(?!\d)/g)].map(m => m[1])
-  const corretor_susep = corNums.find(n => n.length >= 6 && n.length <= 12 && n !== corretor_cnpj) ?? null
-  const corretor_email = corBlock.match(/([\w.\-+]+@[\w.\-]+\.[A-Za-z]{2,})/)?.[1] ?? null
-  const corTelMatch = corBlock.match(/Telefone\s*:?\s*\n*\s*\(?\s*(\d{2})\s*\)?\s*(\d{4,5}-?\d{4})/i)
-  const corretor_telefone = corTelMatch ? `(${corTelMatch[1]}) ${corTelMatch[2]}` : null
-  const filial_ezze = reFirst(/Filial\s+Ezze\s*:?\s*\n*\s*([^\n]+)/i, corBlock)
-                   ?? reFirst(/Filial\s+Ezze\s*:?\s*\n*\s*([^\n]+)/i)
+  // ── Cliente (segurado): 1º all-caps name no texto que não seja
+  // título/marca/cidade. Funciona porque o nome do segurado aparece antes
+  // do nome do corretor, antes de "BRUNO" do questionário, antes de "Nome
+  // Social" etc. — e é a primeira sequência válida em CAIXA ALTA.
+  const allUpperNames = findAllUpperNames(text)
+  const cliente_nome = allUpperNames[0] ?? null
+  // Nome Social: 2ª ocorrência (geralmente igual ao 1º)
+  const segurado_nome_social = allUpperNames.find((n, i) => i > 0 && n === cliente_nome) ?? cliente_nome
 
-  // Questionário de Avaliação de Risco
-  const qBlock = sections.questionario ?? ''
-  const utilizacao_veiculo = reFirst(/utiliza[cç][aã]o\s+do\s+ve[ií]culo\s*\??\s*\n*\s*([^\n]+)/i, qBlock)
-                          ?? reFirst(/Particular\s*\(.*?\)/i, qBlock)
-  const principal_condutor = reFirst(/principal\s+condutor\s*\??\s*\n*\s*([^\n]+)/i, qBlock)
-  const condutor_nome = reFirst(/Nome\s+completo\s+do\s+condutor\s*\n*\s*([^\n]+)/i, qBlock)
-  const condutor_cpf_match = qBlock.match(/CPF\s+do\s+condutor\s*\n*\s*([\d\.\-]+)/i)
-  const condutor_cpf = condutor_cpf_match?.[1]?.replace(/\D/g, '') ?? null
-  const condutor_estado_civil = reFirst(/Estado\s+civil\s+do\s+condutor\s*\n*\s*([^\n]+)/i, qBlock)
-  const condutor_cobertura_jovem = simNao(reFirst(/condutores\s+na\s+faixa[\s\S]{0,300}?(Sim|N[aã]o)/i, qBlock))
+  // ── CPF/CNPJ segurado: 1º documento sem formatação. Para PF a Ezze envia
+  // CPF "puro" (11 dígitos contínuos) na seção segurado. CNPJs aparecem só
+  // no corretor e no rodapé (filtrados via ordem de aparição).
+  const docs = findAllDocs(text)
+  // CPF do segurado: 1º CPF puro (não formatado) — vem antes do condutor
+  // (que aparece formatado). Fallback: 1º CPF.
+  const cpf_cnpj = docs.cpfs[0] ?? docs.cnpjs[0] ?? null
+  // CNPJ do corretor: 1º CNPJ. O CNPJ da Ezze (rodapé) também é 14 dígitos
+  // mas formatado como "31.534.848/0001-24" — fica em docs.cnpjs depois do
+  // CNPJ não-formatado da corretora (ex.: "32186014000138").
+  // Pulamos qualquer CNPJ que comece com "31534848" (CNPJ da Ezze).
+  const corretor_cnpj = docs.cnpjs.find(n => !n.startsWith('31534848')) ?? null
 
-  // Dados do Veículo
-  const vehBlock = sections.veiculo ?? ''
-  const placa  = (vehBlock.match(/Placa\s*\n*\s*([A-Z0-9]{7})/i)
-                ?? text.match(/Placa\s*\n*\s*([A-Z0-9]{7})/i))?.[1] ?? null
-  const chassi = (vehBlock.match(/Chassi\s*\n*\s*([A-Z0-9]{17})/i)
-                ?? text.match(/Chassi\s*\n*\s*([A-Z0-9]{17})/i))?.[1] ?? null
-  const ano_modelo = (vehBlock.match(/Ano\s*Modelo\s*\n*\s*(\d{4})/i)
-                ?? text.match(/Ano\s*Modelo\s*\n*\s*(\d{4})/i))?.[1] ?? null
-  const cod_fipe = (vehBlock.match(/(?:C[oó]d\.?|C[oó]digo)\s*FIPE\s*\n*\s*([\w\-]+)/i)
-                ?? text.match(/(?:C[oó]d\.?|C[oó]digo)\s*FIPE\s*\n*\s*([\w\-]+)/i))?.[1] ?? null
-  const marca  = reFirst(/Marca\s*\n*\s*([A-Za-zÀ-ÿ\- ]{2,40})/i, vehBlock)
-  const modelo = reFirst(/Modelo\s*\n*\s*([^\n]{2,80})/i, vehBlock)
-  const zero_km = simNao(reFirst(/Zero\s*KM\s*\n*\s*(Sim|N[aã]o)/i, vehBlock))
-  const blindagem = simNao(reFirst(/Blindagem\s*\n*\s*(Sim|N[aã]o)/i, vehBlock))
-  const tipo_franquia_casco = reFirst(/Tipo\s+Franquia\s+Casco\s*\n*\s*([^\n]+?)(?:\s*Vistoria|\n)/i, vehBlock)
-  const vistoria_previa = simNao(reFirst(/Vistoria\s+Pr[eé]via\s+Obrigat[oó]ria\s*\n*\s*(Sim|N[aã]o)/i, vehBlock))
-  const rastreador_obrigatorio = simNao(reFirst(/Rastreador\s+Obrigat[oó]rio\s*\n*\s*(Sim|N[aã]o)/i, vehBlock))
+  // ── Email: 1º email é do segurado, 2º é do corretor
+  const allEmails = [...text.matchAll(/([\w.\-+]+@[\w.\-]+\.[A-Za-z]{2,})/g)]
+    .map(m => m[1])
+    .filter(e => !/i4proinfo\.local|ezzeseguros\.com\.br/i.test(e))
+  const segurado_email = allEmails[0] ?? null
+  const corretor_email = allEmails[1] ?? null
 
-  // Coberturas (tabela: nome | valor IS | prêmio)
-  // Linhas como "Compreensiva 100% V.M.R Fipe 928,58", "Danos Materiais R$ 100.000,00 635,48", "Vidros 136,53"
-  const cobBlock = sections.cobertura ?? ''
-  const COB_NOMES = ['Compreensiva', 'Danos\\s+Materiais', 'Danos\\s+Corporais', 'Vidros', 'Assist[eê]ncia\\s+24\\s+Horas', 'Carro\\s+Reserva', 'APP', 'RCF\\b', 'RCF-V', 'RCF-DM', 'RCF-DC']
-  const coberturas: Array<{ nome: string; valor_is: string | null; premio: number | null }> = []
-  for (const nomeRe of COB_NOMES) {
-    // 1) Tenta com Valor IS antes do prêmio
-    const reComIs = new RegExp(`(${nomeRe})\\s*\\n*\\s*((?:R\\$\\s*)?\\d[\\d\\.\\,]*(?:\\s*%?\\s*V\\.M\\.R\\s*Fipe|\\s*Fipe)?)\\s*\\n*\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2})\\b`, 'i')
-    const m1 = reComIs.exec(cobBlock)
-    if (m1) {
-      coberturas.push({ nome: clean(m1[1]) ?? '', valor_is: clean(m1[2]) ?? null, premio: brNum(m1[3]) })
-      continue
-    }
-    // 2) Sem Valor IS — só nome + prêmio
-    const reSemIs = new RegExp(`(${nomeRe})\\s*\\n*\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2})\\b`, 'i')
-    const m2 = reSemIs.exec(cobBlock)
-    if (m2) {
-      coberturas.push({ nome: clean(m2[1]) ?? '', valor_is: null, premio: brNum(m2[2]) })
-    }
+  // ── Telefone segurado: 1º (DD) NNNNN-NNNN no texto
+  const telMatch = /\(\s*(\d{2})\s*\)\s*(\d{4,5}-?\d{4})/.exec(text)
+  const segurado_telefone = telMatch ? `(${telMatch[1]}) ${telMatch[2]}` : null
+
+  // ── CEP: 8 dígitos isolados (sem ser parte de outros números)
+  // No texto aparece "13212375" como uma linha solta. Pode aparecer formatado
+  // como "13212-375" também. Pegamos o 1º.
+  const cepMatch = text.match(/\b(\d{5}-\d{3}|\d{8})\b/)
+  const segurado_cep = cepMatch?.[1] ?? null
+
+  // ── Estado civil
+  const segurado_estado_civil = reF(/(Casado|Solteiro|Divorciado|Vi[uú]vo|Uni[aã]o\s+Est[aá]vel)\s*\(a\)/i)
+
+  // ── UF e Cidade: aparece como "SPJUNDIAÍ" — 2 caps + nome cidade
+  // (também pode aparecer com espaço/quebra). Pega 1ª ocorrência.
+  let segurado_uf: string | null = null
+  let segurado_cidade: string | null = null
+  const ufCidadeJoined = /\b([A-Z]{2})([A-ZÀ-Ÿ][A-Za-zÀ-ÿ' \-]{2,40})\b/.exec(text)
+  if (ufCidadeJoined) {
+    segurado_uf = ufCidadeJoined[1]
+    segurado_cidade = ufCidadeJoined[2].trim()
+  } else {
+    segurado_uf = reF(/UF\s*:?\s*\n?\s*([A-Z]{2})\b/i)
+    segurado_cidade = reF(/Cidade\s*:?\s*\n?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ' \-]{2,40})/i)
   }
 
-  // Prêmio Total — bloco entre "Prêmio Total" e "Dados de Pagamento"/"Serviços"
-  // Esperado 4 valores em ordem: Prêmio Líquido, Adicional Fracionamento, IOF, PRÊMIO TOTAL
-  const premBlock = sections.premioTotal ?? ''
+  // ── Corretor nome: padrão "PEIXOTO & SENA CORRETORA DE SEGUROS\nLTDA"
+  // ou "NOME LTDA"/"NOME S/A"/"NOME EIRELI" em uma ou duas linhas.
+  const corretor_nome = (() => {
+    // Multi-linha: NOME contendo CORRETORA + LTDA
+    const m1 = /([A-ZÀ-Ÿ][A-ZÀ-Ÿ&\s'\.\-]{4,80}?CORRETORA[\s\nA-ZÀ-Ÿ]*?LTDA)/i.exec(text)
+    if (m1) return clean(m1[1].replace(/\n/g, ' '))
+    // Genérico: NOME + LTDA/SA/EIRELI
+    const m2 = /([A-ZÀ-Ÿ][A-ZÀ-Ÿ&\s'\.\-]{4,80}?(?:LTDA|S\/?A|S\.A\.|EIRELI|\bME\b))/i.exec(text)
+    return m2 ? clean(m2[1].replace(/\n/g, ' ')) : null
+  })()
+
+  // ── SUSEP corretor: número 6-9 dígitos que não seja CPF, CNPJ, código CI
+  const susepCandidates = [...text.matchAll(/(?<!\d)(\d{6,9})(?!\d)/g)].map(m => m[1])
+  const corretor_susep = susepCandidates.find(n =>
+    n !== cpf_cnpj && n !== corretor_cnpj && n !== codigoCi && n.length <= 10
+  ) ?? null
+
+  // ── Telefone corretor: 2º telefone (se houver)
+  const allTels = [...text.matchAll(/\(\s*(\d{2})\s*\)\s*(\d{4,5}-?\d{4})/g)]
+  const corretor_telefone = allTels[1] ? `(${allTels[1][1]}) ${allTels[1][2]}` : null
+
+  // ── Filial Ezze (Matriz / Filial X)
+  const filial_ezze = reF(/Filial\s*Ezze\s*:?\s*\n?\s*(Matriz|Filial[^\n]*)/i)
+
+  // ── Veículo
+  const placa  = reF(/Placa\s*\n?\s*([A-Z0-9]{7})/i)
+  const chassi = reF(/Chassi\s*\n?\s*([A-Z0-9]{17})/i)
+  const ano_modelo = reF(/Ano\s*Modelo\s*\n?\s*(\d{4})/i)
+  const cod_fipe = reF(/(?:C[oó]d\.?|C[oó]digo)\s*FIPE\s*\n?\s*([\w\-]+)/i)
+  const marca = reF(/Marca\s*\n?\s*([A-Za-zÀ-ÿ\- ]{2,40})/i)
+  const modelo = reF(/Modelo\s*\n?\s*([A-Za-z0-9À-ÿ\.\-\/\(\) ]{2,80})/i)
+  const zero_km = simNao(reF(/Zero\s*KM\s*\n?\s*(Sim|N[aã]o)/i))
+  const blindagem = simNao(reF(/Blindagem\s*\n?\s*(Sim|N[aã]o)/i))
+  const tipo_franquia_casco = reF(/Tipo\s*Franquia\s*Casco\s*\n?\s*([^\n]+?)(?:\s*Vistoria|\n)/i)
+  const vistoria_previa = simNao(reF(/Vistoria\s*Pr[eé]via\s*Obrigat[oó]ria\s*\n?\s*(Sim|N[aã]o)/i))
+  const rastreador_obrigatorio = simNao(reF(/Rastreador\s*Obrigat[oó]rio\s*\n?\s*(Sim|N[aã]o)/i))
+
+  // ── Prêmio: bloco entre "Prêmio Líquido" e "Cobertura" tem todos os valores
+  // em ordem (label1, label2, ..., valor1, valor2, ...). Formato típico:
+  //   "Prêmio Líquido\nIOF\nPRÊMIO TOTAL\n2.258,88\n166,70\n2.425,59"
+  // (Adicional Fracionamento é frequentemente omitido pelo pdf-parse quando 0,00.)
+  // O LAST número é sempre o Prêmio Total.
+  const premBlockMatch = /Pr[eê]mio\s*L[ií]quido[\s\S]{0,500}?(?=Cobertura|Coberturas|Pr[eê]mio\s*L[ií]quido\s*Total|ParcelasValor)/i.exec(text)
+  const premBlock = premBlockMatch?.[0] ?? ''
   const premNumbers = listBrNumbers(premBlock)
   const premio_liquido = premNumbers[0] ?? null
-  const adicional_fracionamento = premNumbers[1] ?? null
-  const iof = premNumbers[2] ?? null
-  const premio_total = premNumbers.length >= 4
-    ? premNumbers[premNumbers.length - 1]
-    : (premNumbers[premNumbers.length - 1] ?? null)
+  const premio_total   = premNumbers[premNumbers.length - 1] ?? null
+  // 3 valores → ordem Líquido / IOF / Total. 4 valores → Líquido / Frac / IOF / Total.
+  const adicional_fracionamento = premNumbers.length === 4 ? premNumbers[1] : null
+  const iof = premNumbers.length === 4 ? premNumbers[2]
+            : premNumbers.length === 3 ? premNumbers[1]
+            : null
 
-  // Dados de Pagamento
-  const pagBlock = sections.pagamento ?? ''
-  const forma_pagamento = reFirst(/Forma\s+de\s+Pagamento\s*:?\s*([^\n]+)/i, pagBlock)
-                       ?? reFirst(/Forma\s+de\s+Pagamento\s*:?\s*([^\n]+)/i)
-  // Tabela parcelas: "1  242,56  0,00  0.00 %  16,67  17/03/2026"
+  // ── Forma de Pagamento + Parcelas (tabela)
+  const forma_pagamento = reF(/Forma\s*de\s*Pagamento\s*:?\s*([^\n]+)/i)
   const parcelas: Array<Record<string, any>> = []
   const parcelaRe = /(?:^|\n)\s*(\d{1,2})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+([\d\.\,]+)\s+([\d\.,%\s]+%)\s+([\d\.\,]+)\s+(\d{2}\/\d{2}\/\d{4})/gm
   let pm: RegExpExecArray | null
-  while ((pm = parcelaRe.exec(pagBlock)) !== null) {
+  while ((pm = parcelaRe.exec(text)) !== null) {
     parcelas.push({
       numero: Number(pm[1]),
       valor: brNum(pm[2]),
@@ -296,42 +282,52 @@ function parseAuto(rawText: string): EzzeApoliceRow {
     })
   }
 
-  // Serviços (página 3)
-  const servBlock = sections.servicos ?? ''
-  const servicos = {
-    assistencia_24h:  reFirst(/Assist[eê]ncia\s+24\s+horas?\s*\n*\s*([^\n]+)/i, servBlock),
-    carro_reserva:    reFirst(/Carro\s+Reserva\s*\n*\s*([^\n]+)/i, servBlock),
-    danos_vidros:     reFirst(/Danos\s+aos\s+Vidros\s*\n*\s*([^\n]+)/i, servBlock),
-    pequenos_reparos: reFirst(/Pequenos\s+Reparos\s*\n*\s*([^\n]+)/i, servBlock),
-  }
-
-  // Franquias (página 3)
-  const franqBlock = sections.franquias ?? ''
-  const franqNumbers = listBrNumbers(franqBlock)
-  const franqVidros = (() => {
-    const items: Array<{ item: string; valor: number | string | null }> = []
-    const itensVidro = ['Para-brisa\\s*\\(troca\\)', 'Vidro\\s+traseiro\\s*\\(vigia\\)', 'Vidro\\s+lateral', 'Farol\\s+Convencional', 'Lanterna\\s+Convencional', 'Farol\\s+X[eê]non', 'Farol\\s+Led', 'Farol\\s+Auxiliar', 'Lanterna\\s+Led', 'Lanterna\\s+Auxiliar', 'Retrovisor', 'Teto\\s+solar', 'Teto\\s+panor[aâ]mico']
-    for (const it of itensVidro) {
-      const m = new RegExp(`(${it})\\s*\\n*\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2}|sem\\s+cobertura)`, 'i').exec(franqBlock)
-      if (m) {
-        items.push({
-          item: clean(m[1]) ?? '',
-          valor: /sem\s+cobertura/i.test(m[2]) ? 'sem cobertura' : brNum(m[2]),
-        })
-      }
+  // ── Coberturas (tabela "Cobertura | Valor IS | Prêmio")
+  // Padrão linha-por-cobertura quando pdf-parse junta colunas:
+  // "Compreensiva100% V.M.R Fipe928,58", "Danos MateriaisR$ 100.000,00635,48", "Vidros136,53"
+  const COB_NOMES = ['Compreensiva', 'Danos\\s*Materiais', 'Danos\\s*Corporais', 'Vidros', 'Assist[eê]ncia\\s*24\\s*Horas', 'Carro\\s*Reserva', 'APP', 'RCF']
+  const coberturas: Array<{ nome: string; valor_is: string | null; premio: number | null }> = []
+  for (const nomeRe of COB_NOMES) {
+    // 1) Com Valor IS antes do prêmio
+    const reComIs = new RegExp(`(${nomeRe})\\s*\\n*\\s*((?:R\\$\\s*)?\\d[\\d\\.\\,]*(?:\\s*%?\\s*V\\.M\\.R\\s*Fipe|\\s*Fipe)?)\\s*\\n*\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2})\\b`, 'i')
+    const m1 = reComIs.exec(text)
+    if (m1) {
+      coberturas.push({ nome: clean(m1[1]) ?? '', valor_is: clean(m1[2]) ?? null, premio: brNum(m1[3]) })
+      continue
     }
-    return items
-  })()
-  const franquias = {
-    compreensiva: franqNumbers[0] ?? null,
-    vidros: franqVidros,
+    // 2) Sem Valor IS — só nome + prêmio
+    const reSemIs = new RegExp(`(${nomeRe})\\s*\\n*\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2})\\b`, 'i')
+    const m2 = reSemIs.exec(text)
+    if (m2) {
+      coberturas.push({ nome: clean(m2[1]) ?? '', valor_is: null, premio: brNum(m2[2]) })
+    }
   }
 
-  // Texto bruto truncado para debug (vai para coluna pdf_texto_bruto)
+  // ── Questionário de Avaliação de Risco
+  const utilizacao_veiculo = reF(/utiliza[cç][aã]o\s*do\s*ve[ií]culo\s*\??\s*\n?\s*([^\n]+)/i)
+  const principal_condutor = reF(/principal\s*condutor\s*\??\s*\n?\s*([^\n]+)/i)
+  const condutor_nome = reF(/Nome\s*completo\s*do\s*condutor\s*\n?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s'\-\.]{4,99}?)(?:\s*CPF|\n|$)/i)
+  const condutor_cpf_match = /CPF\s*do\s*condutor\s*\n?\s*([\d\.\-]+)/i.exec(text)
+  const condutor_cpf = condutor_cpf_match?.[1]?.replace(/\D/g, '') ?? null
+  const condutor_estado_civil = reF(/Estado\s*civil\s*do\s*condutor\s*\n?\s*([^\n]+?)(?:\s*Deseja|\n|$)/i)
+  const condutor_cobertura_jovem = simNao(reF(/condutores\s*na\s*faixa[\s\S]{0,300}?(Sim|N[aã]o)/i))
+
+  // ── Serviços e Franquias (página 3)
+  const servicos = {
+    assistencia_24h:  reF(/Assist[eê]ncia\s*24\s*horas?\s*\n?\s*([^\n]+)/i),
+    carro_reserva:    reF(/Carro\s*Reserva\s*\n?\s*([^\n]+)/i),
+    danos_vidros:     reF(/Danos\s*aos\s*Vidros\s*\n?\s*([^\n]+)/i),
+    pequenos_reparos: reF(/Pequenos\s*Reparos\s*\n?\s*([^\n]+)/i),
+  }
+  const franquias = (() => {
+    const compreensiva = brNum(reF(/Franquia\s*\(R\$\)\s*\n?\s*([\d\.\,]+)/i))
+    return { compreensiva }
+  })()
+
+  // ── Texto bruto + sections (debug)
   const pdf_texto_bruto = rawText.length > 6000 ? rawText.slice(0, 6000) + '\n…[truncado]' : rawText
 
   return {
-    // chaves snake_case espelham as colunas de seg_stage_apolices
     numero,
     endosso,
     proposta,
@@ -395,45 +391,36 @@ function parseAuto(rawText: string): EzzeApoliceRow {
 // ─────────────────── RC Transporte (Carta Verde) ───────────────────
 function parseRC(rawText: string): EzzeApoliceRow[] {
   const text = rawText
-  const reFirst = (r: RegExp, src = text) => r.exec(src)?.[1]?.trim() ?? null
+  const reF = (r: RegExp, src = text) => r.exec(src)?.[1]?.trim() ?? null
 
-  const sections = splitSections(text, [
-    { key: 'cabecalho',     re: /Garantido\s+por\s+EZZE/i },
-    { key: 'vigencia',      re: /VIG[EÊ]NCIA\s+DA\s+AP[OÓ]LICE/i },
-    { key: 'segurado',      re: /\bSEGURADO\b/ },
-    { key: 'corretor',      re: /\bCORRETOR\b/ },
-    { key: 'premio',        re: /Pr[eê]mio\s*\(EM/i },
-    { key: 'parcelamento',  re: /PARCELAMENTO\s*\(EM/i },
-    { key: 'veiculo',       re: /VE[IÍ]CULO\s+ITEM\s+N\.?\s*:?/i },
-    { key: 'observacoes',   re: /OBSERVA[CÇ][OÕ]ES/i },
-    { key: 'disposicoes',   re: /Disposi[cç][õo]es\s+Gerais/i },
-  ])
-
-  const numero    = reFirst(/Ap[oó]lice\s+N[uú]mero\s*:?\s*(\d+)/i)
-  const proposta  = reFirst(/N[uú]mero\s+da\s+Proposta\s*:?\s*(\d+)/i)
-  const endosso   = reFirst(/(?:^|\n)\s*Endosso\s*:?\s*(\d+)/i)
-  const ramoCod   = reFirst(/(?:^|\n)\s*Ramo\s*:?\s*(\d+)/i)
-  const sucursal  = reFirst(/Sucursal\s*:?\s*(\d+)/i)
-  const dataEmissao = reFirst(/Dt\.?\s*Emiss[aã]o\s+Ap[oó]lice\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i)
-  const faturamento = reFirst(/Faturamento\s*:?\s*(\d+)/i)
+  const numero    = reF(/Ap[oó]lice\s+N[uú]mero\s*:?\s*(\d+)/i)
+  const proposta  = reF(/N[uú]mero\s+da\s+Proposta\s*:?\s*(\d+)/i)
+  const endosso   = reF(/(?:^|\n)\s*Endosso\s*:?\s*(\d+)/i)
+  const ramoCod   = reF(/(?:^|\n)\s*Ramo\s*:?\s*(\d+)/i)
+  const sucursal  = reF(/Sucursal\s*:?\s*(\d+)/i)
+  const dataEmissao = reF(/Dt\.?\s*Emiss[aã]o\s+Ap[oó]lice\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i)
+  const faturamento = reF(/Faturamento\s*:?\s*(\d+)/i)
 
   const vig = /Das?\s+\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s+dia\s+(\d{2}\/\d{2}\/\d{4})\s+at[eé]\s+\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s+dia\s+(\d{2}\/\d{2}\/\d{4})/i.exec(text)
 
-  const segBlock = sections.segurado ?? ''
-  const cliente_nome = pickNomeFromBlock(segBlock)
-  const cpf_cnpj     = pickDocFromBlock(segBlock) ?? pickDocFromBlock(text)
-  const segurado_endereco = clean(segBlock.match(/Endere[cç]o\s*:?\s*([^\n]+)/i)?.[1])
-  const segurado_cep = clean(segBlock.match(/CEP\s*:?\s*(\d{5}-?\d{3})/i)?.[1])
-  const cidadeMatch = segBlock.match(/Cidade\s*:?\s*([^\n]+?)(?:\s+UF\s*:?\s*([A-Z]{2})|\n)/i)
+  // Segurado
+  const allUpperNames = findAllUpperNames(text)
+  const cliente_nome = allUpperNames[0] ?? null
+  const docs = findAllDocs(text)
+  const cpf_cnpj = docs.cnpjs[0] ?? docs.cpfs[0] ?? null
+
+  const segurado_endereco = clean(text.match(/Endere[cç]o\s*:?\s*([^\n]+)/i)?.[1])
+  const segurado_cep = clean(text.match(/CEP\s*:?\s*(\d{5}-?\d{3})/i)?.[1])
+  const cidadeMatch = text.match(/Cidade\s*:?\s*([^\n]+?)(?:\s+UF\s*:?\s*([A-Z]{2})|\n)/i)
   const segurado_cidade = clean(cidadeMatch?.[1])
-  const segurado_uf = cidadeMatch?.[2] ?? clean(segBlock.match(/UF\s*:?\s*([A-Z]{2})/i)?.[1])
+  const segurado_uf = cidadeMatch?.[2] ?? clean(text.match(/UF\s*:?\s*([A-Z]{2})/i)?.[1])
 
-  const corBlock = sections.corretor ?? ''
-  const corretor_nome  = clean(corBlock.match(/Nome\s+do\s+Corretor\s*:?\s*([^\n]+?)(?:\s*C[oó]digo\s*Susep|\n)/i)?.[1])
-  const corretor_susep = clean(corBlock.match(/C[oó]digo\s+Susep\s*:?\s*(\d+)/i)?.[1])
+  const corretor_nome  = clean(text.match(/Nome\s+do\s+Corretor\s*:?\s*([^\n]+?)(?:\s*C[oó]digo\s*Susep|\n)/i)?.[1])
+  const corretor_susep = clean(text.match(/C[oó]digo\s+Susep\s*:?\s*(\d+)/i)?.[1])
 
-  const premBlock = sections.premio ?? ''
-  const premNumbers = listBrNumbers(premBlock)
+  // Prêmios — bloco "Prêmio (EM R$)" tem 5+ valores em sequência
+  const premBlockMatch = /Pr[eê]mio\s*\(EM\s*R\$\)([\s\S]*?)(?=PARCELAMENTO|VE[IÍ]CULO|OBSERVA)/i.exec(text)
+  const premNumbers = listBrNumbers(premBlockMatch?.[1] ?? text)
   const premio_liquido = premNumbers[0] ?? null
   const adicional_fracionamento = premNumbers[1] ?? null
   const custo_apolice = premNumbers[2] ?? null
@@ -471,7 +458,6 @@ function parseRC(rawText: string): EzzeApoliceRow[] {
     pdf_texto_bruto,
   }
 
-  // Cada bloco "VEÍCULO ITEM N.: <n>" vira uma linha de staging
   const veiculoBlocks: Array<{ item: string; block: string }> = []
   const veicRe = /VE[IÍ]CULO\s+ITEM\s+N\.?\s*:?\s*(\d+)([\s\S]*?)(?=VE[IÍ]CULO\s+ITEM\s+N\.?\s*:|OBSERVA[CÇ][OÕ]ES|$)/gi
   let m: RegExpExecArray | null
