@@ -532,10 +532,12 @@ export default function SeguradoraDetalhePage() {
     const lower = file.name.toLowerCase()
     const isEzze = /ezze/i.test(seguradora?.nome || '')
 
-    // PDF: somente apólices da Ezze. Envia bytes em base64 e o parser roda no servidor.
+    // PDF: importação por apólice (qualquer seguradora). Envia bytes em base64
+    // e o parser roda no servidor. A seguradora é detectada automaticamente
+    // do conteúdo do PDF — o nome cadastrado serve só como fallback.
     if (lower.endsWith('.pdf')) {
-      if (!isEzze || aba !== 'apolices') {
-        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices da Ezze Seguros.' })
+      if (aba !== 'apolices') {
+        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices.' })
         e.target.value = ''
         return
       }
@@ -555,9 +557,10 @@ export default function SeguradoraDetalhePage() {
         })
         const j = await r.json()
         if (!r.ok) throw new Error(j?.erro || 'falha na importação')
+        const segLabel = isEzze ? 'Ezze' : (seguradora?.nome || 'PDF')
         setMsg({
           tipo: 'ok',
-          texto: `PDF Ezze (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
+          texto: `PDF ${segLabel} (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
         })
         await carregarContagens()
         await carregarLinhas()

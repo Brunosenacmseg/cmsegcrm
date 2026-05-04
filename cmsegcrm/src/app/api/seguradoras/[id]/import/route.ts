@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { parseEzzeApolicePdf } from '@/lib/parsers/ezze-apolice-pdf'
+import { parseApolicePdf } from '@/lib/parsers/apolice-pdf'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
@@ -111,13 +112,14 @@ function mapApolice(row: any, seguradora_id: string, importacao_id: string) {
   }
 }
 
-// mapApoliceEzze: o parser de PDF da Ezze (src/lib/parsers/ezze-apolice-pdf.ts)
-// já devolve as chaves no formato snake_case esperado pelas colunas de
-// seg_stage_apolices (vide migration 070_seg_stage_apolices_ezze_pdf.sql),
-// então é basicamente passthrough — só precisamos converter tipos numéricos
-// e injetar seguradora_id/importacao_id, e ainda preencher `premio` (coluna
-// legada da tabela) com o premio_total para manter compatibilidade.
-function mapApoliceEzze(row: any, seguradora_id: string, importacao_id: string) {
+// mapApolicePdf: cada parser de PDF (Ezze, Tokio, Allianz, etc.) já devolve as
+// chaves no formato snake_case esperado pelas colunas de seg_stage_apolices
+// (vide migrations 070_seg_stage_apolices_ezze_pdf.sql e
+// 072_seg_stage_apolices_universal_pdf.sql). Aqui é basicamente passthrough —
+// só convertemos tipos numéricos, injetamos seguradora_id/importacao_id e
+// preenchemos `premio` (coluna legada) com o `premio_total` p/ compatibilidade.
+// Campos não-mapeados ficam em `dados jsonb` para inspeção futura.
+function mapApolicePdf(row: any, seguradora_id: string, importacao_id: string) {
   const premioTotal = num(row.premio_total)
   const premioLiquido = num(row.premio_liquido)
   return {
@@ -128,7 +130,7 @@ function mapApoliceEzze(row: any, seguradora_id: string, importacao_id: string) 
     cliente_nome:   sStr(row.cliente_nome),
     produto:        sStr(row.produto),
     premio:         premioTotal ?? premioLiquido,
-    comissao_pct:   null, // Ezze não envia comissão na apólice
+    comissao_pct:   null,
     vigencia_ini:   date(row.vigencia_ini),
     vigencia_fim:   date(row.vigencia_fim),
     placa:          sStr(row.placa),
@@ -179,6 +181,17 @@ function mapApoliceEzze(row: any, seguradora_id: string, importacao_id: string) 
     rastreador_obrigatorio:   sStr(row.rastreador_obrigatorio),
     nr_passageiros:           nInt(row.nr_passageiros),
     tipo_veiculo:             sStr(row.tipo_veiculo),
+    // Universais (migration 072)
+    seguradora_origem:        sStr(row.seguradora_origem),
+    processo_susep:           sStr(row.processo_susep),
+    cep_pernoite:             sStr(row.cep_pernoite),
+    combustivel:              sStr(row.combustivel),
+    kit_gas:                  sStr(row.kit_gas),
+    data_nascimento:          date(row.data_nascimento),
+    sexo:                     sStr(row.sexo),
+    cartao_mascarado:         sStr(row.cartao_mascarado),
+    qtd_parcelas:             nInt(row.qtd_parcelas),
+    juros:                    num(row.juros),
     // Prêmio
     premio_liquido:           premioLiquido,
     adicional_fracionamento:  num(row.adicional_fracionamento),
@@ -202,6 +215,8 @@ function mapApoliceEzze(row: any, seguradora_id: string, importacao_id: string) 
     dados:                    row,
   }
 }
+// Alias retrocompat (ainda referenciado em algumas partes do código).
+const mapApoliceEzze = mapApolicePdf
 function mapSinistro(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
@@ -355,18 +370,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const isEzze = /ezze/i.test(segNome)
 
   if (formato === 'pdf') {
-    if (!isEzze || tipo !== 'apolices') {
+    if (tipo !== 'apolices') {
       return NextResponse.json({
-        erro: 'Importação por PDF só está disponível para apólices da Ezze Seguros.',
+        erro: 'Importação por PDF só está disponível para apólices.',
       }, { status: 400 })
     }
     const b64 = String(body?.pdf_base64 || '').trim()
     if (!b64) return NextResponse.json({ erro: 'pdf_base64 ausente no body' }, { status: 400 })
     try {
       const buf = Buffer.from(b64, 'base64')
-      const r = await parseEzzeApolicePdf(buf)
-      pdfLayout = r.layout
-      linhas = r.rows
+      // Mantém o parser Ezze legado quando a seguradora cadastrada é Ezze
+      // (preserva todos os campos extras que o parser dela já extrai), e usa
+      // o parser unificado para todas as outras (Tokio, Allianz, Bradesco, etc.).
+      if (isEzze) {
+        const r = await parseEzzeApolicePdf(buf)
+        pdfLayout = r.layout
+        linhas = r.rows.map(row => ({ ...row, seguradora_origem: 'ezze' }))
+      } else {
+        const r = await parseApolicePdf(buf, segNome)
+        pdfLayout = r.layout
+        linhas = r.rows
+      }
     } catch (e: any) {
       return NextResponse.json({ erro: `Falha ao ler PDF: ${e?.message || e}` }, { status: 400 })
     }
@@ -388,7 +412,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const importacao_id = (imp as any).id as string
   const tabela = TABELAS[tipo]
   const mapper =
-    (tipo === 'apolices' && isEzze && formato === 'pdf') ? mapApoliceEzze :
+    (tipo === 'apolices' && formato === 'pdf') ? mapApolicePdf :
     tipo === 'apolices'      ? mapApolice :
     (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :
     tipo === 'sinistros'     ? mapSinistro :
