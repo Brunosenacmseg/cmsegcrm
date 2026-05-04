@@ -145,12 +145,17 @@ function parseLinhaPortoAPPAPI(l: string): Record<string, any> {
   else if (tipoPessoa === 'J') cpf_cnpj = subs(86, 99).trim()
   else cpf_cnpj = subs(85, 98).trim()
 
-  // Data Nascimento (PF) — DD/MM/AAAA — só preenche se for válida
+  // Data Nascimento (PF) — DD/MM/AAAA — só preenche se for válida e real
   let data_nascimento: string | null = null
   if (tipoPessoa === 'F') {
     const dn = subs(100, 109).trim()
     const m = dn.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-    if (m) data_nascimento = `${m[3]}-${m[2]}-${m[1]}`
+    if (m) {
+      const y = parseInt(m[3], 10), mo = parseInt(m[2], 10), d = parseInt(m[1], 10)
+      if (y >= 1900 && y <= 2999 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        data_nascimento = `${m[3]}-${m[2]}-${m[1]}`
+      }
+    }
   }
 
   return {
@@ -284,13 +289,22 @@ function parseLinhaPortoCOM(l: string): Record<string, any> {
   const comBase = parseInt(comStr, 10) / 100
   const valor_comissao = isFinite(comBase) ? (comSign === '-' ? -comBase : comBase) : 0
 
+  // Helper: valida YYYYMMDD e converte → ISO. Retorna null se '00000000'
+  // ou inválida (ano 0, mês 0, dia 0, etc.).
+  function ymd8ToIso(s: string): string | null {
+    if (!/^\d{8}$/.test(s)) return null
+    const y = parseInt(s.slice(0, 4), 10)
+    const m = parseInt(s.slice(4, 6), 10)
+    const d = parseInt(s.slice(6, 8), 10)
+    if (y < 1900 || y > 2999 || m < 1 || m > 12 || d < 1 || d > 31) return null
+    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
+  }
+
   // Data Movimento (73-81): 8 dígitos YYYYMMDD — tratada como data_pagamento
-  const dMov = subs(73, 80).trim()
-  const data_pagamento = /^\d{8}$/.test(dMov) ? `${dMov.slice(0,4)}-${dMov.slice(4,6)}-${dMov.slice(6,8)}` : null
+  const data_pagamento = ymd8ToIso(subs(73, 80).trim())
 
   // Data Emissão (89-97): 8 dígitos YYYYMMDD
-  const dEmi = subs(89, 96).trim()
-  const data_emissao = /^\d{8}$/.test(dEmi) ? `${dEmi.slice(0,4)}-${dEmi.slice(4,6)}-${dEmi.slice(6,8)}` : null
+  const data_emissao = ymd8ToIso(subs(89, 96).trim())
 
   // Competência derivada da data de pagamento
   const competencia = data_pagamento ? data_pagamento.slice(0, 7) : null

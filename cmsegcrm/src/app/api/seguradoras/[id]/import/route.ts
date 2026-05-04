@@ -91,9 +91,9 @@ const cleanDoc = (v: any) => {
 function mapApolice(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
-    numero:        sStr(pick(row, ['apolice','numero apolice','nr apolice','numero da apolice','n apolice'])),
-    cpf_cnpj:      cleanDoc(pick(row, ['cpf','cnpj','documento','cpf/cnpj','cpf cnpj'])),
-    cliente_nome:  sStr(pick(row, ['segurado','cliente','nome'])),
+    numero:        sStr(pick(row, ['apolice','numero apolice','nr apolice','numero da apolice','n apolice','numero_apolice'])),
+    cpf_cnpj:      cleanDoc(pick(row, ['cpf','cnpj','documento','cpf/cnpj','cpf cnpj','cpf_cnpj'])),
+    cliente_nome:  sStr(pick(row, ['segurado','cliente','nome','cliente_nome'])),
     produto:       sStr(pick(row, ['produto','ramo'])),
     premio:        num(pick(row, ['premio','prêmio','premio total','valor'])),
     comissao_pct:  num(pick(row, ['% comissao','percentual comissao','comissao %','aliquota'])),
@@ -101,6 +101,12 @@ function mapApolice(row: any, seguradora_id: string, importacao_id: string) {
     vigencia_fim:  date(pick(row, ['vigencia final','fim vigencia','vigencia fim','fim','vencimento'])),
     placa:         sStr(pick(row, ['placa'])),
     status_apolice: sStr(pick(row, ['status','situacao'])),
+    // Campos extras .APP/.API tipo 50
+    codigo_interno:  sStr(pick(row, ['codigo_interno','codigo interno','cod interno'])),
+    endosso:         sStr(pick(row, ['endosso','numero endosso'])),
+    tipo_pessoa:     sStr(pick(row, ['tipo_pessoa','tipo pessoa'])),
+    data_nascimento: date(pick(row, ['data_nascimento','data nascimento','nascimento','dt nascimento'])),
+    sexo:            sStr(pick(row, ['sexo','genero'])),
     dados: row,
   }
 }
@@ -151,19 +157,25 @@ function mapInadimplencia(row: any, seguradora_id: string, importacao_id: string
 function mapComissao(row: any, seguradora_id: string, importacao_id: string) {
   return {
     seguradora_id, importacao_id,
-    // Inclui aliases Tokio: numApolice, CPFCnpj, nomeSegurado, vlrPremio,
-    // vlrComissaoParcela, pcComissao, qtdeParcela, numParcela, dtPagamento
-    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice','numapolice'])),
-    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento','cpfcnpj'])),
-    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome','nomesegurado'])),
+    // Inclui aliases Tokio (numApolice, CPFCnpj, nomeSegurado, vlrPremio...)
+    // E aliases Porto (numero_apolice, valor_premio, valor_comissao...)
+    numero_apolice: sStr(pick(row, ['apolice','numero apolice','nr apolice','numapolice','numero_apolice'])),
+    cpf_cnpj:       cleanDoc(pick(row, ['cpf','cnpj','documento','cpfcnpj','cpf_cnpj'])),
+    cliente_nome:   sStr(pick(row, ['segurado','cliente','nome','nomesegurado','cliente_nome'])),
     produto:        sStr(pick(row, ['produto','ramo'])),
     competencia:    sStr(pick(row, ['competencia','competência','referencia','mes referencia'])),
-    data_pagamento: date(pick(row, ['pagamento','data pagamento','data credito','dtpagamento'])),
+    data_pagamento: date(pick(row, ['pagamento','data pagamento','data credito','dtpagamento','data_pagamento'])),
+    data_emissao:   date(pick(row, ['data_emissao','data emissao','dt emissao'])),
+    codigo_interno: sStr(pick(row, ['codigo_interno','codigo interno','cod interno'])),
+    tipo_documento: sStr(pick(row, ['tipo_documento','tipo doc','tipo documento'])),
+    numero_proposta: sStr(pick(row, ['numero_proposta','proposta','nr proposta'])),
+    descricao_operacao: sStr(pick(row, ['descricao_operacao','descricao operacao','operacao'])),
+    pc_comissao:    num(pick(row, ['pc_comissao','pc comissao'])),
     parcela:        nInt(pick(row, ['parcela','nr parcela','numparcela'])),
     total_parcelas: nInt(pick(row, ['total parcelas','qtd parcelas','qtdeparcela'])),
-    premio:         num(pick(row, ['premio','prêmio','premio liquido','vlrpremio'])),
+    premio:         num(pick(row, ['premio','prêmio','premio liquido','vlrpremio','valor_premio'])),
     comissao_pct:   num(pick(row, ['% comissao','percentual comissao','aliquota','pccomissao'])),
-    comissao_valor: num(pick(row, ['valor comissao','comissao','comissão','valor comissão','vlrcomissaoparcela'])),
+    comissao_valor: num(pick(row, ['valor comissao','comissao','comissão','valor comissão','vlrcomissaoparcela','valor_comissao'])),
     dados: row,
   }
 }
