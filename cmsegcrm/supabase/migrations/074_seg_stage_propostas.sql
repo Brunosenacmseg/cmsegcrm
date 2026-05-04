@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────
--- 074_seg_stage_propostas.sql
+-- 074_seg_stage_propostas.sql  (v2 — defensiva contra tabela `propostas` pré-existente)
 -- Cria a tabela `seg_stage_propostas` para receber importações de propostas
 -- (PDF, XLSX, etc.) das seguradoras. Estrutura espelha `seg_stage_apolices`,
 -- mas com campos exclusivos de proposta (status_proposta, data_validade,
@@ -7,9 +7,9 @@
 --
 -- Também:
 --   1. Estende `seg_importacoes.tipo` p/ aceitar 'propostas'.
---   2. Cria a tabela `propostas` "produção" (mirror reduzido de `apolices`)
---      para que o CRM tenha um módulo permanente de propostas vinculado ao
---      cliente / negócio.
+--   2. Cria/completa a tabela `propostas` "produção" (mirror reduzido de
+--      `apolices`). Como pode já existir uma versão antiga no banco, usamos
+--      `add column if not exists` em vez de assumir o schema novo.
 -- ─────────────────────────────────────────────────────────────
 
 -- 1. Estende o check de tipo em seg_importacoes ───────────────────
@@ -21,39 +21,63 @@ begin
 exception when others then null;
 end $$;
 
--- 2. Tabela de produção `propostas` (similar a apolices) ──────────
+-- 2. Tabela de produção `propostas` (cria se não existir) ─────────
+-- Schema mínimo (apenas id+timestamps). Todas as outras colunas são
+-- adicionadas via `alter table add column if not exists` abaixo, para
+-- conviver com instalações antigas que já tinham um `propostas` parcial.
 create table if not exists public.propostas (
   id              uuid primary key default uuid_generate_v4(),
-  numero          text,                 -- Nº da proposta
-  proposta_endosso text,
-  cliente_id      uuid references public.clientes(id) on delete set null,
-  nome_segurado   text,
-  cpf_cnpj_segurado text,
-  seguradora      text,                  -- Nome livre (cadastrado pelo usuário)
-  ramo            text,
-  produto         text,
-  vigencia_ini    date,
-  vigencia_fim    date,
-  emissao         date,                  -- Data de emissão da proposta
-  data_validade   date,                  -- Validade da proposta (até quando o cliente pode aceitar)
-  premio          numeric(14,2),
-  premio_liquido  numeric(14,2),
-  iof             numeric(14,2),
-  premio_total    numeric(14,2),
-  qtd_parcelas    int,
-  forma_pagamento text,
-  status          text not null default 'em_analise'
-                  check (status in ('em_analise','aceita','recusada','expirada','convertida','cancelada')),
-  apolice_id      uuid references public.apolices(id) on delete set null, -- preenche quando convertida
-  status_assinatura text,
-  proposta_assinada boolean default false,
-  placa           text,
-  observacao      text,
-  fonte           text,                   -- 'PDF', 'XLSX', 'Manual', 'API'
-  arquivo_url     text,                   -- Bucket Supabase com PDF original
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
 );
+
+-- 3. Garante todas as colunas (idempotente) ───────────────────────
+alter table public.propostas
+  add column if not exists numero            text,
+  add column if not exists proposta_endosso  text,
+  add column if not exists cliente_id        uuid references public.clientes(id) on delete set null,
+  add column if not exists nome_segurado     text,
+  add column if not exists cpf_cnpj_segurado text,
+  add column if not exists seguradora        text,
+  add column if not exists ramo              text,
+  add column if not exists produto           text,
+  add column if not exists vigencia_ini      date,
+  add column if not exists vigencia_fim      date,
+  add column if not exists emissao           date,
+  add column if not exists data_validade     date,
+  add column if not exists premio            numeric(14,2),
+  add column if not exists premio_liquido    numeric(14,2),
+  add column if not exists iof               numeric(14,2),
+  add column if not exists premio_total      numeric(14,2),
+  add column if not exists qtd_parcelas      int,
+  add column if not exists forma_pagamento   text,
+  add column if not exists status            text,
+  add column if not exists apolice_id        uuid references public.apolices(id) on delete set null,
+  add column if not exists status_assinatura text,
+  add column if not exists proposta_assinada boolean default false,
+  add column if not exists placa             text,
+  add column if not exists observacao        text,
+  add column if not exists fonte             text,
+  add column if not exists arquivo_url       text;
+
+-- Default + check no `status` (só aplica se a coluna acabou de ser criada)
+do $$
+begin
+  -- Backfill rápido: se houver registros antigos com status NULL ou inválido,
+  -- assume 'em_analise' antes de aplicar o check.
+  update public.propostas
+     set status = 'em_analise'
+   where status is null
+      or status not in ('em_analise','aceita','recusada','expirada','convertida','cancelada');
+
+  alter table public.propostas alter column status set default 'em_analise';
+  alter table public.propostas alter column status set not null;
+
+  alter table public.propostas drop constraint if exists propostas_status_check;
+  alter table public.propostas add constraint propostas_status_check
+    check (status in ('em_analise','aceita','recusada','expirada','convertida','cancelada'));
+exception when others then null;
+end $$;
 
 create index if not exists idx_propostas_cliente on public.propostas(cliente_id);
 create index if not exists idx_propostas_numero  on public.propostas(numero);
@@ -61,7 +85,7 @@ create index if not exists idx_propostas_status  on public.propostas(status);
 create index if not exists idx_propostas_seg     on public.propostas(seguradora);
 create index if not exists idx_propostas_validade on public.propostas(data_validade) where data_validade is not null;
 
--- 3. Tabela de staging (recebe linhas brutas das importações) ──────
+-- 4. Tabela de staging (recebe linhas brutas das importações) ──────
 create table if not exists public.seg_stage_propostas (
   id              uuid primary key default uuid_generate_v4(),
   seguradora_id   uuid not null references public.seguradoras(id) on delete cascade,
@@ -72,7 +96,7 @@ create table if not exists public.seg_stage_propostas (
   data_emissao              date,
   vigencia_ini              date,
   vigencia_fim              date,
-  data_validade             date,                 -- até quando a proposta é válida
+  data_validade             date,
   data_calculo              date,
   versao                    text,
   rule_id                   text,
@@ -82,8 +106,8 @@ create table if not exists public.seg_stage_propostas (
   tipo_seguro               text,
   classe_bonus              int,
   codigo_ci                 text,
-  status_proposta           text,                  -- "Em análise", "Aceita", etc.
-  numero_cotacao            text,                  -- Bradesco, Mapfre
+  status_proposta           text,
+  numero_cotacao            text,
 
   -- ── Segurado / proponente ────────────────────────────────────
   cliente_nome              text,
@@ -179,7 +203,7 @@ create table if not exists public.seg_stage_propostas (
   taxa_juros                numeric(14,2),
   descontos                 numeric(14,2),
   premio_total              numeric(14,2),
-  premio                    numeric(14,2),  -- legado / shortcut p/ premio_total
+  premio                    numeric(14,2),
 
   -- ── Pagamento ────────────────────────────────────────────────
   forma_pagamento           text,
@@ -226,10 +250,10 @@ create table if not exists public.seg_stage_propostas (
   tipo_operacao             text,
 
   -- ── Universais / debug ───────────────────────────────────────
-  seguradora_origem         text,             -- 'allianz', 'tokio', etc.
+  seguradora_origem         text,
   layout_pdf                text,
   pdf_texto_bruto           text,
-  dados                     jsonb,            -- linha bruta da importação
+  dados                     jsonb,
   status                    text not null default 'pendente'
                             check (status in ('pendente','sincronizado','erro')),
   erro_msg                  text,
@@ -244,13 +268,12 @@ create index if not exists idx_seg_stage_prop_st  on public.seg_stage_propostas(
 create index if not exists idx_seg_stage_prop_num on public.seg_stage_propostas(numero);
 create index if not exists idx_seg_stage_prop_cpf on public.seg_stage_propostas(cpf_cnpj);
 
--- 4. RLS (mesmas policies de seg_stage_apolices) ───────────────────
+-- 5. RLS (mesmas policies de seg_stage_apolices) ───────────────────
 alter table public.seg_stage_propostas enable row level security;
 alter table public.propostas           enable row level security;
 
 do $$
 begin
-  -- Staging: admin vê tudo
   create policy seg_stage_propostas_admin on public.seg_stage_propostas
     for all to authenticated using (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
@@ -262,7 +285,6 @@ end $$;
 
 do $$
 begin
-  -- Propostas: admin / vendedor vinculado vêem
   create policy propostas_select on public.propostas
     for select to authenticated using (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role in ('admin','financeiro','vendedor','sdr'))
