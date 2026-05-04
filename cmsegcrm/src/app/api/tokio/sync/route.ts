@@ -178,8 +178,14 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
     ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
     'Content-Type': 'application/json',
+    // Header de auth: o servidor exige `auth_token` (snake_case) —
+    // descoberto via "Required header 'auth_token' is not present"
+    // nos serviços. Mantemos as variantes antigas por segurança.
+    'auth_token':    t,
+    'authToken':     t,
+    'Auth-Token':    t,
     'Authorization': `Bearer ${t}`,
-    'token': t,
+    'token':         t,
     // O servidor exige `service_key` em todas as chamadas — descoberto
     // ao receber 400 com "Required header 'service_key' is not present"
     // no /Corretor/login.
