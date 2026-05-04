@@ -124,7 +124,20 @@ export default function ApolicesPage() {
       .select('id, numero, produto, seguradora, premio, comissao_pct, vigencia_ini, vigencia_fim, status, vendedor_id, cliente_id, negocio_id, clientes(id,nome,tipo), users(id,nome)', { count: 'exact' })
       .order('vigencia_fim', { ascending: true, nullsFirst: false })
       .range(pagina * PAGE_SIZE, pagina * PAGE_SIZE + PAGE_SIZE - 1)
-    if (argStatus)      qList = qList.eq('status', argStatus)
+    // Filtro por "status" derivado de vigencia_fim (cancelado e o unico
+    // que vem do campo status do banco; ativo/renovar/vencido sao
+    // computados a partir da data).
+    const hoje = new Date(); const isoHoje = hoje.toISOString().slice(0,10)
+    const em30 = new Date(); em30.setDate(em30.getDate()+30); const iso30 = em30.toISOString().slice(0,10)
+    if (argStatus === 'cancelado') {
+      qList = qList.eq('status', 'cancelado')
+    } else if (argStatus === 'vencido') {
+      qList = qList.neq('status','cancelado').lt('vigencia_fim', isoHoje)
+    } else if (argStatus === 'renovar') {
+      qList = qList.neq('status','cancelado').gte('vigencia_fim', isoHoje).lte('vigencia_fim', iso30)
+    } else if (argStatus === 'ativo') {
+      qList = qList.neq('status','cancelado').gt('vigencia_fim', iso30)
+    }
     if (argSeg)         qList = qList.eq('seguradora', argSeg)
     if (argRamo)        qList = qList.ilike('produto', `${argRamo}%`)
     if (argVendedorId === '00000000-0000-0000-0000-000000000000') qList = qList.is('vendedor_id', null)
@@ -397,20 +410,16 @@ export default function ApolicesPage() {
   const vencendo30d   = stats.vencendo_30d
 
   function statusApolice(n: any) {
-    // Status do banco tem prioridade absoluta — antes ele era ignorado em
-    // favor do calculo por vencimento, dando a impressao de "varios
-    // status" mesmo quando o filtro estava ativo.
-    const st = (n.status || 'ativo').toLowerCase()
-    if (st === 'cancelado') return { label:'Cancelado', cor:'var(--red)' }
-    if (st === 'vencido')   return { label:'Vencido',   cor:'var(--red)' }
-    if (st === 'renovar')   return { label:'Renovar',   cor:'var(--gold)' }
-    // status === 'ativo' (ou desconhecido): mostra "Renovar em breve" como
-    // SUB-rotulo se a vigencia estiver chegando, mas mantem como Ativo.
-    if (n.vencimento) {
-      const dias = diasAte(n.vencimento)
-      if (dias < 0)   return { label:'Ativo (vencido)',         cor:'var(--gold)' }
-      if (dias <= 30) return { label:`Ativo (vence em ${dias}d)`, cor:'#e6c97a' }
-    }
+    // Cancelado tem prioridade absoluta (campo do banco).
+    if ((n.status || '').toLowerCase() === 'cancelado') return { label:'Cancelado', cor:'var(--red)' }
+    // Resto deriva de vencimento:
+    //  - vencimento < hoje      → Vencido
+    //  - vencimento <= hoje+30d → Renovar
+    //  - vencimento > hoje+30d  → Ativo
+    if (!n.vencimento) return { label:'Ativo', cor:'var(--teal)' }
+    const dias = diasAte(n.vencimento)
+    if (dias < 0)   return { label:'Vencido',                       cor:'var(--red)' }
+    if (dias <= 30) return { label:`Renovar (${dias}d)`,            cor:'var(--gold)' }
     return { label:'Ativo', cor:'var(--teal)' }
   }
 
