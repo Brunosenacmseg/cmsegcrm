@@ -167,17 +167,17 @@ async function tokioLogin(force = false): Promise<string> {
 
 async function tokioGet(servico: string, params: Record<string,string|number> = {}): Promise<string> {
   let token = await tokioLogin()
-  const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
   // `servico` aceita tanto o nome curto ("getApolice") quanto o caminho
   // completo ("/Corretor/getApolice"). Quando vier curto, prefixamos
   // com /Corretor/ conforme documentação oficial.
   const path = servico.startsWith('/') ? servico
              : servico.startsWith('Corretor/') ? `/${servico}`
              : `/Corretor/${servico}`
-  const url = `${TOKIO_BASE}${path}${qs ? `?${qs}` : ''}`
+  const url = `${TOKIO_BASE}${path}`
   const headers = (t: string) => ({
     ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
+    'Content-Type': 'application/json',
     'Authorization': `Bearer ${t}`,
     'token': t,
     // O servidor exige `service_key` em todas as chamadas — descoberto
@@ -188,11 +188,15 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
     'Service-Key':  TOKIO_SERVICE_KEY,
     ...(cookieJar ? { 'Cookie': cookieJar } : {}),
   })
-  let r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
+  // Servidor responde 405 a GET — exige POST com filtros no body.
+  // Mantemos a função com nome "tokioGet" por compatibilidade, mas
+  // o método é POST e os params vão no JSON.
+  const body = JSON.stringify(params || {})
+  let r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
   if (r.status === 401) {
     // Token expirou — refaz login uma vez
     token = await tokioLogin(true)
-    r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
+    r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
   }
   if (!r.ok) throw new Error(`Tokio ${servico} HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
   return await r.text()
