@@ -88,29 +88,24 @@ function listBrNumbers(s: string): number[] {
 
 const SEG_LABELS = /^(?:nome|nome\s+social|cpf\/?cnpj|cpf|telefone|e-?mail|cep|cidade|uf|estado\s+civil|data\s+nascimento|sexo)\s*:?\s*$/i
 
+// Acha o nome do segurado em um bloco de texto. Em vez de iterar por linhas
+// (que falha quando pdf-parse junta texto sem espaços/quebras), procura
+// substrings em CAIXA ALTA com 2+ palavras — funciona mesmo quando o output
+// vem como "Nome completo do condutorBRUNO SANTOS SOUSA".
 function pickNomeFromBlock(block: string): string | null {
-  const lines = block.split('\n').map(l => l.trim()).filter(l => l.length >= 3)
-  // Pula a linha do header da seção (primeira linha com "Segurado" ou "SEGURADO")
-  const startIdx = lines.findIndex(l => /^segurado\b/i.test(l)) + 1
-  const candidates = startIdx > 0 ? lines.slice(startIdx) : lines
-
-  // 1) Primeira em CAIXA ALTA, sem dígitos/@, comprimento razoável
-  for (const l of candidates) {
-    if (SEG_LABELS.test(l)) continue
-    if (/[0-9@]/.test(l)) continue
-    if (/Casado|Solteiro|Divorciado|Vi[uú]vo|Uni[aã]o/i.test(l)) continue
-    if (l.length < 5 || l.length > 100) continue
-    if (/^[A-ZÀ-Ÿ][A-ZÀ-Ÿ\s'\-\.&]{4,99}$/.test(l)) return l
+  // Sequências de 2 a 6 palavras em CAIXA ALTA (mín. 2 letras cada)
+  const re = /[A-ZÀ-Ÿ]{2,}(?:\s+[A-ZÀ-Ÿ\.\-']{2,}){1,5}/g
+  const candidatos: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(block)) !== null) {
+    const s = m[0].trim()
+    if (s.length < 5 || s.length > 100) continue
+    // Pula títulos/labels que ficam em CAPS no PDF da Ezze
+    const sNoPunct = s.replace(/[\.\-']/g, '')
+    if (/^(?:SEGURADO|CORRETOR|CORRETORA|CORRETORES|NOME|NOME SOCIAL|CPF|CNPJ|TELEFONE|EMAIL|E\s*-\s*MAIL|CEP|CIDADE|UF|ESTADO CIVIL|DATA EMISSAO|VIGENCIA|APOLICE|AP[OÓ]LICE|SEGURO|SEGUROS|EZZE|HDI|TOKIO|PORTO|ALLIANZ|BRADESCO|DARWIN|MAPFRE|SUSEP|FIPE|NOVO|VEICULO|VE[IÍ]CULO|MARCA|MODELO|CHASSI|PLACA|ANO MODELO|MATRIZ|FILIAL|RAMO|SUCURSAL|CASADO|SOLTEIRO|DIVORCIADO|VI[UÚ]VO|UNI[AÃ]O EST[AÁ]VEL|SIM|N[AÃ]O|RESERVA|HORAS|VIDROS|COMPREENSIVA|DANOS|ASSIST[EÊ]NCIA|CARRO|FRANQUIA|FRANQUIAS|COBERTURA|COBERTURAS|PARCELAMENTO|PR[EÊ]MIO|TOTAL|LIQUIDO|L[IÍ]QUIDO|IOF|VENCIMENTO|CASCO|VISTORIA|RASTREADOR|BLINDAGEM|FORD|VOLKSWAGEN|FIAT|CHEVROLET|GM|HYUNDAI|RENAULT|HONDA|TOYOTA|NISSAN|JEEP|PEUGEOT|CITROEN|VAN|SEDAN|HATCH|GUAIA[CÇ][AÃ])\b/i.test(sNoPunct)) continue
+    candidatos.push(s)
   }
-  // 2) Fallback: capitalizado
-  for (const l of candidates) {
-    if (SEG_LABELS.test(l)) continue
-    if (/[0-9@]/.test(l)) continue
-    if (/Casado|Solteiro|Divorciado|Vi[uú]vo|Uni[aã]o/i.test(l)) continue
-    if (l.length < 5 || l.length > 100) continue
-    if (/^[A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s'\-\.&]{4,99}$/.test(l)) return l
-  }
-  return null
+  return candidatos[0] ?? null
 }
 
 function pickDocFromBlock(block: string): string | null {
@@ -130,22 +125,30 @@ function parseAuto(rawText: string): EzzeApoliceRow {
   const text = rawText
   const reFirst = (r: RegExp, src = text) => r.exec(src)?.[1]?.trim() ?? null
 
+  // Headers (Auto Individual). Ordem real: Dados da Apólice → Segurado → Corretor
+  // → Questionário → Dados do Veículo → Cobertura → Prêmio Total → Dados de
+  // Pagamento → Serviços → Franquias → Canais de Atendimento → Disposições.
+  // Os \s+ foram trocados por \s* porque pdf-parse às vezes junta palavras de
+  // headers sem whitespace ("DadosdaApólice"). Word boundaries (\b) também
+  // foram removidas pelo mesmo motivo — a primeira ocorrência da string já é
+  // sempre o cabeçalho de seção, antes dos labels/valores das seções seguintes.
   const sections = splitSections(text, [
-    { key: 'dadosApolice', re: /Dados\s+da\s+Ap[oó]lice/i },
-    { key: 'segurado',     re: /\bSegurado\b/i },
-    { key: 'corretor',     re: /\bCorretor\b/i },
-    { key: 'questionario', re: /Question[aá]rio\s+de\s+Avalia/i },
-    { key: 'veiculo',      re: /Dados\s+do\s+Ve[ií]culo/i },
-    { key: 'cobertura',    re: /\bCoberturas?\b/i },
-    { key: 'premioTotal',  re: /Pr[eê]mio\s+Total/i },
-    { key: 'pagamento',    re: /Dados\s+de\s+Pagamento/i },
-    { key: 'servicos',     re: /\bServi[cç]os\b/i },
-    { key: 'franquias',    re: /\bFranquias\b/i },
-    { key: 'canais',       re: /Canais\s+de\s+Atendimento/i }, // marcador final — daqui em diante não capturamos
-    { key: 'disposicoes',  re: /Disposi[cç][õo]es\s+Gerais/i },
+    { key: 'dadosApolice', re: /Dados\s*da\s*Ap[oó]lice/i },
+    { key: 'segurado',     re: /Segurado(?!\s*\(a\))/i }, // exclui "segurado(a)" do questionário
+    { key: 'corretor',     re: /Corretor/i },
+    { key: 'questionario', re: /Question[aá]rio\s*de\s*Avalia/i },
+    { key: 'veiculo',      re: /Dados\s*do\s*Ve[ií]culo/i },
+    { key: 'cobertura',    re: /Cobertura/i },
+    { key: 'premioTotal',  re: /Pr[eê]mio\s*Total/i },
+    { key: 'pagamento',    re: /Dados\s*de\s*Pagamento/i },
+    { key: 'servicos',     re: /Servi[cç]os/i },
+    { key: 'franquias',    re: /Franquias/i },
+    { key: 'canais',       re: /Canais\s*de\s*Atendimento/i }, // marcador final — daqui em diante não capturamos
+    { key: 'disposicoes',  re: /Disposi[cç][õo]es\s*Gerais/i },
   ])
 
-  // Cabeçalho de página (sempre presente, não precisa de seção)
+  // Cabeçalho de página (sempre presente, não precisa de seção). Whitespace é
+  // \s* porque pdf-parse pode juntar labels/valores ("NºApólice:1003...").
   const numero   = reFirst(/N[ºo°]\s*Ap[oó]lice\s*:?\s*(\d+)/i)
   const endosso  = reFirst(/Endosso\s*:?\s*(\d+)/i)
   const proposta = reFirst(/Proposta\s*:?\s*(\d+)/i)
@@ -156,15 +159,30 @@ function parseAuto(rawText: string): EzzeApoliceRow {
   // Dados da Apólice
   const dadosApolice = sections.dadosApolice ?? ''
   const codigoCi    = reFirst(/C[oó]digo\s*CI\s*:?\s*(\d+)/i, dadosApolice) ?? reFirst(/C[oó]digo\s*CI\s*:?\s*(\d+)/i)
-  const tipoSeguro  = reFirst(/Tipo\s+de\s+Seguro\s*:?\s*\n*\s*([^\n]+?)(?:\s*Classe|\s*\n)/i, dadosApolice)
-  const classeBonusStr = reFirst(/Classe\s*b[oô]nus\s*:?\s*\n*\s*(\d+)/i, dadosApolice)
+  const tipoSeguro  = reFirst(/Tipo\s*de\s*Seguro\s*:?\s*([^\n]+?)(?:Classe|\n|$)/i, dadosApolice)
+  const classeBonusStr = reFirst(/Classe\s*b[oô]nus\s*:?\s*(\d+)/i, dadosApolice)
   const classeBonus = classeBonusStr ? Number(classeBonusStr) : null
-  const dataEmissao = reFirst(/Data\s+da\s+Emiss[aã]o\s*:?\s*\n*\s*(\d{2}\/\d{2}\/\d{4})/i, dadosApolice)
-                   ?? reFirst(/Data\s+da\s+Emiss[aã]o\s*:?\s*\n*\s*(\d{2}\/\d{2}\/\d{4})/i)
-  const vig = /das?\s+\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s+dia\s+(\d{2}\/\d{2}\/\d{4})\s+at[eé]\s+\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s+dia\s+(\d{2}\/\d{2}\/\d{4})/i.exec(dadosApolice || text)
+  const dataEmissao = reFirst(/Data\s*da\s*Emiss[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i, dadosApolice)
+                   ?? reFirst(/Data\s*da\s*Emiss[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i)
+  // Vigência: "das 00:00 do dia DD/MM/YYYY até 23:59 do dia DD/MM/YYYY". Mas
+  // pdf-parse junta tudo: "das00:00dodia16/03/2026até23:59dodia16/03/2027" —
+  // tudo \s* permite zero-or-more whitespace entre tokens.
+  const vig = /das?\s*\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s*dia\s*(\d{2}\/\d{2}\/\d{4})\s*at[eé]\s*\d{1,2}\s*:\s*\d{2}\s*h?\s*do\s*dia\s*(\d{2}\/\d{2}\/\d{4})/i.exec(dadosApolice || text)
+            ?? /(\d{2}\/\d{2}\/\d{4})\s*at[eé]\s*[\d:hsdoia\s]*?(\d{2}\/\d{2}\/\d{4})/i.exec(dadosApolice || text)
 
-  // Segurado
-  const segBlock = sections.segurado ?? ''
+  // Segurado. Se o splitSections não conseguiu isolar o bloco (pdf-parse
+  // juntando "Segurado" com a próxima palavra), cai para o texto inteiro até
+  // a primeira ocorrência de "Corretor" — a primeira instância de "Corretor"
+  // sempre é o header de seção (vem antes do label "Corretor:" da linha de
+  // baixo e antes da palavra "Corretora" do nome da empresa).
+  let segBlock = sections.segurado ?? ''
+  if (!segBlock || segBlock.length < 20) {
+    const segIdx = text.search(/Segurado/i)
+    const corIdx = text.search(/Corretor/i)
+    if (segIdx >= 0 && corIdx > segIdx) {
+      segBlock = text.slice(segIdx, corIdx)
+    }
+  }
   const cliente_nome = pickNomeFromBlock(segBlock)
   const cpf_cnpj     = pickDocFromBlock(segBlock)
   const segurado_email = segBlock.match(/([\w.\-+]+@[\w.\-]+\.[A-Za-z]{2,})/)?.[1] ?? null
@@ -329,6 +347,12 @@ function parseAuto(rawText: string): EzzeApoliceRow {
 
   // Texto bruto truncado para debug (vai para coluna pdf_texto_bruto)
   const pdf_texto_bruto = rawText.length > 6000 ? rawText.slice(0, 6000) + '\n…[truncado]' : rawText
+  // Snippets de cada seção (truncados) — vão para `dados.pdf_sections` jsonb
+  // para facilitar debug quando alguma extração estruturada falhar.
+  const trunc = (s: string, n = 800) => (s.length > n ? s.slice(0, n) + '…[truncado]' : s)
+  const pdf_sections = Object.fromEntries(
+    Object.entries(sections).map(([k, v]) => [k, trunc(v)])
+  )
 
   return {
     // chaves snake_case espelham as colunas de seg_stage_apolices
@@ -389,6 +413,7 @@ function parseAuto(rawText: string): EzzeApoliceRow {
     status_apolice: 'ativo',
     layout_pdf: 'ezze-auto',
     pdf_texto_bruto,
+    pdf_sections,
   }
 }
 
