@@ -30,6 +30,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar', adminOnly:true },
   { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing', adminOnly:true },
   { href:'/dashboard/seguradoras',  icon:'🛡️', label:'Seguradoras', section:'Seguradoras', equipeGestao:true },
+  { href:'/dashboard/tokio',        icon:'🌐', label:'Tokio Marine (WS)', section:'Seguradoras', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', section:'Integrações', adminOnly:true },
   { href:'/dashboard/integracoes/meta', icon:'🔗', label:'Conectar Meta', section:'Integrações', adminOnly:true },
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
