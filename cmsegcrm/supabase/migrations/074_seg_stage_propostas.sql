@@ -1,15 +1,9 @@
 -- ─────────────────────────────────────────────────────────────
--- 074_seg_stage_propostas.sql  (v2 — defensiva contra tabela `propostas` pré-existente)
--- Cria a tabela `seg_stage_propostas` para receber importações de propostas
--- (PDF, XLSX, etc.) das seguradoras. Estrutura espelha `seg_stage_apolices`,
--- mas com campos exclusivos de proposta (status_proposta, data_validade,
--- aceite, recusa, etc.).
---
--- Também:
---   1. Estende `seg_importacoes.tipo` p/ aceitar 'propostas'.
---   2. Cria/completa a tabela `propostas` "produção" (mirror reduzido de
---      `apolices`). Como pode já existir uma versão antiga no banco, usamos
---      `add column if not exists` em vez de assumir o schema novo.
+-- 074_seg_stage_propostas.sql  (v3 — ultra-defensiva)
+-- Cria seg_stage_propostas + completa/cria a tabela propostas (produção).
+-- Cada ALTER vai isolado num DO block c/ EXCEPTION pra não derrubar
+-- toda a transação se uma coluna específica conflitar (ex: tabela ou view
+-- pré-existente com schema incompatível).
 -- ─────────────────────────────────────────────────────────────
 
 -- 1. Estende o check de tipo em seg_importacoes ───────────────────
@@ -21,77 +15,103 @@ begin
 exception when others then null;
 end $$;
 
--- 2. Tabela de produção `propostas` (cria se não existir) ─────────
--- Schema mínimo (apenas id+timestamps). Todas as outras colunas são
--- adicionadas via `alter table add column if not exists` abaixo, para
--- conviver com instalações antigas que já tinham um `propostas` parcial.
+-- 2. Tabela de produção `propostas` ──────────────────────────────
+-- Se já existir como VIEW (não tabela), renomeia ela como `propostas_legacy`
+-- pra liberar o nome.
+do $$
+declare
+  v_kind char;
+begin
+  select c.relkind into v_kind
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'propostas';
+  if v_kind = 'v' then
+    execute 'alter view public.propostas rename to propostas_legacy_view';
+  end if;
+exception when others then null;
+end $$;
+
+-- Cria tabela mínima (se não existir)
 create table if not exists public.propostas (
   id              uuid primary key default uuid_generate_v4(),
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
 );
 
--- 3. Garante todas as colunas (idempotente) ───────────────────────
-alter table public.propostas
-  add column if not exists numero            text,
-  add column if not exists proposta_endosso  text,
-  add column if not exists cliente_id        uuid references public.clientes(id) on delete set null,
-  add column if not exists nome_segurado     text,
-  add column if not exists cpf_cnpj_segurado text,
-  add column if not exists seguradora        text,
-  add column if not exists ramo              text,
-  add column if not exists produto           text,
-  add column if not exists vigencia_ini      date,
-  add column if not exists vigencia_fim      date,
-  add column if not exists emissao           date,
-  add column if not exists data_validade     date,
-  add column if not exists premio            numeric(14,2),
-  add column if not exists premio_liquido    numeric(14,2),
-  add column if not exists iof               numeric(14,2),
-  add column if not exists premio_total      numeric(14,2),
-  add column if not exists qtd_parcelas      int,
-  add column if not exists forma_pagamento   text,
-  add column if not exists status            text,
-  add column if not exists apolice_id        uuid references public.apolices(id) on delete set null,
-  add column if not exists status_assinatura text,
-  add column if not exists proposta_assinada boolean default false,
-  add column if not exists placa             text,
-  add column if not exists observacao        text,
-  add column if not exists fonte             text,
-  add column if not exists arquivo_url       text;
+-- 3. Adiciona cada coluna isoladamente (DO block por coluna) ──────
+-- Assim se uma falhar, as outras continuam.
+do $$ begin alter table public.propostas add column if not exists numero            text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists proposta_endosso  text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists nome_segurado     text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists cpf_cnpj_segurado text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists seguradora        text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists ramo              text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists produto           text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists vigencia_ini      date; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists vigencia_fim      date; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists emissao           date; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists data_validade     date; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists premio            numeric(14,2); exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists premio_liquido    numeric(14,2); exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists iof               numeric(14,2); exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists premio_total      numeric(14,2); exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists qtd_parcelas      int; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists forma_pagamento   text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists status            text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists status_assinatura text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists proposta_assinada boolean default false; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists placa             text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists observacao        text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists fonte             text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists arquivo_url       text; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists cliente_id        uuid; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists apolice_id        uuid; exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists created_at        timestamptz default now(); exception when others then null; end $$;
+do $$ begin alter table public.propostas add column if not exists updated_at        timestamptz default now(); exception when others then null; end $$;
 
--- Default + check no `status` (só aplica se a coluna acabou de ser criada)
+-- FKs separadas (podem falhar se cliente/apolice já estiver referenciada)
+do $$ begin
+  alter table public.propostas
+    add constraint propostas_cliente_id_fkey
+    foreign key (cliente_id) references public.clientes(id) on delete set null;
+exception when others then null; end $$;
+do $$ begin
+  alter table public.propostas
+    add constraint propostas_apolice_id_fkey
+    foreign key (apolice_id) references public.apolices(id) on delete set null;
+exception when others then null; end $$;
+
+-- 4. Backfill + check em status ──────────────────────────────────
 do $$
 begin
-  -- Backfill rápido: se houver registros antigos com status NULL ou inválido,
-  -- assume 'em_analise' antes de aplicar o check.
   update public.propostas
      set status = 'em_analise'
    where status is null
       or status not in ('em_analise','aceita','recusada','expirada','convertida','cancelada');
-
+exception when others then null;
+end $$;
+do $$ begin
   alter table public.propostas alter column status set default 'em_analise';
-  alter table public.propostas alter column status set not null;
-
+exception when others then null; end $$;
+do $$ begin
   alter table public.propostas drop constraint if exists propostas_status_check;
   alter table public.propostas add constraint propostas_status_check
     check (status in ('em_analise','aceita','recusada','expirada','convertida','cancelada'));
-exception when others then null;
-end $$;
+exception when others then null; end $$;
 
-create index if not exists idx_propostas_cliente on public.propostas(cliente_id);
-create index if not exists idx_propostas_numero  on public.propostas(numero);
-create index if not exists idx_propostas_status  on public.propostas(status);
-create index if not exists idx_propostas_seg     on public.propostas(seguradora);
-create index if not exists idx_propostas_validade on public.propostas(data_validade) where data_validade is not null;
+-- 5. Índices ─────────────────────────────────────────────────────
+do $$ begin create index if not exists idx_propostas_cliente  on public.propostas(cliente_id); exception when others then null; end $$;
+do $$ begin create index if not exists idx_propostas_numero   on public.propostas(numero);     exception when others then null; end $$;
+do $$ begin create index if not exists idx_propostas_status   on public.propostas(status);     exception when others then null; end $$;
+do $$ begin create index if not exists idx_propostas_seg      on public.propostas(seguradora); exception when others then null; end $$;
+do $$ begin create index if not exists idx_propostas_validade on public.propostas(data_validade) where data_validade is not null; exception when others then null; end $$;
 
--- 4. Tabela de staging (recebe linhas brutas das importações) ──────
+-- 6. Tabela de staging ────────────────────────────────────────────
 create table if not exists public.seg_stage_propostas (
   id              uuid primary key default uuid_generate_v4(),
   seguradora_id   uuid not null references public.seguradoras(id) on delete cascade,
   importacao_id   uuid references public.seg_importacoes(id) on delete set null,
-
-  -- ── Identificação principal ──────────────────────────────────
   numero                    text,
   data_emissao              date,
   vigencia_ini              date,
@@ -108,8 +128,6 @@ create table if not exists public.seg_stage_propostas (
   codigo_ci                 text,
   status_proposta           text,
   numero_cotacao            text,
-
-  -- ── Segurado / proponente ────────────────────────────────────
   cliente_nome              text,
   cpf_cnpj                  text,
   segurado_nome_social      text,
@@ -134,8 +152,6 @@ create table if not exists public.seg_stage_propostas (
   segurado_profissao        text,
   segurado_renda            numeric(14,2),
   segurado_pais_nascimento  text,
-
-  -- ── Condutor principal ───────────────────────────────────────
   condutor_nome             text,
   condutor_cpf              text,
   condutor_data_nasc        date,
@@ -146,8 +162,6 @@ create table if not exists public.seg_stage_propostas (
   condutor_cobertura_jovem  text,
   tipo_residencia           text,
   residentes_18_24          text,
-
-  -- ── Veículo ──────────────────────────────────────────────────
   marca                     text,
   modelo                    text,
   ano_fabricacao            text,
@@ -176,8 +190,6 @@ create table if not exists public.seg_stage_propostas (
   dispositivo_antifurto     text,
   rastreador                text,
   acessorios                text,
-
-  -- ── Coberturas (jsonb) ───────────────────────────────────────
   coberturas                jsonb,
   coberturas_adicionais     jsonb,
   franquias                 jsonb,
@@ -185,8 +197,6 @@ create table if not exists public.seg_stage_propostas (
   assistencias              jsonb,
   clausulas                 jsonb,
   descontos_aplicados       jsonb,
-
-  -- ── Prêmio detalhado ─────────────────────────────────────────
   premio_liquido            numeric(14,2),
   premio_auto               numeric(14,2),
   premio_rcf                numeric(14,2),
@@ -204,8 +214,6 @@ create table if not exists public.seg_stage_propostas (
   descontos                 numeric(14,2),
   premio_total              numeric(14,2),
   premio                    numeric(14,2),
-
-  -- ── Pagamento ────────────────────────────────────────────────
   forma_pagamento           text,
   qtd_parcelas              int,
   valor_parcela             numeric(14,2),
@@ -221,16 +229,12 @@ create table if not exists public.seg_stage_propostas (
   conta_pagto               text,
   dia_vencimento            int,
   parcelas                  jsonb,
-
-  -- ── Histórico do seguro anterior ─────────────────────────────
   seguradora_anterior       text,
   apolice_anterior          text,
   fim_vigencia_anterior     date,
   sinistro_ult_vigencia     text,
   bonus_unico               text,
   renovacao_seguradora      text,
-
-  -- ── Corretor ─────────────────────────────────────────────────
   corretor_nome             text,
   corretor_cnpj             text,
   corretor_susep            text,
@@ -241,15 +245,11 @@ create table if not exists public.seg_stage_propostas (
   corretor_filial           text,
   corretor_inspetoria       text,
   corretor_participacao     numeric(8,4),
-
-  -- ── Sucursal / seguradora ────────────────────────────────────
   sucursal_codigo           text,
   sucursal_nome             text,
   processo_susep            text,
   congenere                 text,
   tipo_operacao             text,
-
-  -- ── Universais / debug ───────────────────────────────────────
   seguradora_origem         text,
   layout_pdf                text,
   pdf_texto_bruto           text,
@@ -263,51 +263,36 @@ create table if not exists public.seg_stage_propostas (
   sincronizado_em           timestamptz
 );
 
-create index if not exists idx_seg_stage_prop_seg on public.seg_stage_propostas(seguradora_id);
-create index if not exists idx_seg_stage_prop_st  on public.seg_stage_propostas(status);
-create index if not exists idx_seg_stage_prop_num on public.seg_stage_propostas(numero);
-create index if not exists idx_seg_stage_prop_cpf on public.seg_stage_propostas(cpf_cnpj);
+do $$ begin create index if not exists idx_seg_stage_prop_seg on public.seg_stage_propostas(seguradora_id); exception when others then null; end $$;
+do $$ begin create index if not exists idx_seg_stage_prop_st  on public.seg_stage_propostas(status);        exception when others then null; end $$;
+do $$ begin create index if not exists idx_seg_stage_prop_num on public.seg_stage_propostas(numero);        exception when others then null; end $$;
+do $$ begin create index if not exists idx_seg_stage_prop_cpf on public.seg_stage_propostas(cpf_cnpj);      exception when others then null; end $$;
 
--- 5. RLS (mesmas policies de seg_stage_apolices) ───────────────────
-alter table public.seg_stage_propostas enable row level security;
-alter table public.propostas           enable row level security;
+-- 7. RLS ──────────────────────────────────────────────────────────
+do $$ begin alter table public.seg_stage_propostas enable row level security; exception when others then null; end $$;
+do $$ begin alter table public.propostas           enable row level security; exception when others then null; end $$;
 
-do $$
-begin
+do $$ begin
   create policy seg_stage_propostas_admin on public.seg_stage_propostas
     for all to authenticated using (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
     ) with check (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role = 'admin')
     );
-exception when duplicate_object then null;
-end $$;
+exception when duplicate_object then null; end $$;
 
-do $$
-begin
+do $$ begin
   create policy propostas_select on public.propostas
     for select to authenticated using (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role in ('admin','financeiro','vendedor','sdr'))
     );
-exception when duplicate_object then null;
-end $$;
+exception when duplicate_object then null; end $$;
 
-do $$
-begin
+do $$ begin
   create policy propostas_admin_write on public.propostas
     for all to authenticated using (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role in ('admin','financeiro','vendedor'))
     ) with check (
       exists (select 1 from public.users u where u.id = auth.uid() and u.role in ('admin','financeiro','vendedor'))
     );
-exception when duplicate_object then null;
-end $$;
-
-comment on table  public.propostas is
-  'Propostas de seguro (estado pré-apólice). Quando aceita pelo cliente e emitida, vira uma apólice — `apolice_id` referencia o registro emitido.';
-comment on table  public.seg_stage_propostas is
-  'Staging para importação de propostas (PDF/XLSX) — mesma mecânica de seg_stage_apolices.';
-comment on column public.propostas.data_validade is
-  'Data limite até a qual a proposta é válida para aceite. Após esta data, status muda para `expirada`.';
-comment on column public.seg_stage_propostas.seguradora_origem is
-  'ID curto da seguradora detectada pelo parser (allianz, bradesco, hdi, etc.).';
+exception when duplicate_object then null; end $$;
