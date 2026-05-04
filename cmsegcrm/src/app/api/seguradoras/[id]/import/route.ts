@@ -453,6 +453,34 @@ function mapComissao(row: any, seguradora_id: string, importacao_id: string) {
   }
 }
 
+// Mapeamento generico de PROPOSTAS — disponivel para todas as seguradoras.
+// Aceita as variacoes mais comuns de cabecalho usadas pelas seguradoras
+// brasileiras (Allianz, Porto, Bradesco, Tokio, etc.). Os dados crus ficam
+// em `dados` para cobrir colunas nao previstas.
+function mapProposta(row: any, seguradora_id: string, importacao_id: string) {
+  return {
+    seguradora_id, importacao_id,
+    numero_proposta: sStr(pick(row, ['proposta','numero proposta','nr proposta','n proposta','numero_proposta','numproposta','num proposta'])),
+    numero_apolice:  sStr(pick(row, ['apolice','numero apolice','nr apolice','numero_apolice','num apolice'])),
+    cpf_cnpj:        cleanDoc(pick(row, ['cpf','cnpj','documento','cpf/cnpj','cpf cnpj','cpf_cnpj','cpfcnpj'])),
+    cliente_nome:    sStr(pick(row, ['segurado','cliente','nome','cliente_nome','nome segurado','nomesegurado','proponente'])),
+    produto:         sStr(pick(row, ['produto','plano','cobertura'])),
+    ramo:            sStr(pick(row, ['ramo','grupo ramo','ramo seguro'])),
+    premio:          num(pick(row, ['premio','prêmio','premio total','valor proposta','valor','premio liquido'])),
+    comissao_pct:    num(pick(row, ['% comissao','percentual comissao','comissao %','aliquota','pc comissao'])),
+    vigencia_ini:    date(pick(row, ['vigencia inicial','inicio vigencia','vigencia ini','inicio','data inicio'])),
+    vigencia_fim:    date(pick(row, ['vigencia final','fim vigencia','vigencia fim','fim','vencimento','data fim'])),
+    data_proposta:   date(pick(row, ['data proposta','data da proposta','dt proposta','data_proposta','emissao proposta'])),
+    data_emissao:    date(pick(row, ['data emissao','data de emissao','dt emissao','data_emissao'])),
+    placa:           sStr(pick(row, ['placa','placa veiculo'])),
+    situacao:        sStr(pick(row, ['situacao','status','status proposta','situacao proposta'])),
+    corretor_nome:   sStr(pick(row, ['corretor','nome corretor','nomecorretor','corretor nome'])),
+    corretor_susep:  sStr(pick(row, ['susep','codigo susep','corretor susep'])),
+    observacoes:     sStr(pick(row, ['observacao','observacoes','obs','motivo','justificativa'])),
+    dados: row,
+  }
+}
+
 // Mapeamento dedicado para Ezze Seguros.
 // Colunas da planilha: NomeCorretor, DataPagamento, NumeroRecibo, NomeTipoPagamento,
 // NomeSegurado, NumeroApolice, NumeroEndosso, NumeroParcela, ValorBruto, ValorLiquido, NomeProduto
@@ -582,9 +610,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const importacao_id = (imp as any).id as string
   const tabela = TABELAS[tipo]
+  // PDF tem parser dedicado (~120 campos) p/ apólices E propostas; XLSX/CSV
+  // cai no mapper "magro" do main (mapProposta / mapApolice).
   const mapper =
     (tipo === 'propostas' && formato === 'pdf') ? mapPropostaPdf :
-    tipo === 'propostas'     ? mapPropostaPdf :
+    tipo === 'propostas'     ? mapProposta :
     (tipo === 'apolices' && formato === 'pdf') ? mapApolicePdf :
     tipo === 'apolices'      ? mapApolice :
     (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :

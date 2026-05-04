@@ -66,9 +66,12 @@ function mergeCookies(setCookieHeader: string | null) {
 // Quando o configurado falha, varremos algumas variações conhecidas.
 let resolvedLoginPath: string | null = null
 
+// Ordem dos candidatos: o path real (descoberto via 400 “service_key
+// is not present”) é `/Corretor/login` em minúsculo. Mantemos os
+// outros como fallback.
 const LOGIN_PATH_CANDIDATES = [
-  '/Corretor/Login',
   '/Corretor/login',
+  '/Corretor/Login',
   '/Corretor/Autenticar',
   '/Corretor/autenticar',
   '/Corretor/auth',
@@ -80,6 +83,10 @@ const LOGIN_PATH_CANDIDATES = [
   '/login',
 ]
 
+// Header obrigatório descoberto na resposta do servidor:
+//   {"detail":"Required header 'service_key' is not present."}
+// Mantemos serviceKey no body também por compatibilidade — alguns
+// ambientes podem aceitar de qualquer um dos dois jeitos.
 async function tentarLoginEmPath(path: string): Promise<{ ok: boolean; status: number; body: string }> {
   const r = await fetch(`${TOKIO_BASE}${path}`, {
     method: 'POST',
@@ -87,6 +94,9 @@ async function tentarLoginEmPath(path: string): Promise<{ ok: boolean; status: n
       ...BROWSER_HEADERS,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'service_key':  TOKIO_SERVICE_KEY,
+      'serviceKey':   TOKIO_SERVICE_KEY,
+      'Service-Key':  TOKIO_SERVICE_KEY,
       ...(cookieJar ? { 'Cookie': cookieJar } : {}),
     },
     body: JSON.stringify({
@@ -138,7 +148,12 @@ async function tokioLogin(force = false): Promise<string> {
     let token = ''
     try {
       const j = JSON.parse(res.body)
-      token = j.token || j.access_token || j.accessToken || j.Token || ''
+      // Resposta real observada em /Corretor/login:
+      //   {"data":{"auth_token":"eyJ..."}}
+      // Aceitamos também os formatos antigos / variantes.
+      token = j?.data?.auth_token || j?.data?.token || j?.data?.accessToken
+           || j.auth_token || j.authToken
+           || j.token || j.access_token || j.accessToken || j.Token || ''
     } catch {
       token = res.body.replace(/^"|"$/g, '').trim()
     }
@@ -152,26 +167,42 @@ async function tokioLogin(force = false): Promise<string> {
 
 async function tokioGet(servico: string, params: Record<string,string|number> = {}): Promise<string> {
   let token = await tokioLogin()
-  const qs = new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString()
   // `servico` aceita tanto o nome curto ("getApolice") quanto o caminho
   // completo ("/Corretor/getApolice"). Quando vier curto, prefixamos
   // com /Corretor/ conforme documentação oficial.
   const path = servico.startsWith('/') ? servico
              : servico.startsWith('Corretor/') ? `/${servico}`
              : `/Corretor/${servico}`
-  const url = `${TOKIO_BASE}${path}${qs ? `?${qs}` : ''}`
+  const url = `${TOKIO_BASE}${path}`
   const headers = (t: string) => ({
     ...BROWSER_HEADERS,
     'Accept': 'application/xml, application/json, text/xml',
+    'Content-Type': 'application/json',
+    // Header de auth: o servidor exige `auth_token` (snake_case) —
+    // descoberto via "Required header 'auth_token' is not present"
+    // nos serviços. Mantemos as variantes antigas por segurança.
+    'auth_token':    t,
+    'authToken':     t,
+    'Auth-Token':    t,
     'Authorization': `Bearer ${t}`,
-    'token': t,
+    'token':         t,
+    // O servidor exige `service_key` em todas as chamadas — descoberto
+    // ao receber 400 com "Required header 'service_key' is not present"
+    // no /Corretor/login.
+    'service_key':  TOKIO_SERVICE_KEY,
+    'serviceKey':   TOKIO_SERVICE_KEY,
+    'Service-Key':  TOKIO_SERVICE_KEY,
     ...(cookieJar ? { 'Cookie': cookieJar } : {}),
   })
-  let r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
+  // Servidor responde 405 a GET — exige POST com filtros no body.
+  // Mantemos a função com nome "tokioGet" por compatibilidade, mas
+  // o método é POST e os params vão no JSON.
+  const body = JSON.stringify(params || {})
+  let r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
   if (r.status === 401) {
     // Token expirou — refaz login uma vez
     token = await tokioLogin(true)
-    r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
+    r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
   }
   if (!r.ok) throw new Error(`Tokio ${servico} HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
   return await r.text()
@@ -1534,18 +1565,35 @@ export async function POST(request: NextRequest) {
       const cfg = SERVICO_MAP[String(params.servico||'').toUpperCase()]
       if (!cfg) return NextResponse.json({ error: 'parametro `servico` invalido. Use APOLICES|PARCELAS|COMISSOES|SINISTRO|RENOVACAO|PENDENCIA|RECUSA' }, { status: 400 })
 
-      const filtros: Record<string,string> = {}
-      if (params.dataInicio) filtros.dataInicio = String(params.dataInicio)
-      if (params.dataFim)    filtros.dataFim    = String(params.dataFim)
-      if (params.numApolice) filtros.numApolice = String(params.numApolice)
+      // O servidor da Tokio responde 500 (NullPointerException no
+      // controller Java) quando recebe body vazio. Defaultamos para
+      // últimos 30 dias e mandamos várias grafias do mesmo filtro
+      // por compatibilidade — qualquer uma que o serviço aceite vai
+      // ser preenchida.
+      const hojeIso = new Date().toISOString().slice(0, 10)
+      const trintaDiasAtrasIso = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+      const dIni = String(params.dataInicio || trintaDiasAtrasIso)
+      const dFim = String(params.dataFim    || hojeIso)
+      const filtros: Record<string,string> = {
+        dataInicio:       dIni,
+        dataFim:          dFim,
+        dtInicio:         dIni,
+        dtFim:            dFim,
+        dtInicioPeriodo:  dIni,
+        dtFimPeriodo:     dFim,
+      }
+      if (params.numApolice) {
+        filtros.numApolice = String(params.numApolice)
+        filtros.numeroApolice = String(params.numApolice)
+      }
 
       try {
         const xml = await tokioGet(cfg.endpoint, filtros)
         const nome = `tokio-${cfg.endpoint}-${Date.now()}.xml`
         const resultado = await processarArquivo(nome, xml, cfg.tipo)
-        return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, ...resultado })
+        return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, filtros, ...resultado })
       } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+        return NextResponse.json({ error: err.message, filtros }, { status: 500 })
       }
     }
 

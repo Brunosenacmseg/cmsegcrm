@@ -283,7 +283,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
   // ignorando o wrapper .ret. Aceita ".COM", "_E.COM", "_ECOM", "_ECOM.ret".
   function extTipo(nome: string): string | null {
     const lower = nome.toLowerCase()
-    const TIPOS = ['com','cbs','vdn','sre','xpp','xpi','ire','app','api']
+    const TIPOS = ['com','cbs','vdn','sre','xpp','xpi','ire','app','api','si2','sin']
     for (const t of TIPOS) {
       const re = new RegExp(`(?:[._]e?${t})(?:\\.ret)?$`, 'i')
       if (re.test(lower)) return t.toUpperCase()
@@ -306,7 +306,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
   }
   // Tipos com parser implementado: COM (250b), APP/API (120b), IRE (variável)
   if (tipoArquivo && !['COM', 'APP', 'API', 'IRE'].includes(tipoArquivo)) {
-    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Disponíveis: .COM, .APP/.API, .IRE. Aguardando posições oficiais dos demais.`)
+    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado (.SI2/.SIN para sinistros precisa do layout). Disponíveis: .COM, .APP/.API, .IRE.`)
   }
 
   // Tamanho da linha varia por tipo. IRE tem largura variável (cada
@@ -355,7 +355,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
     rows.push({
       linha_num: i + 1,
       tipo_arquivo: tipoArquivo,
-      nome_interno: nomeInterno,
+      _arquivo: nomeInterno,
       linha_raw: l,
       ...parsed,
     })
@@ -756,6 +756,7 @@ export default function SeguradoraDetalhePage() {
             {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
              aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
              aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
+             aba === 'propostas' ? ' registrar a proposta no histórico do cliente (criando o cadastro se necessário).' :
              ' criar/atualizar a apólice e vincular ao cliente.'}
           </p>
         )}
@@ -813,6 +814,7 @@ export default function SeguradoraDetalhePage() {
                 <tr>
                   <th style={th}>Status</th>
                   {aba === 'apolices' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>CPF/CNPJ</th><th style={th}>Vigência</th><th style={th}>Prêmio</th></>}
+                  {aba === 'propostas' && <><th style={th}>Proposta</th><th style={th}>Cliente</th><th style={th}>CPF/CNPJ</th><th style={th}>Produto</th><th style={th}>Prêmio</th><th style={th}>Situação</th></>}
                   {aba === 'sinistros' && <><th style={th}>Sinistro</th><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Data</th><th style={th}>Valor</th></>}
                   {aba === 'inadimplencia' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Parcela</th><th style={th}>Vencimento</th><th style={th}>Valor</th><th style={th}>Atraso</th></>}
                   {aba === 'comissoes' && <><th style={th}>Apólice</th><th style={th}>Cliente</th><th style={th}>Competência</th><th style={th}>Parcela</th><th style={th}>Valor</th></>}
@@ -829,6 +831,14 @@ export default function SeguradoraDetalhePage() {
                       <td style={tdMuted}>{l.cpf_cnpj || '—'}</td>
                       <td style={tdMuted}>{l.vigencia_ini || '—'} → {l.vigencia_fim || '—'}</td>
                       <td style={td}>{fmt(l.premio)}</td>
+                    </>}
+                    {aba === 'propostas' && <>
+                      <td style={tdMono}>{l.numero_proposta || '—'}</td>
+                      <td style={td}>{l.cliente_nome || '—'}</td>
+                      <td style={tdMuted}>{l.cpf_cnpj || '—'}</td>
+                      <td style={td}>{l.produto || '—'}</td>
+                      <td style={td}>{fmt(l.premio)}</td>
+                      <td style={tdMuted}>{l.situacao || '—'}</td>
                     </>}
                     {aba === 'sinistros' && <>
                       <td style={tdMono}>{l.numero_sinistro || '—'}</td>
