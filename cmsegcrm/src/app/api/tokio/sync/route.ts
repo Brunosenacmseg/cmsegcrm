@@ -66,9 +66,12 @@ function mergeCookies(setCookieHeader: string | null) {
 // Quando o configurado falha, varremos algumas variações conhecidas.
 let resolvedLoginPath: string | null = null
 
+// Ordem dos candidatos: o path real (descoberto via 400 “service_key
+// is not present”) é `/Corretor/login` em minúsculo. Mantemos os
+// outros como fallback.
 const LOGIN_PATH_CANDIDATES = [
-  '/Corretor/Login',
   '/Corretor/login',
+  '/Corretor/Login',
   '/Corretor/Autenticar',
   '/Corretor/autenticar',
   '/Corretor/auth',
@@ -80,6 +83,10 @@ const LOGIN_PATH_CANDIDATES = [
   '/login',
 ]
 
+// Header obrigatório descoberto na resposta do servidor:
+//   {"detail":"Required header 'service_key' is not present."}
+// Mantemos serviceKey no body também por compatibilidade — alguns
+// ambientes podem aceitar de qualquer um dos dois jeitos.
 async function tentarLoginEmPath(path: string): Promise<{ ok: boolean; status: number; body: string }> {
   const r = await fetch(`${TOKIO_BASE}${path}`, {
     method: 'POST',
@@ -87,6 +94,9 @@ async function tentarLoginEmPath(path: string): Promise<{ ok: boolean; status: n
       ...BROWSER_HEADERS,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'service_key':  TOKIO_SERVICE_KEY,
+      'serviceKey':   TOKIO_SERVICE_KEY,
+      'Service-Key':  TOKIO_SERVICE_KEY,
       ...(cookieJar ? { 'Cookie': cookieJar } : {}),
     },
     body: JSON.stringify({
@@ -165,6 +175,12 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
     'Accept': 'application/xml, application/json, text/xml',
     'Authorization': `Bearer ${t}`,
     'token': t,
+    // O servidor exige `service_key` em todas as chamadas — descoberto
+    // ao receber 400 com "Required header 'service_key' is not present"
+    // no /Corretor/login.
+    'service_key':  TOKIO_SERVICE_KEY,
+    'serviceKey':   TOKIO_SERVICE_KEY,
+    'Service-Key':  TOKIO_SERVICE_KEY,
     ...(cookieJar ? { 'Cookie': cookieJar } : {}),
   })
   let r = await fetch(url, { headers: headers(token), signal: AbortSignal.timeout(60000) })
