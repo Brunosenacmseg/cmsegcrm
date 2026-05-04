@@ -371,28 +371,18 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
 // apólice + nome, com fallback para criação de cliente sem CPF.
 function parseLinhaPortoCOM(l: string): Record<string, any> {
   if (l.length !== 250) return {}
+  // Apenas linhas de detalhe começam com '1'. Header começa com '0', trailer com '9'.
+  if (l.charAt(0) !== '1') return {}
   const subs = (a: number, b: number) => l.substring(a - 1, b) // 1-indexed inclusive
 
-  // Nº Apólice (13-26): se não for numérico de 6+ dígitos, não é detalhe
-  const numero_apolice = subs(13, 26).trim().replace(/^0+/, '')
-  if (!/^\d{6,}$/.test(numero_apolice)) return {}
+  function moneyField(start: number, len: number, divisor: number): number {
+    const raw = subs(start, start + len - 1)
+    const sign = l.charAt(start + len - 1) // sinal logo após o campo
+    const base = parseInt(raw, 10) / divisor
+    if (!isFinite(base)) return 0
+    return sign === '-' ? -base : base
+  }
 
-  const cliente_nome = subs(149, 199).trim()
-
-  // Prêmio (100-115): 15 dígitos + sinal em 115, divisor 10000
-  const premioStr = subs(100, 114).trim()
-  const premioSign = l.charAt(114) // posição 115 (0-indexed = 114)
-  const premioBase = parseInt(premioStr, 10) / 10000
-  const valor_premio = isFinite(premioBase) ? (premioSign === '-' ? -premioBase : premioBase) : 0
-
-  // Comissão (121-133): 12 dígitos + sinal em 133, divisor 100
-  const comStr = subs(121, 132).trim()
-  const comSign = l.charAt(132) // posição 133
-  const comBase = parseInt(comStr, 10) / 100
-  const valor_comissao = isFinite(comBase) ? (comSign === '-' ? -comBase : comBase) : 0
-
-  // Helper: valida YYYYMMDD e converte → ISO. Retorna null se '00000000'
-  // ou inválida (ano 0, mês 0, dia 0, etc.).
   function ymd8ToIso(s: string): string | null {
     if (!/^\d{8}$/.test(s)) return null
     const y = parseInt(s.slice(0, 4), 10)
@@ -402,19 +392,29 @@ function parseLinhaPortoCOM(l: string): Record<string, any> {
     return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
   }
 
-  // Data Movimento (73-81): 8 dígitos YYYYMMDD — tratada como data_pagamento
-  const data_pagamento = ymd8ToIso(subs(73, 80).trim())
+  // Apólice: pos 14-21 (8 dígitos). Pos 22-26 = endosso (00000 = base).
+  const numero_apolice = subs(14, 21).replace(/^0+/, '') || subs(14, 21)
+  if (!/^\d{4,}$/.test(numero_apolice)) return {}
+  const endosso = subs(22, 26)
 
-  // Data Emissão (89-97): 8 dígitos YYYYMMDD
-  const data_emissao = ymd8ToIso(subs(89, 96).trim())
+  // Prêmio: pos 22-35 (14 dígitos) + sinal pos 36, divisor 10000.
+  // ATENÇÃO: pos 22-26 também é endosso, mas no layout COM esse trecho
+  // representa o valor do prêmio (o "endosso" só aparece em outros tipos).
+  const valor_premio = moneyField(22, 14, 10000)
 
-  // Competência derivada da data de pagamento
-  const competencia = data_pagamento ? data_pagamento.slice(0, 7) : null
+  // Comissão: pos 97-110 (14 dígitos) + sinal pos 111, divisor 10000.
+  const valor_comissao = moneyField(97, 14, 10000)
+
+  // Data emissão (112-119) e data movimento/pagamento (120-127), YYYYMMDD.
+  const data_emissao   = ymd8ToIso(subs(112, 119))
+  const data_pagamento = ymd8ToIso(subs(120, 127))
+  const competencia    = data_pagamento ? data_pagamento.slice(0, 7) : null
 
   return {
     numero_apolice,
-    cliente_nome,
-    cpf_cnpj: null,                  // não existe no layout — cruzar pelo nome+apólice
+    endosso,
+    cliente_nome: null,              // .COM não traz nome — sincronização cruza por apólice
+    cpf_cnpj: null,
     valor_premio,
     valor_comissao,
     data_pagamento,
