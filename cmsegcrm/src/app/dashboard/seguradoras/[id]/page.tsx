@@ -122,33 +122,52 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
   return { rows, tipoArquivo }
 }
 
-// Parser tentativo do layout COM (Comissões Porto). As posições abaixo
-// são CHUTES baseados em layouts CNAB típicos — ATENÇÃO: serão revistas
-// quando o usuário fornecer 5+ linhas reais decodificadas em CP1252 ou
-// o manual oficial da Porto.
+// Parser do layout COM (Comissões Porto). Posições 1-indexed conforme
+// manual da Porto. CPF/CNPJ NÃO vem no arquivo — match será feito por
+// apólice + nome, com fallback para criação de cliente sem CPF.
 function parseLinhaPortoCOM(l: string): Record<string, any> {
   if (l.length !== 250) return {}
-  // Layout TENTATIVO (preliminary guess) — baseado em padrões CNAB
-  const tipo = l.substring(0, 1).trim()              // tipo de registro
-  if (tipo !== '1') return {}                         // só registros de detalhe
-  return {
-    // Estes nomes seguem o que o backend já reconhece via heurística:
-    numero_apolice: l.substring(1, 13).trim(),
-    cpf_cnpj:       l.substring(13, 27).trim(),
-    cliente_nome:   l.substring(27, 67).trim(),
-    competencia:    l.substring(67, 73).trim(),
-    valor_premio:   parseValorCNAB(l.substring(73, 88)),
-    pc_comissao:    parseValorCNAB(l.substring(88, 95), 4),
-    valor_comissao: parseValorCNAB(l.substring(95, 110)),
-  }
-}
+  const subs = (a: number, b: number) => l.substring(a - 1, b) // 1-indexed inclusive
 
-// Valor CNAB: número como string com `decimais` casas implícitas.
-// Ex: "000000000123450" com 2 decimais = 1234.50
-function parseValorCNAB(s: string, decimais = 2): number {
-  const n = Number(s.trim())
-  if (!isFinite(n)) return 0
-  return n / Math.pow(10, decimais)
+  // Nº Apólice (13-26): se não for numérico de 6+ dígitos, não é detalhe
+  const numero_apolice = subs(13, 26).trim().replace(/^0+/, '')
+  if (!/^\d{6,}$/.test(numero_apolice)) return {}
+
+  const cliente_nome = subs(149, 199).trim()
+
+  // Prêmio (100-115): 15 dígitos + sinal em 115, divisor 10000
+  const premioStr = subs(100, 114).trim()
+  const premioSign = l.charAt(114) // posição 115 (0-indexed = 114)
+  const premioBase = parseInt(premioStr, 10) / 10000
+  const valor_premio = isFinite(premioBase) ? (premioSign === '-' ? -premioBase : premioBase) : 0
+
+  // Comissão (121-133): 12 dígitos + sinal em 133, divisor 100
+  const comStr = subs(121, 132).trim()
+  const comSign = l.charAt(132) // posição 133
+  const comBase = parseInt(comStr, 10) / 100
+  const valor_comissao = isFinite(comBase) ? (comSign === '-' ? -comBase : comBase) : 0
+
+  // Data Movimento (73-81): 8 dígitos YYYYMMDD
+  const dMov = subs(73, 80).trim()
+  const data_movimento = /^\d{8}$/.test(dMov) ? `${dMov.slice(0,4)}-${dMov.slice(4,6)}-${dMov.slice(6,8)}` : null
+
+  // Data Emissão (89-97): 8 dígitos YYYYMMDD
+  const dEmi = subs(89, 96).trim()
+  const data_emissao = /^\d{8}$/.test(dEmi) ? `${dEmi.slice(0,4)}-${dEmi.slice(4,6)}-${dEmi.slice(6,8)}` : null
+
+  // Competência derivada da data de movimento
+  const competencia = data_movimento ? data_movimento.slice(0, 7) : null
+
+  return {
+    numero_apolice,
+    cliente_nome,
+    cpf_cnpj: null,                  // não existe no layout — cruzar pelo nome+apólice
+    valor_premio,
+    valor_comissao,
+    data_movimento,
+    data_emissao,
+    competencia,
+  }
 }
 
 // Lê Tokio XML (Comissoes). Extrai cada <DetalheComissao> como uma linha.
