@@ -1565,18 +1565,35 @@ export async function POST(request: NextRequest) {
       const cfg = SERVICO_MAP[String(params.servico||'').toUpperCase()]
       if (!cfg) return NextResponse.json({ error: 'parametro `servico` invalido. Use APOLICES|PARCELAS|COMISSOES|SINISTRO|RENOVACAO|PENDENCIA|RECUSA' }, { status: 400 })
 
-      const filtros: Record<string,string> = {}
-      if (params.dataInicio) filtros.dataInicio = String(params.dataInicio)
-      if (params.dataFim)    filtros.dataFim    = String(params.dataFim)
-      if (params.numApolice) filtros.numApolice = String(params.numApolice)
+      // O servidor da Tokio responde 500 (NullPointerException no
+      // controller Java) quando recebe body vazio. Defaultamos para
+      // últimos 30 dias e mandamos várias grafias do mesmo filtro
+      // por compatibilidade — qualquer uma que o serviço aceite vai
+      // ser preenchida.
+      const hojeIso = new Date().toISOString().slice(0, 10)
+      const trintaDiasAtrasIso = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+      const dIni = String(params.dataInicio || trintaDiasAtrasIso)
+      const dFim = String(params.dataFim    || hojeIso)
+      const filtros: Record<string,string> = {
+        dataInicio:       dIni,
+        dataFim:          dFim,
+        dtInicio:         dIni,
+        dtFim:            dFim,
+        dtInicioPeriodo:  dIni,
+        dtFimPeriodo:     dFim,
+      }
+      if (params.numApolice) {
+        filtros.numApolice = String(params.numApolice)
+        filtros.numeroApolice = String(params.numApolice)
+      }
 
       try {
         const xml = await tokioGet(cfg.endpoint, filtros)
         const nome = `tokio-${cfg.endpoint}-${Date.now()}.xml`
         const resultado = await processarArquivo(nome, xml, cfg.tipo)
-        return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, ...resultado })
+        return NextResponse.json({ ok: true, arquivo: nome, servico: cfg.endpoint, tipo: cfg.tipo, filtros, ...resultado })
       } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 500 })
+        return NextResponse.json({ error: err.message, filtros }, { status: 500 })
       }
     }
 
