@@ -530,35 +530,63 @@ export default function SeguradoraDetalhePage() {
     if (!file) return
     setMsg(null)
     const lower = file.name.toLowerCase()
-    const isEzze = /ezze/i.test(seguradora?.nome || '')
+    const segNome = String(seguradora?.nome || '')
+    const isAllianz = /allianz/i.test(segNome)
+    const isEzze    = /ezze/i.test(segNome)
 
-    // PDF: somente apólices da Ezze. Envia bytes em base64 e o parser roda no servidor.
+    // PDF de apólice: Allianz e Ezze têm parsers dedicados.
+    //  • Allianz vai pro endpoint /api/allianz/import-pdf (multipart) que
+    //    extrai texto, casa cliente por CPF/CNPJ, faz upsert na apólice
+    //    e salva em apolice_itens_auto/coberturas/clausulas/locais/motoristas.
+    //  • Ezze envia bytes em base64 pro endpoint genérico /api/seguradoras/[id]/import,
+    //    que dispara o parser Ezze no servidor.
     if (lower.endsWith('.pdf')) {
-      if (!isEzze || aba !== 'apolices') {
-        setMsg({ tipo: 'err', texto: 'Importação por PDF só está disponível para apólices da Ezze Seguros.' })
+      if (aba !== 'apolices' || (!isAllianz && !isEzze)) {
+        setMsg({
+          tipo: 'err',
+          texto: 'Importação por PDF disponível apenas para apólices da Allianz ou Ezze Seguros.',
+        })
         e.target.value = ''
         return
       }
       setImportando(true)
       try {
-        const buf = await file.arrayBuffer()
-        const pdfBase64 = bufferToBase64(buf)
-        const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
-          method: 'POST',
-          headers: await authHeaders(),
-          body: JSON.stringify({
-            tipo: aba,
-            formato: 'pdf',
-            nome_arquivo: file.name,
-            pdf_base64: pdfBase64,
-          }),
-        })
-        const j = await r.json()
-        if (!r.ok) throw new Error(j?.erro || 'falha na importação')
-        setMsg({
-          tipo: 'ok',
-          texto: `PDF Ezze (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
-        })
+        if (isAllianz) {
+          const fd = new FormData()
+          fd.append('file', file)
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: Record<string, string> = {}
+          if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+          const r = await fetch('/api/allianz/import-pdf', { method: 'POST', headers, body: fd })
+          const j = await r.json()
+          if (!r.ok) throw new Error(j?.erro || 'falha ao importar PDF')
+          const w = (j.warnings || []) as string[]
+          const wtxt = w.length ? ` • ${w.length} aviso${w.length>1?'s':''}` : ''
+          setMsg({
+            tipo: w.length ? 'err' : 'ok',
+            texto: `PDF Allianz (${j.produto}) importado. Apólice ${j.dados_extraidos?.numero_apolice || '—'} ${j.tipo === 'renovada' ? 'renovada' : 'emitida'}.${wtxt}${w.length ? '\n• ' + w.slice(0,3).join('\n• ') : ''}`,
+          })
+        } else {
+          // Ezze
+          const buf = await file.arrayBuffer()
+          const pdfBase64 = bufferToBase64(buf)
+          const r = await fetch(`/api/seguradoras/${params!.id}/import`, {
+            method: 'POST',
+            headers: await authHeaders(),
+            body: JSON.stringify({
+              tipo: aba,
+              formato: 'pdf',
+              nome_arquivo: file.name,
+              pdf_base64: pdfBase64,
+            }),
+          })
+          const j = await r.json()
+          if (!r.ok) throw new Error(j?.erro || 'falha na importação')
+          setMsg({
+            tipo: 'ok',
+            texto: `PDF Ezze (${j.pdf_layout || 'layout?'}) importado: ${j.inseridos} linha(s). Clique em "Sincronizar" para vincular ao CRM.`,
+          })
+        }
         await carregarContagens()
         await carregarLinhas()
       } catch (err: any) {
@@ -745,7 +773,7 @@ export default function SeguradoraDetalhePage() {
 
         {aba !== 'relatorio_clientes' && (
           <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:12 }}>
-            Aceitos: XLSX, CSV, XML (Tokio), ZIP (Allianz — descompacta XLSX/CSV automaticamente), .RET/.COM (Porto). Após importar, clique em <strong style={{ color:'var(--text)' }}>Sincronizar</strong> para vincular ao cliente/apólice e
+            Aceitos: XLSX, CSV, XML (Tokio), ZIP (Allianz — descompacta XLSX/CSV automaticamente), .RET/.COM (Porto), PDF (Allianz — apólice avulsa, na aba Apólices). Após importar, clique em <strong style={{ color:'var(--text)' }}>Sincronizar</strong> para vincular ao cliente/apólice e
             {aba === 'sinistros' ? ' criar negócio no funil Sinistro.' :
              aba === 'inadimplencia' ? ' criar negócio no funil Cobrança e registrar inadimplência no histórico.' :
              aba === 'comissoes' ? ' lançar em Comissões e registrar no histórico da apólice.' :
