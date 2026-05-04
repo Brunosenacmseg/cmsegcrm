@@ -338,7 +338,8 @@ export default function SeguradoraDetalhePage() {
   async function carregarContagens() {
     const c: Record<string, { pend: number; ok: number; err: number }> = {}
     for (const a of ABAS) {
-      const t = TABELAS[a.tipo]
+      const t = TABELAS[a.tipo as Tipo]
+      if (!t) { c[a.tipo] = { pend: 0, ok: 0, err: 0 }; continue }
       const [{ count: p }, { count: o }, { count: e }] = await Promise.all([
         supabase.from(t).select('id', { count: 'exact', head: true }).eq('seguradora_id', params!.id).eq('status', 'pendente'),
         supabase.from(t).select('id', { count: 'exact', head: true }).eq('seguradora_id', params!.id).eq('status', 'sincronizado'),
