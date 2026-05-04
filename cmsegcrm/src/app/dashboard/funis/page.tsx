@@ -1086,6 +1086,9 @@ function FunisPage() {
             <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
               {(funiAtual.etapas||[]).map((etapa: string) => {
                 const cards = negociosFunil.filter(n => n.etapa === etapa)
+                const valorEmAndamento = cards
+                  .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
+                  .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
                 const ehHover = etapaHover === etapa && arrastando
                 return (
                   <div key={etapa}
@@ -1099,9 +1102,15 @@ function FunisPage() {
                     }}
                     style={{width:270,flexShrink:0,display:'flex',flexDirection:'column',gap:8,padding:'10px 8px',borderRadius:12,background:ehHover?'rgba(201,168,76,0.12)':'#f1f3f8',border:'1px solid #e2e6ee',outline:ehHover?'2px dashed rgba(201,168,76,0.5)':'none',outlineOffset:-2,transition:'background 0.15s',maxHeight:'calc(100vh - 200px)',overflowY:'auto'}}>
                   {/* Header coluna */}
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
-                    <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
-                    <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.08)',padding:'1px 7px',borderRadius:10}}>{cards.length}</span>
+                  <div style={{display:'flex',flexDirection:'column',gap:4,padding:'8px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
+                      <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.08)',padding:'1px 7px',borderRadius:10}}>{cards.length}</span>
+                    </div>
+                    <div title="Soma do prêmio das negociações em andamento nesta etapa"
+                      style={{fontSize:11,fontWeight:600,color:'var(--teal)'}}>
+                      R$ {valorEmAndamento.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                    </div>
                   </div>
 
                   {/* Cards */}
