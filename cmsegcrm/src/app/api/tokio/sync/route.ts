@@ -30,6 +30,22 @@ const TOKIO_SERVICE_KEY = process.env.TOKIO_SERVICE_KEY || ''
 
 // Cache simples do token (vive por instância da Lambda)
 let tokenCache: { token: string; exp: number } | null = null
+// Código do corretor extraído do JWT (claim `jti`). É populado no
+// primeiro login bem-sucedido. Usado em headers/body dos serviços
+// porque alguns endpoints exigem o ID do corretor explicitamente.
+let cdCorretorCache: string | null = null
+
+function decodeJwtPayload(jwt: string): any {
+  try {
+    const parts = jwt.split('.')
+    if (parts.length < 2) return null
+    // base64url → base64
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4))
+    const json = Buffer.from(b64 + pad, 'base64').toString('utf8')
+    return JSON.parse(json)
+  } catch { return null }
+}
 
 // Headers genéricos de browser pra evitar bloqueio do Imperva.
 // O WAF da Tokio (X-CDN: Imperva) bloqueia User-Agents de bot/lib.
@@ -160,6 +176,10 @@ async function tokioLogin(force = false): Promise<string> {
     if (!token) throw new Error(`Tokio Login: token não encontrado em ${path}: ${res.body.slice(0,200)}`)
     resolvedLoginPath = path
     tokenCache = { token, exp: Date.now() + 25 * 60 * 1000 }
+    // Extrai o código do corretor do JWT (claim `jti`) — alguns
+    // serviços exigem ele no body como cdCorretor.
+    const payload = decodeJwtPayload(token)
+    if (payload?.jti) cdCorretorCache = String(payload.jti)
     return token
   }
   throw new Error(`Tokio Login: nenhum path aceito. Última tentativa ${ultimo?.path} HTTP ${ultimo?.status}: ${ultimo?.body}`)
@@ -202,21 +222,40 @@ async function tokioGet(servico: string, params: Record<string,string|number> = 
     'Service-Key':  TOKIO_SERVICE_KEY,
     ...(cookieJar ? { 'Cookie': cookieJar } : {}),
   })
+  const paramsComCorretor: any = { ...params }
+  if (cdCorretorCache) {
+    paramsComCorretor.cdCorretor = cdCorretorCache
+    paramsComCorretor.codigoCorretor = cdCorretorCache
+    paramsComCorretor.codCorretor = cdCorretorCache
+  }
   const bodyObj: any = {
-    ...params,
-    filtro:  { ...params },
-    filtros: { ...params },
-    request: { ...params },
-    data:    { ...params },
+    ...paramsComCorretor,
+    filtro:   { ...paramsComCorretor },
+    filtros:  { ...paramsComCorretor },
+    request:  { ...paramsComCorretor },
+    data:     { ...paramsComCorretor },
+    parametros: { ...paramsComCorretor },
   }
   const body = JSON.stringify(bodyObj)
-  let r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
+  // headers com cdCorretor extra
+  const allHeaders = (t: string) => ({
+    ...headers(t),
+    ...(cdCorretorCache ? {
+      'cd_corretor':   cdCorretorCache,
+      'cdCorretor':    cdCorretorCache,
+      'codigo_corretor': cdCorretorCache,
+    } : {}),
+  })
+  let r = await fetch(url, { method: 'POST', headers: allHeaders(token), body, signal: AbortSignal.timeout(60000) })
   if (r.status === 401) {
     // Token expirou — refaz login uma vez
     token = await tokioLogin(true)
-    r = await fetch(url, { method: 'POST', headers: headers(token), body, signal: AbortSignal.timeout(60000) })
+    r = await fetch(url, { method: 'POST', headers: allHeaders(token), body, signal: AbortSignal.timeout(60000) })
   }
-  if (!r.ok) throw new Error(`Tokio ${servico} HTTP ${r.status}: ${(await r.text()).slice(0,200)}`)
+  if (!r.ok) {
+    const respText = (await r.text()).slice(0, 400)
+    throw new Error(`Tokio ${servico} HTTP ${r.status}: ${respText} | enviado: ${body.slice(0, 300)}`)
+  }
   return await r.text()
 }
 
