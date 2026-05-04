@@ -148,7 +148,12 @@ async function tokioLogin(force = false): Promise<string> {
     let token = ''
     try {
       const j = JSON.parse(res.body)
-      token = j.token || j.access_token || j.accessToken || j.Token || ''
+      // Resposta real observada em /Corretor/login:
+      //   {"data":{"auth_token":"eyJ..."}}
+      // Aceitamos também os formatos antigos / variantes.
+      token = j?.data?.auth_token || j?.data?.token || j?.data?.accessToken
+           || j.auth_token || j.authToken
+           || j.token || j.access_token || j.accessToken || j.Token || ''
     } catch {
       token = res.body.replace(/^"|"$/g, '').trim()
     }
