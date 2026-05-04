@@ -135,6 +135,16 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string): Promise<{ ro
   const m = nomeInterno.toLowerCase().match(/\.([a-z]{3})$/)
   const tipoArquivo = m ? m[1].toUpperCase() : null
 
+  // .CBS = mensagem de status/erro curta — não é dado.
+  if (tipoArquivo === 'CBS' || texto.length < 200) {
+    throw new Error(`Arquivo .CBS é uma mensagem da Porto, não dado: "${texto.slice(0, 150).trim()}"`)
+  }
+  // Outros tipos (.APP/.API/.SRE/.IRE/.VDN/.XPP/.XPI) ainda não têm parser
+  // de campos. Aguardando posições oficiais do manual.
+  if (tipoArquivo && tipoArquivo !== 'COM') {
+    throw new Error(`Layout .${tipoArquivo} ainda não tem parser implementado. Atualmente só .COM (Comissões) está pronto. Aguardando posições oficiais.`)
+  }
+
   // Quebra em linhas. Tenta vários separadores; se nada bater, força
   // chunks fixos de 250 chars (alguns layouts CNAB não têm separador).
   let linhas = texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
