@@ -458,7 +458,8 @@ export default function SeguradoraDetalhePage() {
   }
 
   async function reenfileirarErros() {
-    const t = TABELAS[aba]
+    const t = TABELAS[aba as Tipo]
+    if (!t) return
     await supabase.from(t).update({ status: 'pendente', erro_msg: null })
       .eq('seguradora_id', params!.id).eq('status', 'erro')
     await carregarContagens()
