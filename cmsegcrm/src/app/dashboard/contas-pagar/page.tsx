@@ -36,6 +36,20 @@ export default function ContasPagarPage() {
   const [modalPagar, setModalPagar] = useState<any>(null)
   const [formPagar, setFormPagar] = useState({ categoria_id:'', forma_pagto:'PIX', data_pagamento: new Date().toISOString().slice(0,10), obs:'' })
 
+  // Modal de editar (admin pode editar a qualquer momento, inclusive após pago)
+  const [modalEditar, setModalEditar] = useState<any>(null)
+  const emptyEdit = { nome:'', valor:'', vencimento:'', descricao:'', fornecedor:'', categoria_id:'' }
+  const [formEditar, setFormEditar] = useState<any>(emptyEdit)
+  const [salvandoEdit, setSalvandoEdit] = useState(false)
+
+  // Modal de anexos: lista todos os documentos da conta e permite
+  // anexar novos a qualquer momento (inclusive em contas já pagas).
+  const [modalAnexos, setModalAnexos] = useState<any>(null)
+  const [anexosExtras, setAnexosExtras] = useState<any[]>([])
+  const [carregandoAnexos, setCarregandoAnexos] = useState(false)
+  const [enviandoAnexo, setEnviandoAnexo] = useState(false)
+  const fileExtraRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => { init() }, [])
   useEffect(() => { if (profile) carregar() }, [profile, aba, filtroStatus])
 
@@ -152,6 +166,86 @@ export default function ContasPagarPage() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  function abrirEditar(c: any) {
+    setFormEditar({
+      nome: c.nome || '',
+      valor: c.valor != null ? String(c.valor).replace('.', ',') : '',
+      vencimento: c.vencimento || '',
+      descricao: c.descricao || '',
+      fornecedor: c.fornecedor || '',
+      categoria_id: c.categoria_id || '',
+    })
+    setModalEditar(c)
+  }
+
+  async function confirmarEditar() {
+    if (!modalEditar) return
+    if (!formEditar.nome.trim() || !formEditar.valor) { alert('Nome e valor são obrigatórios'); return }
+    setSalvandoEdit(true)
+    try {
+      const r = await fetch('/api/contas-pagar/editar', {
+        method: 'PATCH', headers: await authHeaders(),
+        body: JSON.stringify({
+          conta_id: modalEditar.id,
+          nome: formEditar.nome,
+          valor: formEditar.valor,
+          vencimento: formEditar.vencimento || undefined,
+          descricao: formEditar.descricao,
+          fornecedor: formEditar.fornecedor,
+          categoria_id: formEditar.categoria_id || null,
+        }),
+      })
+      const j = await r.json()
+      if (!r.ok) { alert('Erro: '+j.error); return }
+      setModalEditar(null)
+      await carregar()
+    } finally { setSalvandoEdit(false) }
+  }
+
+  async function abrirAnexos(c: any) {
+    setModalAnexos(c)
+    setAnexosExtras([])
+    setCarregandoAnexos(true)
+    const { data } = await supabase
+      .from('contas_pagar_anexos')
+      .select('*')
+      .eq('conta_id', c.id)
+      .order('created_at', { ascending: false })
+    setAnexosExtras(data || [])
+    setCarregandoAnexos(false)
+  }
+
+  async function enviarAnexoExtra(file: File) {
+    if (!modalAnexos || !profile?.id) return
+    setEnviandoAnexo(true)
+    try {
+      const ts = Date.now()
+      const safe = file.name.replace(/[^\w.\-]/g, '_')
+      const path = `contas_pagar/${modalAnexos.id}/${ts}_${safe}`
+      const { error: errUp } = await supabase.storage.from('cmsegcrm').upload(path, file)
+      if (errUp) { alert('Erro upload: '+errUp.message); return }
+      const { error: errIns } = await supabase.from('contas_pagar_anexos').insert({
+        conta_id: modalAnexos.id,
+        bucket: 'cmsegcrm',
+        path,
+        nome_arquivo: file.name,
+        tipo_mime: file.type,
+        tamanho_kb: Math.round(file.size / 1024),
+        user_id: profile.id,
+      })
+      if (errIns) { alert('Erro ao registrar anexo: '+errIns.message); return }
+      if (fileExtraRef.current) fileExtraRef.current.value = ''
+      await abrirAnexos(modalAnexos)
+    } finally { setEnviandoAnexo(false) }
+  }
+
+  async function removerAnexoExtra(anexo: any) {
+    if (!confirm(`Remover "${anexo.nome_arquivo}"?`)) return
+    await supabase.storage.from(anexo.bucket || 'cmsegcrm').remove([anexo.path])
+    await supabase.from('contas_pagar_anexos').delete().eq('id', anexo.id)
+    if (modalAnexos) await abrirAnexos(modalAnexos)
+  }
+
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
   const isAdmin = profile?.role === 'admin'
@@ -264,6 +358,12 @@ export default function ContasPagarPage() {
                     )}
                     {isAdmin && c.status === 'aprovado' && (
                       <button onClick={()=>abrirPagar(c)} style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>💸 Pagar</button>
+                    )}
+                    {isAdmin && (
+                      <button onClick={()=>abrirEditar(c)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:'pointer'}}>✏️ Editar</button>
+                    )}
+                    {(isAdmin || c.criado_por === profile?.id) && (
+                      <button onClick={()=>abrirAnexos(c)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',cursor:'pointer'}}>📎 Documentos</button>
                     )}
                     {(isAdmin || (c.criado_por === profile?.id && c.status === 'pendente')) && (
                       <button onClick={()=>excluir(c)} style={{padding:'5px 8px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>🗑</button>
@@ -423,6 +523,120 @@ export default function ContasPagarPage() {
               <button onClick={confirmarPagar} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.15)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif'}}>
                 💸 Confirmar pagamento
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalEditar && (
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalEditar(null)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:540,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>✏️ Editar conta</div>
+            <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:18}}>
+              Status atual: <strong style={{color:STATUS_COR[modalEditar.status as Status]}}>{modalEditar.status}</strong>
+              {modalEditar.status === 'pago' && <> · alterações de valor/categoria serão sincronizadas com o DRE</>}
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Categoria</label>
+              <select value={formEditar.categoria_id} onChange={e=>setFormEditar((f:any)=>({...f,categoria_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                <option value="">— sem categoria —</option>
+                {categorias.map(c => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}
+              </select>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Nome / referência *</label>
+              <input value={formEditar.nome} onChange={e=>setFormEditar((f:any)=>({...f,nome:e.target.value}))} style={inp} />
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+              <div>
+                <label style={lbl}>Valor (R$) *</label>
+                <input value={formEditar.valor} onChange={e=>setFormEditar((f:any)=>({...f,valor:e.target.value}))} placeholder="0,00" style={inp} />
+              </div>
+              <div>
+                <label style={lbl}>Vencimento</label>
+                <input type="date" value={formEditar.vencimento} onChange={e=>setFormEditar((f:any)=>({...f,vencimento:e.target.value}))} style={inp} />
+              </div>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Fornecedor</label>
+              <input value={formEditar.fornecedor} onChange={e=>setFormEditar((f:any)=>({...f,fornecedor:e.target.value}))} style={inp} />
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={lbl}>Descrição</label>
+              <textarea value={formEditar.descricao} onChange={e=>setFormEditar((f:any)=>({...f,descricao:e.target.value}))} rows={3} style={{...inp,resize:'none'}} />
+            </div>
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button className="btn-secondary" onClick={()=>setModalEditar(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={confirmarEditar} disabled={salvandoEdit||!formEditar.nome||!formEditar.valor}>
+                {salvandoEdit ? 'Salvando...' : '✓ Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalAnexos && (
+        <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
+          onClick={e=>e.target===e.currentTarget&&setModalAnexos(null)}>
+          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:560,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,marginBottom:6}}>📎 Documentos</div>
+            <div style={{fontSize:13,marginBottom:18}}>
+              <strong>{modalAnexos.nome}</strong>
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={lbl}>Anexar novo documento</label>
+              <input ref={fileExtraRef} type="file" accept="application/pdf,image/*"
+                disabled={enviandoAnexo}
+                onChange={e=>{ const f = e.target.files?.[0]; if (f) enviarAnexoExtra(f) }}
+                style={{...inp,padding:'7px 13px'}} />
+              <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>
+                Você pode anexar comprovantes, notas fiscais e outros documentos a qualquer momento — inclusive após a conta ter sido paga.
+              </div>
+            </div>
+
+            <div style={{borderTop:'1px solid var(--border)',paddingTop:14}}>
+              <div style={{fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}}>Documentos da conta</div>
+
+              {modalAnexos.anexo && (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'8px 10px',border:'1px solid var(--border)',borderRadius:8,marginBottom:8,background:'rgba(255,255,255,0.04)'}}>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>📄 {modalAnexos.anexo.nome_arquivo}</div>
+                    <div style={{fontSize:10,color:'var(--text-muted)'}}>Anexo original</div>
+                  </div>
+                  <button onClick={()=>baixarAnexo(modalAnexos.anexo)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>Abrir</button>
+                </div>
+              )}
+
+              {carregandoAnexos ? (
+                <div style={{fontSize:12,color:'var(--text-muted)'}}>Carregando...</div>
+              ) : anexosExtras.length === 0 && !modalAnexos.anexo ? (
+                <div style={{fontSize:12,color:'var(--text-muted)',padding:'14px 0'}}>Nenhum documento anexado.</div>
+              ) : (
+                anexosExtras.map(a => (
+                  <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'8px 10px',border:'1px solid var(--border)',borderRadius:8,marginBottom:8,background:'rgba(255,255,255,0.04)'}}>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>📄 {a.nome_arquivo}</div>
+                      <div style={{fontSize:10,color:'var(--text-muted)'}}>{Math.round((a.tamanho_kb||0))} KB · {new Date(a.created_at).toLocaleString('pt-BR')}</div>
+                    </div>
+                    <button onClick={()=>baixarAnexo(a)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>Abrir</button>
+                    {(isAdmin || (modalAnexos.criado_por === profile?.id && modalAnexos.status === 'pendente')) && (
+                      <button onClick={()=>removerAnexoExtra(a)} style={{padding:'5px 8px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>🗑</button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:18}}>
+              <button className="btn-secondary" onClick={()=>setModalAnexos(null)}>Fechar</button>
             </div>
           </div>
         </div>
