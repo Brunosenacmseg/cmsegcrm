@@ -23,16 +23,17 @@ type Conta = {
 
 const VAZIO: Conta = {
   from_email: '', from_nome: '', assinatura: '',
-  smtp_host: '', smtp_port: 587, smtp_secure: false, smtp_user: '',
-  imap_host: '', imap_port: 993, imap_secure: true, imap_user: '',
+  smtp_host: 'smtp.oncorretor.com.br', smtp_port: 465, smtp_secure: true, smtp_user: '',
+  imap_host: 'imap.oncorretor.com.br', imap_port: 993, imap_secure: true, imap_user: '',
   ativo: true,
 }
 
 const PRESETS: Array<{ nome: string; smtp_host: string; smtp_port: number; smtp_secure: boolean; imap_host: string }> = [
-  { nome: 'Gmail / Google Workspace', smtp_host: 'smtp.gmail.com',     smtp_port: 587, smtp_secure: false, imap_host: 'imap.gmail.com' },
-  { nome: 'Outlook / Microsoft 365',  smtp_host: 'smtp.office365.com', smtp_port: 587, smtp_secure: false, imap_host: 'outlook.office365.com' },
-  { nome: 'Locaweb',                  smtp_host: 'email-ssl.com.br',   smtp_port: 465, smtp_secure: true,  imap_host: 'imap.email-ssl.com.br' },
-  { nome: 'UOL Host',                 smtp_host: 'smtps.uhserver.com', smtp_port: 465, smtp_secure: true,  imap_host: 'imap.uhserver.com' },
+  { nome: 'Skymail (oncorretor)',     smtp_host: 'smtp.oncorretor.com.br', smtp_port: 465, smtp_secure: true,  imap_host: 'imap.oncorretor.com.br' },
+  { nome: 'Gmail / Google Workspace', smtp_host: 'smtp.gmail.com',         smtp_port: 587, smtp_secure: false, imap_host: 'imap.gmail.com' },
+  { nome: 'Outlook / Microsoft 365',  smtp_host: 'smtp.office365.com',     smtp_port: 587, smtp_secure: false, imap_host: 'outlook.office365.com' },
+  { nome: 'Locaweb',                  smtp_host: 'email-ssl.com.br',       smtp_port: 465, smtp_secure: true,  imap_host: 'imap.email-ssl.com.br' },
+  { nome: 'UOL Host',                 smtp_host: 'smtps.uhserver.com',     smtp_port: 465, smtp_secure: true,  imap_host: 'imap.uhserver.com' },
 ]
 
 export default function EmailPage() {
@@ -191,10 +192,10 @@ export default function EmailPage() {
           <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
             Provedor:&nbsp;
             <select onChange={e => { const p = PRESETS[Number(e.target.value)]; if (p) aplicarPreset(p) }}
-              defaultValue=""
+              defaultValue="0"
               style={{ padding: 6, borderRadius: 6, border: '1px solid var(--border)' }}>
-              <option value="">— escolher preset —</option>
               {PRESETS.map((p, i) => <option key={p.nome} value={i}>{p.nome}</option>)}
+              <option value="">— personalizado —</option>
             </select>
           </div>
 
@@ -209,7 +210,7 @@ export default function EmailPage() {
 
           <h3 style={{ marginTop: 22, marginBottom: 8, fontSize: 14 }}>Envio (SMTP)</h3>
           <Grid>
-            <Field label="Servidor SMTP *"><input value={conta.smtp_host} onChange={e => setConta({ ...conta, smtp_host: e.target.value })} placeholder="smtp.gmail.com" /></Field>
+            <Field label="Servidor SMTP *"><input value={conta.smtp_host} onChange={e => setConta({ ...conta, smtp_host: e.target.value })} placeholder="smtp.oncorretor.com.br" /></Field>
             <Field label="Porta *"><input type="number" value={conta.smtp_port} onChange={e => setConta({ ...conta, smtp_port: Number(e.target.value) })} /></Field>
             <Field label="Usuário *"><input value={conta.smtp_user} onChange={e => setConta({ ...conta, smtp_user: e.target.value })} placeholder="voce@empresa.com.br" /></Field>
             <Field label={temConta ? 'Senha (deixe em branco para manter)' : 'Senha *'}>
@@ -225,7 +226,7 @@ export default function EmailPage() {
 
           <h3 style={{ marginTop: 22, marginBottom: 8, fontSize: 14 }}>Recebimento (IMAP — opcional)</h3>
           <Grid>
-            <Field label="Servidor IMAP"><input value={conta.imap_host || ''} onChange={e => setConta({ ...conta, imap_host: e.target.value })} placeholder="imap.gmail.com" /></Field>
+            <Field label="Servidor IMAP"><input value={conta.imap_host || ''} onChange={e => setConta({ ...conta, imap_host: e.target.value })} placeholder="imap.oncorretor.com.br" /></Field>
             <Field label="Porta"><input type="number" value={conta.imap_port || 993} onChange={e => setConta({ ...conta, imap_port: Number(e.target.value) })} /></Field>
             <Field label="Usuário IMAP"><input value={conta.imap_user || ''} onChange={e => setConta({ ...conta, imap_user: e.target.value })} placeholder="(igual ao SMTP por padrão)" /></Field>
             <Field label="SSL">
