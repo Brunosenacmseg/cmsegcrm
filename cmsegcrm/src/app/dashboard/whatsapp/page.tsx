@@ -59,9 +59,7 @@ export default function WhatsAppPage() {
   const [textoEnvio, setTextoEnvio]       = useState('')
   const [loading, setLoading]             = useState(true)
   const [loadingQR, setLoadingQR]         = useState(false)
-  const [modalConfig, setModalConfig]     = useState(false)
   const [enviando, setEnviando]           = useState(false)
-  const [config, setConfig]               = useState({ evo_url:'', api_key:'', nome:'' })
   const msgFimRef  = useRef<HTMLDivElement>(null)
   const fileRef    = useRef<HTMLInputElement>(null)
   const audioRef   = useRef<HTMLInputElement>(null)
@@ -191,26 +189,6 @@ export default function WhatsAppPage() {
     }
   }
 
-  async function gerarQRCode() {
-    if (!instancia) return
-    setLoadingQR(true)
-    let ultimoErro = ''
-    for (let i = 0; i < 10; i++) {
-      const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'qrcode', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
-      const data = await res.json()
-      if (data?.base64) {
-        await supabase.from('whatsapp_instancias').update({ qrcode: data.base64, status:'qrcode' }).eq('id', instancia.id)
-        setInstancia((prev: any) => ({ ...prev, qrcode: data.base64, status:'qrcode' }))
-        setLoadingQR(false)
-        return
-      }
-      if (data?.error) ultimoErro = data.error
-      await new Promise(r => setTimeout(r, 3000))
-    }
-    setLoadingQR(false)
-    alert('Não foi possível gerar o QR Code.' + (ultimoErro ? `\n\nMotivo: ${ultimoErro}` : '\n\nVerifique se a Evolution API está acessível.'))
-  }
-
   async function desconectar() {
     if (!instancia || !confirm('Desconectar WhatsApp?')) return
     await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'desconectar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
@@ -232,28 +210,52 @@ export default function WhatsAppPage() {
     setInstancia((p:any) => ({ ...p, agente_ativo: ativo }))
   }
 
-  async function salvarConfig() {
-    const { data: { user } } = await supabase.auth.getUser()
-    const nomeInst = (config.nome || `corretor_${user?.id?.slice(0,8)}`).trim()
-    // URL/API key vêm do servidor (env) — só envia se o admin tiver
-    // sobrescrito manualmente no formulário avançado.
-    const { data: inst } = await supabase.from('whatsapp_instancias').upsert({
-      user_id: user?.id,
-      nome: nomeInst,
-      evolution_url: config.evo_url || null,
-      api_key:       config.api_key || null,
-      status: 'disconnected',
-    }).select().single()
-    setInstancia(inst)
-    setModalConfig(false)
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'criar_instancia', evo_url:config.evo_url||undefined, api_key:config.api_key||undefined, instance:nomeInst }) })
-    const data = await res.json()
-    const qrBase64 = data?.base64 || data?.qrcode?.base64
-    if (qrBase64) {
-      await supabase.from('whatsapp_instancias').update({ qrcode: qrBase64, status:'qrcode' }).eq('id', inst.id)
-      setInstancia((prev: any) => ({ ...prev, qrcode: qrBase64, status:'qrcode' }))
-    } else if (data?.error) {
-      alert('Não foi possível gerar o QR Code.\n\nMotivo: ' + data.error)
+  async function conectarWhatsApp() {
+    setLoadingQR(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setLoadingQR(false); return }
+
+      let inst = instancia
+      if (!inst) {
+        const sug = (profile?.nome||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split(/\s+/).filter(Boolean)[0]
+        const nomeInst = (sug ? `corretor_${sug}` : `corretor_${user.id.slice(0,8)}`).replace(/[^a-z0-9_]/g,'')
+        const { data: novaInst } = await supabase.from('whatsapp_instancias').upsert({
+          user_id: user.id, nome: nomeInst, status: 'disconnected',
+        }).select().single()
+        inst = novaInst
+        setInstancia(inst)
+      }
+      if (!inst) { setLoadingQR(false); alert('Não foi possível criar a instância no banco.'); return }
+
+      const r1 = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'criar_instancia', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome }) })
+      const d1 = await r1.json()
+      const qr1 = d1?.base64 || d1?.qrcode?.base64
+      if (qr1) {
+        await supabase.from('whatsapp_instancias').update({ qrcode: qr1, status:'qrcode' }).eq('id', inst.id)
+        setInstancia((p:any) => ({ ...p, qrcode: qr1, status:'qrcode' }))
+        setLoadingQR(false)
+        return
+      }
+
+      let ultimoErro = d1?.error || ''
+      for (let i = 0; i < 10; i++) {
+        const r2 = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'qrcode', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome }) })
+        const d2 = await r2.json()
+        if (d2?.base64) {
+          await supabase.from('whatsapp_instancias').update({ qrcode: d2.base64, status:'qrcode' }).eq('id', inst.id)
+          setInstancia((p:any) => ({ ...p, qrcode: d2.base64, status:'qrcode' }))
+          setLoadingQR(false)
+          return
+        }
+        if (d2?.error) ultimoErro = d2.error
+        await new Promise(r => setTimeout(r, 3000))
+      }
+      setLoadingQR(false)
+      alert('Não foi possível gerar o QR Code.' + (ultimoErro ? `\n\nMotivo: ${ultimoErro}` : '\n\nVerifique se a Evolution API está acessível.'))
+    } catch (err: any) {
+      setLoadingQR(false)
+      alert('Erro: ' + (err?.message || 'desconhecido'))
     }
   }
 
@@ -456,11 +458,9 @@ export default function WhatsAppPage() {
             <div style={{fontSize:56,marginBottom:16}}>💬</div>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:22,marginBottom:8}}>WhatsApp no CM Seguros</div>
             <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:28,lineHeight:1.6}}>Conecte seu número do WhatsApp para enviar e receber mensagens diretamente do CRM.</div>
-            <button className="btn-primary" style={{padding:'12px 28px',fontSize:14}} onClick={()=>{
-              const sug = (profile?.nome||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/\s+/).filter(Boolean)[0]
-              if (sug) setConfig(c=>({...c, nome: c.nome || `corretor_${sug}`}))
-              setModalConfig(true)
-            }}>⚙ Configurar WhatsApp</button>
+            <button className="btn-primary" style={{padding:'12px 28px',fontSize:14}} onClick={conectarWhatsApp} disabled={loadingQR}>
+              {loadingQR ? 'Gerando QR Code...' : '📱 Conectar WhatsApp'}
+            </button>
           </div>
         </div>
       )}
@@ -485,13 +485,8 @@ export default function WhatsAppPage() {
               </div>
               {instancia.numero&&<div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>📱 {instancia.numero}</div>}
               <div style={{display:'flex',gap:6}}>
-                {instancia.status!=='connected'&&<button onClick={gerarQRCode} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>{loadingQR?'...':'📱 Conectar'}</button>}
+                {instancia.status!=='connected'&&<button onClick={conectarWhatsApp} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>{loadingQR?'...':'📱 Conectar'}</button>}
                 {instancia.status==='connected'&&<button onClick={desconectar} style={{flex:1,fontSize:11,background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Desconectar</button>}
-                <button onClick={()=>{
-                  const sug = (profile?.nome||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/\s+/).filter(Boolean)[0]
-                  if (sug) setConfig(c=>({...c, nome: c.nome || `corretor_${sug}`}))
-                  setModalConfig(true)
-                }} style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 8px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>⚙️</button>
               </div>
             </div>
 
@@ -771,27 +766,6 @@ export default function WhatsAppPage() {
               )}
             </div>
             <button className="btn-secondary" onClick={()=>setModalVincular(false)} style={{width:'100%'}}>Cancelar</button>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Config */}
-      {modalConfig&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(5,12,26,0.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}
-          onClick={e=>e.target===e.currentTarget&&setModalConfig(false)}>
-          <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:18,padding:'30px 32px',width:480,maxWidth:'95vw'}}>
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)',marginBottom:6}}>Conectar WhatsApp</div>
-            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:20}}>Escolha um nome para sua instância e clique em Conectar para ler o QR Code.</div>
-            <div style={{marginBottom:14}}>
-              <label className="label">Nome da instância</label>
-              <input className="input" placeholder="ex: corretor_bruno"
-                value={config.nome}
-                onChange={e=>setConfig(c=>({...c,nome:e.target.value.replace(/\s+/g,'_').toLowerCase()}))} />
-            </div>
-            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
-              <button className="btn-secondary" onClick={()=>setModalConfig(false)}>Cancelar</button>
-              <button className="btn-primary" onClick={salvarConfig} disabled={!config.nome.trim()}>🔗 Conectar</button>
-            </div>
           </div>
         </div>
       )}
