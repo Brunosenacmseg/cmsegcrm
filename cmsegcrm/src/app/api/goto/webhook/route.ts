@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     if (stateType === 'STARTING') {
       // Verificar se já existe
-      const { data: existing } = await supabaseAdmin
+      const { data: existing } = await supabaseAdmin()
         .from('ligacoes')
         .select('id')
         .eq('goto_conversation_id', conversationId)
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         let clienteId = null
         const numeroParaBusca = (direction === 'entrante' ? numeroOrigem : numeroDestino).replace(/\D/g, '').slice(-11)
         if (numeroParaBusca) {
-          const { data: cliente } = await supabaseAdmin
+          const { data: cliente } = await supabaseAdmin()
             .from('clientes')
             .select('id')
             .ilike('telefone', `%${numeroParaBusca}%`)
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (stateType === 'ENDING' || stateType === 'ENDED') {
-      const { data: ligacao } = await supabaseAdmin
+      const { data: ligacao } = await supabaseAdmin()
         .from('ligacoes')
         .select('inicio')
         .eq('goto_conversation_id', conversationId)

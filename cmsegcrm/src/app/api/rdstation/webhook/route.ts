@@ -89,28 +89,33 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
   }
   if (clienteId) payload.cliente_id = clienteId
 
-  const { data: existente } = await supabaseAdmin().from('negocios').select('id, etapa').eq('rd_id', id).maybeSingle()
+  const { data: existente, error: errSel } = await supabaseAdmin().from('negocios').select('id, etapa').eq('rd_id', id).maybeSingle()
+  if (errSel) return { ok: false, motivo: `select negocios: ${errSel.message}` }
   if (existente) {
-    await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
+    const { error: errUp } = await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
+    if (errUp) return { ok: false, motivo: `update negocios: ${errUp.message}` }
     if (existente.etapa !== etapa) {
-      await supabaseAdmin().from('historico').insert({
+      const { error: errHist } = await supabaseAdmin().from('historico').insert({
         negocio_id: existente.id, cliente_id: clienteId, tipo: 'blue',
         titulo: `🔄 Etapa atualizada via RD Station`,
         descricao: `${existente.etapa} → ${etapa}`,
       })
+      if (errHist) return { ok: false, motivo: `insert historico: ${errHist.message}` }
     }
     return { ok: true, action: 'updated', id: existente.id }
   } else {
     if (!payload.cliente_id) {
-      const { data: ph } = await supabaseAdmin().from('clientes').insert({
+      const { data: ph, error: errCli } = await supabaseAdmin().from('clientes').insert({
         nome: d.organization?.name || d.name || 'Sem cliente (RD)',
         tipo: d.organization?.name ? 'PJ' : 'PF',
         fonte: 'RD Station CRM',
       }).select('id').single()
+      if (errCli) return { ok: false, motivo: `insert cliente placeholder: ${errCli.message}` }
       payload.cliente_id = ph?.id
     }
     if (!payload.cliente_id) return { ok: false, motivo: 'Não foi possível criar cliente' }
-    const { data: novo } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
+    const { data: novo, error: errIns } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
+    if (errIns) return { ok: false, motivo: `insert negocios: ${errIns.message}` }
     return { ok: true, action: 'created', id: novo?.id }
   }
 }
@@ -134,12 +139,15 @@ async function aplicarContact(c: RDContact) {
     fonte: c.source?.name || 'RD Station CRM',
   }
 
-  const { data: existente } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', id).maybeSingle()
+  const { data: existente, error: errSel } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', id).maybeSingle()
+  if (errSel) return { ok: false, motivo: `select clientes: ${errSel.message}` }
   if (existente) {
-    await supabaseAdmin().from('clientes').update(payload).eq('id', existente.id)
+    const { error: errUp } = await supabaseAdmin().from('clientes').update(payload).eq('id', existente.id)
+    if (errUp) return { ok: false, motivo: `update clientes: ${errUp.message}` }
     return { ok: true, action: 'updated', id: existente.id }
   } else {
-    const { data: novo } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
+    const { data: novo, error: errIns } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
+    if (errIns) return { ok: false, motivo: `insert clientes: ${errIns.message}` }
     return { ok: true, action: 'created', id: novo?.id }
   }
 }
@@ -196,65 +204,80 @@ export async function POST(request: NextRequest) {
   const evento = detectarEvento(body)
 
   // Logar payload para debug (limitado)
-  await supabaseAdmin().from('rdstation_syncs').insert({
+  const { data: logRow } = await supabaseAdmin().from('rdstation_syncs').insert({
     recurso: `webhook:${evento}`,
     status: 'processando',
     qtd_lidos: 1,
     erros: [JSON.stringify(body).slice(0, 1500)],
-  }).select('id').single().then(async ({ data }) => {
-    if (!data?.id) return
-    try {
-      const deal = extrairDeal(body)
-      const contact = extrairContact(body)
-      let resultado: any = null
+  }).select('id').single()
 
-      if (evento === 'deal_deleted') {
-        const doc = extrairDocumento(body)
-        const id = doc?._id || doc?.id || body?.deal?._id || body?.deal?.id
-        if (id) {
-          const { data: existe } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
-          if (existe) {
-            await supabaseAdmin().from('negocios').delete().eq('id', existe.id)
-            resultado = { ok: true, action: 'deleted', id: existe.id }
-          }
+  let resultado: any = { ok: false, motivo: 'não processado' }
+  try {
+    const deal = extrairDeal(body)
+    const contact = extrairContact(body)
+
+    if (evento === 'deal_deleted') {
+      const doc = extrairDocumento(body)
+      const id = doc?._id || doc?.id || body?.deal?._id || body?.deal?.id
+      if (id) {
+        const { data: existe, error: errSel } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
+        if (errSel) {
+          resultado = { ok: false, motivo: `select negocios: ${errSel.message}` }
+        } else if (existe) {
+          const { error: errDel } = await supabaseAdmin().from('negocios').delete().eq('id', existe.id)
+          resultado = errDel
+            ? { ok: false, motivo: `delete negocios: ${errDel.message}` }
+            : { ok: true, action: 'deleted', id: existe.id }
+        } else {
+          resultado = { ok: true, action: 'noop', motivo: 'negócio não existia' }
         }
-      } else if (evento === 'contact_deleted') {
-        const doc = extrairDocumento(body)
-        const id = doc?._id || doc?.id
-        if (id) {
-          const { data: existe } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', id).maybeSingle()
-          if (existe) {
-            await supabaseAdmin().from('clientes').delete().eq('id', existe.id)
-            resultado = { ok: true, action: 'deleted', id: existe.id }
-          }
-        }
-      } else if (deal) {
-        resultado = await aplicarDeal(deal, evento)
-      } else if (contact) {
-        resultado = await aplicarContact(contact)
       } else {
-        resultado = { ok: false, motivo: 'Tipo de evento não suportado' }
+        resultado = { ok: false, motivo: 'deal_deleted sem id' }
       }
-
-      await supabaseAdmin().from('rdstation_syncs').update({
-        status: resultado?.ok ? 'concluido' : 'erro',
-        qtd_criados: resultado?.action === 'created' ? 1 : 0,
-        qtd_atualizados: resultado?.action === 'updated' ? 1 : 0,
-        qtd_erros: resultado?.ok ? 0 : 1,
-        erros: resultado?.ok ? null : [resultado?.motivo || 'erro desconhecido'],
-        concluido_em: new Date().toISOString(),
-      }).eq('id', data.id)
-    } catch (err: any) {
-      await supabaseAdmin().from('rdstation_syncs').update({
-        status: 'erro', qtd_erros: 1,
-        erros: [err?.message?.slice(0, 200) || 'erro'],
-        concluido_em: new Date().toISOString(),
-      }).eq('id', data.id)
+    } else if (evento === 'contact_deleted') {
+      const doc = extrairDocumento(body)
+      const id = doc?._id || doc?.id
+      if (id) {
+        const { data: existe, error: errSel } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', id).maybeSingle()
+        if (errSel) {
+          resultado = { ok: false, motivo: `select clientes: ${errSel.message}` }
+        } else if (existe) {
+          const { error: errDel } = await supabaseAdmin().from('clientes').delete().eq('id', existe.id)
+          resultado = errDel
+            ? { ok: false, motivo: `delete clientes: ${errDel.message}` }
+            : { ok: true, action: 'deleted', id: existe.id }
+        } else {
+          resultado = { ok: true, action: 'noop', motivo: 'cliente não existia' }
+        }
+      } else {
+        resultado = { ok: false, motivo: 'contact_deleted sem id' }
+      }
+    } else if (deal) {
+      resultado = await aplicarDeal(deal, evento)
+    } else if (contact) {
+      resultado = await aplicarContact(contact)
+    } else {
+      resultado = { ok: false, motivo: 'Tipo de evento não suportado' }
     }
-  })
+  } catch (err: any) {
+    resultado = { ok: false, motivo: err?.message?.slice(0, 200) || 'erro' }
+  }
 
-  // Responder rápido pra RD não fazer retry
-  return NextResponse.json({ ok: true, evento })
+  if (logRow?.id) {
+    await supabaseAdmin().from('rdstation_syncs').update({
+      status: resultado?.ok ? 'concluido' : 'erro',
+      qtd_criados: resultado?.action === 'created' ? 1 : 0,
+      qtd_atualizados: resultado?.action === 'updated' ? 1 : 0,
+      qtd_erros: resultado?.ok ? 0 : 1,
+      erros: resultado?.ok ? null : [resultado?.motivo || 'erro desconhecido'],
+      concluido_em: new Date().toISOString(),
+    }).eq('id', logRow.id)
+  }
+
+  // Resposta reflete o resultado real do processamento.
+  // RD Station só faz retry em 5xx; um payload sem sucesso volta 200 com ok:false
+  // para evitar retry infinito (o erro fica registrado em rdstation_syncs).
+  return NextResponse.json({ ok: !!resultado?.ok, evento, action: resultado?.action, motivo: resultado?.motivo })
 }
 
 // Health-check (RD valida URL com GET)

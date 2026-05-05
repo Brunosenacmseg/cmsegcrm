@@ -12,18 +12,6 @@ function supabaseAdmin() {
 const ACCOUNT_KEY = '1137037296556608637'
 const ORG_ID = '570e7213-a520-4573-8aa4-d41dd46a8477'
 
-// Extensão do Bruno (1001)
-const EXTENSAO_BRUNO = '745ad02d-5bef-4f5a-97c4-4430db995a00'
-
-// Mapa de extensões por nome (do diagnóstico)
-const EXTENSOES: Record<string, string> = {
-  'Bruno Sena': '745ad02d-5bef-4f5a-97c4-4430db995a00',
-  'Bruno': '745ad02d-5bef-4f5a-97c4-4430db995a00',
-  'Giovanna Picasso': '625a6ae2-8cde-4b15-8baa-d791ed44b0cf',
-  'Gabriel Silverio': '3c5bdc6a-eaa0-41fe-925f-244e98728334',
-  'Maria Luisa': '2033939f-9daf-424b-822b-19819dc03b2a',
-}
-
 async function getValidToken(userId: string) {
   const { data } = await supabaseAdmin().from('goto_tokens').select('*').eq('user_id', userId).single()
   if (!data) return null
@@ -140,32 +128,31 @@ export async function POST(request: NextRequest) {
       const numeroLimpo = numero.replace(/\D/g, '')
       const numeroFormatado = numeroLimpo.startsWith('55') ? `+${numeroLimpo}` : `+55${numeroLimpo}`
 
-      // Descobrir extensão do usuário
+      // Descobrir extensão do usuário a partir do ramal_goto cadastrado.
       let extId = extensao_id
       if (!extId) {
-        const { data: userData } = await supabaseAdmin().from('users').select('nome').eq('id', user_id).single()
-        const nomeUser = userData?.nome || ''
-        // Verificar no mapa fixo
-        for (const [nome, id] of Object.entries(EXTENSOES)) {
-          if (nomeUser.toLowerCase().includes(nome.toLowerCase().split(' ')[0].toLowerCase())) {
-            extId = id; break
-          }
+        const { data: userData } = await supabaseAdmin().from('users').select('nome,ramal_goto').eq('id', user_id).single()
+        const ramal = (userData?.ramal_goto || '').toString().trim()
+        if (!ramal) {
+          return NextResponse.json({
+            error: 'Seu ramal GoTo não está configurado. Peça ao admin para cadastrar em Usuários.',
+          })
         }
-        // Se não achou, buscar dinamicamente
+        const extensoes = await getExtensoes(at)
+        const ext = extensoes.find((e: any) =>
+          e.type === 'DIRECT_EXTENSION' &&
+          [e.number, e.extensionNumber, e.extension].some(n => n != null && String(n) === ramal)
+        )
+        extId = ext?.id
+        console.log('[GoTo] Ramal', ramal, '→ extensão', ext?.name, extId)
         if (!extId) {
-          const extensoes = await getExtensoes(at)
-          const ext = extensoes.find((e: any) =>
-            e.type === 'DIRECT_EXTENSION' &&
-            e.name?.toLowerCase().includes(nomeUser.toLowerCase().split(' ')[0].toLowerCase())
-          ) || extensoes.find((e: any) => e.type === 'DIRECT_EXTENSION')
-          extId = ext?.id
-          console.log('[GoTo] Ext dinamica:', ext?.name, extId)
+          return NextResponse.json({
+            error: `Ramal ${ramal} não encontrado nas extensões do GoTo. Verifique o cadastro.`,
+          })
         }
       }
 
       console.log('[GoTo] Usando extensão:', extId, '→', numeroFormatado)
-
-      if (!extId) return NextResponse.json({ error: 'Extensão não encontrada.' })
 
       // Endpoint correto: calls/v2/calls com from.lineId = extensionId
       const tentativas = [

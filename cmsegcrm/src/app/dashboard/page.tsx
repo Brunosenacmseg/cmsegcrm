@@ -85,12 +85,12 @@ export default function DashboardPage() {
       { data: usr },
       { data: negsSemestre },
     ] = await Promise.all([
-      scoped(supabase.from('negocios').select('premio, comissao_pct, etapa, funil_id, vendedor_id, created_at')),
+      scoped(supabase.from('negocios').select('premio, comissao_pct, etapa, status, funil_id, vendedor_id, created_at, data_fechamento')),
       scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMes)),
       scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMesAnt).lt('created_at', inicioMes)),
       scoped(supabase.from('negocios').select('id, vencimento, produto, clientes(nome)').lte('vencimento', em30dias).gt('vencimento', hoje.toISOString().slice(0,10)).order('vencimento')),
       supabase.from('users').select('id, nome, avatar_url, role').order('nome'),
-      scoped(supabase.from('negocios').select('premio, etapa, created_at').gte('created_at', inicioSemestre)),
+      scoped(supabase.from('negocios').select('premio, status, data_fechamento').eq('status', 'ganho').gte('data_fechamento', inicioSemestre)),
     ])
 
     setUsuarios(usr || [])
@@ -108,11 +108,11 @@ export default function DashboardPage() {
     }
     setEquipeMembros(map)
 
-    const fechadasNoMes = (negs||[]).filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= inicioMes)
-    const fechadasNoMesAnt = (negs||[]).filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= inicioMesAnt && n.created_at < inicioMes)
+    const fechadasNoMes = (negs||[]).filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= inicioMes)
+    const fechadasNoMesAnt = (negs||[]).filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= inicioMesAnt && n.data_fechamento < inicioMes)
     const premioMes = fechadasNoMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
     const premioMesAnterior = fechadasNoMesAnt.reduce((s:number,n:any)=>s+(n.premio||0),0)
-    const ativos = (negs||[]).filter((n:any) => !ETAPAS_FECHADAS_GANHAS.includes(n.etapa))
+    const ativos = (negs||[]).filter((n:any) => n.status !== 'ganho' && n.status !== 'perdido' && !ETAPAS_FECHADAS_GANHAS.includes(n.etapa))
     const comissoes = ativos.filter((n:any)=>n.comissao_pct>0).map((n:any)=>n.comissao_pct)
     const mediaComissao = comissoes.length ? comissoes.reduce((a:number,b:number)=>a+b,0)/comissoes.length : 0
 
@@ -122,7 +122,7 @@ export default function DashboardPage() {
       const iniM = d.toISOString()
       const fimM = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
       const valor = (negsSemestre||[])
-        .filter((n:any) => ETAPAS_FECHADAS_GANHAS.includes(n.etapa) && n.created_at >= iniM && n.created_at < fimM)
+        .filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= iniM && n.data_fechamento < fimM)
         .reduce((s:number,n:any) => s+(n.premio||0), 0)
       tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
     }
@@ -150,11 +150,11 @@ export default function DashboardPage() {
     if (filtroUser) userIdsFiltro = [filtroUser]
     else if (filtroEquipe) userIdsFiltro = equipeMembros[filtroEquipe] || []
 
-    // — Ranking de Vendas (negócios fechados ganhos no período) —
+    // — Ranking de Vendas (negócios marcados como Ganho no período, pela data de fechamento) —
     let qNegs = supabase.from('negocios')
-      .select('premio, comissao_pct, vendedor_id, etapa')
-      .in('etapa', ETAPAS_FECHADAS_GANHAS)
-      .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim)
+      .select('premio, comissao_pct, vendedor_id, status, data_fechamento')
+      .eq('status', 'ganho')
+      .gte('data_fechamento', intervalo.inicio).lte('data_fechamento', intervalo.fim)
     if (onlyMine) qNegs = qNegs.eq('vendedor_id', meId)
     else if (userIdsFiltro && userIdsFiltro.length) qNegs = qNegs.in('vendedor_id', userIdsFiltro)
     else if (userIdsFiltro) qNegs = qNegs.eq('vendedor_id', '00000000-0000-0000-0000-000000000000') // equipe vazia

@@ -105,6 +105,8 @@ function FunisPage() {
   // Modal detalhes do card
   const [modalCard, setModalCard] = useState(false)
   const [cardAtivo, setCardAtivo] = useState<any>(null)
+  const [premioInput, setPremioInput] = useState<string>('')
+  const [salvandoPremio, setSalvandoPremio] = useState(false)
 
   useEffect(() => { init() }, [])
   useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros])
@@ -159,7 +161,8 @@ function FunisPage() {
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
-    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); return }
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); return }
+    setPremioInput(cardAtivo.premio != null ? String(Number(cardAtivo.premio).toFixed(2)).replace('.', ',') : '')
     Promise.all([
       supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
       supabase.from('negocio_produtos').select('*').eq('negocio_id', cardAtivo.id).order('criado_em'),
@@ -361,6 +364,36 @@ function FunisPage() {
     setOrigemCard(v ? origens.find(o => o.id === v) : null)
   }
 
+  function podeEditarPremio(card: any): boolean {
+    if (!card || !profile) return false
+    return profile.role === 'admin' || profile.id === card.vendedor_id
+  }
+
+  async function salvarPremioDoCard() {
+    if (!cardAtivo) return
+    if (!podeEditarPremio(cardAtivo)) {
+      alert('Apenas o responsável pela negociação ou um administrador pode editar o valor.')
+      return
+    }
+    const bruto = (premioInput || '').replace(/\./g, '').replace(',', '.').trim()
+    const novo = bruto === '' ? 0 : Number(bruto)
+    if (Number.isNaN(novo) || novo < 0) {
+      alert('Valor inválido. Use apenas números (ex.: 1500,00).')
+      return
+    }
+    const atual = Number(cardAtivo.premio || 0)
+    if (novo === atual) return
+    setSalvandoPremio(true)
+    const { error } = await supabase.from('negocios').update({ premio: novo }).eq('id', cardAtivo.id)
+    setSalvandoPremio(false)
+    if (error) {
+      alert('Erro ao salvar valor: ' + error.message)
+      return
+    }
+    setCardAtivo({ ...cardAtivo, premio: novo })
+    setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, premio: novo } : n))
+  }
+
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
@@ -431,7 +464,7 @@ function FunisPage() {
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
         produto, seguradora, cpf_cnpj, motivo_perda, obs,
         custom_fields, created_at, data_fechamento,
-        clientes(id,nome,cpf_cnpj,telefone),
+        clientes(id,nome,cpf_cnpj,telefone,email),
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
       if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
@@ -1170,8 +1203,20 @@ function FunisPage() {
 
                       {/* Cliente ou botão vincular */}
                       {neg.clientes ? (
-                        <div style={{fontSize:11,color:'var(--teal)',marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
-                          <span>👤</span> {neg.clientes.nome}
+                        <div style={{marginBottom:4}}>
+                          <div style={{fontSize:11,color:'var(--teal)',display:'flex',alignItems:'center',gap:4}}>
+                            <span>👤</span> {neg.clientes.nome}
+                          </div>
+                          {neg.clientes.telefone && (
+                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,paddingLeft:16,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.clientes.telefone}>
+                              <span>📞</span> {neg.clientes.telefone}
+                            </div>
+                          )}
+                          {neg.clientes.email && (
+                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,paddingLeft:16,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.clientes.email}>
+                              <span>✉️</span> {neg.clientes.email}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button onClick={e=>{e.stopPropagation();setNegocioVincular(neg);setVincularTab('buscar');setVincularBusca('');setVincularRes([]);setNovoClienteForm({nome:'',cpf_cnpj:neg.cpf_cnpj||'',telefone:'',email:''}); setModalVincular(true)}}
@@ -1471,14 +1516,29 @@ function FunisPage() {
 
             {/* Info */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-              {[
+              {([
                 ['Etapa', cardAtivo.etapa],
                 ['Produto', cardAtivo.produto||'—'],
-                ['Prêmio', cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'],
+                ['Prêmio', podeEditarPremio(cardAtivo) ? (
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontSize:13,color:'var(--text-muted)'}}>R$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={premioInput}
+                      onChange={e => setPremioInput(e.target.value)}
+                      onBlur={salvarPremioDoCard}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur() }}
+                      placeholder="0,00"
+                      disabled={salvandoPremio}
+                      style={{flex:1,minWidth:0,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 9px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                    />
+                  </div>
+                ) : (cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—')],
                 ['Responsável', cardAtivo.users?.nome||'—'],
                 ['🆕 Criado em', cardAtivo.created_at ? new Date(cardAtivo.created_at).toLocaleString('pt-BR') : '—'],
                 ['🏁 Fechado em', cardAtivo.data_fechamento ? new Date(cardAtivo.data_fechamento).toLocaleString('pt-BR') : '— (em andamento)'],
-              ].map(([l,v])=>(
+              ] as Array<[string, React.ReactNode]>).map(([l,v])=>(
                 <div key={l}><div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
                   <div style={{fontSize:13}}>{v}</div></div>
               ))}

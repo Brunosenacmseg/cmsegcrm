@@ -517,13 +517,16 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
       payload.origem_id = origemId
 
       let negocioId: string | null = null
-      const { data: existente } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
+      const { data: existente, error: errSel } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
+      if (errSel) throw new Error(`select negocios: ${errSel.message}`)
       if (existente) {
-        await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
+        const { error: errUp } = await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
+        if (errUp) throw new Error(`update negocios: ${errUp.message}`)
         negocioId = existente.id
         stats.qtd_atualizados++
       } else {
-        const { data: novo } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
+        const { data: novo, error: errIns } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
+        if (errIns) throw new Error(`insert negocios: ${errIns.message}`)
         negocioId = novo?.id || null
         stats.qtd_criados++
       }
