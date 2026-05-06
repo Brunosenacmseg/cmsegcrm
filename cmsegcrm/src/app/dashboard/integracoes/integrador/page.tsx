@@ -52,6 +52,7 @@ export default function IntegradorPage() {
     if (!u) { router.push('/login'); return }
     setUser(u)
     const { data: prof } = await supabase.from('users').select('*').eq('id', u.id).single()
+    if (prof?.role !== 'admin') { router.push('/dashboard'); return }
     setProfile(prof)
     const [{ data: cs }, { data: fs }, { data: us }] = await Promise.all([
       supabase.from('integracoes_conexoes').select('*').order('criado_em', { ascending: false }),

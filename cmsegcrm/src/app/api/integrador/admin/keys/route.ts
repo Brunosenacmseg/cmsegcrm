@@ -19,12 +19,9 @@ async function autenticarUsuario(req: NextRequest) {
   return data?.user || null
 }
 
-async function podeUsar(userId: string, conexaoId: string) {
-  const sa = supabaseAdmin()
-  const { data: u } = await sa.from('users').select('role').eq('id', userId).single()
-  if (u?.role === 'admin') return true
-  const { data: c } = await sa.from('integracoes_conexoes').select('owner_id').eq('id', conexaoId).maybeSingle()
-  return c?.owner_id === userId
+async function ehAdmin(userId: string) {
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userId).single()
+  return u?.role === 'admin'
 }
 
 export async function POST(req: NextRequest) {
@@ -35,7 +32,7 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch { return NextResponse.json({ ok: false, erro: 'JSON inválido' }, { status: 400 }) }
   const { conexao_id, nome, escopos, expira_em } = body || {}
   if (!conexao_id || !nome) return NextResponse.json({ ok: false, erro: 'conexao_id e nome obrigatórios' }, { status: 400 })
-  if (!(await podeUsar(user.id, conexao_id))) return NextResponse.json({ ok: false, erro: 'sem permissão' }, { status: 403 })
+  if (!(await ehAdmin(user.id))) return NextResponse.json({ ok: false, erro: 'apenas admin' }, { status: 403 })
 
   const k = generateApiKey()
   const { data, error } = await supabaseAdmin().from('integracoes_api_keys').insert({

@@ -15,12 +15,9 @@ async function autenticarUsuario(req: NextRequest) {
   return data?.user || null
 }
 
-async function podeUsar(userId: string, conexaoId: string) {
-  const sa = supabaseAdmin()
-  const { data: u } = await sa.from('users').select('role').eq('id', userId).single()
-  if (u?.role === 'admin') return true
-  const { data: c } = await sa.from('integracoes_conexoes').select('owner_id').eq('id', conexaoId).maybeSingle()
-  return c?.owner_id === userId
+async function ehAdmin(userId: string) {
+  const { data: u } = await supabaseAdmin().from('users').select('role').eq('id', userId).single()
+  return u?.role === 'admin'
 }
 
 export async function POST(req: NextRequest) {
@@ -31,7 +28,7 @@ export async function POST(req: NextRequest) {
   const { conexao_id, nome, url, eventos, secret } = body || {}
   if (!conexao_id || !nome || !url) return NextResponse.json({ ok: false, erro: 'conexao_id, nome, url obrigatórios' }, { status: 400 })
   try { new URL(url) } catch { return NextResponse.json({ ok: false, erro: 'url inválida' }, { status: 400 }) }
-  if (!(await podeUsar(user.id, conexao_id))) return NextResponse.json({ ok: false, erro: 'sem permissão' }, { status: 403 })
+  if (!(await ehAdmin(user.id))) return NextResponse.json({ ok: false, erro: 'apenas admin' }, { status: 403 })
 
   const { data, error } = await supabaseAdmin().from('integracoes_webhooks_out').insert({
     conexao_id,

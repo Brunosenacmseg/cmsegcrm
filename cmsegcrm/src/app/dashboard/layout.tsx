@@ -34,7 +34,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/tokio',        icon:'🌐', label:'Tokio Marine (WS)', section:'Seguradoras', adminOnly:true },
   { href:'/dashboard/rdstation',    icon:'🔁', label:'RD Station CRM', section:'Integrações', adminOnly:true },
   { href:'/dashboard/integracoes/meta', icon:'🔗', label:'Conectar Meta', section:'Integrações', adminOnly:true },
-  { href:'/dashboard/integracoes/integrador', icon:'🔌', label:'Integrador (API/Webhooks)', section:'Integrações' },
+  { href:'/dashboard/integracoes/integrador', icon:'🔌', label:'Integrador (API/Webhooks)', section:'Integrações', adminOnly:true },
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
   { href:'/dashboard/automacoes',   icon:'⚡', label:'Automações', adminOnly:true },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
