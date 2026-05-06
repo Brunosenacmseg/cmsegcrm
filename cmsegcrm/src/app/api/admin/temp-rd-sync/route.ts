@@ -114,21 +114,11 @@ async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?
     erros: [] as string[],
   }
 
-  // Pipelines + funis pra resolver funil
-  let pipelines: RDPipeline[] = []
-  for (const path of ['/deal_pipelines', '/pipelines']) {
-    for (const key of ['deal_pipelines', 'pipelines']) {
-      try { const r = await listarTodos<RDPipeline>(path, token, key); if (r.length) { pipelines = r; break } } catch {}
-    }
-    if (pipelines.length) break
-  }
+  // OTIMIZADO: skip /deal_pipelines + /deal_stages (~30-60s no plano Hobby).
+  // Usa só funis que já existem no DB (povoados pelo sync prévio) + fallback.
+  // Se faltar match, deal cai no funil "RD: Importados".
   const pipelineNomePorId: Record<string, string> = {}
-  for (const p of pipelines) { const pid = rdId(p); if (pid && p.name) pipelineNomePorId[pid] = p.name }
-
-  let stages: RDStage[] = []
-  try { stages = await listarTodos<RDStage>('/deal_stages', token, 'deal_stages') } catch {}
   const pipelinePorStage: Record<string, string> = {}
-  for (const s of stages) { const sid = rdId(s); if (sid && s.deal_pipeline_id) pipelinePorStage[sid] = s.deal_pipeline_id }
 
   const { data: funis } = await admin().from('funis').select('id, rd_id, etapas, nome, tipo')
   const funilPorRd: Record<string, any> = {}, funilPorNome: Record<string, any> = {}
