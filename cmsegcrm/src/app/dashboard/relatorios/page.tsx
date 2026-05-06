@@ -103,9 +103,9 @@ export default function RelatoriosPage() {
     ])
 
     const todos  = negs
-    const ativos = todos.filter((n:any) => !['Fechado Perdido','Não Renovado','Inadimplente','Negado'].includes(n.etapa))
-    const ganhos = todos.filter((n:any) => ['Fechado Ganho','Renovado','Pago','Concluído'].includes(n.etapa))
-    const perdidos = todos.filter((n:any) => ['Fechado Perdido','Não Renovado'].includes(n.etapa))
+    const ativos = todos.filter((n:any) => n.status !== 'ganho' && n.status !== 'perdido')
+    const ganhos = todos.filter((n:any) => n.status === 'ganho')
+    const perdidos = todos.filter((n:any) => n.status === 'perdido')
 
     // Prêmio por ramo
     const porRamo: Record<string,number> = {}

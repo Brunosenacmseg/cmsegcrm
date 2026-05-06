@@ -90,11 +90,11 @@ export default function MetasPage() {
     for (const meta of metas) {
       let novoValor = 0
       if (meta.tipo === 'premio') {
-        const { data } = await supabase.from('negocios').select('premio').eq('vendedor_id', meta.user_id).in('etapa', ['Fechado Ganho', 'Renovado', 'Pago', 'Concluído']).gte('updated_at', meta.periodo_inicio).lte('updated_at', meta.periodo_fim + 'T23:59:59')
+        const { data } = await supabase.from('negocios').select('premio').eq('vendedor_id', meta.user_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
         novoValor = (data || []).reduce((s: number, n: any) => s + (n.premio || 0), 0)
       }
       if (meta.tipo === 'negocios') {
-        const { count } = await supabase.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', meta.user_id).in('etapa', ['Fechado Ganho', 'Renovado', 'Pago', 'Concluído']).gte('updated_at', meta.periodo_inicio).lte('updated_at', meta.periodo_fim + 'T23:59:59')
+        const { count } = await supabase.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', meta.user_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
         novoValor = count || 0
       }
       if (meta.tipo === 'clientes') {
