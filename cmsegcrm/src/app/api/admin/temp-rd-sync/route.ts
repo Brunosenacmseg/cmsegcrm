@@ -41,17 +41,33 @@ function docValido(v?: string | null): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  const secretIn = req.headers.get('x-secret') || new URL(req.url).searchParams.get('secret') || ''
+  const url = new URL(req.url)
+  const secretIn = req.headers.get('x-secret') || url.searchParams.get('secret') || ''
   if (secretIn !== SECRET) return NextResponse.json({ error: 'secret inválido' }, { status: 401 })
-
-  const token = process.env.RDSTATION_CRM_TOKEN
-  if (!token) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
 
   let body: any = {}
   try { body = await req.json() } catch {}
-  const from: string | undefined = body?.from ? `${body.from}T00:00:00Z` : undefined
-  const to: string | undefined   = body?.to   ? `${body.to}T23:59:59Z`   : undefined
-  const limitePaginas: number    = Math.max(1, Math.min(50, Number(body?.limite_paginas) || 50))
+  const from: string | undefined = body?.from || url.searchParams.get('from') || undefined
+  const to: string | undefined   = body?.to   || url.searchParams.get('to')   || undefined
+  return rodarSync(from, to)
+}
+
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url)
+  const secretIn = req.headers.get('x-secret') || url.searchParams.get('secret') || ''
+  if (!secretIn) return NextResponse.json({ ok: true, service: 'temp-rd-sync', uso: 'GET ?secret=...&from=YYYY-MM-DD&to=YYYY-MM-DD' })
+  if (secretIn !== SECRET) return NextResponse.json({ error: 'secret inválido' }, { status: 401 })
+  const from = url.searchParams.get('from') || undefined
+  const to   = url.searchParams.get('to')   || undefined
+  return rodarSync(from, to)
+}
+
+async function rodarSync(fromDay?: string, toDay?: string) {
+  const token = process.env.RDSTATION_CRM_TOKEN
+  if (!token) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
+
+  const from: string | undefined = fromDay ? `${fromDay}T00:00:00Z` : undefined
+  const to: string | undefined   = toDay   ? `${toDay}T23:59:59Z`   : undefined
 
   const stats = {
     qtd_lidos_rd: 0,
@@ -192,8 +208,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, stats: { ...stats, erros: stats.erros.slice(0, 30) } })
-}
-
-export function GET() {
-  return NextResponse.json({ ok: true, service: 'temp-rd-sync' })
 }
