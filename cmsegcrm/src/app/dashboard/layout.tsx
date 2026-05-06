@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
 import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
+import BoasVindasLider from '@/components/BoasVindasLider'
 import { registrarLog } from '@/lib/logs'
 
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean; liderOnly?: boolean }> = [
@@ -370,6 +371,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <ChatIA />
       <MetaPixel />
+      <BoasVindasLider visivel={profile?.role === 'lider' && pathname !== '/dashboard/gestao-equipe'} />
     </div>
   )
 }
