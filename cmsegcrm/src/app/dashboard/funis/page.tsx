@@ -51,6 +51,10 @@ function FunisPage() {
   const [equipes, setEquipes]             = useState<any[]>([])
   const [equipeMembros, setEquipeMembros] = useState<Record<string,string[]>>({})
   const [visibleIds, setVisibleIds] = useState<string[] | null>(null)
+  // Acesso amplo do funil "EMISSÃO E IMPLANTAÇÃO" para a EQUIPE PÓS VENDA:
+  // membros/líder enxergam todas as negociações desse funil, independente
+  // do vendedor. Bypass do filtro `visibleIds` (filtros manuais continuam).
+  const [userInPosvenda, setUserInPosvenda] = useState(false)
 
   // Campos personalizados (definição do admin)
   const [camposPers, setCamposPers] = useState<any[]>([])
@@ -109,8 +113,8 @@ function FunisPage() {
   const [salvandoPremio, setSalvandoPremio] = useState(false)
 
   useEffect(() => { init() }, [])
-  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros])
-  useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros])
+  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda, funis])
+  useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros, userInPosvenda, funis])
 
   // Sincroniza a barra de rolagem horizontal de cima com o kanban
   useEffect(() => {
@@ -394,6 +398,26 @@ function FunisPage() {
     setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, premio: novo } : n))
   }
 
+  // Normaliza string ao mesmo padrão do `pt_norm` do banco (lower + sem acento)
+  const ptNorm = (s: string) =>
+    (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+  const isPosvendaNome = (nome?: string) => {
+    const n = ptNorm(nome || '')
+    return n === 'equipe pos venda'
+        || n === 'pos venda'
+        || n === 'pos-venda'
+        || n === 'posvenda'
+  }
+  const isFunilEmissao = (funilId?: string | null) => {
+    if (!funilId) return false
+    const f = funis.find((x: any) => x.id === funilId)
+    return !!f && ptNorm(f.nome) === ptNorm('EMISSÃO E IMPLANTAÇÃO')
+  }
+  // Quando o funil é EMISSÃO E IMPLANTAÇÃO e o usuário está na EQUIPE
+  // PÓS VENDA, ele enxerga todos os cards independente do vendedor.
+  const bypassVisibleIds = (funilId?: string | null) =>
+    userInPosvenda && isFunilEmissao(funilId)
+
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
@@ -407,7 +431,7 @@ function FunisPage() {
 
     // Equipes + membros (para filtro por equipe)
     const [{ data: eqs }, { data: mems }] = await Promise.all([
-      supabase.from('equipes').select('id, nome').order('nome'),
+      supabase.from('equipes').select('id, nome, lider_id').order('nome'),
       supabase.from('equipe_membros').select('equipe_id, user_id'),
     ])
     setEquipes(eqs || [])
@@ -418,6 +442,13 @@ function FunisPage() {
       mapa[eid].push(uid)
     }
     setEquipeMembros(mapa)
+
+    const equipesPosvenda = (eqs || []).filter((e: any) => isPosvendaNome(e?.nome))
+    const meuId = prof?.id || user?.id
+    const ehPosvenda = !!meuId && equipesPosvenda.some((e: any) =>
+      e.lider_id === meuId || (mapa[e.id] || []).includes(meuId)
+    )
+    setUserInPosvenda(ehPosvenda)
 
     await carregarFunis()
     setLoading(false)
@@ -440,9 +471,10 @@ function FunisPage() {
         .select('id', { count: 'exact', head: true })
         .eq('funil_id', f.id)
         .or('status.is.null,status.eq.em_andamento')
-      if (filtroUsuario)        q = q.eq('vendedor_id', filtroUsuario)
-      else if (idsEquipe)       q = idsEquipe.length ? q.in('vendedor_id', idsEquipe) : q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
-      else if (visibleIds)      q = q.in('vendedor_id', visibleIds)
+      if (filtroUsuario)             q = q.eq('vendedor_id', filtroUsuario)
+      else if (idsEquipe)            q = idsEquipe.length ? q.in('vendedor_id', idsEquipe) : q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
+      else if (bypassVisibleIds(f.id)) { /* pós-venda em EMISSÃO E IMPLANTAÇÃO: vê tudo */ }
+      else if (visibleIds)           q = q.in('vendedor_id', visibleIds)
       const { count } = await q
       out[f.id] = count || 0
     }))
@@ -472,6 +504,7 @@ function FunisPage() {
         const ids = equipeMembros[filtroEquipe] || []
         q = ids.length ? q.in('vendedor_id', ids) : q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
       }
+      else if (bypassVisibleIds(funilAtivo)) { /* pós-venda em EMISSÃO E IMPLANTAÇÃO: vê tudo */ }
       else if (visibleIds) q = q.in('vendedor_id', visibleIds)
       const { data, error } = await q
         .order('created_at', { ascending: false })
