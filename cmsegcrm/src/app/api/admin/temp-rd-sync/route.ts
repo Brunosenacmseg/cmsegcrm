@@ -44,28 +44,64 @@ export async function POST(req: NextRequest) {
   const url = new URL(req.url)
   const secretIn = req.headers.get('x-secret') || url.searchParams.get('secret') || ''
   if (secretIn !== SECRET) return NextResponse.json({ error: 'secret inválido' }, { status: 401 })
-
-  let body: any = {}
-  try { body = await req.json() } catch {}
-  const from: string | undefined = body?.from || url.searchParams.get('from') || undefined
-  const to: string | undefined   = body?.to   || url.searchParams.get('to')   || undefined
-  return rodarSync(from, to)
+  let body: any = {}; try { body = await req.json() } catch {}
+  const from = body?.from || url.searchParams.get('from') || undefined
+  const to   = body?.to   || url.searchParams.get('to')   || undefined
+  return iniciarSync(from, to)
 }
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const secretIn = req.headers.get('x-secret') || url.searchParams.get('secret') || ''
-  if (!secretIn) return NextResponse.json({ ok: true, service: 'temp-rd-sync', uso: 'GET ?secret=...&from=YYYY-MM-DD&to=YYYY-MM-DD' })
+  if (!secretIn) return NextResponse.json({
+    ok: true, service: 'temp-rd-sync',
+    uso: 'GET ?secret=...&from=YYYY-MM-DD&to=YYYY-MM-DD  •  GET ?secret=...&job=<id>  •  GET ?secret=...&list=1'
+  })
   if (secretIn !== SECRET) return NextResponse.json({ error: 'secret inválido' }, { status: 401 })
+
+  const job = url.searchParams.get('job')
+  const list = url.searchParams.get('list')
+  if (job) {
+    const { data } = await admin().from('rdstation_syncs').select('*').eq('id', job).maybeSingle()
+    return NextResponse.json({ job: data })
+  }
+  if (list) {
+    const { data } = await admin().from('rdstation_syncs')
+      .select('*').like('recurso', 'temp-rd-sync%')
+      .order('iniciado_em', { ascending: false }).limit(20)
+    return NextResponse.json({ syncs: data || [] })
+  }
+
   const from = url.searchParams.get('from') || undefined
   const to   = url.searchParams.get('to')   || undefined
-  return rodarSync(from, to)
+  return iniciarSync(from, to)
 }
 
-async function rodarSync(fromDay?: string, toDay?: string) {
+// Responde imediato com job_id e processa em background. O status final
+// fica em public.rdstation_syncs (consulte por ?job=<id>).
+async function iniciarSync(fromDay?: string, toDay?: string) {
   const token = process.env.RDSTATION_CRM_TOKEN
   if (!token) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
 
+  const recurso = `temp-rd-sync ${fromDay || 'TUDO'}→${toDay || 'TUDO'}`
+  const { data: log } = await admin().from('rdstation_syncs').insert({
+    recurso, status: 'processando',
+  }).select('id').single()
+  const jobId = (log as any)?.id
+
+  // Dispara em background — Vercel mantém a função viva até a Promise resolver
+  // (com maxDuration=300). Resposta imediata pra evitar timeout no proxy.
+  setImmediate(() => rodarSync(token, fromDay, toDay, jobId).catch(async (err) => {
+    await admin().from('rdstation_syncs').update({
+      status: 'erro', erros: [String(err?.message || err).slice(0, 200)],
+      concluido_em: new Date().toISOString(),
+    }).eq('id', jobId)
+  }))
+
+  return NextResponse.json({ ok: true, job_id: jobId, status_url: `?secret=${SECRET}&job=${jobId}` }, { status: 202 })
+}
+
+async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?: string) {
   const from: string | undefined = fromDay ? `${fromDay}T00:00:00Z` : undefined
   const to: string | undefined   = toDay   ? `${toDay}T23:59:59Z`   : undefined
 
@@ -207,5 +243,16 @@ async function rodarSync(fromDay?: string, toDay?: string) {
     }
   }
 
-  return NextResponse.json({ ok: true, stats: { ...stats, erros: stats.erros.slice(0, 30) } })
+  if (jobId) {
+    const status = stats.qtd_erros === 0 ? 'concluido' : (stats.qtd_criados > 0 ? 'parcial' : 'erro')
+    await admin().from('rdstation_syncs').update({
+      status,
+      qtd_lidos: stats.qtd_lidos_rd,
+      qtd_criados: stats.qtd_criados,
+      qtd_atualizados: stats.ja_existiam,
+      qtd_erros: stats.qtd_erros,
+      erros: stats.erros.slice(0, 30),
+      concluido_em: new Date().toISOString(),
+    }).eq('id', jobId)
+  }
 }
