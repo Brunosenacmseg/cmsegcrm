@@ -8,7 +8,7 @@ import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 import { registrarLog } from '@/lib/logs'
 
-const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean }> = [
+const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean; liderOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
   { href:'/dashboard/funis',        icon:'🏗', label:'Funis' },
   { href:'/dashboard/cotacoes',     icon:'🔍', label:'Cotações', adminOnly:true },
@@ -36,6 +36,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/agentes-ia',   icon:'🤖', label:'Agentes de IA', adminOnly:true },
   { href:'/dashboard/automacoes',   icon:'⚡', label:'Automações', adminOnly:true },
   { href:'/dashboard/manuais',      icon:'📚', label:'Manuais & Processos', section:'Empresa' },
+  { href:'/dashboard/gestao-equipe',icon:'🧭', label:'Gestão de Equipe', section:'Empresa', liderOnly:true },
   { href:'/dashboard/rh',           icon:'🧑‍💼', label:'RH', section:'Empresa' },
   { href:'/dashboard/melhorias',    icon:'💡', label:'Melhorias CRM', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', adminOnly:true },
@@ -59,6 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [temAcessoFin, setTemAcessoFin]   = useState(false)
   const [ehPosVenda, setEhPosVenda]       = useState(false)
   const [ehGestao, setEhGestao]           = useState(false)
+  const [ehLider, setEhLider]             = useState(false)
   // Seções recolhidas — começa com Marketing/Integrações/Empresa/Config
   // recolhidos para reduzir densidade visual. Persiste em localStorage.
   const [secoesRecolhidas, setSecoesRecolhidas] = useState<Record<string,boolean>>(() => {
@@ -118,8 +120,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const rotaPosVenda = NAV.find(item => item.equipePosVenda && (pathname === item.href || pathname.startsWith(item.href + '/')))
     if (rotaPosVenda && !isAdminUser && !ehPosVenda) {
       router.replace('/dashboard')
+      return
     }
-  }, [profile, ehPosVenda, ehGestao, pathname, router])
+    const rotaLider = NAV.find(item => item.liderOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
+    if (rotaLider && !isAdminUser && !ehLider) {
+      router.replace('/dashboard')
+    }
+  }, [profile, ehPosVenda, ehGestao, ehLider, pathname, router])
 
   // Registra navegação do usuário (auditoria). Usa o label do NAV quando
   // possível para que o log fique legível no painel de admin.
@@ -153,6 +160,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // Pertence à equipe GESTÃO? (libera módulo Seguradoras)
     const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
     setEhGestao(nomes.some(n => norm(n) === 'gestao' || norm(n) === 'equipe gestao'))
+    // É líder? role='lider' ou consta como lider_id em alguma equipe
+    if (data?.role === 'lider' || data?.role === 'admin') {
+      setEhLider(true)
+    } else {
+      const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', userId).limit(1)
+      setEhLider(!!(eqs && eqs.length))
+    }
   }
 
   async function carregarBadges(userId: string) {
@@ -216,6 +230,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // Autentique: só admin ou membro da EQUIPE PÓS VENDA
     if (item.equipePosVenda && !isAdmin && !ehPosVenda) return false
     if (item.equipeGestao && !isAdmin && !ehGestao) return false
+    if (item.liderOnly && !isAdmin && !ehLider) return false
     // Financeiro / DRE: agora é adminOnly (já filtrado acima); o flag
     // temAcessoFin permanece como no-op para compat.
     if (item.href === '/dashboard/financeiro' && !temAcessoFin) return false
