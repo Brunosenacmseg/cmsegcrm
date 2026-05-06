@@ -77,8 +77,9 @@ export async function GET(req: NextRequest) {
   return iniciarSync(from, to)
 }
 
-// Responde imediato com job_id e processa em background. O status final
-// fica em public.rdstation_syncs (consulte por ?job=<id>).
+// Roda síncrono — Vercel mantém a função viva até 300s (maxDuration). Mesmo
+// se o cliente HTTP cair antes (proxy timeout), a Lambda continua e grava o
+// resultado em public.rdstation_syncs. Consulte com ?job=<id>.
 async function iniciarSync(fromDay?: string, toDay?: string) {
   const token = process.env.RDSTATION_CRM_TOKEN
   if (!token) return NextResponse.json({ error: 'RDSTATION_CRM_TOKEN não configurado' }, { status: 400 })
@@ -89,16 +90,16 @@ async function iniciarSync(fromDay?: string, toDay?: string) {
   }).select('id').single()
   const jobId = (log as any)?.id
 
-  // Dispara em background — Vercel mantém a função viva até a Promise resolver
-  // (com maxDuration=300). Resposta imediata pra evitar timeout no proxy.
-  setImmediate(() => rodarSync(token, fromDay, toDay, jobId).catch(async (err) => {
+  try {
+    const stats = await rodarSync(token, fromDay, toDay, jobId)
+    return NextResponse.json({ ok: true, job_id: jobId, stats }, { status: 200 })
+  } catch (err: any) {
     await admin().from('rdstation_syncs').update({
       status: 'erro', erros: [String(err?.message || err).slice(0, 200)],
       concluido_em: new Date().toISOString(),
     }).eq('id', jobId)
-  }))
-
-  return NextResponse.json({ ok: true, job_id: jobId, status_url: `?secret=${SECRET}&job=${jobId}` }, { status: 202 })
+    return NextResponse.json({ ok: false, job_id: jobId, error: err?.message || String(err) }, { status: 500 })
+  }
 }
 
 async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?: string) {
@@ -255,4 +256,5 @@ async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?
       concluido_em: new Date().toISOString(),
     }).eq('id', jobId)
   }
+  return stats
 }
