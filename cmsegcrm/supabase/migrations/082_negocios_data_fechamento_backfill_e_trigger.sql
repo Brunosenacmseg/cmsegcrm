@@ -1,8 +1,9 @@
 -- Backfill: negócios marcados como "ganho" sem data_fechamento (importação legada)
--- são marcados como fechados em 31/12/2025 para não inflar o ranking do mês corrente
--- mas continuarem visíveis em períodos históricos.
+-- recebem uma data aleatória dentro de abril/2025 para que apareçam distribuídos
+-- nos relatórios históricos sem inflar o mês corrente.
 update public.negocios
-   set data_fechamento = '2025-12-31 23:59:59+00'::timestamptz
+   set data_fechamento = '2025-04-01 00:00:00+00'::timestamptz
+                         + (random() * interval '30 days')
  where status = 'ganho'
    and data_fechamento is null;
 
