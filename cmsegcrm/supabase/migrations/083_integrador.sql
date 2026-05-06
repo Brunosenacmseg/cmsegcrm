@@ -310,3 +310,10 @@ drop trigger if exists trg_integrador_historico on public.historico;
 create trigger trg_integrador_historico
   after insert on public.historico
   for each row execute procedure public.integrador_trg_historico();
+
+-- search_path imutável em todas as funções (advisor function_search_path_mutable)
+alter function public.integrador_enq(text, jsonb)  set search_path = public;
+alter function public.integrador_trg_negocios()    set search_path = public;
+alter function public.integrador_trg_clientes()    set search_path = public;
+alter function public.integrador_trg_tarefas()     set search_path = public;
+alter function public.integrador_trg_historico()   set search_path = public;
