@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Avatar from '@/components/Avatar'
 
-const ETAPAS_FECHADAS_GANHAS = ['Fechado Ganho','Renovado','Pago','Concluído']
-
 type Periodo = 'mes_atual' | 'mes_anterior' | 'semana' | 'custom'
 
 function intervaloDoPeriodo(p: Periodo, inicioCustom?: string, fimCustom?: string): { inicio: string; fim: string; rotulo: string } {
@@ -112,7 +110,7 @@ export default function DashboardPage() {
     const fechadasNoMesAnt = (negs||[]).filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= inicioMesAnt && n.data_fechamento < inicioMes)
     const premioMes = fechadasNoMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
     const premioMesAnterior = fechadasNoMesAnt.reduce((s:number,n:any)=>s+(n.premio||0),0)
-    const ativos = (negs||[]).filter((n:any) => n.status !== 'ganho' && n.status !== 'perdido' && !ETAPAS_FECHADAS_GANHAS.includes(n.etapa))
+    const ativos = (negs||[]).filter((n:any) => n.status !== 'ganho' && n.status !== 'perdido')
     const comissoes = ativos.filter((n:any)=>n.comissao_pct>0).map((n:any)=>n.comissao_pct)
     const mediaComissao = comissoes.length ? comissoes.reduce((a:number,b:number)=>a+b,0)/comissoes.length : 0
 

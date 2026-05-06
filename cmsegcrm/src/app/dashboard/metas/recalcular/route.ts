@@ -33,12 +33,12 @@ export async function POST(request: NextRequest) {
       let novoValor = meta.valor_atual
 
       if (meta.tipo === 'premio') {
-        const { data } = await supabaseAdmin.from('negocios').select('premio').eq('vendedor_id', vendedor_id).in('etapa', ['Fechado Ganho', 'Renovado', 'Pago', 'Concluído']).gte('updated_at', meta.periodo_inicio).lte('updated_at', meta.periodo_fim + 'T23:59:59')
+        const { data } = await supabaseAdmin.from('negocios').select('premio').eq('vendedor_id', vendedor_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
         novoValor = (data || []).reduce((s: number, n: any) => s + (n.premio || 0), 0)
       }
 
       if (meta.tipo === 'negocios') {
-        const { count } = await supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', vendedor_id).in('etapa', ['Fechado Ganho', 'Renovado', 'Pago', 'Concluído']).gte('updated_at', meta.periodo_inicio).lte('updated_at', meta.periodo_fim + 'T23:59:59')
+        const { count } = await supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', vendedor_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
         novoValor = count || 0
       }
 
