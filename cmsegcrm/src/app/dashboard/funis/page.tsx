@@ -112,6 +112,12 @@ function FunisPage() {
   const [premioInput, setPremioInput] = useState<string>('')
   const [salvandoPremio, setSalvandoPremio] = useState(false)
 
+  // Tarefas: lista no card aberto e mapa "próxima tarefa em aberto" por negócio
+  const [tarefasCard, setTarefasCard]           = useState<any[]>([])
+  const [tarefasPorNegocio, setTarefasPorNegocio] = useState<Record<string, any>>({})
+  const [novaTarefa, setNovaTarefa]             = useState<{ titulo: string; prazo: string }>({ titulo:'', prazo:'' })
+  const [salvandoTarefa, setSalvandoTarefa]     = useState(false)
+
   useEffect(() => { init() }, [])
   useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda, funis])
   useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros, userInPosvenda, funis])
@@ -165,22 +171,52 @@ function FunisPage() {
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
-    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); return }
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); return }
     setPremioInput(cardAtivo.premio != null ? String(Number(cardAtivo.premio).toFixed(2)).replace('.', ',') : '')
+    setNovaTarefa({ titulo:'', prazo:'' })
     Promise.all([
       supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
       supabase.from('negocio_produtos').select('*').eq('negocio_id', cardAtivo.id).order('criado_em'),
       supabase.from('negocio_notas').select('*, users(nome,avatar_url)').eq('negocio_id', cardAtivo.id).order('criado_em', { ascending: false }),
       cardAtivo.origem_id ? supabase.from('origens').select('*').eq('id', cardAtivo.origem_id).maybeSingle() : Promise.resolve({ data: null }),
       supabase.from('anexos').select('*, users(nome)').eq('negocio_id', cardAtivo.id).order('created_at', { ascending: false }),
-    ]).then(([t, p, n, o, a]) => {
+      supabase.from('tarefas')
+        .select('id,titulo,descricao,prazo,status,tipo,responsavel_id,users!tarefas_responsavel_id_fkey(id,nome,avatar_url)')
+        .eq('negocio_id', cardAtivo.id)
+        .order('status', { ascending: true })
+        .order('prazo', { ascending: true, nullsFirst: false }),
+    ]).then(([t, p, n, o, a, tk]) => {
       setTagsCard((t.data || []).map((x: any) => x.tags).filter(Boolean))
       setProdutosCard(p.data || [])
       setNotasCard(n.data || [])
       setOrigemCard((o as any).data || null)
       setAnexosCard((a as any).data || [])
+      setTarefasCard((tk as any).data || [])
     })
   }, [cardAtivo?.id])
+
+  // Carrega "próxima tarefa em aberto" de cada negócio visível para o badge
+  // do kanban. Roda quando muda a lista de negócios (ex.: troca de funil).
+  useEffect(() => {
+    if (!negocios.length) { setTarefasPorNegocio({}); return }
+    const ids = negocios.map(n => n.id)
+    let cancelled = false
+    supabase.from('tarefas')
+      .select('id,titulo,prazo,negocio_id,status')
+      .in('negocio_id', ids)
+      .not('status', 'in', '(concluida,cancelada)')
+      .order('prazo', { ascending: true, nullsFirst: false })
+      .then(({ data }) => {
+        if (cancelled) return
+        const map: Record<string, any> = {}
+        for (const t of (data || []) as any[]) {
+          if (!t.negocio_id) continue
+          if (!map[t.negocio_id]) map[t.negocio_id] = t // já vem ordenado: o 1º é o mais próximo
+        }
+        setTarefasPorNegocio(map)
+      })
+    return () => { cancelled = true }
+  }, [funilAtivo, negocios.length])
 
   async function uploadAnexos(files: FileList | null) {
     if (!files || !cardAtivo || !profile?.id) return
@@ -349,6 +385,64 @@ function FunisPage() {
     if (!confirm('Excluir essa anotação?')) return
     await supabase.from('negocio_notas').delete().eq('id', id)
     setNotasCard(prev => prev.filter(n => n.id !== id))
+  }
+
+  function atualizarBadgeKanban(negocioId: string, lista: any[]) {
+    const ativas = (lista || []).filter(t => t.status !== 'concluida' && t.status !== 'cancelada')
+    const proxima = ativas.slice().sort((a,b) => {
+      if (!a.prazo && !b.prazo) return 0
+      if (!a.prazo) return 1
+      if (!b.prazo) return -1
+      return String(a.prazo).localeCompare(String(b.prazo))
+    })[0] || null
+    setTarefasPorNegocio(prev => {
+      const m = { ...prev }
+      if (proxima) m[negocioId] = proxima
+      else delete m[negocioId]
+      return m
+    })
+  }
+
+  async function criarTarefaDoCard() {
+    if (!cardAtivo || !profile?.id) return
+    const titulo = novaTarefa.titulo.trim()
+    if (!titulo) { alert('Informe o título da tarefa'); return }
+    setSalvandoTarefa(true)
+    const { data, error } = await supabase.from('tarefas').insert({
+      titulo,
+      tipo:           'tarefa',
+      status:         'pendente',
+      prazo:          novaTarefa.prazo ? new Date(novaTarefa.prazo).toISOString() : null,
+      negocio_id:     cardAtivo.id,
+      cliente_id:     cardAtivo.cliente_id || null,
+      responsavel_id: profile.id,
+      criado_por:     profile.id,
+    }).select('id,titulo,descricao,prazo,status,tipo,responsavel_id,users!tarefas_responsavel_id_fkey(id,nome,avatar_url)').single()
+    setSalvandoTarefa(false)
+    if (error) { alert('Erro ao criar tarefa: '+error.message); return }
+    if (data) {
+      // Espelha em tarefa_responsaveis (mesmo padrão usado em /tarefas)
+      await supabase.from('tarefa_responsaveis').insert({ tarefa_id: (data as any).id, user_id: profile.id })
+      const novas = [data, ...tarefasCard]
+      setTarefasCard(novas)
+      atualizarBadgeKanban(cardAtivo.id, novas)
+    }
+    setNovaTarefa({ titulo:'', prazo:'' })
+  }
+
+  async function alterarStatusTarefa(id: string, status: string) {
+    await supabase.from('tarefas').update({ status }).eq('id', id)
+    const novas = tarefasCard.map(t => t.id === id ? { ...t, status } : t)
+    setTarefasCard(novas)
+    if (cardAtivo) atualizarBadgeKanban(cardAtivo.id, novas)
+  }
+
+  async function excluirTarefa(id: string) {
+    if (!confirm('Excluir esta tarefa?')) return
+    await supabase.from('tarefas').delete().eq('id', id)
+    const novas = tarefasCard.filter(t => t.id !== id)
+    setTarefasCard(novas)
+    if (cardAtivo) atualizarBadgeKanban(cardAtivo.id, novas)
   }
 
   const [editandoNota, setEditandoNota] = useState<{ id: string; conteudo: string } | null>(null)
@@ -1267,6 +1361,31 @@ function FunisPage() {
                         {neg.produto && <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 6px',borderRadius:8}}>{neg.produto}</span>}
                       </div>
 
+                      {(() => {
+                        const t = tarefasPorNegocio[neg.id]
+                        if (!t) return null
+                        const atrasada = !!t.prazo && new Date(t.prazo).getTime() < Date.now()
+                        return (
+                          <div title={atrasada ? 'Tarefa atrasada' : 'Próxima tarefa'}
+                            style={{
+                              marginTop:6,
+                              display:'flex',alignItems:'center',gap:6,
+                              padding:'4px 8px',borderRadius:6,fontSize:10,fontWeight:600,
+                              background: atrasada ? 'rgba(224,82,82,0.12)' : 'rgba(28,181,160,0.10)',
+                              border: '1px solid '+(atrasada ? 'rgba(224,82,82,0.45)' : 'rgba(28,181,160,0.32)'),
+                              color: atrasada ? 'var(--red)' : 'var(--teal)',
+                            }}>
+                            <span style={{flexShrink:0}}>{atrasada ? '⚠️' : '📋'}</span>
+                            <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.titulo}</span>
+                            {t.prazo && (
+                              <span style={{fontSize:9,opacity:0.85,flexShrink:0}}>
+                                {new Date(t.prazo).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
+
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6,gap:6,fontSize:9,color:'var(--text-muted)',borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:5}}>
                         {neg.created_at && (
                           <span title="Data de criação">🆕 {new Date(neg.created_at).toLocaleDateString('pt-BR')}</span>
@@ -1740,6 +1859,88 @@ function FunisPage() {
                 <input value={novoProdNeg.valor_unit} onChange={e=>setNovoProdNeg(s=>({...s,valor_unit:e.target.value}))} placeholder="Valor unit." style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontSize:11,outline:'none'}} />
                 <button onClick={adicionarProduto} disabled={!novoProdNeg.produto_id} style={{padding:'6px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>+</button>
               </div>
+            </div>
+
+            {/* Tarefas */}
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:8,flexWrap:'wrap'}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>
+                  📋 Tarefas ({tarefasCard.filter(t => t.status !== 'concluida' && t.status !== 'cancelada').length} em aberto / {tarefasCard.length} total)
+                </div>
+                <a href="/dashboard/tarefas" target="_blank" rel="noreferrer" style={{fontSize:10,color:'var(--gold)',textDecoration:'none'}}>Painel completo →</a>
+              </div>
+
+              {/* Form de criar tarefa rápida */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 170px auto',gap:6,marginBottom:8}}>
+                <input
+                  value={novaTarefa.titulo}
+                  onChange={e=>setNovaTarefa(f => ({...f, titulo:e.target.value}))}
+                  onKeyDown={e=>{ if (e.key==='Enter' && novaTarefa.titulo.trim()) criarTarefaDoCard() }}
+                  placeholder="Título da tarefa..."
+                  style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
+                <input
+                  type="datetime-local"
+                  value={novaTarefa.prazo}
+                  onChange={e=>setNovaTarefa(f => ({...f, prazo:e.target.value}))}
+                  style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
+                <button onClick={criarTarefaDoCard} disabled={salvandoTarefa || !novaTarefa.titulo.trim()}
+                  style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap',opacity:(salvandoTarefa || !novaTarefa.titulo.trim())?0.6:1}}>
+                  {salvandoTarefa ? '...' : '+ Criar tarefa'}
+                </button>
+              </div>
+
+              {/* Lista de tarefas do card */}
+              {tarefasCard.length === 0 ? (
+                <div style={{fontSize:11,color:'var(--text-muted)',padding:'4px 0'}}>Nenhuma tarefa vinculada a essa negociação ainda.</div>
+              ) : (
+                <div style={{maxHeight:240,overflow:'auto',display:'flex',flexDirection:'column',gap:6}}>
+                  {tarefasCard.map(t => {
+                    const concluida = t.status === 'concluida'
+                    const cancelada = t.status === 'cancelada'
+                    const atrasada  = !concluida && !cancelada && t.prazo && new Date(t.prazo).getTime() < Date.now()
+                    const corBorda  = atrasada ? 'rgba(224,82,82,0.45)' : concluida ? 'rgba(28,181,160,0.35)' : 'var(--border)'
+                    const corFundo  = atrasada ? 'rgba(224,82,82,0.06)' : concluida ? 'rgba(28,181,160,0.05)' : 'rgba(255,255,255,0.03)'
+                    return (
+                      <div key={t.id}
+                        style={{padding:'8px 10px',borderRadius:8,border:'1px solid '+corBorda,background:corFundo,display:'flex',alignItems:'flex-start',gap:8}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                            <span style={{fontSize:12,fontWeight:600,color:atrasada?'var(--red)':'var(--text)',textDecoration:concluida||cancelada?'line-through':'none',opacity:concluida||cancelada?0.7:1}}>
+                              {t.titulo}
+                            </span>
+                            {atrasada && <span style={{fontSize:9,padding:'1px 6px',borderRadius:8,background:'rgba(224,82,82,0.18)',color:'var(--red)',fontWeight:700,letterSpacing:'0.5px'}}>ATRASADA</span>}
+                            {concluida && <span style={{fontSize:9,padding:'1px 6px',borderRadius:8,background:'rgba(28,181,160,0.18)',color:'var(--teal)',fontWeight:700,letterSpacing:'0.5px'}}>✓ CONCLUÍDA</span>}
+                            {cancelada && <span style={{fontSize:9,padding:'1px 6px',borderRadius:8,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',fontWeight:700,letterSpacing:'0.5px'}}>CANCELADA</span>}
+                          </div>
+                          <div style={{display:'flex',alignItems:'center',gap:10,marginTop:3,fontSize:10,color:'var(--text-muted)',flexWrap:'wrap'}}>
+                            {t.prazo && (
+                              <span style={{color:atrasada?'var(--red)':'var(--text-muted)'}}>
+                                📅 {new Date(t.prazo).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}
+                              </span>
+                            )}
+                            {t.users?.nome && <span>👤 {t.users.nome.split(' ')[0]}</span>}
+                          </div>
+                        </div>
+                        <div style={{display:'flex',gap:4,flexShrink:0}}>
+                          {!concluida && !cancelada && (
+                            <button onClick={()=>alterarStatusTarefa(t.id,'concluida')}
+                              title="Concluir"
+                              style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>✓</button>
+                          )}
+                          {(concluida || cancelada) && (
+                            <button onClick={()=>alterarStatusTarefa(t.id,'pendente')}
+                              title="Reabrir"
+                              style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>↺</button>
+                          )}
+                          <button onClick={()=>excluirTarefa(t.id)}
+                            title="Excluir"
+                            style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>×</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Anexos */}
