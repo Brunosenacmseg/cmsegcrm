@@ -16,6 +16,16 @@ function soDigitos(v?: string | null): string | null {
   return d || null
 }
 
+// Descarta CPFs/CNPJs com tamanho inválido ou todos os dígitos iguais
+// (000.000.000-00, 111.111.111-11 etc — placeholders comuns).
+function docValido(v?: string | null): string | null {
+  const d = soDigitos(v)
+  if (!d) return null
+  if (d.length !== 11 && d.length !== 14) return null
+  if (/^(\d)\1+$/.test(d)) return null
+  return d
+}
+
 // ─── Mapeamento de Deal RD → negocio CMSEGCRM ──────────────
 async function aplicarDeal(d: RDDeal, eventType: string) {
   const id = rdId(d)
@@ -53,13 +63,26 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     if (m) etapa = m
   }
 
-  // Resolver cliente
+  // Resolver cliente: primeiro por rd_id, depois por CPF/CNPJ, depois por email.
+  // Importante porque o RD frequentemente envia eventos de deal sem antes ter
+  // mandado o evento de contact — sem esse fallback o webhook cria placeholders
+  // duplicados sem CPF e perdemos o vínculo com o cliente real.
   let clienteId: string | null = null
   const primeiro = d.contacts?.[0]
+  const docContato = docValido(primeiro?.cnpj) || docValido(primeiro?.cpf)
+  const emailContato = primeiro?.emails?.[0]?.email?.trim().toLowerCase() || null
   if (primeiro) {
     const cid = rdId(primeiro)
     if (cid) {
       const { data } = await supabaseAdmin().from('clientes').select('id').eq('rd_id', cid).maybeSingle()
+      clienteId = data?.id || null
+    }
+    if (!clienteId && docContato) {
+      const { data } = await supabaseAdmin().from('clientes').select('id').eq('cpf_cnpj', docContato).limit(1).maybeSingle()
+      clienteId = data?.id || null
+    }
+    if (!clienteId && emailContato) {
+      const { data } = await supabaseAdmin().from('clientes').select('id').eq('email', emailContato).limit(1).maybeSingle()
       clienteId = data?.id || null
     }
   }
@@ -86,6 +109,8 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     premio,
     vencimento: venc,
     obs: obs || null,
+    cpf_cnpj: docContato,
+    fonte: d.deal_source?.name || d.campaign?.name || 'RD Station CRM',
   }
   if (clienteId) payload.cliente_id = clienteId
 
@@ -105,12 +130,22 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     return { ok: true, action: 'updated', id: existente.id }
   } else {
     if (!payload.cliente_id) {
-      const { data: ph, error: errCli } = await supabaseAdmin().from('clientes').insert({
-        nome: d.organization?.name || d.name || 'Sem cliente (RD)',
-        tipo: d.organization?.name ? 'PJ' : 'PF',
-        fonte: 'RD Station CRM',
-      }).select('id').single()
-      if (errCli) return { ok: false, motivo: `insert cliente placeholder: ${errCli.message}` }
+      // Tenta criar com dados reais do contato (nome/email/telefone/CPF) — só
+      // cai pra placeholder se vier sem nada utilizável.
+      const novoCliente: any = {
+        nome: primeiro?.name?.trim()
+          || d.organization?.name
+          || d.name
+          || 'Sem cliente (RD)',
+        tipo: docContato && docContato.length === 14 ? 'PJ' : (d.organization?.name ? 'PJ' : 'PF'),
+        cpf_cnpj: docContato,
+        email: emailContato,
+        telefone: primeiro?.phones?.[0]?.phone?.trim() || null,
+        fonte: d.deal_source?.name || d.campaign?.name || 'RD Station CRM',
+      }
+      if (rdId(primeiro as any)) novoCliente.rd_id = rdId(primeiro as any)
+      const { data: ph, error: errCli } = await supabaseAdmin().from('clientes').insert(novoCliente).select('id').single()
+      if (errCli) return { ok: false, motivo: `insert cliente: ${errCli.message}` }
       payload.cliente_id = ph?.id
     }
     if (!payload.cliente_id) return { ok: false, motivo: 'Não foi possível criar cliente' }
