@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomBytes } from 'crypto'
+import { FB_OAUTH_DIALOG } from '@/lib/meta-graph'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
   const redirectUri = `${origin}/api/meta/oauth/callback`
   const state = randomBytes(16).toString('hex')
 
-  const url = new URL('https://www.facebook.com/v19.0/dialog/oauth')
+  const url = new URL(FB_OAUTH_DIALOG)
   url.searchParams.set('client_id', String(appId))
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('state', state)

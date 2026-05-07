@@ -178,8 +178,13 @@ export default function FormulariosMetaPage() {
           )}
 
           {erro && (
-            <div className="card" style={{marginBottom:18,background:'rgba(224,82,82,0.08)',borderColor:'rgba(224,82,82,0.3)',color:'var(--red)',fontSize:13}}>
-              ❌ {erro}
+            <div className="card" style={{marginBottom:18,background:'rgba(224,82,82,0.08)',borderColor:'rgba(224,82,82,0.3)',color:'var(--red)',fontSize:13,lineHeight:1.6}}>
+              <div>❌ {erro}</div>
+              {/^api access blocked/i.test(erro) && (
+                <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(224,82,82,0.25)',color:'var(--text)',fontSize:12}}>
+                  <b>Como resolver:</b> abra <a href="/dashboard/integracoes/meta" style={{color:'var(--gold)'}}>Integrações → Meta</a> e cole um <b>Page Access Token</b> (campo dedicado). Esse token deve ter <code>leads_retrieval</code> e ser específico da Page, não do usuário.
+                </div>
+              )}
             </div>
           )}
 

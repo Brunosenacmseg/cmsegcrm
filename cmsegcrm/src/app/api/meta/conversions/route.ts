@@ -69,6 +69,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // test_event_code só é válido quando configurado em Events Manager →
+  // Test Events. Se test=true sem env, retornamos erro claro em vez de
+  // mandar o literal 'TEST_CODE' que a Meta ignora silenciosamente.
+  let testEventCode: string | undefined
+  if (test) {
+    const code = (process.env.META_TEST_EVENT_CODE || '').trim()
+    if (!code) {
+      return NextResponse.json({
+        error: 'META_TEST_EVENT_CODE não configurado. Pegue em Events Manager → Test Events e adicione como variável de ambiente.',
+      }, { status: 400 })
+    }
+    testEventCode = code
+  }
+
   try {
     const { resposta, payload } = await enviarEventoCRM({
       datasetId,
@@ -76,7 +90,7 @@ export async function POST(request: NextRequest) {
       eventName: event_name,
       eventTime: event_time,
       cliente,
-      testEventCode: test ? (process.env.META_TEST_EVENT_CODE || 'TEST_CODE') : undefined,
+      testEventCode,
     })
 
     await supabaseAdmin().from('meta_eventos_log').insert({

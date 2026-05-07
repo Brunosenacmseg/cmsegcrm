@@ -15,6 +15,7 @@ export default function ConectarMetaPage() {
     access_token: '',
     ad_account_id: '',
     page_id: '',
+    page_access_token: '',
     app_id: '',
     app_secret: '',
     verify_token: '',
@@ -70,7 +71,7 @@ export default function ConectarMetaPage() {
   async function desconectar() {
     if (!confirm('Desconectar a integração Meta? Os dados sincronizados serão mantidos.')) return
     const r = await fetch('/api/meta/connect', { method:'DELETE', headers: await authHeaders() })
-    if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'',dataset_id:'' }); await init() }
+    if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',page_access_token:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'',dataset_id:'' }); await init() }
   }
 
   async function testarCAPI() {
@@ -156,6 +157,14 @@ export default function ConectarMetaPage() {
               <div>
                 <label style={lbl}>page_id (para leads)</label>
                 <input value={form.page_id} onChange={e=>setForm(f=>({...f,page_id:e.target.value}))} placeholder="123456789" style={inp} />
+              </div>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={lbl}>Page Access Token {status?.tem_page_access_token ? <span style={{color:'var(--teal)'}}>(salvo ✓)</span> : <span style={{color:'var(--text-muted)'}}>(recomendado)</span>}</label>
+              <input type="password" value={form.page_access_token} onChange={e=>setForm(f=>({...f,page_access_token:e.target.value}))} placeholder={status?.tem_page_access_token ? '(deixe em branco pra manter o salvo)' : 'EAA... — Page Access Token específico da Página'} style={inp} />
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,lineHeight:1.5}}>
+                Gere em <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color:'var(--teal)'}}>Graph API Explorer</a> selecionando a Page no campo "Application" e marcando os escopos <code>leads_retrieval, pages_show_list, pages_read_engagement, pages_manage_metadata</code>. Sem esse token, <code>/leadgen_forms</code> retorna <b>"API access blocked"</b>.
               </div>
             </div>
 

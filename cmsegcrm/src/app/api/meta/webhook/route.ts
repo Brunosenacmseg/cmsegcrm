@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GRAPH, verifyMetaSignature } from '@/lib/meta-graph'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -22,8 +23,6 @@ function supabaseAdmin() {
   if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
-
-const GRAPH = 'https://graph.facebook.com/v19.0'
 
 // ─── GET: Meta envia challenge pra verificar a URL ──────────────
 export async function GET(req: NextRequest) {
@@ -43,15 +42,34 @@ export async function GET(req: NextRequest) {
 
 // ─── POST: novo lead ─────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // Lê o corpo cru pra poder validar a assinatura HMAC SHA-256 que a Meta
+  // envia no header X-Hub-Signature-256 (computada com app_secret sobre o
+  // JSON exato). Sem isso, qualquer um pode injetar leads via POST.
+  const raw = await req.text()
   let body: any = {}
-  try { body = await req.json() } catch {
+  try { body = JSON.parse(raw) } catch {
     return NextResponse.json({ ok: false, erro: 'JSON inválido' }, { status: 400 })
+  }
+
+  const { data: cfg } = await supabaseAdmin().from('meta_config')
+    .select('access_token, page_access_token, app_secret').eq('id', 1).maybeSingle()
+  const accessToken = (cfg?.page_access_token as string) || (cfg?.access_token as string) || null
+  const appSecret = (cfg?.app_secret as string) || process.env.META_APP_SECRET || null
+
+  const sigHeader = req.headers.get('x-hub-signature-256')
+  const verif = verifyMetaSignature(raw, sigHeader, appSecret)
+  if (verif === false) {
+    console.warn('[meta-webhook] assinatura X-Hub-Signature-256 inválida — rejeitando POST')
+    return NextResponse.json({ ok: false, erro: 'assinatura inválida' }, { status: 403 })
+  }
+  if (verif === null) {
+    // Sem app_secret configurado: aceita pra não bloquear setups iniciais,
+    // mas avisa em log. Em produção SEMPRE configure app_secret.
+    console.warn('[meta-webhook] app_secret não configurado — aceitando POST sem validar HMAC. Configure em /dashboard/integracoes/meta.')
   }
 
   // Estrutura típica: { object: 'page', entry: [{ changes: [{ field: 'leadgen', value: { leadgen_id, ad_id, ... } }] }] }
   const entries: any[] = body?.entry || []
-  const { data: cfg } = await supabaseAdmin().from('meta_config').select('access_token').eq('id', 1).maybeSingle()
-  const accessToken = cfg?.access_token
 
   const recebidos: any[] = []
   for (const e of entries) {
@@ -70,21 +88,28 @@ export async function POST(req: NextRequest) {
         campos:       null as any,
       }
 
-      // Busca o lead detalhado na Graph API (precisa do access_token)
+      // Busca o lead detalhado na Graph API. Idealmente com page_access_token
+      // (leads_retrieval é page-scoped); cai pra user token como fallback.
       if (accessToken) {
         try {
           const r = await fetch(`${GRAPH}/${leadgenId}?fields=field_data,ad_id,adset_id,campaign_id,form_id&access_token=${encodeURIComponent(accessToken)}`, {
             signal: AbortSignal.timeout(10000),
           })
-          if (r.ok) {
-            const j = await r.json()
+          const j = await r.json().catch(() => ({}))
+          if (r.ok && !j?.error) {
             linha.campos      = j.field_data || null
             linha.ad_id       = j.ad_id || linha.ad_id
             linha.adset_id    = j.adset_id || linha.adset_id
             linha.campanha_id = j.campaign_id || null
             linha.form_id     = j.form_id || linha.form_id
+          } else {
+            console.error('[meta-webhook] falha ao buscar leadgen', leadgenId, j?.error || `HTTP ${r.status}`)
           }
-        } catch {}
+        } catch (e) {
+          console.error('[meta-webhook] erro de rede buscando leadgen', leadgenId, e)
+        }
+      } else {
+        console.warn('[meta-webhook] sem access_token configurado — não foi possível enriquecer lead', leadgenId)
       }
 
       // Carrega mapeamento PRIMEIRO (precisa de campo_map antes de extrair)
