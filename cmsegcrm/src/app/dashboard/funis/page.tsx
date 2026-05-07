@@ -111,6 +111,8 @@ function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
   const [premioInput, setPremioInput] = useState<string>('')
   const [salvandoPremio, setSalvandoPremio] = useState(false)
+  // Transferência do card aberto para outro funil
+  const [transferFunilId, setTransferFunilId] = useState<string>('')
 
   // Tarefas: lista no card aberto e mapa "próxima tarefa em aberto" por negócio
   const [tarefasCard, setTarefasCard]           = useState<any[]>([])
@@ -171,7 +173,8 @@ function FunisPage() {
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
-    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); return }
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); setTransferFunilId(''); return }
+    setTransferFunilId('')
     setPremioInput(cardAtivo.premio != null ? String(Number(cardAtivo.premio).toFixed(2)).replace('.', ',') : '')
     setNovaTarefa({ titulo:'', prazo:'' })
     Promise.all([
@@ -896,6 +899,41 @@ function FunisPage() {
     limparSelecao()
   }
 
+  // Transfere as negociações selecionadas para outro funil. A etapa de
+  // destino é a primeira do funil escolhido (admin pode reposicionar
+  // depois, no funil novo).
+  async function bulkMoverFunil(novoFunilId: string) {
+    if (!novoFunilId || !selecionados.size) return
+    if (novoFunilId === funilAtivo) return
+    const destino = funis.find((f:any) => f.id === novoFunilId)
+    if (!destino) { alert('Funil de destino não encontrado.'); return }
+    const primeiraEtapa = destino.etapas?.[0] || ''
+    if (!primeiraEtapa) { alert(`O funil "${destino.nome}" não tem etapas configuradas.`); return }
+    if (!confirm(`Transferir ${selecionados.size} negociação(ões) para o funil "${destino.nome}"?\n\nElas entrarão na etapa "${primeiraEtapa}".`)) return
+    setBulkLoading(true)
+    const ids = Array.from(selecionados)
+    const { error } = await supabase.from('negocios').update({ funil_id: novoFunilId, etapa: primeiraEtapa }).in('id', ids)
+    setBulkLoading(false)
+    if (error) { alert('Erro ao transferir: ' + error.message); return }
+    setNegocios(prev => prev.filter(n => !ids.includes(n.id)))
+    await carregarContagens(funis)
+    limparSelecao()
+  }
+
+  // Move uma única negociação para outro funil + etapa específica.
+  async function moverParaOutroFunil(negocioId: string, novoFunilId: string, novaEtapa: string) {
+    if (!negocioId || !novoFunilId || !novaEtapa) return
+    const destino = funis.find((f:any) => f.id === novoFunilId)
+    if (!destino) { alert('Funil de destino não encontrado.'); return }
+    if (!confirm(`Transferir esta negociação para o funil "${destino.nome}" · etapa "${novaEtapa}"?`)) return
+    const { error } = await supabase.from('negocios').update({ funil_id: novoFunilId, etapa: novaEtapa }).eq('id', negocioId)
+    if (error) { alert('Erro ao transferir: ' + error.message); return }
+    setNegocios(prev => prev.filter(n => n.id !== negocioId))
+    await carregarContagens(funis)
+    setModalCard(false)
+    setCardAtivo(null)
+  }
+
   async function bulkTrocarVendedor(novoVendedor: string) {
     if (!selecionados.size) return
     const vendedor = usuarios.find(u => u.id === novoVendedor) || null
@@ -1185,6 +1223,20 @@ function FunisPage() {
               style={{padding:'5px 8px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'#fff',color:'#222',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
               <option value="">→ Mover para etapa…</option>
               {(funiAtual.etapas || []).map((et:string) => <option key={et} value={et}>{et}</option>)}
+            </select>
+          )}
+
+          {profile?.role === 'admin' && funis.length > 1 && (
+            <select
+              disabled={!selecionados.size || bulkLoading}
+              onChange={e => { if (e.target.value) bulkMoverFunil(e.target.value); e.target.value = '' }}
+              defaultValue=""
+              title="Transfere as negociações selecionadas para outro funil (entram na primeira etapa)"
+              style={{padding:'5px 8px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'#fff',color:'#222',cursor:selecionados.size?'pointer':'not-allowed',opacity:selecionados.size?1:0.4}}>
+              <option value="">⇄ Transferir para outro funil…</option>
+              {funis.filter((f:any) => f.id !== funilAtivo).map((f:any) => (
+                <option key={f.id} value={f.id}>{f.nome}</option>
+              ))}
             </select>
           )}
 
@@ -1740,6 +1792,48 @@ function FunisPage() {
                       → {e}
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Transferir para outro funil */}
+            {funis.length > 1 && (
+              <div style={{marginBottom:16,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>⇄ Transferir para outro funil</div>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                  <select
+                    value={transferFunilId}
+                    onChange={e => setTransferFunilId(e.target.value)}
+                    style={{flex:'1 1 180px',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                    <option value="">— escolha o funil —</option>
+                    {funis.filter((f:any) => f.id !== cardAtivo.funil_id).map((f:any) => (
+                      <option key={f.id} value={f.id}>{f.nome}</option>
+                    ))}
+                  </select>
+                  {(() => {
+                    const destino = funis.find((f:any) => f.id === transferFunilId)
+                    if (!destino) return null
+                    const etapasDest: string[] = destino.etapas || []
+                    if (!etapasDest.length) {
+                      return <div style={{fontSize:11,color:'var(--red)'}}>Esse funil não tem etapas configuradas.</div>
+                    }
+                    return (
+                      <select
+                        defaultValue=""
+                        onChange={e => {
+                          const et = e.target.value
+                          e.target.value = ''
+                          if (et) moverParaOutroFunil(cardAtivo.id, transferFunilId, et)
+                        }}
+                        style={{flex:'1 1 160px',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+                        <option value="">→ etapa de destino…</option>
+                        {etapasDest.map((et:string) => <option key={et} value={et}>{et}</option>)}
+                      </select>
+                    )
+                  })()}
+                </div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:6}}>
+                  A negociação sai do funil atual e passa a aparecer no funil de destino.
                 </div>
               </div>
             )}
