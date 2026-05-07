@@ -92,7 +92,7 @@ function FunisPage() {
   const [modalNovo, setModalNovo] = useState(false)
   const [funilModal, setFunilModal] = useState<any>(null)
   const [salvando, setSalvando]   = useState(false)
-  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
+  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'' })
   const [clienteBusca, setClienteBusca] = useState('')
   const [clientesRes, setClientesRes]   = useState<any[]>([])
   const [clienteSel, setClienteSel]     = useState<any>(null)
@@ -111,6 +111,8 @@ function FunisPage() {
   const [cardAtivo, setCardAtivo] = useState<any>(null)
   const [premioInput, setPremioInput] = useState<string>('')
   const [salvandoPremio, setSalvandoPremio] = useState(false)
+  const [telefoneInput, setTelefoneInput] = useState<string>('')
+  const [salvandoTelefone, setSalvandoTelefone] = useState(false)
   // Transferência do card aberto para outro funil
   const [transferFunilId, setTransferFunilId] = useState<string>('')
 
@@ -173,9 +175,10 @@ function FunisPage() {
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
-    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); setTransferFunilId(''); return }
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTelefoneInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); setTransferFunilId(''); return }
     setTransferFunilId('')
     setPremioInput(cardAtivo.premio != null ? String(Number(cardAtivo.premio).toFixed(2)).replace('.', ',') : '')
+    setTelefoneInput(cardAtivo.telefone_negocio || '')
     setNovaTarefa({ titulo:'', prazo:'' })
     Promise.all([
       supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
@@ -470,6 +473,23 @@ function FunisPage() {
     return profile.role === 'admin' || profile.id === card.vendedor_id
   }
 
+  async function salvarTelefoneDoCard() {
+    if (!cardAtivo) return
+    const novo = (telefoneInput || '').trim()
+    const atual = (cardAtivo.telefone_negocio || '').trim()
+    if (novo === atual) return
+    setSalvandoTelefone(true)
+    const valor = novo === '' ? null : novo
+    const { error } = await supabase.from('negocios').update({ telefone_negocio: valor }).eq('id', cardAtivo.id)
+    setSalvandoTelefone(false)
+    if (error) {
+      alert('Erro ao salvar telefone: ' + error.message)
+      return
+    }
+    setCardAtivo({ ...cardAtivo, telefone_negocio: valor })
+    setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, telefone_negocio: valor } : n))
+  }
+
   async function salvarPremioDoCard() {
     if (!cardAtivo) return
     if (!podeEditarPremio(cardAtivo)) {
@@ -592,7 +612,7 @@ function FunisPage() {
         id, titulo, etapa, status, qualificacao, premio, vencimento,
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
         produto, seguradora, cpf_cnpj, motivo_perda, obs,
-        custom_fields, created_at, data_fechamento,
+        custom_fields, created_at, data_fechamento, telefone_negocio,
         clientes(id,nome,cpf_cnpj,telefone,email),
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
@@ -626,18 +646,19 @@ function FunisPage() {
     const funil = funilModal
     const etapa = formNovo.etapa || funil?.etapas?.[0] || ''
     await supabase.from('negocios').insert({
-      titulo:      formNovo.titulo,
-      produto:     formNovo.produto || null,
-      seguradora:  formNovo.seguradora || null,
-      premio:      formNovo.premio ? parseFloat(formNovo.premio) : null,
-      obs:         formNovo.obs || null,
+      titulo:          formNovo.titulo,
+      produto:         formNovo.produto || null,
+      seguradora:      formNovo.seguradora || null,
+      premio:          formNovo.premio ? parseFloat(formNovo.premio) : null,
+      obs:             formNovo.obs || null,
+      telefone_negocio: formNovo.telefone?.trim() || null,
       etapa,
-      funil_id:    funil.id,
-      cliente_id:  clienteSel?.id || null,
-      vendedor_id: formNovo.vendedor_id || profile?.id,
+      funil_id:        funil.id,
+      cliente_id:      clienteSel?.id || null,
+      vendedor_id:     formNovo.vendedor_id || profile?.id,
     })
     setModalNovo(false)
-    setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'' })
+    setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'' })
     setClienteSel(null); setClienteBusca('')
     setSalvando(false)
     await carregarNegocios()
@@ -1386,9 +1407,9 @@ function FunisPage() {
                           <div style={{fontSize:11,color:'var(--teal)',display:'flex',alignItems:'center',gap:4}}>
                             <span>👤</span> {neg.clientes.nome}
                           </div>
-                          {neg.clientes.telefone && (
-                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,paddingLeft:16,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.clientes.telefone}>
-                              <span>📞</span> {neg.clientes.telefone}
+                          {(neg.telefone_negocio || neg.clientes.telefone) && (
+                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,paddingLeft:16,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.telefone_negocio || neg.clientes.telefone}>
+                              <span>📞</span> {neg.telefone_negocio || neg.clientes.telefone}
                             </div>
                           )}
                           {neg.clientes.email && (
@@ -1398,10 +1419,17 @@ function FunisPage() {
                           )}
                         </div>
                       ) : (
-                        <button onClick={e=>{e.stopPropagation();setNegocioVincular(neg);setVincularTab('buscar');setVincularBusca('');setVincularRes([]);setNovoClienteForm({nome:'',cpf_cnpj:neg.cpf_cnpj||'',telefone:'',email:''}); setModalVincular(true)}}
-                          style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px dashed rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:4,display:'block'}}>
-                          + Vincular cliente
-                        </button>
+                        <>
+                          <button onClick={e=>{e.stopPropagation();setNegocioVincular(neg);setVincularTab('buscar');setVincularBusca('');setVincularRes([]);setNovoClienteForm({nome:'',cpf_cnpj:neg.cpf_cnpj||'',telefone:neg.telefone_negocio||'',email:''}); setModalVincular(true)}}
+                            style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px dashed rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:4,display:'block'}}>
+                            + Vincular cliente
+                          </button>
+                          {neg.telefone_negocio && (
+                            <div style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={neg.telefone_negocio}>
+                              <span>📞</span> {neg.telefone_negocio}
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {neg.cpf_cnpj && !neg.clientes && (
@@ -1590,6 +1618,9 @@ function FunisPage() {
                 <input value={formNovo.premio} onChange={e=>setFormNovo(f=>({...f,premio:e.target.value}))} placeholder="0,00" style={inp}/></div>
             </div>
 
+            <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Telefone</label>
+              <input value={formNovo.telefone} onChange={e=>setFormNovo(f=>({...f,telefone:e.target.value}))} placeholder="(00) 00000-0000" style={inp}/></div>
+
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Seguradora</label>
               <select value={formNovo.seguradora} onChange={e=>setFormNovo(f=>({...f,seguradora:e.target.value}))} style={{...inp,background:'#ffffff'}}>
                 <option value="">— Selecione —</option>
@@ -1772,6 +1803,21 @@ function FunisPage() {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* Telefone do negócio */}
+            <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>📞 Telefone</div>
+              <input
+                type="tel"
+                value={telefoneInput}
+                onChange={e => setTelefoneInput(e.target.value)}
+                onBlur={salvarTelefoneDoCard}
+                onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur() }}
+                placeholder="(00) 00000-0000"
+                disabled={salvandoTelefone}
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}}
+              />
             </div>
 
             {/* Obs */}
