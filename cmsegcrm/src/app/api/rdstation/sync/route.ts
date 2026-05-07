@@ -4,6 +4,7 @@ import {
   listarTodos, listarPorJanela, ping, rdId, norm, buscarDealDetalhe,
   RDContact, RDDeal, RDPipeline, RDActivity, RDUser, RDStage,
 } from '@/lib/rdstation'
+import { aplicarMapeamento, RegraMapeamento } from '@/lib/rdstation-mapeamento'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
@@ -246,6 +247,17 @@ async function gravarCacheRD(chave: string, valor: any) {
 
 async function importarNegocios(token: string, from?: string, to?: string, incluirDetalhes = false) {
   const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+
+  // Mapeamento configurável (admin define em /dashboard/rdstation/mapeamento).
+  // Carregado uma vez e aplicado por deal. Tolera tabela vazia/erro: mantém
+  // o comportamento atual quando não há regras.
+  let regrasMapeamento: RegraMapeamento[] = []
+  try {
+    const { data } = await supabaseAdmin()
+      .from('rdstation_mapeamento_campos')
+      .select('mapeamento').eq('id', 1).maybeSingle()
+    regrasMapeamento = (data?.mapeamento as RegraMapeamento[]) || []
+  } catch {}
 
   // ─── PIPELINES DO RD: nome + etapas (para resolver mismatch) ──
   // Cacheado por 1h — refaz só se invalidado. Sem cache, isso sozinho
@@ -498,6 +510,11 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         motivo_perda:    motivoPerda,
         data_fechamento: dataFech,
       }
+
+      // Mapeamento configurável: sobrescreve campos selecionados pelo admin
+      // depois do default. Não toca FKs/lógica especial (funil/etapa/status/
+      // vendedor/cliente) que continuam vindo do default acima.
+      aplicarMapeamento(payload, dx, regrasMapeamento)
 
       // Origem (deal_source) — auto-cria em origens se vier do RD
       let origemId: string | null = null
