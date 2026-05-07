@@ -25,6 +25,9 @@ export default function ConectarMetaPage() {
   })
   const [testandoCAPI, setTestandoCAPI] = useState(false)
   const [respostaCAPI, setRespostaCAPI] = useState<string|null>(null)
+  const [secrets, setSecrets] = useState<Record<string,string|null>|null>(null)
+  const [revelando, setRevelando] = useState(false)
+  const [mostrar, setMostrar] = useState<Record<string,boolean>>({})
 
   useEffect(()=>{ init() }, [])
 
@@ -72,6 +75,15 @@ export default function ConectarMetaPage() {
     if (!confirm('Desconectar a integração Meta? Os dados sincronizados serão mantidos.')) return
     const r = await fetch('/api/meta/connect', { method:'DELETE', headers: await authHeaders() })
     if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',page_access_token:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'',dataset_id:'' }); await init() }
+  }
+
+  async function revelarSecrets() {
+    setRevelando(true)
+    try {
+      const r = await fetch('/api/meta/connect?revelar=1', { headers: await authHeaders() })
+      const j = await r.json()
+      if (r.ok) setSecrets(j.secrets || {})
+    } finally { setRevelando(false) }
   }
 
   async function testarCAPI() {
@@ -140,6 +152,82 @@ export default function ConectarMetaPage() {
               <li>Salve aqui — o robô vai testar o token e tentar subscrever a Page automaticamente</li>
             </ol>
           </div>
+
+          {status?.conectado && (
+            <div className="card" style={{marginBottom:20}}>
+              <div style={{display:'flex',alignItems:'center',marginBottom:14}}>
+                <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,flex:1}}>📋 Configuração salva</div>
+                {!secrets ? (
+                  <button onClick={revelarSecrets} disabled={revelando}
+                    style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    {revelando ? 'Carregando...' : '👁 Mostrar secrets'}
+                  </button>
+                ) : (
+                  <button onClick={()=>{setSecrets(null);setMostrar({})}}
+                    style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                    🙈 Ocultar
+                  </button>
+                )}
+              </div>
+              {(() => {
+                const linhas: Array<{ key:string; label:string; val:string|null|undefined; secret:boolean }> = [
+                  { key:'ad_account_id',     label:'Ad Account ID',     val: status?.ad_account_id, secret:false },
+                  { key:'page_id',           label:'Page ID',           val: status?.page_id,       secret:false },
+                  { key:'app_id',            label:'App ID',            val: status?.app_id,        secret:false },
+                  { key:'pixel_id',          label:'Pixel ID',          val: status?.pixel_id,      secret:false },
+                  { key:'dataset_id',        label:'CAPI Dataset ID',   val: status?.dataset_id,    secret:false },
+                  { key:'access_token',      label:'Access Token',      val: secrets?.access_token,      secret:true },
+                  { key:'page_access_token', label:'Page Access Token', val: secrets?.page_access_token, secret:true },
+                  { key:'app_secret',        label:'App Secret',        val: secrets?.app_secret,        secret:true },
+                  { key:'verify_token',      label:'Verify Token',      val: secrets?.verify_token,      secret:true },
+                  { key:'conversions_token', label:'Conversions API Token', val: secrets?.conversions_token, secret:true },
+                ]
+                const mask = (v: string) => v.length <= 8 ? '••••' : v.slice(0,4) + '•'.repeat(Math.max(8, v.length-8)) + v.slice(-4)
+                return (
+                  <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,fontSize:12}}>
+                    {linhas.map(l => {
+                      const temValor = !!l.val
+                      const temFlag = l.secret
+                        ? (l.key === 'access_token' ? status?.tem_access_token
+                          : l.key === 'page_access_token' ? status?.tem_page_access_token
+                          : l.key === 'app_secret' ? status?.tem_app_secret
+                          : l.key === 'verify_token' ? status?.tem_verify_token
+                          : l.key === 'conversions_token' ? status?.tem_conversions_token
+                          : false)
+                        : temValor
+                      const exibe = l.secret ? (mostrar[l.key] && l.val ? l.val : (l.val ? mask(l.val) : null)) : (l.val || null)
+                      return (
+                        <div key={l.key} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',background:'rgba(255,255,255,0.03)',borderRadius:6,border:'1px solid var(--border)'}}>
+                          <div style={{flex:'0 0 180px',color:'var(--text-muted)',fontSize:11,letterSpacing:'0.5px',textTransform:'uppercase',fontWeight:600}}>{l.label}</div>
+                          <div style={{flex:1,fontFamily:'monospace',fontSize:12,color: exibe ? 'var(--text)' : 'var(--text-muted)',wordBreak:'break-all'}}>
+                            {exibe || (temFlag ? '✓ salvo (clique em Mostrar secrets)' : '— não configurado')}
+                          </div>
+                          {l.secret && l.val && (
+                            <>
+                              <button onClick={()=>setMostrar(m=>({...m,[l.key]:!m[l.key]}))}
+                                style={{padding:'3px 8px',borderRadius:4,fontSize:10,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)'}}>
+                                {mostrar[l.key]?'Ocultar':'Mostrar'}
+                              </button>
+                              <button onClick={()=>{navigator.clipboard.writeText(l.val!);setMsg('✅ Copiado: '+l.label)}}
+                                style={{padding:'3px 8px',borderRadius:4,fontSize:10,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)'}}>
+                                Copiar
+                              </button>
+                            </>
+                          )}
+                          {!l.secret && l.val && (
+                            <button onClick={()=>{navigator.clipboard.writeText(l.val!);setMsg('✅ Copiado: '+l.label)}}
+                              style={{padding:'3px 8px',borderRadius:4,fontSize:10,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)'}}>
+                              Copiar
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
 
           <div className="card">
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:18}}>Credenciais</div>

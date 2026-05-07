@@ -32,9 +32,11 @@ export async function GET(req: NextRequest) {
   const auth = await checarAdmin(req)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
+  const url = new URL(req.url)
+  const revelar = url.searchParams.get('revelar') === '1'
+
   const { data } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
-  // Não devolve secrets crus, só status
-  return NextResponse.json({
+  const base = {
     ok: true,
     conectado: !!data?.access_token,
     ad_account_id: data?.ad_account_id || null,
@@ -42,11 +44,26 @@ export async function GET(req: NextRequest) {
     app_id: data?.app_id || null,
     pixel_id: data?.pixel_id || null,
     dataset_id: data?.dataset_id || null,
+    tem_access_token: !!data?.access_token,
+    tem_app_secret: !!data?.app_secret,
+    tem_verify_token: !!data?.verify_token,
     tem_conversions_token: !!data?.conversions_token,
     tem_page_access_token: !!data?.page_access_token,
     webhook_subscribed: !!data?.webhook_subscribed,
     expires_at: data?.expires_at || null,
     configurado_em: data?.configurado_em || null,
+  }
+  if (!revelar) return NextResponse.json(base)
+  // Admin pediu pra revelar — devolve secrets em texto claro.
+  return NextResponse.json({
+    ...base,
+    secrets: {
+      access_token:       data?.access_token || null,
+      page_access_token:  data?.page_access_token || null,
+      app_secret:         data?.app_secret || null,
+      verify_token:       data?.verify_token || null,
+      conversions_token:  data?.conversions_token || null,
+    },
   })
 }
 
