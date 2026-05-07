@@ -130,6 +130,36 @@ export async function POST(req: NextRequest) {
         const v = Array.isArray(c.values) && c.values[0] ? String(c.values[0]).trim() : ''
         if (k && v) valorPorKey[k] = v
       }
+
+      // Enriquece valorPorKey com metadados da Meta (campanha, adset, ad,
+      // form, page, lead). Permite usar __meta__:* tanto em campo_map quanto
+      // em titulo_campos. Os IDs já vêm em `linha`; os nomes são buscados
+      // nas tabelas espelho meta_campanhas / meta_adsets / meta_ads.
+      const setMeta = (k: string, v: string | null | undefined) => {
+        if (v != null && String(v).trim() !== '') valorPorKey[k] = String(v).trim()
+      }
+      setMeta('__meta__:campaign_id', linha.campanha_id)
+      setMeta('__meta__:adset_id',    linha.adset_id)
+      setMeta('__meta__:ad_id',       linha.ad_id)
+      setMeta('__meta__:form_id',     linha.form_id)
+      setMeta('__meta__:page_id',     linha.page_id)
+      setMeta('__meta__:lead_id',     linha.meta_lead_id)
+      setMeta('__meta__:form_name',   mapping?.form_nome)
+      if (linha.campanha_id) {
+        const { data: row } = await supabaseAdmin().from('meta_campanhas')
+          .select('nome').eq('meta_id', String(linha.campanha_id)).maybeSingle()
+        setMeta('__meta__:campaign_name', (row as any)?.nome)
+      }
+      if (linha.adset_id) {
+        const { data: row } = await supabaseAdmin().from('meta_adsets')
+          .select('nome').eq('meta_id', String(linha.adset_id)).maybeSingle()
+        setMeta('__meta__:adset_name', (row as any)?.nome)
+      }
+      if (linha.ad_id) {
+        const { data: row } = await supabaseAdmin().from('meta_ads')
+          .select('nome').eq('meta_id', String(linha.ad_id)).maybeSingle()
+        setMeta('__meta__:ad_name', (row as any)?.nome)
+      }
       // fallback heurístico (caso campo_map não cubra tudo)
       const heur = (...keys: string[]) => {
         for (const k of keys) {
@@ -138,24 +168,19 @@ export async function POST(req: NextRequest) {
         }
         return null
       }
-      // Aplica campo_map → preenche colunas (suporta prefixos)
-      //   cliente:<col>     → cliente.<col>
-      //   cliente_cf:<chave>→ cliente.custom_fields.<chave>
+      // Aplica campo_map → preenche colunas da NEGOCIAÇÃO (suporta prefixos)
       //   negocio:<col>     → negocio.<col>
       //   negocio_cf:<chave>→ negocio.custom_fields.<chave>
-      // Sem prefixo (legado) = cliente:<col>
-      const cliBase: Record<string, any> = {}
-      const cliCustom: Record<string, any> = {}
+      // Mapeamentos legados com prefixo cliente:/cliente_cf: ou sem prefixo
+      // são ignorados — esta integração não cria nem atualiza clientes.
       const negBase: Record<string, any> = {}
       const negCustom: Record<string, any> = {}
       const aplicar = (target: any, v: string) => {
         if (!target) return
         const t = String(target)
-        if (t.startsWith('cliente_cf:'))      cliCustom[t.slice(11)] = v
-        else if (t.startsWith('cliente:'))    cliBase[t.slice(8)]    = v
-        else if (t.startsWith('negocio_cf:')) negCustom[t.slice(11)] = v
-        else if (t.startsWith('negocio:'))    negBase[t.slice(8)]    = v
-        else                                   cliBase[t]             = v // legado plano
+        if (t.startsWith('negocio_cf:')) negCustom[t.slice(11)] = v
+        else if (t.startsWith('negocio:')) negBase[t.slice(8)] = v
+        // demais prefixos (cliente:, cliente_cf:, sem prefixo) → ignorados
       }
       for (const [formKey, target] of Object.entries(campoMap)) {
         const v = valorPorKey[formKey]
@@ -163,61 +188,23 @@ export async function POST(req: NextRequest) {
         if (typeof target === 'string') {
           aplicar(target, v)
         } else if (target && typeof target === 'object') {
-          aplicar((target as any).cliente, v)
           aplicar((target as any).negocio, v)
         }
       }
-      // Garante os campos básicos (heurística como fallback)
-      const nome     = cliBase.nome     || heur('full_name', 'nome', 'name')
-      const email    = cliBase.email    || heur('email', 'e-mail')
-      const telefone = cliBase.telefone || heur('phone_number', 'telefone', 'phone', 'celular')
-      const cpf      = cliBase.cpf_cnpj || heur('cpf')
-      const cnpj     = (!cliBase.cpf_cnpj) ? heur('cnpj') : null
 
-      // Tenta achar cliente existente por email/cpf/telefone, senão cria
-      let clienteId: string | null = null
-      const tenta = async (col: string, val: string | null) => {
-        if (!val) return null
-        const { data } = await supabaseAdmin().from('clientes').select('id').eq(col, val).limit(1).maybeSingle()
-        return data?.id || null
+      // Compõe título a partir de titulo_campos (lista ordenada de chaves do form).
+      // Quando há múltiplas chaves, junta os valores com " - ".
+      const tituloCampos: string[] = Array.isArray(mapping?.titulo_campos) ? mapping.titulo_campos : []
+      let tituloComposto: string | null = null
+      if (tituloCampos.length > 0) {
+        const partes = tituloCampos.map(k => valorPorKey[k]).filter(v => v != null && v !== '')
+        if (partes.length) tituloComposto = partes.join(' - ')
       }
-      clienteId = await tenta('email', email?.toLowerCase() || null)
-            || await tenta('cpf_cnpj', (cpf || cnpj))
-            || await tenta('telefone', telefone)
 
-      // Monta payload do cliente (cliBase + heurística + tracking)
-      const payloadCliente: any = {
-        ...cliBase,
-        nome:     cliBase.nome || nome || email || telefone || 'Lead Meta sem nome',
-        tipo:     (cliBase.cpf_cnpj?.replace(/\D/g,'').length === 14 || cnpj) ? 'PJ' : 'PF',
-        cpf_cnpj: cliBase.cpf_cnpj || cpf || cnpj || null,
-        email:    cliBase.email?.toLowerCase() || email?.toLowerCase() || null,
-        telefone: cliBase.telefone || telefone || null,
-        fonte:    'Meta Ads',
-        meta_lead_id:     linha.meta_lead_id,
-        meta_campaign_id: linha.campanha_id || null,
-        meta_adset_id:    linha.adset_id || null,
-        meta_ad_id:       linha.ad_id || null,
-        meta_form_id:     linha.form_id || null,
-      }
-      if (Object.keys(cliCustom).length) payloadCliente.custom_fields = cliCustom
-
-      if (!clienteId) {
-        const { data: novo } = await supabaseAdmin().from('clientes').insert(payloadCliente).select('id').single()
-        clienteId = novo?.id || null
-      } else {
-        // Atualiza cliente existente. custom_fields faz merge (não sobrescreve).
-        const { data: cur } = await supabaseAdmin().from('clientes').select('custom_fields').eq('id', clienteId).maybeSingle()
-        const upd: any = {}
-        for (const [k, v] of Object.entries(payloadCliente)) {
-          if (k === 'custom_fields') continue
-          if (v != null && v !== '') upd[k] = v
-        }
-        if (Object.keys(cliCustom).length) {
-          upd.custom_fields = { ...((cur as any)?.custom_fields || {}), ...cliCustom }
-        }
-        await supabaseAdmin().from('clientes').update(upd).eq('id', clienteId)
-      }
+      // Fallback heurístico apenas para o título de fallback
+      const nome     = heur('full_name', 'nome', 'name')
+      const email    = heur('email', 'e-mail')
+      const telefone = heur('phone_number', 'telefone', 'phone', 'celular')
 
       // Define vendedor: round-robin se houver vendedor_ids, senão fixo
       let vendedorId: string | null = null
@@ -228,9 +215,9 @@ export async function POST(req: NextRequest) {
         vendedorId = mapping?.vendedor_id || null
       }
 
-      // Cria negócio se: temos cliente E (mapping permite OU não há mapping)
+      // Cria negócio (sem cliente). cliente_id fica null — a coluna é nullable.
       let negocioId: string | null = null
-      const deveCriarNegocio = clienteId && (mapping ? mapping.criar_negocio !== false : true)
+      const deveCriarNegocio = mapping ? mapping.criar_negocio !== false : true
       if (deveCriarNegocio) {
         let funilId: string | null = mapping?.funil_id || null
         let etapaInicial: string | null = mapping?.etapa || null
@@ -248,12 +235,11 @@ export async function POST(req: NextRequest) {
         }
 
         if (funilId) {
-          // Converte premio/numérico se mapeado
           const negPayload: any = {
-            cliente_id:        clienteId,
+            cliente_id:        null,
             funil_id:          funilId,
             etapa:             etapaInicial!,
-            titulo:            negBase.titulo || `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
+            titulo:            tituloComposto || negBase.titulo || `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
             fonte:             negBase.fonte  || 'Meta Ads',
             obs:               campos.length ? campos.map((c: any) => `${c.name}: ${(c.values || []).join(', ')}`).join('\n') : null,
             corretor_id:       vendedorId,
@@ -261,10 +247,11 @@ export async function POST(req: NextRequest) {
             meta_campaign_id:  linha.campanha_id || null,
             meta_ad_id:        linha.ad_id || null,
           }
-          // Aplica negBase (sobrescreve defaults se mapeado)
+          // Aplica negBase (sobrescreve defaults se mapeado), exceto titulo
+          // (já resolvido acima com prioridade para titulo_campos).
           for (const [k, v] of Object.entries(negBase)) {
             if (v == null || v === '') continue
-            // converte numérico para colunas numéricas conhecidas
+            if (k === 'titulo') continue
             if (k === 'premio' || k === 'comissao_pct') {
               const n = Number(String(v).replace(/[^\d,.-]/g,'').replace(',', '.'))
               if (isFinite(n)) negPayload[k] = n
@@ -277,7 +264,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Grava o lead
+      // Grava o lead (sem cliente_id — nenhum cliente é criado/associado)
       await supabaseAdmin().from('meta_leads').insert({
         meta_lead_id:  linha.meta_lead_id,
         form_id:       linha.form_id,
@@ -286,13 +273,13 @@ export async function POST(req: NextRequest) {
         campanha_id:   linha.campanha_id || null,
         page_id:       linha.page_id,
         campos:        linha.campos,
-        cliente_id:    clienteId,
+        cliente_id:    null,
         negocio_id:    negocioId,
         vendedor_id:   vendedorId,
         processado_em: new Date().toISOString(),
       })
 
-      recebidos.push({ leadgenId, clienteId, negocioId })
+      recebidos.push({ leadgenId, negocioId })
     }
   }
 

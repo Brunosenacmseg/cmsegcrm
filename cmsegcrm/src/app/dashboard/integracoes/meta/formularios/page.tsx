@@ -17,22 +17,12 @@ type Form = {
     vendedor_ids?: string[]
     ativo: boolean
     criar_negocio: boolean
-    campo_map?: Record<string, string>
+    campo_map?: Record<string, any>
+    titulo_campos?: string[]
   }
 }
 
-const COLS_CLIENTE_PADRAO = [
-  { val: 'cliente:nome',     label: 'Nome' },
-  { val: 'cliente:cpf_cnpj', label: 'CPF/CNPJ' },
-  { val: 'cliente:email',    label: 'E-mail' },
-  { val: 'cliente:telefone', label: 'Telefone' },
-  { val: 'cliente:cep',      label: 'CEP' },
-  { val: 'cliente:cidade',   label: 'Cidade' },
-  { val: 'cliente:estado',   label: 'Estado' },
-  { val: 'cliente:fonte',    label: 'Fonte' },
-]
 const COLS_NEGOCIO_PADRAO = [
-  { val: 'negocio:titulo',     label: 'Título' },
   { val: 'negocio:produto',    label: 'Produto' },
   { val: 'negocio:seguradora', label: 'Seguradora' },
   { val: 'negocio:premio',     label: 'Prêmio' },
@@ -43,6 +33,22 @@ const COLS_NEGOCIO_PADRAO = [
   { val: 'negocio:cep',        label: 'CEP' },
   { val: 'negocio:vencimento', label: 'Vencimento' },
   { val: 'negocio:obs',        label: 'Observações' },
+]
+
+// Metadados expostos pelo webhook em valorPorKey. Aparecem no UI ao lado
+// dos campos do formulário, podendo ser usados tanto no mapeamento quanto
+// na composição do título.
+const META_CAMPOS: { key: string; label: string }[] = [
+  { key: '__meta__:campaign_name', label: 'Campanha (nome)' },
+  { key: '__meta__:adset_name',    label: 'Conjunto de anúncios (nome)' },
+  { key: '__meta__:ad_name',       label: 'Anúncio (nome)' },
+  { key: '__meta__:form_name',     label: 'Formulário (nome)' },
+  { key: '__meta__:campaign_id',   label: 'Campanha (ID)' },
+  { key: '__meta__:adset_id',      label: 'Conjunto (ID)' },
+  { key: '__meta__:ad_id',         label: 'Anúncio (ID)' },
+  { key: '__meta__:form_id',       label: 'Formulário (ID)' },
+  { key: '__meta__:page_id',       label: 'Página (ID)' },
+  { key: '__meta__:lead_id',       label: 'Lead (ID)' },
 ]
 
 export default function FormulariosMetaPage() {
@@ -107,7 +113,7 @@ export default function FormulariosMetaPage() {
 
   async function salvarMapeamento(form: Form, patch: Partial<NonNullable<Form['mapeamento']>>) {
     setSalvando(form.form_id)
-    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, vendedor_ids: [], ativo: true, criar_negocio: true, campo_map: {} }
+    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, vendedor_ids: [], ativo: true, criar_negocio: true, campo_map: {}, titulo_campos: [] }
     const novo = { ...atual, ...patch }
     try {
       await fetch('/api/meta/forms', {
@@ -121,18 +127,26 @@ export default function FormulariosMetaPage() {
       setForms(prev => prev.map(x => x.form_id === form.form_id ? { ...x, mapeamento: novo } : x))
     } finally { setSalvando(null) }
   }
-  function mapearCampo(form: Form, formKey: string, alvo: 'cliente'|'negocio', valor: string) {
-    const m = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {} }
+  function mapearCampo(form: Form, formKey: string, valor: string) {
+    const m = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {}, titulo_campos: [] }
     const cm: Record<string, any> = { ...(m.campo_map || {}) }
-    // Migração soft: se valor era string (legado), promove pra objeto { cliente: ... }
     let entry: any = cm[formKey]
-    if (typeof entry === 'string') entry = { cliente: entry }
+    // legado: valor podia ser string apontando pra cliente:* — descartamos
+    if (typeof entry === 'string') entry = {}
     if (!entry || typeof entry !== 'object') entry = {}
-    if (valor) entry[alvo] = valor
-    else delete entry[alvo]
+    // Apenas o alvo "negocio" é gerenciado pela UI atual; preserva chaves desconhecidas.
+    if (valor) entry.negocio = valor
+    else delete entry.negocio
     if (Object.keys(entry).length === 0) delete cm[formKey]
     else cm[formKey] = entry
     salvarMapeamento(form, { campo_map: cm })
+  }
+  function toggleTituloCampo(form: Form, formKey: string) {
+    const atuais = Array.isArray(form.mapeamento?.titulo_campos) ? [...form.mapeamento!.titulo_campos!] : []
+    const idx = atuais.indexOf(formKey)
+    if (idx >= 0) atuais.splice(idx, 1)
+    else atuais.push(formKey)
+    salvarMapeamento(form, { titulo_campos: atuais })
   }
 
   async function removerMapeamento(form: Form) {
@@ -193,6 +207,7 @@ export default function FormulariosMetaPage() {
           <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14,lineHeight:1.5}}>
             Para cada formulário do Meta Lead Ads abaixo, escolha em qual <b>funil</b>, <b>etapa</b> e <b>vendedor</b> a negociação deve ser criada quando alguém preencher.
             Formulários sem mapeamento ativo continuam caindo no funil padrão de venda, sem vendedor.
+            <br/><b>Importante:</b> esta integração cria apenas a <b>negociação</b> — nenhum cliente é criado ou alterado.
           </div>
 
           {forms.length === 0 && !erro && (
@@ -269,20 +284,18 @@ export default function FormulariosMetaPage() {
                   {form.questions && form.questions.length > 0 && (
                     <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
                       <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>
-                        Mapeamento de campos
+                        Mapeamento de campos da negociação
                       </div>
-                      <div style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr 1fr',gap:6,fontSize:10,color:'var(--text-muted)',padding:'4px 8px',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
+                      <div style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr',gap:6,fontSize:10,color:'var(--text-muted)',padding:'4px 8px',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
                         <div>Campo do formulário</div>
-                        <div>→ Cliente</div>
                         <div>→ Negociação</div>
                       </div>
                       <div style={{display:'flex',flexDirection:'column',gap:4}}>
                         {form.questions.map(q => {
                           const entry: any = (m?.campo_map || {})[q.key]
-                          const vCli = typeof entry === 'string' ? entry : (entry?.cliente || '')
                           const vNeg = typeof entry === 'string' ? '' : (entry?.negocio || '')
                           return (
-                            <div key={q.key} style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr 1fr',gap:6,alignItems:'center',background:'rgba(255,255,255,0.03)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
+                            <div key={q.key} style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr',gap:6,alignItems:'center',background:'rgba(255,255,255,0.03)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
                               <div style={{minWidth:0,fontSize:11}}>
                                 <div style={{fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color:'#1a1a2e'}} title={q.label || q.key}>
                                   {q.label || q.key}
@@ -290,22 +303,7 @@ export default function FormulariosMetaPage() {
                                 <div style={{color:'var(--text-muted)',fontSize:10,fontFamily:'monospace'}}>{q.key}</div>
                               </div>
 
-                              <select value={vCli} onChange={e=>mapearCampo(form, q.key, 'cliente', e.target.value)}
-                                style={{...sel,padding:'4px 6px',fontSize:11}}>
-                                <option value="">— ignorar —</option>
-                                <optgroup label="Padrão">
-                                  {COLS_CLIENTE_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
-                                </optgroup>
-                                {customFields.filter(cf => cf.entidade === 'cliente').length > 0 && (
-                                  <optgroup label="Personalizados">
-                                    {customFields.filter(cf => cf.entidade === 'cliente').map(cf =>
-                                      <option key={cf.chave} value={`cliente_cf:${cf.chave}`}>{cf.nome}</option>
-                                    )}
-                                  </optgroup>
-                                )}
-                              </select>
-
-                              <select value={vNeg} onChange={e=>mapearCampo(form, q.key, 'negocio', e.target.value)}
+                              <select value={vNeg} onChange={e=>mapearCampo(form, q.key, e.target.value)}
                                 style={{...sel,padding:'4px 6px',fontSize:11}}>
                                 <option value="">— ignorar —</option>
                                 <optgroup label="Padrão">
@@ -322,6 +320,93 @@ export default function FormulariosMetaPage() {
                             </div>
                           )
                         })}
+
+                        <div style={{marginTop:6,fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:0.5,padding:'4px 8px'}}>
+                          Dados da Meta (campanha, anúncio, formulário…)
+                        </div>
+                        {META_CAMPOS.map(c => {
+                          const entry: any = (m?.campo_map || {})[c.key]
+                          const vNeg = typeof entry === 'string' ? '' : (entry?.negocio || '')
+                          return (
+                            <div key={c.key} style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr',gap:6,alignItems:'center',background:'rgba(28,181,160,0.04)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
+                              <div style={{minWidth:0,fontSize:11}}>
+                                <div style={{fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color:'#1a1a2e'}} title={c.label}>
+                                  📣 {c.label}
+                                </div>
+                                <div style={{color:'var(--text-muted)',fontSize:10,fontFamily:'monospace'}}>{c.key}</div>
+                              </div>
+
+                              <select value={vNeg} onChange={e=>mapearCampo(form, c.key, e.target.value)}
+                                style={{...sel,padding:'4px 6px',fontSize:11}}>
+                                <option value="">— ignorar —</option>
+                                <optgroup label="Padrão">
+                                  {COLS_NEGOCIO_PADRAO.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+                                </optgroup>
+                                {customFields.filter(cf => cf.entidade === 'negocio').length > 0 && (
+                                  <optgroup label="Personalizados">
+                                    {customFields.filter(cf => cf.entidade === 'negocio').map(cf =>
+                                      <option key={cf.chave} value={`negocio_cf:${cf.chave}`}>{cf.nome}</option>
+                                    )}
+                                  </optgroup>
+                                )}
+                              </select>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Composição do título da negociação a partir de múltiplos campos */}
+                      <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
+                        <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:6,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>
+                          Título da negociação
+                        </div>
+                        <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8,lineHeight:1.5}}>
+                          Selecione um ou mais campos do formulário para compor o título. Quando há mais de um, os valores são concatenados com <code style={{background:'rgba(255,255,255,0.05)',padding:'1px 4px',borderRadius:3}}>-</code> na ordem em que foram marcados.
+                        </div>
+                        <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>Campos do formulário</div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))',gap:6}}>
+                          {form.questions.map(q => {
+                            const tc = m?.titulo_campos || []
+                            const idx = tc.indexOf(q.key)
+                            const ativo = idx >= 0
+                            return (
+                              <label key={q.key} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,padding:'6px 8px',cursor:'pointer',color:'#1a1a2e',borderRadius:6,border:'1px solid var(--border)',background: ativo ? 'rgba(201,168,76,0.08)' : '#ffffff'}}>
+                                <input type="checkbox" checked={ativo} onChange={()=>toggleTituloCampo(form, q.key)} style={{accentColor:'var(--gold)'}}/>
+                                {ativo && (
+                                  <span style={{minWidth:18,height:18,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'var(--gold)',color:'#1a1a2e',borderRadius:9,fontSize:10,fontWeight:700}}>{idx + 1}</span>
+                                )}
+                                <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={q.label || q.key}>{q.label || q.key}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                        <div style={{fontSize:10,color:'var(--text-muted)',margin:'10px 0 4px',textTransform:'uppercase',letterSpacing:0.5}}>Dados da Meta</div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))',gap:6}}>
+                          {META_CAMPOS.map(c => {
+                            const tc = m?.titulo_campos || []
+                            const idx = tc.indexOf(c.key)
+                            const ativo = idx >= 0
+                            return (
+                              <label key={c.key} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,padding:'6px 8px',cursor:'pointer',color:'#1a1a2e',borderRadius:6,border:'1px solid var(--border)',background: ativo ? 'rgba(201,168,76,0.08)' : 'rgba(28,181,160,0.04)'}}>
+                                <input type="checkbox" checked={ativo} onChange={()=>toggleTituloCampo(form, c.key)} style={{accentColor:'var(--gold)'}}/>
+                                {ativo && (
+                                  <span style={{minWidth:18,height:18,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'var(--gold)',color:'#1a1a2e',borderRadius:9,fontSize:10,fontWeight:700}}>{idx + 1}</span>
+                                )}
+                                <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={c.label}>📣 {c.label}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                        {(m?.titulo_campos || []).length > 0 && (
+                          <div style={{marginTop:8,fontSize:11,color:'var(--text-muted)'}}>
+                            Prévia: <b style={{color:'#1a1a2e'}}>{(m?.titulo_campos || []).map(k => {
+                              const q = form.questions?.find(x => x.key === k)
+                              if (q) return q.label || k
+                              const meta = META_CAMPOS.find(x => x.key === k)
+                              return meta?.label || k
+                            }).join(' - ')}</b>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
