@@ -77,6 +77,21 @@ export default function ConectarMetaPage() {
     if (r.ok) { setMsg('Desconectado'); setForm({ access_token:'',ad_account_id:'',page_id:'',page_access_token:'',app_id:'',app_secret:'',verify_token:'',pixel_id:'',conversions_token:'',dataset_id:'' }); await init() }
   }
 
+  async function buscarPageToken() {
+    setMsg(null)
+    const r = await fetch('/api/meta/connect', {
+      method:'PATCH', headers: await authHeaders(),
+      body: JSON.stringify({ acao: 'buscar_page_token' }),
+    })
+    const j = await r.json()
+    if (!r.ok) { setMsg('❌ ' + (j.error || 'erro')); return }
+    let m = `✅ Page Token salvo da Page "${j.page?.name}"`
+    if (j.webhook_subscribed) m += ' · Webhook leadgen ativo'
+    else if (j.webhook_erro)  m += ' · ⚠ Webhook: ' + j.webhook_erro
+    setMsg(m)
+    await init()
+  }
+
   async function revelarSecrets() {
     setRevelando(true)
     try {
@@ -251,6 +266,14 @@ export default function ConectarMetaPage() {
             <div style={{marginBottom:14}}>
               <label style={lbl}>Page Access Token {status?.tem_page_access_token ? <span style={{color:'var(--teal)'}}>(salvo ✓)</span> : <span style={{color:'var(--text-muted)'}}>(recomendado)</span>}</label>
               <input type="password" value={form.page_access_token} onChange={e=>setForm(f=>({...f,page_access_token:e.target.value}))} placeholder={status?.tem_page_access_token ? '(deixe em branco pra manter o salvo)' : 'EAA... — Page Access Token específico da Página'} style={inp} />
+              <div style={{display:'flex',gap:8,marginTop:6}}>
+                <button type="button" onClick={buscarPageToken}
+                  disabled={!status?.conectado || !status?.page_id}
+                  title={!status?.page_id ? 'Configure page_id antes' : 'Usa o Access Token salvo pra descobrir o Page Token via /me/accounts'}
+                  style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',fontWeight:600,opacity:(!status?.conectado||!status?.page_id)?0.5:1}}>
+                  🔍 Buscar Page Token automaticamente
+                </button>
+              </div>
               <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,lineHeight:1.5}}>
                 Gere em <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color:'var(--teal)'}}>Graph API Explorer</a> selecionando a Page no campo "Application" e marcando os escopos <code>leads_retrieval, pages_show_list, pages_read_engagement, pages_manage_metadata</code>. Sem esse token, <code>/leadgen_forms</code> retorna <b>"API access blocked"</b>.
               </div>
