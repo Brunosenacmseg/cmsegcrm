@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GRAPH } from '@/lib/meta-graph'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,8 +16,6 @@ function supabaseAdmin() {
   if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
-
-const GRAPH = 'https://graph.facebook.com/v19.0'
 
 async function checarAdmin(req: NextRequest): Promise<{ ok: boolean; userId?: string; erro?: string }> {
   const auth = req.headers.get('authorization') || ''
@@ -44,6 +43,7 @@ export async function GET(req: NextRequest) {
     pixel_id: data?.pixel_id || null,
     dataset_id: data?.dataset_id || null,
     tem_conversions_token: !!data?.conversions_token,
+    tem_page_access_token: !!data?.page_access_token,
     webhook_subscribed: !!data?.webhook_subscribed,
     expires_at: data?.expires_at || null,
     configurado_em: data?.configurado_em || null,
@@ -57,15 +57,16 @@ export async function POST(req: NextRequest) {
   let body: any = {}
   try { body = await req.json() } catch {}
 
-  const access_token      = (body.access_token      || '').trim()
-  const ad_account_id     = (body.ad_account_id     || '').trim()
-  const page_id           = (body.page_id           || '').trim()
-  const app_id            = (body.app_id            || '').trim()
-  const app_secret        = (body.app_secret        || '').trim()
-  const verify_token      = (body.verify_token      || '').trim()
-  const pixel_id          = (body.pixel_id          || '').trim()
-  const conversions_token = (body.conversions_token || '').trim()
-  const dataset_id        = (body.dataset_id        || '').trim()
+  const access_token       = (body.access_token       || '').trim()
+  const ad_account_id      = (body.ad_account_id      || '').trim()
+  const page_id            = (body.page_id            || '').trim()
+  const page_access_token  = (body.page_access_token  || '').trim()
+  const app_id             = (body.app_id             || '').trim()
+  const app_secret         = (body.app_secret         || '').trim()
+  const verify_token       = (body.verify_token       || '').trim()
+  const pixel_id           = (body.pixel_id           || '').trim()
+  const conversions_token  = (body.conversions_token  || '').trim()
+  const dataset_id         = (body.dataset_id         || '').trim()
 
   if (!access_token) return NextResponse.json({ error: 'access_token é obrigatório' }, { status: 400 })
 
@@ -81,12 +82,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Falha ao verificar token: '+e.message }, { status: 400 })
   }
 
+  // Tenta descobrir / validar o page_access_token. A ordem é:
+  //   1) Se admin colou um page_access_token explícito, usa esse.
+  //   2) Senão, tenta /me/accounts com o user/system token.
+  //   3) Como último recurso, mantém o que já estava salvo (não apaga).
+  // Esse token é OBRIGATÓRIO pra leadgen_forms e leads_retrieval — o user
+  // token sozinho costuma retornar "API access blocked".
+  const { data: existente } = await supabaseAdmin().from('meta_config')
+    .select('page_access_token').eq('id', 1).maybeSingle()
+  let pageAccessTokenFinal: string | null = page_access_token || (existente?.page_access_token as string) || null
+  let webhook_erro: string | null = null
+  if (page_id && !pageAccessTokenFinal) {
+    try {
+      const ra = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(access_token)}`, {
+        signal: AbortSignal.timeout(8000),
+      })
+      const ja = await ra.json()
+      if (ja?.error) {
+        console.error('[meta-connect] /me/accounts error:', ja.error)
+        webhook_erro = `Não consegui listar suas Pages (${ja.error.message}). Cole o Page Access Token manualmente.`
+      } else {
+        const page = (ja?.data || []).find((p: any) => String(p.id) === String(page_id))
+        if (page?.access_token) {
+          pageAccessTokenFinal = page.access_token
+        } else {
+          webhook_erro = 'Page access token não encontrado em /me/accounts. Cole-o manualmente no campo "Page Access Token" ou verifique se o usuário do token administra essa Page com leads_retrieval.'
+        }
+      }
+    } catch (e: any) {
+      console.error('[meta-connect] /me/accounts fetch failed:', e)
+      webhook_erro = 'Falha ao consultar /me/accounts: ' + (e?.message || 'rede')
+    }
+  }
+
   // Salva config (upsert na linha id=1)
   const { error: errSave } = await supabaseAdmin().from('meta_config').upsert({
     id: 1,
     access_token,
     ad_account_id:     ad_account_id || null,
     page_id:           page_id || null,
+    page_access_token: pageAccessTokenFinal,
     app_id:            app_id || null,
     app_secret:        app_secret || null,
     verify_token:      verify_token || null,
@@ -99,28 +134,23 @@ export async function POST(req: NextRequest) {
   })
   if (errSave) return NextResponse.json({ error: 'Erro ao salvar: ' + errSave.message }, { status: 500 })
 
-  // Tenta subscrever a Page no leadgen (webhook)
+  // Subscreve a Page no leadgen (precisa do page_access_token)
   let webhook_subscribed = false
-  let webhook_erro: string | null = null
-  if (page_id) {
+  if (page_id && pageAccessTokenFinal) {
     try {
-      // Precisa de page_access_token. Busca via /me/accounts.
-      const ra = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(access_token)}`)
-      const ja = await ra.json()
-      const page = (ja?.data || []).find((p: any) => String(p.id) === String(page_id))
-      const pageToken = page?.access_token
-      if (pageToken) {
-        const rs = await fetch(`${GRAPH}/${page_id}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(pageToken)}`, {
-          method: 'POST',
-        })
-        const js = await rs.json()
-        webhook_subscribed = !!js.success
-        if (!webhook_subscribed) webhook_erro = js.error?.message || 'subscribe falhou'
-      } else {
-        webhook_erro = 'Page access token não encontrado em /me/accounts. Verifique se a page_id é válida e o usuário do token administra a Page.'
+      const rs = await fetch(`${GRAPH}/${page_id}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(pageAccessTokenFinal)}`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(8000),
+      })
+      const js = await rs.json()
+      webhook_subscribed = !!js.success
+      if (!webhook_subscribed) {
+        webhook_erro = js?.error?.message || 'subscribe falhou'
+        console.error('[meta-connect] subscribed_apps failed:', js?.error)
       }
     } catch (e: any) {
-      webhook_erro = e.message
+      console.error('[meta-connect] subscribed_apps fetch failed:', e)
+      webhook_erro = e?.message || 'erro de rede ao subscrever Page'
     }
     await supabaseAdmin().from('meta_config').update({ webhook_subscribed }).eq('id', 1)
   }
@@ -128,6 +158,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     me: { id: me.id, name: me.name },
+    page_access_token_resolvido: !!pageAccessTokenFinal,
     webhook_subscribed,
     webhook_erro,
   })

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GRAPH } from '@/lib/meta-graph'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
@@ -15,8 +16,6 @@ function supabaseAdmin() {
   if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
-
-const GRAPH = 'https://graph.facebook.com/v19.0'
 
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
@@ -152,7 +151,10 @@ async function syncInsights(cfg: any, from?: string, to?: string) {
   const stats = { lidas: 0, gravadas: 0 }
   for (const n of niveis) {
     const fields = `${n.idField},date_start,date_stop,impressions,reach,clicks,spend,ctr,cpc,cpm,actions`
-    const url = `${GRAPH}/${cfg.ad_account_id}/insights?fields=${fields}&level=${n.level}&time_increment=1&time_range={'since':'${ini}','until':'${fim}'}&limit=500&access_token=${encodeURIComponent(cfg.access_token)}`
+    // Meta exige JSON válido (aspas duplas) e URL-encoded em time_range.
+    // Aspas simples ou string sem encoding causam OAuthException #100.
+    const timeRange = encodeURIComponent(JSON.stringify({ since: ini, until: fim }))
+    const url = `${GRAPH}/${cfg.ad_account_id}/insights?fields=${fields}&level=${n.level}&time_increment=1&time_range=${timeRange}&limit=500&access_token=${encodeURIComponent(cfg.access_token)}`
     const lista = await paginar<any>(url)
     stats.lidas += lista.length
 

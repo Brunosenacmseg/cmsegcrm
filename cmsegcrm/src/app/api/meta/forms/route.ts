@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GRAPH } from '@/lib/meta-graph'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,8 +21,6 @@ const admin = new Proxy({} as ReturnType<typeof createClient>, {
   }
 })
 
-const GRAPH = 'https://graph.facebook.com/v19.0'
-
 async function checarAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization') || ''
   const token = auth.replace(/^Bearer\s+/i, '').trim()
@@ -33,13 +32,18 @@ async function checarAdmin(req: NextRequest) {
   return { ok: true as const, userId: userData.user.id }
 }
 
-async function getPageToken(accessToken: string, pageId: string): Promise<string | null> {
+async function getPageTokenViaMeAccounts(accessToken: string, pageId: string): Promise<{ token: string | null; erro: any | null }> {
   try {
-    const r = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(accessToken)}`)
+    const r = await fetch(`${GRAPH}/me/accounts?fields=id,name,access_token&limit=200&access_token=${encodeURIComponent(accessToken)}`, {
+      signal: AbortSignal.timeout(8000),
+    })
     const j = await r.json()
+    if (j?.error) return { token: null, erro: j.error }
     const page = (j?.data || []).find((p: any) => String(p.id) === String(pageId))
-    return page?.access_token || null
-  } catch { return null }
+    return { token: page?.access_token || null, erro: null }
+  } catch (e: any) {
+    return { token: null, erro: { message: e?.message || 'rede', tipo: 'fetch_error' } }
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -47,18 +51,43 @@ export async function GET(req: NextRequest) {
   if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 401 })
 
   const { data: cfg } = await admin.from('meta_config')
-    .select('access_token, page_id').eq('id', 1).maybeSingle()
+    .select('access_token, page_id, page_access_token').eq('id', 1).maybeSingle()
   if (!cfg?.access_token || !cfg?.page_id) {
     return NextResponse.json({ error: 'Configure access_token e page_id em /dashboard/integracoes/meta primeiro' }, { status: 400 })
   }
 
-  const pageToken = await getPageToken(cfg.access_token, cfg.page_id) || cfg.access_token
+  // Estratégia: prioriza page_access_token persistido. Se não houver, tenta
+  // resolver via /me/accounts. Como último recurso usa o user/system token —
+  // mas a Meta normalmente recusa /leadgen_forms com user token, retornando
+  // "API access blocked". Nesse caso devolvemos uma mensagem acionável.
+  let pageToken: string | null = cfg.page_access_token || null
+  let pageTokenOrigem: 'persistido' | 'me_accounts' | 'fallback_user' = 'persistido'
+  let resolveErro: any = null
+  if (!pageToken) {
+    const { token, erro } = await getPageTokenViaMeAccounts(cfg.access_token, cfg.page_id)
+    if (token) { pageToken = token; pageTokenOrigem = 'me_accounts' }
+    else { resolveErro = erro; pageToken = cfg.access_token; pageTokenOrigem = 'fallback_user' }
+  }
+
   let forms: any[] = []
   try {
     // Inclui questions{key,label,type} para permitir mapeamento de campos no UI
-    const r = await fetch(`${GRAPH}/${cfg.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions{key,label,type}&limit=200&access_token=${encodeURIComponent(pageToken)}`)
+    const r = await fetch(`${GRAPH}/${cfg.page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count,questions{key,label,type}&limit=200&access_token=${encodeURIComponent(pageToken)}`, {
+      signal: AbortSignal.timeout(15000),
+    })
     const j = await r.json()
-    if (j.error) return NextResponse.json({ error: j.error.message }, { status: 400 })
+    if (j.error) {
+      console.error('[meta-forms] leadgen_forms error:', j.error, '| origem token:', pageTokenOrigem)
+      const dica = pageTokenOrigem === 'fallback_user'
+        ? ' — não foi possível obter um Page Access Token. Cole-o manualmente em /dashboard/integracoes/meta (campo "Page Access Token") ou conceda à conexão a permissão pages_show_list + leads_retrieval e administre essa Page.'
+        : ' — verifique se o token tem leads_retrieval e se a Page está vinculada ao app (App Roles → Page Roles).'
+      return NextResponse.json({
+        error: j.error.message + dica,
+        meta_error: { code: j.error.code, subcode: j.error.error_subcode, type: j.error.type },
+        page_token_origem: pageTokenOrigem,
+        resolve_erro: resolveErro,
+      }, { status: 400 })
+    }
     forms = j.data || []
   } catch (e: any) {
     return NextResponse.json({ error: 'Falha buscando forms: ' + e.message }, { status: 500 })

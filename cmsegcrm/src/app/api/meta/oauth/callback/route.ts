@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GRAPH } from '@/lib/meta-graph'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,8 +19,6 @@ const admin = new Proxy({} as ReturnType<typeof createClient>, {
     return (g['__sa_admin'] as any)[prop]
   }
 })
-
-const GRAPH = 'https://graph.facebook.com/v19.0'
 
 function html(msg: string, ok = true) {
   return new NextResponse(
@@ -81,46 +80,55 @@ export async function GET(req: NextRequest) {
       longToken = j.access_token
       if (j.expires_in) expiresAt = new Date(Date.now() + Number(j.expires_in) * 1000).toISOString()
     }
-  } catch {}
+  } catch (e) { console.error('[meta-oauth] long-lived token exchange failed:', e) }
 
-  // 3) Pega primeira Page disponível (admin pode trocar manualmente depois)
+  // 3) Pega Pages disponíveis (admin pode trocar manualmente depois) e
+  // captura o Page Access Token — necessário pra leadgen_forms e leads.
   let pageId: string | null = null
   let pageNome: string | null = null
+  let pageAccessToken: string | null = null
   try {
     const r = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(longToken)}`)
     const j = await r.json()
+    if (j?.error) console.error('[meta-oauth] /me/accounts error:', j.error)
     const existente = (await admin.from('meta_config').select('page_id').eq('id', 1).maybeSingle()).data?.page_id
     const page = (j?.data || []).find((p: any) => existente && String(p.id) === String(existente)) || (j?.data || [])[0]
-    if (page) { pageId = String(page.id); pageNome = page.name }
-  } catch {}
+    if (page) { pageId = String(page.id); pageNome = page.name; pageAccessToken = page.access_token || null }
+  } catch (e) { console.error('[meta-oauth] /me/accounts fetch failed:', e) }
 
   // 4) Salva
   await admin.from('meta_config').upsert({
     id: 1,
     access_token: longToken,
     page_id: pageId,
+    page_access_token: pageAccessToken,
     expires_at: expiresAt,
     updated_at: new Date().toISOString(),
   })
 
-  // 5) Subscreve Page no leadgen
+  // 5) Subscreve Page no leadgen (precisa de page_access_token)
   let webhookOk = false
-  if (pageId) {
+  let webhookErro: string | null = null
+  if (pageId && pageAccessToken) {
     try {
-      const r = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(longToken)}`)
-      const j = await r.json()
-      const page = (j?.data || []).find((p: any) => String(p.id) === pageId)
-      if (page?.access_token) {
-        const rs = await fetch(`${GRAPH}/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(page.access_token)}`, { method: 'POST' })
-        const js = await rs.json()
-        webhookOk = !!js.success
+      const rs = await fetch(`${GRAPH}/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(pageAccessToken)}`, { method: 'POST' })
+      const js = await rs.json()
+      webhookOk = !!js.success
+      if (!webhookOk) {
+        webhookErro = js?.error?.message || 'subscribe falhou'
+        console.error('[meta-oauth] subscribed_apps failed:', js?.error)
       }
-    } catch {}
+    } catch (e: any) {
+      webhookErro = e?.message || 'erro de rede'
+      console.error('[meta-oauth] subscribed_apps fetch failed:', e)
+    }
     await admin.from('meta_config').update({ webhook_subscribed: webhookOk }).eq('id', 1)
+  } else if (pageId && !pageAccessToken) {
+    webhookErro = 'Page access token não retornado em /me/accounts (verifique permissões pages_show_list / leads_retrieval)'
   }
 
   const res = html(
-    `Conectado${pageNome ? ' à página <b>' + pageNome + '</b>' : ''}.${webhookOk ? ' Webhook leadgen ativo.' : ' (Webhook não foi assinado — verifique as permissões.)'}`,
+    `Conectado${pageNome ? ' à página <b>' + pageNome + '</b>' : ''}.${webhookOk ? ' Webhook leadgen ativo.' : ' (Webhook: ' + (webhookErro || 'não assinado — verifique permissões') + ')'}`,
     true
   )
   res.cookies.delete('meta_oauth_state')
