@@ -8,8 +8,10 @@ type Campanha = {
   meta_id: string
   nome: string
   status: string | null
+  effective_status: string | null
   objetivo: string | null
   daily_budget: number | null
+  lifetime_budget: number | null
 }
 type Insight = {
   entidade_id: string
@@ -93,7 +95,16 @@ export default function CampanhasPage() {
     totaisPorCampanha[i.entidade_id].leads += Number(i.leads || 0)
   }
 
-  const filtradas = campanhas.filter(c => statusFiltro === 'todas' || c.status === statusFiltro)
+  // Usa effective_status quando disponível (reflete pausas em conta/adset/parent),
+  // com fallback para o status configurado.
+  const efetivo = (c: Campanha) => (c.effective_status || c.status || '').toUpperCase()
+  const filtradas = campanhas.filter(c => {
+    if (statusFiltro === 'todas') return true
+    const s = efetivo(c)
+    if (statusFiltro === 'ACTIVE') return s === 'ACTIVE'
+    if (statusFiltro === 'PAUSED') return s.includes('PAUSED')
+    return true
+  })
 
   // Totais agregados
   const tGasto = filtradas.reduce((s,c)=> s + (totaisPorCampanha[c.meta_id]?.gasto || 0), 0)
@@ -201,7 +212,8 @@ export default function CampanhasPage() {
                     const ctrC = t.impressoes > 0 ? (t.cliques / t.impressoes) * 100 : 0
                     const cplC = t.leads > 0 ? t.gasto / t.leads : 0
                     const roasC = t.gasto > 0 ? Number(v.receita_total || 0) / t.gasto : 0
-                    const corStatus = c.status === 'ACTIVE' ? 'var(--teal)' : c.status === 'PAUSED' ? 'var(--gold)' : 'var(--text-muted)'
+                    const stEf = efetivo(c)
+                    const corStatus = stEf === 'ACTIVE' ? 'var(--teal)' : stEf.includes('PAUSED') ? 'var(--gold)' : 'var(--text-muted)'
                     return (
                       <tr key={c.id} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                         <td style={{padding:'10px 4px'}}>
@@ -209,7 +221,7 @@ export default function CampanhasPage() {
                           <div style={{fontSize:10,color:'var(--text-muted)'}}>{c.objetivo || '—'}</div>
                         </td>
                         <td style={{padding:'10px 4px',textAlign:'center'}}>
-                          <span style={{fontSize:9,fontWeight:700,letterSpacing:'1px',padding:'2px 8px',borderRadius:5,textTransform:'uppercase',color:corStatus,border:'1px solid '+corStatus+'66'}}>{c.status||'—'}</span>
+                          <span title={c.status ? `configurado: ${c.status}` : ''} style={{fontSize:9,fontWeight:700,letterSpacing:'1px',padding:'2px 8px',borderRadius:5,textTransform:'uppercase',color:corStatus,border:'1px solid '+corStatus+'66'}}>{stEf||'—'}</span>
                         </td>
                         <td style={{padding:'10px 4px',textAlign:'right',color:'var(--red)'}}>R$ {fmt(t.gasto)}</td>
                         <td style={{padding:'10px 4px',textAlign:'right'}}>{fmtN(t.impressoes)}</td>
