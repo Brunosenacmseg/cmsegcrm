@@ -212,6 +212,72 @@ async function importarNegocios(linhas: any[]) {
     const { data: cls } = await supabaseAdmin().from('clientes').select('id, cpf_cnpj').in('cpf_cnpj', cpfsLote)
     for (const c of cls || []) if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
   }
+
+  // Auto-criação de clientes: a planilha do RD Station traz dados do cliente
+  // (nome/CPF/email/telefone) junto com a negociação. Quando não existe um
+  // cliente correspondente, cria agora pra que o negócio fique vinculado em
+  // vez de ficar com cliente_id=null. Dedup somente por CPF/CNPJ — rows sem
+  // CPF criam cliente novo (pode duplicar, mas evita perder dados).
+  const clientesPorRowIdx: Record<number, string> = {}
+  const novosCli: { rowIdx: number; cpf: string | null; payload: any }[] = []
+  const cpfsPlanejados = new Set<string>()
+  for (let idx = 0; idx < linhas.length; idx++) {
+    const r = linhas[idx]
+    const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
+    if (cpf && clientePorCpf[cpf]) continue           // já existe → reusa
+    if (cpf && cpfsPlanejados.has(cpf)) continue      // já planejado nesse lote
+
+    const nome = s(r.cliente) || s(r.nome) || s(r.empresa) || s(r.titulo)
+    const email = s(r.email || r['e-mail'])?.toLowerCase() || null
+    if (!nome && !cpf && !email) continue             // nada que identifique
+
+    if (cpf) cpfsPlanejados.add(cpf)
+    const isPJ = (s(r.tipo) || '').toUpperCase() === 'PJ'
+              || !!s(r.empresa)
+              || !!(cpf && cpf.replace(/\D/g, '').length > 11)
+    novosCli.push({
+      rowIdx: idx,
+      cpf,
+      payload: {
+        nome: nome || email || cpf,
+        cpf_cnpj: cpf,
+        email,
+        telefone: s(r.telefone || r.fone || r.celular || r.whatsapp),
+        tipo: isPJ ? 'PJ' : 'PF',
+        fonte: 'Importação Negócios',
+      },
+    })
+  }
+  if (novosCli.length) {
+    for (let i = 0; i < novosCli.length; i += 500) {
+      const chunk = novosCli.slice(i, i + 500)
+      const { data: criados, error } = await supabaseAdmin()
+        .from('clientes')
+        .insert(chunk.map(nc => nc.payload))
+        .select('id, cpf_cnpj')
+      if (error) {
+        for (const nc of chunk) {
+          const { data: one } = await supabaseAdmin()
+            .from('clientes')
+            .insert(nc.payload)
+            .select('id, cpf_cnpj')
+            .single()
+          if (one?.id) {
+            if (one.cpf_cnpj) clientePorCpf[one.cpf_cnpj as string] = one.id as string
+            clientesPorRowIdx[nc.rowIdx] = one.id as string
+          }
+        }
+      } else {
+        // INSERT...RETURNING preserva a ordem do input → match posicional.
+        for (let j = 0; j < (criados || []).length; j++) {
+          const c = criados[j] as any
+          const nc = chunk[j]
+          if (c.cpf_cnpj) clientePorCpf[c.cpf_cnpj] = c.id
+          clientesPorRowIdx[nc.rowIdx] = c.id
+        }
+      }
+    }
+  }
   const { data: usuarios } = await supabaseAdmin().from('users').select('id, nome, email')
   const userPorNome:  Record<string, string> = {}
   const userPorEmail: Record<string, string> = {}
@@ -312,7 +378,8 @@ async function importarNegocios(linhas: any[]) {
   // Coleta etapas novas por funil; ao final do lote, mescla nos arrays text[]
   // de funis.etapas pra que os cards aparecam como colunas no kanban.
   const etapasNovasPorFunil = new Map<string, Set<string>>()
-  for (const r of linhas) {
+  for (let rowIdx = 0; rowIdx < linhas.length; rowIdx++) {
+    const r = linhas[rowIdx]
     try {
       const titulo = s(r.titulo) || s(r.nome) || s(r.cliente) || s(r.empresa) || 'Negócio importado'
       const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
@@ -338,7 +405,7 @@ async function importarNegocios(linhas: any[]) {
         if (!etapasNovasPorFunil.has(f.id)) etapasNovasPorFunil.set(f.id, new Set())
         etapasNovasPorFunil.get(f.id)!.add(etapa)
       }
-      const clienteId = cpf ? (clientePorCpf[cpf] || null) : null
+      const clienteId = (cpf ? clientePorCpf[cpf] : null) || clientesPorRowIdx[rowIdx] || null
 
       // Status
       const estadoRaw = (s(r.estado || r.status || r.situacao) || '').toLowerCase()
