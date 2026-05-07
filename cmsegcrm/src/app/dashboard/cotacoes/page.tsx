@@ -183,6 +183,12 @@ export default function CotacoesPage() {
         }
         setMsg(`✅ Dados encontrados (${json.fonte === 'base_local' ? 'base local' : 'consulta automática'})`)
         setTimeout(() => setMsg(''), 3000)
+      } else if (json?.error) {
+        setMsg('⚠ ' + json.error)
+        setTimeout(() => setMsg(''), 4000)
+      } else if (json?.encontrado === false) {
+        setMsg('ℹ CPF não encontrado na base — preencha os dados manualmente')
+        setTimeout(() => setMsg(''), 3000)
       }
     } catch {} finally {
       setConsultandoCpf(false)
@@ -218,6 +224,12 @@ export default function CotacoesPage() {
         setTimeout(() => setMsg(''), 3000)
       } else if (json?.error) {
         setMsg('⚠ ' + json.error)
+        setTimeout(() => setMsg(''), 4000)
+      } else if (json?.motivo) {
+        setMsg('⚠ Consulta de placa indisponível: ' + json.motivo)
+        setTimeout(() => setMsg(''), 4000)
+      } else if (json?.encontrado === false) {
+        setMsg('⚠ Placa não encontrada — preencha os dados do veículo manualmente')
         setTimeout(() => setMsg(''), 4000)
       }
     } catch {} finally {
