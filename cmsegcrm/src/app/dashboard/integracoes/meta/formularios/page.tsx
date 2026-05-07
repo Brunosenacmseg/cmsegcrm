@@ -17,32 +17,42 @@ type Form = {
     vendedor_ids?: string[]
     ativo: boolean
     criar_negocio: boolean
-    campo_map?: Record<string, string>
+    campo_map?: Record<string, any>
+    titulo_campos?: string[]
+    campo_negocio_map?: Record<string, string[]>
   }
 }
 
-const COLS_CLIENTE_PADRAO = [
-  { val: 'cliente:nome',     label: 'Nome' },
-  { val: 'cliente:cpf_cnpj', label: 'CPF/CNPJ' },
-  { val: 'cliente:email',    label: 'E-mail' },
-  { val: 'cliente:telefone', label: 'Telefone' },
-  { val: 'cliente:cep',      label: 'CEP' },
-  { val: 'cliente:cidade',   label: 'Cidade' },
-  { val: 'cliente:estado',   label: 'Estado' },
-  { val: 'cliente:fonte',    label: 'Fonte' },
+// Linhas exibidas como campos da negociação. Cada uma vira uma key em
+// campo_negocio_map e recebe uma lista ordenada de origens (chips) que
+// serão concatenadas com " - " ao criar a negociação.
+const LINHAS_NEGOCIO: Array<{ key: string; label: string; required?: boolean }> = [
+  { key: 'negocio:titulo',           label: 'Título da negociação', required: true },
+  { key: 'negocio:produto',          label: 'Produto' },
+  { key: 'negocio:seguradora',       label: 'Seguradora' },
+  { key: 'negocio:premio',           label: 'Prêmio' },
+  { key: 'negocio:comissao_pct',     label: 'Comissão %' },
+  { key: 'negocio:telefone_negocio', label: 'Telefone' },
+  { key: 'negocio:email_negocio',    label: 'E-mail' },
+  { key: 'negocio:placa',            label: 'Placa' },
+  { key: 'negocio:cep',              label: 'CEP' },
+  { key: 'negocio:vencimento',       label: 'Vencimento' },
+  { key: 'negocio:fonte',            label: 'Fonte da negociação' },
+  { key: 'negocio:obs',              label: 'Anotação da negociação' },
 ]
-const COLS_NEGOCIO_PADRAO = [
-  { val: 'negocio:titulo',     label: 'Título' },
-  { val: 'negocio:produto',    label: 'Produto' },
-  { val: 'negocio:seguradora', label: 'Seguradora' },
-  { val: 'negocio:premio',     label: 'Prêmio' },
-  { val: 'negocio:comissao_pct', label: 'Comissão %' },
-  { val: 'negocio:telefone_negocio', label: 'Telefone' },
-  { val: 'negocio:email_negocio',    label: 'E-mail' },
-  { val: 'negocio:placa',      label: 'Placa' },
-  { val: 'negocio:cep',        label: 'CEP' },
-  { val: 'negocio:vencimento', label: 'Vencimento' },
-  { val: 'negocio:obs',        label: 'Observações' },
+
+// Metadados expostos pelo webhook em valorPorKey (além das questions do form).
+const META_CAMPOS: { key: string; label: string }[] = [
+  { key: '__meta__:campaign_name', label: 'Campanha (nome)' },
+  { key: '__meta__:adset_name',    label: 'Conjunto de anúncios (nome)' },
+  { key: '__meta__:ad_name',       label: 'Anúncio (nome)' },
+  { key: '__meta__:form_name',     label: 'Formulário (nome)' },
+  { key: '__meta__:campaign_id',   label: 'Campanha (ID)' },
+  { key: '__meta__:adset_id',      label: 'Conjunto (ID)' },
+  { key: '__meta__:ad_id',         label: 'Anúncio (ID)' },
+  { key: '__meta__:form_id',       label: 'Formulário (ID)' },
+  { key: '__meta__:page_id',       label: 'Página (ID)' },
+  { key: '__meta__:lead_id',       label: 'Lead (ID)' },
 ]
 
 export default function FormulariosMetaPage() {
@@ -57,6 +67,8 @@ export default function FormulariosMetaPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState<string | null>(null)
   const [statusMeta, setStatusMeta] = useState<any>(null)
+  // picker aberto: identifica formulário + linha (coluna da negociação)
+  const [picker, setPicker] = useState<{ form_id: string; col: string } | null>(null)
 
   useEffect(() => { init() }, [])
 
@@ -107,7 +119,7 @@ export default function FormulariosMetaPage() {
 
   async function salvarMapeamento(form: Form, patch: Partial<NonNullable<Form['mapeamento']>>) {
     setSalvando(form.form_id)
-    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, vendedor_ids: [], ativo: true, criar_negocio: true, campo_map: {} }
+    const atual = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, vendedor_ids: [], ativo: true, criar_negocio: true, campo_map: {}, titulo_campos: [], campo_negocio_map: {} }
     const novo = { ...atual, ...patch }
     try {
       await fetch('/api/meta/forms', {
@@ -121,18 +133,36 @@ export default function FormulariosMetaPage() {
       setForms(prev => prev.map(x => x.form_id === form.form_id ? { ...x, mapeamento: novo } : x))
     } finally { setSalvando(null) }
   }
-  function mapearCampo(form: Form, formKey: string, alvo: 'cliente'|'negocio', valor: string) {
-    const m = form.mapeamento || { funil_id: null, etapa: null, vendedor_id: null, ativo: true, criar_negocio: true, campo_map: {} }
-    const cm: Record<string, any> = { ...(m.campo_map || {}) }
-    // Migração soft: se valor era string (legado), promove pra objeto { cliente: ... }
-    let entry: any = cm[formKey]
-    if (typeof entry === 'string') entry = { cliente: entry }
-    if (!entry || typeof entry !== 'object') entry = {}
-    if (valor) entry[alvo] = valor
-    else delete entry[alvo]
-    if (Object.keys(entry).length === 0) delete cm[formKey]
-    else cm[formKey] = entry
-    salvarMapeamento(form, { campo_map: cm })
+
+  // Adiciona uma origem (chave do form ou __meta__:*) ao final da lista
+  // de uma coluna da negociação em campo_negocio_map.
+  function adicionarOrigem(form: Form, col: string, origem: string) {
+    const m = form.mapeamento
+    const mapAtual: Record<string, string[]> = { ...(m?.campo_negocio_map || {}) }
+    const lista = Array.isArray(mapAtual[col]) ? [...mapAtual[col]] : []
+    lista.push(origem)
+    mapAtual[col] = lista
+    salvarMapeamento(form, { campo_negocio_map: mapAtual })
+  }
+
+  // Remove a origem na posição idx da lista de uma coluna.
+  function removerOrigem(form: Form, col: string, idx: number) {
+    const m = form.mapeamento
+    const mapAtual: Record<string, string[]> = { ...(m?.campo_negocio_map || {}) }
+    const lista = Array.isArray(mapAtual[col]) ? [...mapAtual[col]] : []
+    lista.splice(idx, 1)
+    if (lista.length) mapAtual[col] = lista
+    else delete mapAtual[col]
+    salvarMapeamento(form, { campo_negocio_map: mapAtual })
+  }
+
+  // Resolve label legível para uma chave (questão do form, meta ou outra).
+  function labelDeOrigem(form: Form, origem: string): { label: string; tipo: 'form' | 'meta' | 'outro' } {
+    const meta = META_CAMPOS.find(c => c.key === origem)
+    if (meta) return { label: meta.label, tipo: 'meta' }
+    const q = form.questions?.find(x => x.key === origem)
+    if (q) return { label: q.label || q.key, tipo: 'form' }
+    return { label: origem, tipo: 'outro' }
   }
 
   async function removerMapeamento(form: Form) {
@@ -224,7 +254,12 @@ export default function FormulariosMetaPage() {
           <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14,lineHeight:1.5}}>
             Para cada formulário do Meta Lead Ads abaixo, escolha em qual <b>funil</b>, <b>etapa</b> e <b>vendedor</b> a negociação deve ser criada quando alguém preencher.
             Formulários sem mapeamento ativo continuam caindo no funil padrão de venda, sem vendedor.
+            <br/><b>Importante:</b> esta integração cria apenas a <b>negociação</b> — nenhum cliente é criado ou alterado.
+            Em cada campo da negociação você pode <b>combinar várias origens</b> (campos do formulário ou dados da Meta); os valores são concatenados com <code style={{background:'rgba(255,255,255,0.05)',padding:'1px 4px',borderRadius:3}}>-</code>.
           </div>
+          {picker && (
+            <div onClick={()=>setPicker(null)} style={{position:'fixed',inset:0,zIndex:10}} />
+          )}
 
           {forms.length === 0 && !erro && (
             <div className="card" style={{textAlign:'center',padding:40,color:'var(--text-muted)'}}>
@@ -297,65 +332,101 @@ export default function FormulariosMetaPage() {
                     </div>
                   </div>
 
-                  {form.questions && form.questions.length > 0 && (
-                    <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
-                      <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>
-                        Mapeamento de campos
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr 1fr',gap:6,fontSize:10,color:'var(--text-muted)',padding:'4px 8px',marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}>
-                        <div>Campo do formulário</div>
-                        <div>→ Cliente</div>
-                        <div>→ Negociação</div>
-                      </div>
-                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                        {form.questions.map(q => {
-                          const entry: any = (m?.campo_map || {})[q.key]
-                          const vCli = typeof entry === 'string' ? entry : (entry?.cliente || '')
-                          const vNeg = typeof entry === 'string' ? '' : (entry?.negocio || '')
-                          return (
-                            <div key={q.key} style={{display:'grid',gridTemplateColumns:'minmax(160px, 1.4fr) 1fr 1fr',gap:6,alignItems:'center',background:'rgba(255,255,255,0.03)',padding:'6px 8px',borderRadius:6,border:'1px solid var(--border)'}}>
-                              <div style={{minWidth:0,fontSize:11}}>
-                                <div style={{fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color:'#1a1a2e'}} title={q.label || q.key}>
-                                  {q.label || q.key}
+                  {form.questions && form.questions.length > 0 && (() => {
+                    const cfsNeg = customFields.filter(cf => cf.entidade === 'negocio')
+                    const linhas: Array<{ key: string; label: string; required?: boolean; custom?: boolean }> = [
+                      ...LINHAS_NEGOCIO,
+                      ...cfsNeg.map(cf => ({ key: `negocio_cf:${cf.chave}`, label: `Negociação: ${cf.nome}`, custom: true })),
+                    ]
+                    const negMap = m?.campo_negocio_map || {}
+                    return (
+                      <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
+                        <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>
+                          Campos da negociação
+                        </div>
+                        <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:10,lineHeight:1.5}}>
+                          Para cada campo, clique em <b>+ INSERIR INFOS</b> e escolha campos do formulário ou dados da Meta.
+                          Quando houver mais de uma origem, os valores serão concatenados com <code style={{background:'rgba(255,255,255,0.05)',padding:'1px 4px',borderRadius:3}}>-</code>.
+                        </div>
+
+                        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                          {linhas.map(lin => {
+                            const origens = Array.isArray(negMap[lin.key]) ? negMap[lin.key] : []
+                            const aberto = picker?.form_id === form.form_id && picker?.col === lin.key
+                            const usados = new Set<string>(origens)
+                            return (
+                              <div key={lin.key} style={{position:'relative'}}>
+                                <div style={{fontSize:12,color:'#1a1a2e',marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                                  {lin.custom && <span style={{color:'var(--gold)'}}>★</span>}
+                                  <span style={{fontWeight:500}}>{lin.label}</span>
+                                  <span style={{fontSize:10,color:lin.required?'var(--red)':'var(--text-muted)'}}>{lin.required ? '(obrigatório)' : '(opcional)'}</span>
                                 </div>
-                                <div style={{color:'var(--text-muted)',fontSize:10,fontFamily:'monospace'}}>{q.key}</div>
+                                <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 8px',minHeight:38,background:'#ffffff',border:'1px solid var(--border)',borderRadius:6,flexWrap:'wrap'}}>
+                                  {origens.length === 0 && (
+                                    <span style={{fontSize:11,color:'#9ca3af',flex:1}}>Digite ou insira informações</span>
+                                  )}
+                                  {origens.map((src, idx) => {
+                                    const info = labelDeOrigem(form, src)
+                                    const cor = info.tipo === 'meta' ? 'rgba(28,181,160,0.15)' : info.tipo === 'form' ? 'rgba(24,119,242,0.12)' : 'rgba(201,168,76,0.12)'
+                                    const corBorda = info.tipo === 'meta' ? 'rgba(28,181,160,0.5)' : info.tipo === 'form' ? 'rgba(24,119,242,0.45)' : 'rgba(201,168,76,0.5)'
+                                    const icone = info.tipo === 'meta' ? '📣' : info.tipo === 'form' ? '📝' : '•'
+                                    return (
+                                      <span key={idx} style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                                        <span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'3px 8px',background:cor,border:`1px solid ${corBorda}`,borderRadius:14,fontSize:11,color:'#1a1a2e',maxWidth:300}}>
+                                          <span style={{minWidth:14,height:14,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,0.6)',color:'#1a1a2e',borderRadius:7,fontSize:9,fontWeight:700}}>{idx + 1}</span>
+                                          <span style={{fontSize:11}}>{icone}</span>
+                                          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={info.label}>{info.label}</span>
+                                          <button onClick={()=>removerOrigem(form, lin.key, idx)} style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:13,lineHeight:1,padding:0}}>×</button>
+                                        </span>
+                                        {idx < origens.length - 1 && <span style={{fontSize:11,color:'#6b7280'}}>-</span>}
+                                      </span>
+                                    )
+                                  })}
+                                  <div style={{flex:1}}/>
+                                  <button onClick={()=>setPicker(aberto ? null : { form_id: form.form_id, col: lin.key })}
+                                    style={{fontSize:11,fontWeight:600,color:'var(--teal)',background:'none',border:'none',cursor:'pointer',padding:'2px 6px',whiteSpace:'nowrap'}}>
+                                    + INSERIR INFOS
+                                  </button>
+                                </div>
+
+                                {aberto && (
+                                  <div style={{position:'absolute',right:0,top:'100%',marginTop:4,zIndex:20,width:340,maxHeight:340,overflow:'auto',background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.15)'}}>
+                                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 10px',borderBottom:'1px solid var(--border)'}}>
+                                      <span style={{fontSize:11,fontWeight:600,color:'#1a1a2e'}}>Inserir informação</span>
+                                      <button onClick={()=>setPicker(null)} style={{background:'none',border:'none',color:'#6b7280',fontSize:14,cursor:'pointer',padding:0}}>×</button>
+                                    </div>
+                                    <div style={{padding:'6px 0'}}>
+                                      <div style={{fontSize:9,color:'var(--text-muted)',padding:'4px 12px',textTransform:'uppercase',letterSpacing:0.6}}>Campos do formulário</div>
+                                      {(form.questions || []).length === 0 && (
+                                        <div style={{fontSize:11,color:'#9ca3af',padding:'4px 12px'}}>Sem perguntas no formulário</div>
+                                      )}
+                                      {(form.questions || []).map(q => (
+                                        <button key={q.key} onClick={()=>{ adicionarOrigem(form, lin.key, q.key); setPicker(null) }}
+                                          style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'6px 12px',background: usados.has(q.key) ? 'rgba(24,119,242,0.05)' : 'none',border:'none',cursor:'pointer',textAlign:'left',fontSize:11,color:'#1a1a2e'}}>
+                                          <span>📝</span>
+                                          <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{q.label || q.key}</span>
+                                          {usados.has(q.key) && <span style={{fontSize:9,color:'var(--text-muted)'}}>já usado</span>}
+                                        </button>
+                                      ))}
+                                      <div style={{fontSize:9,color:'var(--text-muted)',padding:'8px 12px 4px',textTransform:'uppercase',letterSpacing:0.6}}>Dados da Meta</div>
+                                      {META_CAMPOS.map(c => (
+                                        <button key={c.key} onClick={()=>{ adicionarOrigem(form, lin.key, c.key); setPicker(null) }}
+                                          style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'6px 12px',background: usados.has(c.key) ? 'rgba(28,181,160,0.06)' : 'none',border:'none',cursor:'pointer',textAlign:'left',fontSize:11,color:'#1a1a2e'}}>
+                                          <span>📣</span>
+                                          <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.label}</span>
+                                          {usados.has(c.key) && <span style={{fontSize:9,color:'var(--text-muted)'}}>já usado</span>}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-
-                              <select value={vCli} onChange={e=>mapearCampo(form, q.key, 'cliente', e.target.value)}
-                                style={{...sel,padding:'4px 6px',fontSize:11}}>
-                                <option value="">— ignorar —</option>
-                                <optgroup label="Padrão">
-                                  {COLS_CLIENTE_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
-                                </optgroup>
-                                {customFields.filter(cf => cf.entidade === 'cliente').length > 0 && (
-                                  <optgroup label="Personalizados">
-                                    {customFields.filter(cf => cf.entidade === 'cliente').map(cf =>
-                                      <option key={cf.chave} value={`cliente_cf:${cf.chave}`}>{cf.nome}</option>
-                                    )}
-                                  </optgroup>
-                                )}
-                              </select>
-
-                              <select value={vNeg} onChange={e=>mapearCampo(form, q.key, 'negocio', e.target.value)}
-                                style={{...sel,padding:'4px 6px',fontSize:11}}>
-                                <option value="">— ignorar —</option>
-                                <optgroup label="Padrão">
-                                  {COLS_NEGOCIO_PADRAO.map(c => <option key={c.val} value={c.val}>{c.label}</option>)}
-                                </optgroup>
-                                {customFields.filter(cf => cf.entidade === 'negocio').length > 0 && (
-                                  <optgroup label="Personalizados">
-                                    {customFields.filter(cf => cf.entidade === 'negocio').map(cf =>
-                                      <option key={cf.chave} value={`negocio_cf:${cf.chave}`}>{cf.nome}</option>
-                                    )}
-                                  </optgroup>
-                                )}
-                              </select>
-                            </div>
-                          )
-                        })}
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:10,borderTop:'1px solid var(--border)'}}>
                     <label style={{fontSize:11,color:'var(--text-muted)',display:'flex',gap:6,alignItems:'center',cursor:'pointer'}}>
@@ -367,7 +438,7 @@ export default function FormulariosMetaPage() {
                       {salvando === form.form_id && <span style={{fontSize:11,color:'var(--gold)'}}>Salvando...</span>}
                       <button onClick={()=>enviarLeadTeste(form)} disabled={salvando === form.form_id}
                         style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.06)',color:'var(--teal)',cursor:'pointer'}}
-                        title="Cria um cliente + negociação fictícios usando o mapeamento atual, simulando o webhook da Meta">
+                        title="Cria uma negociação fictícia usando o mapeamento atual, simulando o webhook da Meta">
                         🧪 Enviar lead de teste
                       </button>
                       {m && <button onClick={()=>removerMapeamento(form)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>Remover</button>}

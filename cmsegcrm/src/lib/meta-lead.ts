@@ -2,12 +2,30 @@
 //
 // O webhook (`/api/meta/webhook`) e o endpoint de teste
 // (`/api/meta/webhook/test`) chamam `processarLeadgen()` com a mesma
-// estrutura de dados que a Meta entrega — assim o caminho de criação de
-// cliente + negociação é exatamente o mesmo em produção e em teste.
+// estrutura de dados que a Meta entrega — assim o caminho de criação da
+// negociação é exatamente o mesmo em produção e em teste.
 //
-// Mantém-se aqui também a aplicação do `campo_map` (com prefixos
-// `cliente:`, `cliente_cf:`, `negocio:`, `negocio_cf:`) e a heurística de
-// fallback para os campos básicos (nome/email/telefone/cpf).
+// Esta integração cria APENAS a negociação. Nenhum cliente é criado ou
+// atualizado — o `cliente_id` da negociação fica nulo (a coluna é
+// nullable). Mapeamentos legados que apontavam para `cliente:*` são
+// ignorados.
+//
+// Mapeamento de origem para cada coluna da negociação:
+//   1. campo_negocio_map (preferido): { "negocio:titulo": ["__meta__:campaign_name", "first_name"], ... }
+//      — concatena os valores resolvidos com " - " na ordem informada.
+//   2. titulo_campos (legado, só para o título): mesma semântica do campo_negocio_map
+//      restrita à coluna titulo.
+//   3. campo_map (legado): { formKey: { negocio: "negocio:col" } } — preenche
+//      colunas ainda não definidas pelos mapas mais novos.
+//
+// Além das chaves vindas do form, o webhook expõe metadados da Meta como
+// origens disponíveis em `valorPorKey`:
+//   __meta__:campaign_id / campaign_name
+//   __meta__:adset_id    / adset_name
+//   __meta__:ad_id       / ad_name
+//   __meta__:form_id     / form_name
+//   __meta__:page_id
+//   __meta__:lead_id
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -53,8 +71,6 @@ export async function processarLeadgen(
     if (error) logErr('falha ao carregar mapeamento', error)
     if (m && (m as any).ativo !== false) mapping = m
   }
-  const campoMap: Record<string, any> =
-    (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
 
   // 2) Extrai valores do field_data
   const campos = Array.isArray(input.fieldData) ? input.fieldData : []
@@ -72,91 +88,94 @@ export async function processarLeadgen(
     return null
   }
 
-  // 3) Aplica campo_map → cliBase / cliCustom / negBase / negCustom
-  const cliBase: Record<string, any> = {}
-  const cliCustom: Record<string, any> = {}
+  // 3) Enriquece valorPorKey com metadados da Meta — disponíveis para uso
+  //    tanto em campo_negocio_map quanto em titulo_campos.
+  const setMeta = (k: string, v: string | null | undefined) => {
+    if (v != null && String(v).trim() !== '') valorPorKey[k] = String(v).trim()
+  }
+  setMeta('__meta__:campaign_id', input.campaignId)
+  setMeta('__meta__:adset_id',    input.adsetId)
+  setMeta('__meta__:ad_id',       input.adId)
+  setMeta('__meta__:form_id',     input.formId)
+  setMeta('__meta__:page_id',     input.pageId)
+  setMeta('__meta__:lead_id',     input.leadgenId)
+  setMeta('__meta__:form_name',   mapping?.form_nome)
+  if (input.campaignId) {
+    const { data: row } = await sa.from('meta_campanhas')
+      .select('nome').eq('meta_id', String(input.campaignId)).maybeSingle()
+    setMeta('__meta__:campaign_name', (row as any)?.nome)
+  }
+  if (input.adsetId) {
+    const { data: row } = await sa.from('meta_adsets')
+      .select('nome').eq('meta_id', String(input.adsetId)).maybeSingle()
+    setMeta('__meta__:adset_name', (row as any)?.nome)
+  }
+  if (input.adId) {
+    const { data: row } = await sa.from('meta_ads')
+      .select('nome').eq('meta_id', String(input.adId)).maybeSingle()
+    setMeta('__meta__:ad_name', (row as any)?.nome)
+  }
+
+  // 4) Resolve colunas da negociação a partir dos mapeamentos disponíveis.
   const negBase: Record<string, any> = {}
   const negCustom: Record<string, any> = {}
-  const aplicar = (target: any, v: string) => {
+  const aplicarColuna = (colKey: string, valor: string) => {
+    if (!colKey || valor == null || valor === '') return
+    if (colKey.startsWith('negocio_cf:'))   negCustom[colKey.slice(11)] = valor
+    else if (colKey.startsWith('negocio:')) negBase[colKey.slice(8)]    = valor
+  }
+
+  // 4a) Mapa novo: { coluna: [origens] } → concatena com " - "
+  const negMap: Record<string, any> = (mapping?.campo_negocio_map && typeof mapping.campo_negocio_map === 'object') ? mapping.campo_negocio_map : {}
+  for (const [colKey, srcKeys] of Object.entries(negMap)) {
+    if (!Array.isArray(srcKeys)) continue
+    const partes = srcKeys
+      .map(k => valorPorKey[String(k)])
+      .filter(v => v != null && v !== '')
+    if (partes.length) aplicarColuna(colKey, partes.join(' - '))
+  }
+
+  // 4b) Legado campo_map ({ formKey: { negocio: "negocio:col" } }) — só
+  //     preenche colunas que ainda não vieram do mapa novo. Prefixos
+  //     cliente:/cliente_cf: e sem prefixo são ignorados (esta integração
+  //     não cria nem atualiza clientes).
+  const campoMap: Record<string, any> =
+    (mapping?.campo_map && typeof mapping.campo_map === 'object') ? mapping.campo_map : {}
+  const aplicarLegado = (target: any, v: string) => {
     if (!target || typeof target !== 'string') return
-    if (target.startsWith('cliente_cf:'))      cliCustom[target.slice(11)] = v
-    else if (target.startsWith('cliente:'))    cliBase[target.slice(8)]    = v
-    else if (target.startsWith('negocio_cf:')) negCustom[target.slice(11)] = v
-    else if (target.startsWith('negocio:'))    negBase[target.slice(8)]    = v
-    else                                       cliBase[target]             = v
+    if (target.startsWith('negocio_cf:')) {
+      const k = target.slice(11)
+      if (!(k in negCustom)) negCustom[k] = v
+    } else if (target.startsWith('negocio:')) {
+      const k = target.slice(8)
+      if (!(k in negBase)) negBase[k] = v
+    }
   }
   for (const [formKey, target] of Object.entries(campoMap)) {
     const v = valorPorKey[formKey]
     if (!v) continue
     if (typeof target === 'string') {
-      aplicar(target, v)
+      aplicarLegado(target, v)
     } else if (target && typeof target === 'object') {
-      aplicar((target as any).cliente, v)
-      aplicar((target as any).negocio, v)
+      aplicarLegado((target as any).negocio, v)
     }
   }
 
-  // 4) Heurísticas de fallback para campos essenciais
-  const nome     = cliBase.nome     || heur('full_name', 'nome', 'name')
-  const email    = cliBase.email    || heur('email', 'e-mail')
-  const telefone = cliBase.telefone || heur('phone_number', 'telefone', 'phone', 'celular')
-  const cpf      = cliBase.cpf_cnpj || heur('cpf')
-  const cnpj     = (!cliBase.cpf_cnpj) ? heur('cnpj') : null
-
-  // 5) Busca cliente existente (email > cpf/cnpj > telefone) ou prepara para criar
-  let clienteId: string | null = null
-  const tenta = async (col: string, val: string | null) => {
-    if (!val) return null
-    const { data, error } = await sa.from('clientes').select('id').eq(col, val).limit(1).maybeSingle()
-    if (error) logErr(`busca cliente por ${col}`, error)
-    return (data as any)?.id || null
-  }
-  clienteId = await tenta('email', email?.toLowerCase() || null)
-        || await tenta('cpf_cnpj', (cpf || cnpj))
-        || await tenta('telefone', telefone)
-
-  // 6) Monta payload do cliente e cria/atualiza
-  const payloadCliente: any = {
-    ...cliBase,
-    nome:     cliBase.nome || nome || email || telefone || 'Lead Meta sem nome',
-    tipo:     (String(cliBase.cpf_cnpj || '').replace(/\D/g,'').length === 14 || cnpj) ? 'PJ' : 'PF',
-    cpf_cnpj: cliBase.cpf_cnpj || cpf || cnpj || null,
-    email:    (cliBase.email || email || '').toLowerCase() || null,
-    telefone: cliBase.telefone || telefone || null,
-    fonte:    cliBase.fonte || 'Meta Ads',
-    meta_lead_id:     input.leadgenId || null,
-    meta_campaign_id: input.campaignId || null,
-    meta_adset_id:    input.adsetId || null,
-    meta_ad_id:       input.adId || null,
-    meta_form_id:     input.formId || null,
-  }
-  if (Object.keys(cliCustom).length) payloadCliente.custom_fields = cliCustom
-
-  if (!clienteId) {
-    const { data: novo, error } = await sa.from('clientes').insert(payloadCliente).select('id').single()
-    if (error) logErr('insert cliente falhou', error)
-    clienteId = (novo as any)?.id || null
-  } else {
-    const { data: cur, error: errCur } = await sa.from('clientes').select('custom_fields').eq('id', clienteId).maybeSingle()
-    if (errCur) logErr('select custom_fields cliente', errCur)
-    const upd: any = {}
-    for (const [k, v] of Object.entries(payloadCliente)) {
-      if (k === 'custom_fields') continue
-      if (v != null && v !== '') upd[k] = v
+  // 5) Compõe título: prioriza o que veio do mapa novo (negBase.titulo);
+  //    senão usa titulo_campos legado; senão usa heurística.
+  let tituloComposto: string | null = negBase.titulo || null
+  if (!tituloComposto) {
+    const tituloCampos: string[] = Array.isArray(mapping?.titulo_campos) ? mapping.titulo_campos : []
+    if (tituloCampos.length > 0) {
+      const partes = tituloCampos.map(k => valorPorKey[k]).filter(v => v != null && v !== '')
+      if (partes.length) tituloComposto = partes.join(' - ')
     }
-    if (Object.keys(cliCustom).length) {
-      upd.custom_fields = { ...((cur as any)?.custom_fields || {}), ...cliCustom }
-    }
-    const { error } = await sa.from('clientes').update(upd).eq('id', clienteId)
-    if (error) logErr('update cliente falhou', error)
   }
+  const nome     = heur('full_name', 'nome', 'name')
+  const email    = heur('email', 'e-mail')
+  const telefone = heur('phone_number', 'telefone', 'phone', 'celular')
 
-  if (!clienteId) {
-    log('cliente não pôde ser criado — abortando criação de negociação')
-    return { ok: false, clienteId: null, negocioId: null, metaLeadId: input.leadgenId, vendedorId: null, motivo: 'cliente_falhou', erros }
-  }
-
-  // 7) Distribuição (round-robin) de vendedor
+  // 6) Distribuição (round-robin) de vendedor
   let vendedorId: string | null = null
   if (mapping?.vendedor_ids && Array.isArray(mapping.vendedor_ids) && mapping.vendedor_ids.length > 0) {
     const { data: rr, error } = await sa.rpc('meta_proximo_vendedor', { p_form_id: String(input.formId || '') })
@@ -166,9 +185,9 @@ export async function processarLeadgen(
     vendedorId = mapping?.vendedor_id || null
   }
 
-  // 8) Cria a negociação se permitido
+  // 7) Cria a negociação se permitido. Sem cliente_id (nullable).
   let negocioId: string | null = null
-  const deveCriarNegocio = !!clienteId && (mapping ? mapping.criar_negocio !== false : true)
+  const deveCriarNegocio = mapping ? mapping.criar_negocio !== false : true
   if (!deveCriarNegocio) {
     log('mapeamento desabilitou criação de negociação')
   } else {
@@ -193,10 +212,10 @@ export async function processarLeadgen(
       logErr('nenhum funil de venda encontrado — não foi possível criar negociação')
     } else {
       const negPayload: any = {
-        cliente_id:        clienteId,
+        cliente_id:        null,
         funil_id:          funilId,
         etapa:             etapaInicial!,
-        titulo:            negBase.titulo || `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
+        titulo:            tituloComposto || `Lead Meta · ${nome || email || telefone || 'sem nome'}`,
         fonte:             negBase.fonte  || 'Meta Ads',
         obs:               campos.length ? campos.map((c: any) => `${c.name}: ${(c.values || []).join(', ')}`).join('\n') : null,
         corretor_id:       vendedorId,
@@ -204,8 +223,10 @@ export async function processarLeadgen(
         meta_campaign_id:  input.campaignId || null,
         meta_ad_id:        input.adId || null,
       }
+      // Aplica negBase (sobrescreve defaults), exceto titulo (já resolvido).
       for (const [k, v] of Object.entries(negBase)) {
         if (v == null || v === '') continue
+        if (k === 'titulo') continue
         if (k === 'premio' || k === 'comissao_pct') {
           const n = Number(String(v).replace(/[^\d,.-]/g,'').replace(',', '.'))
           if (isFinite(n)) negPayload[k] = n
@@ -219,7 +240,7 @@ export async function processarLeadgen(
     }
   }
 
-  // 9) Persiste o lead em meta_leads para auditoria
+  // 8) Persiste o lead em meta_leads para auditoria (sem cliente_id)
   const { error: errLead } = await sa.from('meta_leads').insert({
     meta_lead_id:  input.leadgenId,
     form_id:       input.formId,
@@ -228,7 +249,7 @@ export async function processarLeadgen(
     campanha_id:   input.campaignId || null,
     page_id:       input.pageId || null,
     campos:        input.fieldData || null,
-    cliente_id:    clienteId,
+    cliente_id:    null,
     negocio_id:    negocioId,
     vendedor_id:   vendedorId,
     processado_em: new Date().toISOString(),
@@ -236,8 +257,8 @@ export async function processarLeadgen(
   if (errLead) logErr('insert meta_leads falhou', errLead)
 
   return {
-    ok: !!clienteId && (deveCriarNegocio ? !!negocioId : true),
-    clienteId,
+    ok: deveCriarNegocio ? !!negocioId : true,
+    clienteId: null,
     negocioId,
     metaLeadId: input.leadgenId,
     vendedorId,
