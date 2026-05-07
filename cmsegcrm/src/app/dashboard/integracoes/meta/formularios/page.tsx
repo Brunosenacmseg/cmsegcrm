@@ -142,6 +142,37 @@ export default function FormulariosMetaPage() {
     } finally { setSalvando(null) }
   }
 
+  async function enviarLeadTeste(form: Form) {
+    setSalvando(form.form_id)
+    try {
+      const r = await fetch('/api/meta/webhook/test', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ form_id: form.form_id }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        alert('❌ ' + (j.error || `HTTP ${r.status}`))
+        return
+      }
+      const linhas: string[] = []
+      linhas.push(j.ok ? '✅ Lead de teste processado com sucesso.' : '⚠ Lead processado parcialmente.')
+      linhas.push('')
+      linhas.push(`Cliente:    ${j.cliente_id || '— não criado —'}`)
+      linhas.push(`Negociação: ${j.negocio_id || '— não criada —'}`)
+      if (j.vendedor_id) linhas.push(`Vendedor:   ${j.vendedor_id}`)
+      if (j.motivo)      linhas.push(`Motivo:     ${j.motivo}`)
+      if (Array.isArray(j.erros) && j.erros.length) {
+        linhas.push('')
+        linhas.push('Erros:')
+        for (const e of j.erros) linhas.push(`  • ${e}`)
+      }
+      alert(linhas.join('\n'))
+    } catch (e: any) {
+      alert('❌ ' + (e?.message || 'erro de rede'))
+    } finally { setSalvando(null) }
+  }
+
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
   if (profile?.role !== 'admin') return (
     <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10,color:'var(--text-muted)'}}>
@@ -332,6 +363,11 @@ export default function FormulariosMetaPage() {
                     </label>
                     <div style={{display:'flex',gap:8,alignItems:'center'}}>
                       {salvando === form.form_id && <span style={{fontSize:11,color:'var(--gold)'}}>Salvando...</span>}
+                      <button onClick={()=>enviarLeadTeste(form)} disabled={salvando === form.form_id}
+                        style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.06)',color:'var(--teal)',cursor:'pointer'}}
+                        title="Cria um cliente + negociação fictícios usando o mapeamento atual, simulando o webhook da Meta">
+                        🧪 Enviar lead de teste
+                      </button>
                       {m && <button onClick={()=>removerMapeamento(form)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>Remover</button>}
                     </div>
                   </div>
