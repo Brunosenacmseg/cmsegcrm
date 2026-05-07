@@ -38,7 +38,13 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
       throw new Error(`RD ${res.status} em ${path}: ${txt.slice(0, 180)}`)
     }
     registrarSucesso()
-    return res.json() as Promise<T>
+    // RD às vezes responde 204/200 sem corpo (ex: confirmação de update);
+    // res.json() nesse caso lança "Unexpected end of JSON input".
+    if (res.status === 204) return {} as T
+    const txt = await res.text()
+    if (!txt) return {} as T
+    try { return JSON.parse(txt) as T }
+    catch (e: any) { throw new Error(`RD ${path}: resposta não-JSON (${txt.slice(0, 120)})`) }
   }
   throw new Error(`RD: rate limit (429) excedido em ${path} após ${(totalEspera/1000).toFixed(0)}s de espera. Reduza o intervalo de datas (use 1-2 meses por vez) ou tente novamente em alguns minutos.`)
 }

@@ -408,7 +408,19 @@ export default function ImportarPage() {
           headers: await authHeaders(),
           body: JSON.stringify({ linhas: chunk, dry_run: dryRun }),
         })
-        const j = await r.json()
+        // Parse defensivo: lote grande pode estourar timeout do Vercel
+        // (504 com body vazio) e quebrar `r.json()` com "Unexpected end of JSON input".
+        const txt = await r.text()
+        let j: any = {}
+        if (!txt) {
+          setSyncResultado({ erro: `Resposta vazia (HTTP ${r.status}) no lote ${Math.floor(i/TAM)+1}. Reduza o tamanho do lote ou tente novamente.` })
+          setSyncProcessando(false); return
+        }
+        try { j = JSON.parse(txt) }
+        catch {
+          setSyncResultado({ erro: `Resposta inválida (HTTP ${r.status}): ${txt.slice(0, 160)}` })
+          setSyncProcessando(false); return
+        }
         if (j.error) { setSyncResultado({ erro: j.error }); setSyncProcessando(false); return }
         const s = j.stats || {}
         for (const k of ['total','sem_titulo','sem_responsavel','sem_match_negocio','multiplos_match','ja_correto','a_atualizar']) ag[k] += s[k] || 0
