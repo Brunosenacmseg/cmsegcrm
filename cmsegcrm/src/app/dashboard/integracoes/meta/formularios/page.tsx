@@ -37,6 +37,8 @@ const COLS_NEGOCIO_PADRAO = [
   { val: 'negocio:seguradora', label: 'Seguradora' },
   { val: 'negocio:premio',     label: 'Prêmio' },
   { val: 'negocio:comissao_pct', label: 'Comissão %' },
+  { val: 'negocio:telefone_negocio', label: 'Telefone' },
+  { val: 'negocio:email_negocio',    label: 'E-mail' },
   { val: 'negocio:placa',      label: 'Placa' },
   { val: 'negocio:cep',        label: 'CEP' },
   { val: 'negocio:vencimento', label: 'Vencimento' },
