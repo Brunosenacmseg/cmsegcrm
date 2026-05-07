@@ -152,7 +152,7 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'cidade',        label: 'Cidade',        hints: ['cidade'] },
     { campo: 'cpf_2',         label: 'CPF 2',         hints: ['cpf 2','cpf_2'] },
     { campo: 'email',         label: 'E-mail',        hints: ['email','e-mail'] },
-    { campo: 'telefone',      label: 'Telefone',      hints: ['telefone','fone','celular','whatsapp'] },
+    { campo: 'telefone',      label: 'Telefone 1',    hints: ['telefone 1','telefone1','telefone','fone','celular','whatsapp'] },
     { campo: 'cargo',         label: 'Cargo (do contato)', hints: ['cargo'] },
     // Observações
     { campo: 'obs',           label: 'Observações',   hints: ['obs','observ','notas'] },
