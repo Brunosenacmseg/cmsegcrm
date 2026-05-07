@@ -153,6 +153,7 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'cpf_2',         label: 'CPF 2',         hints: ['cpf 2','cpf_2'] },
     { campo: 'email',         label: 'E-mail',        hints: ['email','e-mail'] },
     { campo: 'telefone',      label: 'Telefone 1',    hints: ['telefone 1','telefone1','telefone','fone','celular','whatsapp'] },
+    { campo: 'telefone_1',    label: 'Telefone 1 (campo personalizado)', hints: ['telefone_1','telefone 1 personalizado'] },
     { campo: 'cargo',         label: 'Cargo (do contato)', hints: ['cargo'] },
     // Observações
     { campo: 'obs',           label: 'Observações',   hints: ['obs','observ','notas'] },
