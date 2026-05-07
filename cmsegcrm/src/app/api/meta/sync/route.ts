@@ -50,6 +50,10 @@ async function getConfig() {
   const { data } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
   if (!data?.access_token) throw new Error('Meta não conectado — configure em /dashboard/integracoes/meta')
   if (!data.ad_account_id) throw new Error('ad_account_id não configurado')
+  // Meta exige prefixo act_ para endpoints de ad account; sem ele a API responde
+  // (#100) Tried accessing nonexisting field (campaigns).
+  const raw = String(data.ad_account_id).trim()
+  data.ad_account_id = raw.startsWith('act_') ? raw : `act_${raw.replace(/^act_/, '')}`
   return data
 }
 
