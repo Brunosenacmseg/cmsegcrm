@@ -198,7 +198,8 @@ async function importarClientes(linhas: any[]) {
 }
 
 async function importarNegocios(linhas: any[]) {
-  const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_sem_alteracao: 0, qtd_erros: 0, erros: [] as string[] }
+  const isVazio = (v: any) => v === null || v === undefined || v === '' || (typeof v === 'number' && v === 0)
   const { data: funis } = await supabaseAdmin().from('funis').select('id, nome, etapas, tipo').order('ordem')
   const funilDefault = (funis || []).find((f:any) => f.tipo === 'venda') || funis?.[0]
   if (!funilDefault) {
@@ -293,28 +294,30 @@ async function importarNegocios(linhas: any[]) {
   const equipePorNome: Record<string, string> = {}
   for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
 
-  // DEDUP: pre-fetch negocios existentes pra evitar duplicar quando o user
-  // re-importa a mesma planilha. Chave de dedup:
-  //  1) rd_id (chave perfeita) — quando vier
-  //  2) titulo + cpf_cnpj (chave natural quando nao tem rd_id)
+  // DEDUP: pre-fetch negocios existentes. Quando re-importa, em vez de
+  // pular, faz UPDATE preenchendo só os campos vazios no CRM (merge não-
+  // destrutivo). Chaves: 1) rd_id (perfeita quando vem), 2) titulo+cpf.
   const rdIdsLote = Array.from(new Set(linhas.map(r => s(r.rd_id || r.id_rd || r.id_negocio || r['id rd'])).filter(Boolean))) as string[]
   const titulosLote = Array.from(new Set(linhas.map(r => s(r.titulo) || s(r.nome) || s(r.cliente)).filter(Boolean))) as string[]
-  const negocioPorRdId:    Record<string, string> = {}
-  const negocioPorTitCpf:  Record<string, string> = {}
+  const negocioPorRdId:    Record<string, any> = {}
+  const negocioPorTitCpf:  Record<string, any> = {}
+  // Seleciona todas as colunas que o payload de import preenche, pra
+  // permitir merge não-destrutivo (só preenche o que está vazio).
+  const COLS_NEG = 'id, rd_id, titulo, cpf_cnpj, cliente_id, funil_id, etapa, produto, seguradora, seguradora_atual, premio, valor_unico, valor_recorrente, comissao_pct, comissao_valor, cep, fonte, fonte_origem, campanha, empresa, cargo_contato, vencimento, previsao_fechamento, data_primeiro_contato, data_ultimo_contato, data_proxima_tarefa, pausada, anotacao_motivo_perda, placa_veiculo, modelo_veiculo, rastreador, tipo_seguro, operadora, tipo_cnpj, funcionario_clt, particular, possui_plano, plano_atual, motivo_troca_plano, mensalidade_atual, idade_beneficiarios, possui_hospital_pref, qual_hospital, cpf_2, cep_negocio, email_negocio, telefone_negocio, status, data_fechamento, motivo_perda, qualificacao, vendedor_id, equipe_id, custom_fields, obs'
   if (rdIdsLote.length) {
     for (let i = 0; i < rdIdsLote.length; i += 500) {
       const chunk = rdIdsLote.slice(i, i + 500)
-      const { data } = await supabaseAdmin().from('negocios').select('id, rd_id').in('rd_id', chunk)
-      for (const n of data || []) if ((n as any).rd_id) negocioPorRdId[(n as any).rd_id] = (n as any).id
+      const { data } = await supabaseAdmin().from('negocios').select(COLS_NEG).in('rd_id', chunk)
+      for (const n of data || []) if ((n as any).rd_id) negocioPorRdId[(n as any).rd_id] = n
     }
   }
   if (titulosLote.length) {
     for (let i = 0; i < titulosLote.length; i += 500) {
       const chunk = titulosLote.slice(i, i + 500)
-      const { data } = await supabaseAdmin().from('negocios').select('id, titulo, cpf_cnpj').in('titulo', chunk)
+      const { data } = await supabaseAdmin().from('negocios').select(COLS_NEG).in('titulo', chunk)
       for (const n of data || []) {
         const k = `${(n as any).titulo}|||${(n as any).cpf_cnpj || ''}`
-        negocioPorTitCpf[k] = (n as any).id
+        negocioPorTitCpf[k] = n
       }
     }
   }
@@ -375,6 +378,11 @@ async function importarNegocios(linhas: any[]) {
 
   // Monta payloads em memória
   const novos: any[] = []
+  const atualizaveis: { id: string; patch: any }[] = []
+  const negociosTratadosNoLote = new Set<string>()
+  // Colunas que NÃO devem ser sobrescritas em update (chave de match ou
+  // estado de workflow que pode confundir o kanban).
+  const SKIP_NO_UPDATE = new Set(['titulo', 'rd_id', 'cpf_cnpj', 'cliente_id', 'funil_id'])
   // Coleta etapas novas por funil; ao final do lote, mescla nos arrays text[]
   // de funis.etapas pra que os cards aparecam como colunas no kanban.
   const etapasNovasPorFunil = new Map<string, Set<string>>()
@@ -384,15 +392,16 @@ async function importarNegocios(linhas: any[]) {
       const titulo = s(r.titulo) || s(r.nome) || s(r.cliente) || s(r.empresa) || 'Negócio importado'
       const cpf = s(r.cpf_cnpj || r.cpf || r.CPF || r.cnpj)
 
-      // DEDUP: se ja existe negocio com mesmo rd_id ou (titulo+cpf), pula.
+      // Detecta negocio existente. Se houver, ATUALIZA (preenche só os
+      // campos vazios) em vez de pular ou criar duplicata.
       const rdId = s(r.rd_id || r.id_rd || r.id_negocio || r['id rd'])
-      if (rdId && negocioPorRdId[rdId]) {
-        stats.qtd_atualizados++
-        continue
-      }
       const chaveTitCpf = `${titulo}|||${cpf || ''}`
-      if (negocioPorTitCpf[chaveTitCpf]) {
-        stats.qtd_atualizados++
+      const matchPorRd = (rdId && typeof negocioPorRdId[rdId] === 'object') ? negocioPorRdId[rdId] : null
+      const matchPorTit = (typeof negocioPorTitCpf[chaveTitCpf] === 'object') ? negocioPorTitCpf[chaveTitCpf] : null
+      const existente: any = matchPorRd || matchPorTit
+      if (existente && negociosTratadosNoLote.has(existente.id)) {
+        // Mesmo negocio matchado por mais de uma linha do mesmo lote:
+        // só aplica a primeira pra evitar updates concorrentes.
         continue
       }
 
@@ -434,11 +443,7 @@ async function importarNegocios(linhas: any[]) {
         if (!camposConhecidos.has(kn)) customFields[k] = v
       }
 
-      // Marca a chave dedup pra que duplicatas DENTRO do mesmo lote tambem sejam evitadas
-      negocioPorTitCpf[chaveTitCpf] = '__pendente__'
-      if (rdId) negocioPorRdId[rdId] = '__pendente__'
-
-      novos.push({
+      const payload: any = {
         titulo,
         rd_id: rdId || null,
         cliente_id: clienteId,
@@ -496,7 +501,42 @@ async function importarNegocios(linhas: any[]) {
         equipe_id: equipeId,
         custom_fields: Object.keys(customFields).length ? customFields : null,
         obs: s(r.obs || r.observacoes || r.observacao || r['observações']),
-      })
+      }
+
+      if (existente) {
+        // Merge não-destrutivo: só preenche colunas vazias do CRM com
+        // valores não vazios da planilha. custom_fields é mesclado por
+        // chave (não sobrescreve chaves já preenchidas).
+        const patch: Record<string, any> = {}
+        for (const [col, novo] of Object.entries(payload)) {
+          if (SKIP_NO_UPDATE.has(col)) continue
+          if (col === 'custom_fields') continue
+          if (novo === null || novo === undefined || novo === '') continue
+          if (isVazio(existente[col])) patch[col] = novo
+        }
+        const cfNovo = (payload.custom_fields && typeof payload.custom_fields === 'object') ? payload.custom_fields : {}
+        const cfAtual = (existente.custom_fields && typeof existente.custom_fields === 'object') ? existente.custom_fields : {}
+        let cfMudou = false
+        const cfMerged = { ...cfAtual }
+        for (const [k, v] of Object.entries(cfNovo)) {
+          if (isVazio((cfAtual as any)[k])) { (cfMerged as any)[k] = v; cfMudou = true }
+        }
+        if (cfMudou) patch.custom_fields = cfMerged
+
+        negociosTratadosNoLote.add(existente.id)
+        if (Object.keys(patch).length === 0) {
+          stats.qtd_sem_alteracao++
+        } else {
+          atualizaveis.push({ id: existente.id, patch })
+        }
+        continue
+      }
+
+      // Marca a chave dedup pra que duplicatas DENTRO do mesmo lote tambem sejam evitadas
+      negocioPorTitCpf[chaveTitCpf] = '__pendente__'
+      if (rdId) negocioPorRdId[rdId] = '__pendente__'
+
+      novos.push(payload)
     } catch (e: any) {
       stats.qtd_erros++
       if (stats.erros.length < 20) stats.erros.push(e?.message?.slice(0, 120) || 'erro')
@@ -529,6 +569,28 @@ async function importarNegocios(linhas: any[]) {
       stats.qtd_criados += novos.length
     }
   }
+
+  // UPDATE não-destrutivo dos negocios já existentes (em paralelo,
+  // chunks de 50 pra não saturar o pool de conexões).
+  if (atualizaveis.length) {
+    const TAM = 50
+    for (let i = 0; i < atualizaveis.length; i += TAM) {
+      const ch = atualizaveis.slice(i, i + TAM)
+      const errs = await Promise.all(ch.map(async ({ id, patch }) => {
+        const { error } = await supabaseAdmin().from('negocios').update(patch).eq('id', id)
+        return error
+      }))
+      for (const error of errs) {
+        if (error) {
+          stats.qtd_erros++
+          if (stats.erros.length < 20) stats.erros.push(`update: ${(error as any)?.message?.slice(0,80) || 'erro'}`)
+        } else {
+          stats.qtd_atualizados++
+        }
+      }
+    }
+  }
+
   return stats
 }
 
