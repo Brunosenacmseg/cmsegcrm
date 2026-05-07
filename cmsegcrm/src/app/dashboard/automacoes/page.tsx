@@ -327,7 +327,7 @@ export default function AutomacoesPage() {
                       <div style={{gridColumn:'1/-1',fontSize:11,color:'var(--text-muted)',marginTop:4}}>
                         Copiar do negócio original:
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
-                          {['cliente','produto','seguradora','vendedor','equipe','origem','cpf','cep','placa','premio','comissao_pct','vencimento'].map(c => (
+                          {['cliente','produto','seguradora','vendedor','equipe','origem','cpf','cep','placa','premio','comissao_pct','comissao_valor','vencimento','proposta','renovacao'].map(c => (
                             <label key={c} style={{display:'flex',alignItems:'center',gap:4,fontSize:11,cursor:'pointer'}}>
                               <input type="checkbox" checked={(ac.copiar||[]).includes(c)} onChange={e=>{
                                 const cur = new Set<string>(ac.copiar||[])
@@ -339,9 +339,13 @@ export default function AutomacoesPage() {
                         </div>
                       </div>
                       <div style={{gridColumn:'1/-1',marginTop:8}}>
-                        <label style={lbl}>Atribuir ao líder da equipe (sobrescreve "vendedor")</label>
-                        <select value={ac.vendedor_lider_equipe||''} onChange={e=>alterarAcao(idx,{vendedor_lider_equipe:e.target.value||undefined})} style={{...inp,background:'#ffffff'}}>
-                          <option value="">— não usar (mantém vendedor copiado) —</option>
+                        <label style={lbl}>Atribuir à equipe (mantém o vendedor original; só usa o líder se "vendedor" não for copiado)</label>
+                        <select value={ac.equipe_alvo || ac.vendedor_lider_equipe || ''} onChange={e=>{
+                          const v = e.target.value || undefined
+                          // grava no campo novo e limpa o legado para evitar conflito
+                          alterarAcao(idx, { equipe_alvo: v, vendedor_lider_equipe: undefined })
+                        }} style={{...inp,background:'#ffffff'}}>
+                          <option value="">— não atribuir equipe —</option>
                           {equipes.map(eq => <option key={eq.id} value={eq.nome}>{eq.nome}</option>)}
                         </select>
                       </div>

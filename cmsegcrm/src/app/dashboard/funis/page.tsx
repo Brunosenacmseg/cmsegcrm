@@ -592,9 +592,11 @@ function FunisPage() {
         id, titulo, etapa, status, qualificacao, premio, vencimento,
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
         produto, seguradora, cpf_cnpj, motivo_perda, obs,
+        comissao_pct, comissao_valor, proposta_id,
         custom_fields, created_at, data_fechamento,
         clientes(id,nome,cpf_cnpj,telefone,email),
-        users!negocios_vendedor_id_fkey(nome)
+        users!negocios_vendedor_id_fkey(nome),
+        propostas(id,numero)
       `).eq('funil_id', funilAtivo)
       if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
       else if (filtroEquipe) {
@@ -1723,6 +1725,7 @@ function FunisPage() {
               {([
                 ['Etapa', cardAtivo.etapa],
                 ['Produto', cardAtivo.produto||'—'],
+                ['Seguradora', cardAtivo.seguradora||'—'],
                 ['Prêmio', podeEditarPremio(cardAtivo) ? (
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     <span style={{fontSize:13,color:'var(--text-muted)'}}>R$</span>
@@ -1739,6 +1742,19 @@ function FunisPage() {
                     />
                   </div>
                 ) : (cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—')],
+                ['Comissão', (() => {
+                  const pct = cardAtivo.comissao_pct
+                  const val = cardAtivo.comissao_valor
+                  const partes = []
+                  if (pct != null && pct !== '') partes.push(`${Number(pct).toLocaleString('pt-BR',{maximumFractionDigits:2})}%`)
+                  if (val != null && val !== '') partes.push(`R$ ${Number(val).toLocaleString('pt-BR',{minimumFractionDigits:2})}`)
+                  return partes.length ? partes.join(' · ') : '—'
+                })()],
+                ['Vencimento', cardAtivo.vencimento ? new Date(cardAtivo.vencimento as any).toLocaleDateString('pt-BR') : '—'],
+                ['Proposta', cardAtivo.propostas?.numero || '—'],
+                ['Renovação', (cardAtivo.custom_fields && typeof cardAtivo.custom_fields === 'object' && 'renovacao' in cardAtivo.custom_fields)
+                  ? (cardAtivo.custom_fields.renovacao ? 'Sim' : 'Não')
+                  : '—'],
                 ['Responsável', cardAtivo.users?.nome||'—'],
                 ['🆕 Criado em', cardAtivo.created_at ? new Date(cardAtivo.created_at).toLocaleString('pt-BR') : '—'],
                 ['🏁 Fechado em', cardAtivo.data_fechamento ? new Date(cardAtivo.data_fechamento).toLocaleString('pt-BR') : '— (em andamento)'],

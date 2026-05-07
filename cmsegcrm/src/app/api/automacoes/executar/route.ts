@@ -48,27 +48,46 @@ async function executarAcao(acao: Acao, negocio: any, userId?: string): Promise<
         fonte:       'Automação',
         obs:         `origem_negocio:${negocio.id} | criado por automação`,
       }
-      if (copiar.includes('cliente'))    payload.cliente_id   = negocio.cliente_id
-      if (copiar.includes('produto'))    payload.produto      = negocio.produto
-      if (copiar.includes('seguradora')) payload.seguradora   = negocio.seguradora
-      if (copiar.includes('premio'))     payload.premio       = negocio.premio
-      if (copiar.includes('comissao_pct')) payload.comissao_pct = negocio.comissao_pct
-      if (copiar.includes('placa'))      payload.placa        = negocio.placa
-      if (copiar.includes('cpf'))        payload.cpf_cnpj     = negocio.cpf_cnpj
-      if (copiar.includes('cep'))        payload.cep          = negocio.cep
-      if (copiar.includes('vencimento')) payload.vencimento   = negocio.vencimento
-      if (copiar.includes('vendedor'))   payload.vendedor_id  = negocio.vendedor_id
-      if (copiar.includes('equipe'))     payload.equipe_id    = negocio.equipe_id
-      if (copiar.includes('origem'))     payload.origem_id    = negocio.origem_id
+      if (copiar.includes('cliente'))      payload.cliente_id     = negocio.cliente_id
+      if (copiar.includes('produto'))      payload.produto        = negocio.produto
+      if (copiar.includes('seguradora'))   payload.seguradora     = negocio.seguradora
+      if (copiar.includes('premio'))       payload.premio         = negocio.premio
+      if (copiar.includes('comissao_pct')) payload.comissao_pct   = negocio.comissao_pct
+      if (copiar.includes('comissao_valor')) payload.comissao_valor = negocio.comissao_valor
+      if (copiar.includes('placa'))        payload.placa          = negocio.placa
+      if (copiar.includes('cpf'))          payload.cpf_cnpj       = negocio.cpf_cnpj
+      if (copiar.includes('cep'))          payload.cep            = negocio.cep
+      if (copiar.includes('vencimento'))   payload.vencimento     = negocio.vencimento
+      if (copiar.includes('vendedor'))     payload.vendedor_id    = negocio.vendedor_id
+      if (copiar.includes('equipe'))       payload.equipe_id      = negocio.equipe_id
+      if (copiar.includes('origem'))       payload.origem_id      = negocio.origem_id
+      if (copiar.includes('proposta'))     payload.proposta_id    = negocio.proposta_id
 
-      // Atribuição ao líder de uma equipe específica (sobrescreve copiar:vendedor)
-      if (acao.vendedor_lider_equipe) {
+      // Renovação: deriva do tipo do funil de origem e mescla em custom_fields
+      if (copiar.includes('renovacao')) {
+        let isRenov: boolean | null = null
+        if (negocio.funil_id) {
+          const { data: funilOrig } = await supabaseAdmin().from('funis').select('tipo').eq('id', negocio.funil_id).maybeSingle()
+          if (funilOrig?.tipo) isRenov = funilOrig.tipo === 'renovacao'
+        }
+        const cfOrig = (negocio.custom_fields && typeof negocio.custom_fields === 'object') ? negocio.custom_fields : {}
+        payload.custom_fields = { ...cfOrig, renovacao: isRenov }
+      }
+
+      // Atribuição: por padrão NÃO sobrescreve mais o vendedor — só atribui a equipe.
+      // Mantém compat retroativa com `vendedor_lider_equipe` (legado): só sobrescreve
+      // o vendedor se 'vendedor' NÃO estiver em copiar.
+      const equipeAlvoNome = acao.equipe_alvo || acao.vendedor_lider_equipe
+      if (equipeAlvoNome) {
         const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-        const alvo = norm(String(acao.vendedor_lider_equipe))
+        const alvo = norm(String(equipeAlvoNome))
         const { data: equipes } = await supabaseAdmin().from('equipes').select('id, nome, lider_id')
         const eq = (equipes || []).find((e: any) => norm(e.nome || '').includes(alvo))
-        if (eq?.lider_id) payload.vendedor_id = eq.lider_id
-        if (eq?.id)       payload.equipe_id   = eq.id
+        if (eq?.id) payload.equipe_id = eq.id
+        // só usa o líder como vendedor se NÃO copiamos o vendedor original ou se ele estiver vazio
+        if (eq?.lider_id && (!copiar.includes('vendedor') || !negocio.vendedor_id)) {
+          payload.vendedor_id = eq.lider_id
+        }
       }
 
       // Idempotência: não cria duplicado se já existe um negócio nesse funil
