@@ -60,13 +60,13 @@ export async function GET(req: NextRequest) {
   // resolver via /me/accounts. Como último recurso usa o user/system token —
   // mas a Meta normalmente recusa /leadgen_forms com user token, retornando
   // "API access blocked". Nesse caso devolvemos uma mensagem acionável.
-  let pageToken: string | null = cfg.page_access_token || null
+  let pageToken: string = (cfg.page_access_token as string) || ''
   let pageTokenOrigem: 'persistido' | 'me_accounts' | 'fallback_user' = 'persistido'
   let resolveErro: any = null
   if (!pageToken) {
-    const { token, erro } = await getPageTokenViaMeAccounts(cfg.access_token, cfg.page_id)
+    const { token, erro } = await getPageTokenViaMeAccounts(cfg.access_token as string, cfg.page_id as string)
     if (token) { pageToken = token; pageTokenOrigem = 'me_accounts' }
-    else { resolveErro = erro; pageToken = cfg.access_token; pageTokenOrigem = 'fallback_user' }
+    else { resolveErro = erro; pageToken = cfg.access_token as string; pageTokenOrigem = 'fallback_user' }
   }
 
   let forms: any[] = []
