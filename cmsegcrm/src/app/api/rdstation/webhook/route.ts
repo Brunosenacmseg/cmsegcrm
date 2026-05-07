@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { rdId, RDDeal, RDContact } from '@/lib/rdstation'
+import { aplicarMapeamento, RegraMapeamento } from '@/lib/rdstation-mapeamento'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,6 +114,16 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     fonte: d.deal_source?.name || d.campaign?.name || 'RD Station CRM',
   }
   if (clienteId) payload.cliente_id = clienteId
+
+  // Aplica mapeamento configurável (mesma config que sync admin usa).
+  // Tolera tabela vazia/erro — mantém payload default.
+  try {
+    const { data: m } = await supabaseAdmin()
+      .from('rdstation_mapeamento_campos')
+      .select('mapeamento').eq('id', 1).maybeSingle()
+    const regras = (m?.mapeamento as RegraMapeamento[]) || []
+    aplicarMapeamento(payload, d, regras)
+  } catch {}
 
   const { data: existente, error: errSel } = await supabaseAdmin().from('negocios').select('id, etapa').eq('rd_id', id).maybeSingle()
   if (errSel) return { ok: false, motivo: `select negocios: ${errSel.message}` }
