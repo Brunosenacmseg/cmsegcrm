@@ -114,6 +114,10 @@ async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?
     erros: [] as string[],
   }
 
+  const startedAt = Date.now()
+  const DEADLINE_MS = 50_000 // Vercel Hobby cap = 60s; folga pra finalizar update
+  let truncado = false
+
   // OTIMIZADO: skip /deal_pipelines + /deal_stages (~30-60s no plano Hobby).
   // Usa só funis que já existem no DB (povoados pelo sync prévio) + fallback.
   // Se faltar match, deal cai no funil "RD: Importados".
@@ -157,6 +161,7 @@ async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?
 
   // Cria os faltantes
   for (const d of deals) {
+    if (Date.now() - startedAt > DEADLINE_MS) { truncado = true; break }
     const id = rdId(d); if (!id) continue
     if (jaPresentes.has(id)) { stats.ja_existiam++; continue }
 
@@ -235,16 +240,21 @@ async function rodarSync(token: string, fromDay?: string, toDay?: string, jobId?
   }
 
   if (jobId) {
-    const status = stats.qtd_erros === 0 ? 'concluido' : (stats.qtd_criados > 0 ? 'parcial' : 'erro')
+    const status = truncado
+      ? 'parcial'
+      : (stats.qtd_erros === 0 ? 'concluido' : (stats.qtd_criados > 0 ? 'parcial' : 'erro'))
+    const errosFinal = truncado
+      ? [`[truncado por deadline ${DEADLINE_MS}ms]`, ...stats.erros].slice(0, 30)
+      : stats.erros.slice(0, 30)
     await admin().from('rdstation_syncs').update({
       status,
       qtd_lidos: stats.qtd_lidos_rd,
       qtd_criados: stats.qtd_criados,
       qtd_atualizados: stats.ja_existiam,
       qtd_erros: stats.qtd_erros,
-      erros: stats.erros.slice(0, 30),
+      erros: errosFinal,
       concluido_em: new Date().toISOString(),
     }).eq('id', jobId)
   }
-  return stats
+  return { ...stats, truncado }
 }
