@@ -420,6 +420,7 @@ async function importarNegocios(linhas: any[]) {
         cpf_2: s(r['cpf 2'] || r.cpf_2),
         cep_negocio: s(r.cep),
         email_negocio: s(r.email || r['e-mail'])?.toLowerCase() || null,
+        telefone_negocio: s(r.telefone || r.telefone1 || r['telefone 1'] || r.fone || r.celular || r.whatsapp) || null,
         // Status
         status, data_fechamento: dataFech,
         motivo_perda: status === 'perdido' ? (s(r.motivo_perda) || s(r.motivo) || null) : null,
