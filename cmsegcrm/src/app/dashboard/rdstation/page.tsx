@@ -102,6 +102,19 @@ export default function RDStationPage() {
             )}
           </div>
 
+          <div className="card" style={{marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16}}>
+            <div>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:6}}>⚙ Mapeamento de campos</div>
+              <div style={{fontSize:12,color:'var(--text-muted)',lineHeight:1.5}}>
+                Configure quais campos do RD (incluindo custom_fields) preenchem cada coluna em Negócios. Vale para o sync manual e o webhook.
+              </div>
+            </div>
+            <a href="/dashboard/rdstation/mapeamento"
+              style={{padding:'10px 18px',background:'rgba(74,128,240,0.15)',border:'1px solid rgba(74,128,240,0.4)',borderRadius:8,color:'#4a80f0',textDecoration:'none',fontSize:13,fontWeight:600,whiteSpace:'nowrap'}}>
+              Abrir mapeamento →
+            </a>
+          </div>
+
           <div className="card" style={{marginBottom:20}}>
             <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,marginBottom:12}}>🛠 Como configurar (uma vez)</div>
             <ol style={{fontSize:13,color:'var(--text-muted)',lineHeight:1.9,paddingLeft:20,margin:0}}>
