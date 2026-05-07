@@ -71,8 +71,19 @@ export default function TempLeakTokenPage() {
         },
         body: JSON.stringify(body),
       })
-      const j = await r.json()
+      // Resposta defensiva: sync grande pode estourar o timeout do Vercel
+      // (504) e voltar com body vazio/HTML — `r.json()` direto explode com
+      // "Unexpected end of JSON input".
+      const txt = await r.text()
+      let j: any = {}
+      if (txt) {
+        try { j = JSON.parse(txt) }
+        catch { j = { error: `Resposta inválida (HTTP ${r.status}): ${txt.slice(0, 160)}` } }
+      } else {
+        j = { error: `Resposta vazia (HTTP ${r.status}). Provável timeout — reduza a janela de datas (1-2 meses por vez) e tente de novo.` }
+      }
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`)
+      if (j?.error) throw new Error(j.error)
       setResultadoSync(j)
     } catch (e: any) {
       setErroSync(e?.message || String(e))

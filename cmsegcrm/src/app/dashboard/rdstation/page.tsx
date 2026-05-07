@@ -22,7 +22,15 @@ export default function RDStationPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token||''}` },
       })
-      const j = await r.json()
+      // Parse defensivo: 504/HTML do edge volta sem JSON e quebra `r.json()`
+      // com "Unexpected end of JSON input".
+      const txt = await r.text()
+      let j: any
+      if (!txt) j = { ok: false, diagnostico: `Resposta vazia (HTTP ${r.status}). Possível timeout — tente novamente.` }
+      else {
+        try { j = JSON.parse(txt) }
+        catch { j = { ok: false, diagnostico: `Resposta inválida (HTTP ${r.status}): ${txt.slice(0, 160)}` } }
+      }
       setResultadoTeste(j)
     } catch (e: any) {
       setResultadoTeste({ ok: false, diagnostico: 'Erro de rede: ' + (e?.message||'') })
