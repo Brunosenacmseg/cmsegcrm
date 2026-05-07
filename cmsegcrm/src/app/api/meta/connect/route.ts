@@ -32,9 +32,11 @@ export async function GET(req: NextRequest) {
   const auth = await checarAdmin(req)
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
 
+  const url = new URL(req.url)
+  const revelar = url.searchParams.get('revelar') === '1'
+
   const { data } = await supabaseAdmin().from('meta_config').select('*').eq('id', 1).maybeSingle()
-  // Não devolve secrets crus, só status
-  return NextResponse.json({
+  const base = {
     ok: true,
     conectado: !!data?.access_token,
     ad_account_id: data?.ad_account_id || null,
@@ -42,11 +44,26 @@ export async function GET(req: NextRequest) {
     app_id: data?.app_id || null,
     pixel_id: data?.pixel_id || null,
     dataset_id: data?.dataset_id || null,
+    tem_access_token: !!data?.access_token,
+    tem_app_secret: !!data?.app_secret,
+    tem_verify_token: !!data?.verify_token,
     tem_conversions_token: !!data?.conversions_token,
     tem_page_access_token: !!data?.page_access_token,
     webhook_subscribed: !!data?.webhook_subscribed,
     expires_at: data?.expires_at || null,
     configurado_em: data?.configurado_em || null,
+  }
+  if (!revelar) return NextResponse.json(base)
+  // Admin pediu pra revelar — devolve secrets em texto claro.
+  return NextResponse.json({
+    ...base,
+    secrets: {
+      access_token:       data?.access_token || null,
+      page_access_token:  data?.page_access_token || null,
+      app_secret:         data?.app_secret || null,
+      verify_token:       data?.verify_token || null,
+      conversions_token:  data?.conversions_token || null,
+    },
   })
 }
 
@@ -169,4 +186,80 @@ export async function DELETE(req: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
   await supabaseAdmin().from('meta_config').delete().eq('id', 1)
   return NextResponse.json({ ok: true })
+}
+
+// PATCH: ações utilitárias. Hoje suporta { acao: 'buscar_page_token' } que
+// usa o access_token salvo pra chamar /me/accounts e descobrir o
+// page_access_token correspondente ao page_id já configurado.
+export async function PATCH(req: NextRequest) {
+  const auth = await checarAdmin(req)
+  if (!auth.ok) return NextResponse.json({ error: auth.erro }, { status: 401 })
+
+  let body: any = {}
+  try { body = await req.json() } catch {}
+  if (body.acao !== 'buscar_page_token') {
+    return NextResponse.json({ error: 'ação inválida' }, { status: 400 })
+  }
+
+  const { data: cfg } = await supabaseAdmin().from('meta_config').select('access_token, page_id').eq('id', 1).maybeSingle()
+  if (!cfg?.access_token) return NextResponse.json({ error: 'Access Token não está salvo. Salve primeiro o token do System User.' }, { status: 400 })
+  if (!cfg?.page_id)      return NextResponse.json({ error: 'page_id não configurado.' }, { status: 400 })
+
+  let resp: any
+  try {
+    const r = await fetch(`${GRAPH}/me/accounts?fields=id,name,access_token&limit=200&access_token=${encodeURIComponent(cfg.access_token as string)}`, {
+      signal: AbortSignal.timeout(10000),
+    })
+    resp = await r.json()
+    if (!r.ok || resp?.error) return NextResponse.json({ error: 'Meta: ' + (resp?.error?.message || 'erro') }, { status: 400 })
+  } catch (e: any) {
+    return NextResponse.json({ error: 'Falha ao consultar /me/accounts: ' + e.message }, { status: 500 })
+  }
+
+  const lista: any[] = resp?.data || []
+  if (lista.length === 0) {
+    return NextResponse.json({
+      error: 'Nenhuma Page encontrada. O usuário do Access Token não administra nenhuma Página. Adicione esse usuário como admin da Page em facebook.com/{sua-page}/settings → Acesso à Página, depois gere um novo Access Token.',
+    }, { status: 400 })
+  }
+
+  const page = lista.find((p: any) => String(p.id) === String(cfg.page_id))
+  if (!page) {
+    const nomes = lista.map((p: any) => `${p.name} (${p.id})`).join(', ')
+    return NextResponse.json({
+      error: `page_id "${cfg.page_id}" não encontrado entre as Pages do usuário. Pages disponíveis: ${nomes}. Atualize o campo page_id ou troque o Access Token.`,
+    }, { status: 400 })
+  }
+  if (!page.access_token) {
+    return NextResponse.json({ error: `Page "${page.name}" não retornou access_token. Verifique se o token tem os escopos pages_show_list e pages_read_engagement.` }, { status: 400 })
+  }
+
+  // Tenta subscrever leadgen logo de uma vez.
+  let webhook_subscribed = false
+  let webhook_erro: string | null = null
+  try {
+    const rs = await fetch(`${GRAPH}/${cfg.page_id}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(page.access_token)}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(8000),
+    })
+    const js = await rs.json()
+    webhook_subscribed = !!js.success
+    if (!webhook_subscribed) webhook_erro = js?.error?.message || 'subscribe falhou'
+  } catch (e: any) {
+    webhook_erro = e?.message || 'erro de rede ao subscrever Page'
+  }
+
+  const { error: errUp } = await supabaseAdmin().from('meta_config').update({
+    page_access_token: page.access_token,
+    webhook_subscribed,
+    updated_at: new Date().toISOString(),
+  }).eq('id', 1)
+  if (errUp) return NextResponse.json({ error: 'Erro ao salvar: ' + errUp.message }, { status: 500 })
+
+  return NextResponse.json({
+    ok: true,
+    page: { id: page.id, name: page.name },
+    webhook_subscribed,
+    webhook_erro,
+  })
 }

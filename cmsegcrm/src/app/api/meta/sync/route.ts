@@ -59,8 +59,15 @@ async function getConfig() {
 
 // ─── Sincroniza campanhas ────────────────────────────────────────
 async function syncCampanhas(cfg: any) {
-  const fields = 'id,name,status,objective,daily_budget,start_time,stop_time,created_time'
-  const url = `${GRAPH}/${cfg.ad_account_id}/campaigns?fields=${fields}&limit=200&access_token=${encodeURIComponent(cfg.access_token)}`
+  const fields = 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time'
+  // effective_status=ACTIVE,PAUSED,... — sem filter, /campaigns só traz não-deletadas.
+  // Para garantir TODAS (ativas + pausadas + arquivadas) usamos filtering com effective_status.
+  const filtering = encodeURIComponent(JSON.stringify([{
+    field: 'effective_status',
+    operator: 'IN',
+    value: ['ACTIVE','PAUSED','DELETED','PENDING_REVIEW','DISAPPROVED','PREAPPROVED','PENDING_BILLING_INFO','CAMPAIGN_PAUSED','ARCHIVED','ADSET_PAUSED','IN_PROCESS','WITH_ISSUES'],
+  }]))
+  const url = `${GRAPH}/${cfg.ad_account_id}/campaigns?fields=${fields}&filtering=${filtering}&limit=200&access_token=${encodeURIComponent(cfg.access_token)}`
   const lista = await paginar<any>(url)
   let criadas = 0, atualizadas = 0
   for (const c of lista) {
@@ -68,8 +75,10 @@ async function syncCampanhas(cfg: any) {
       meta_id: String(c.id),
       nome: c.name || '(sem nome)',
       status: c.status || null,
+      effective_status: c.effective_status || null,
       objetivo: c.objective || null,
-      daily_budget: c.daily_budget ? Number(c.daily_budget) / 100 : null, // Meta retorna em centavos
+      daily_budget: c.daily_budget ? Number(c.daily_budget) / 100 : null,    // Meta retorna em centavos
+      lifetime_budget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
       inicio: c.start_time ? c.start_time.slice(0, 10) : null,
       fim: c.stop_time ? c.stop_time.slice(0, 10) : null,
       criada_em: c.created_time || null,
