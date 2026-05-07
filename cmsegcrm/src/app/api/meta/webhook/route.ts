@@ -168,37 +168,59 @@ export async function POST(req: NextRequest) {
         }
         return null
       }
-      // Aplica campo_map → preenche colunas da NEGOCIAÇÃO (suporta prefixos)
-      //   negocio:<col>     → negocio.<col>
-      //   negocio_cf:<chave>→ negocio.custom_fields.<chave>
-      // Mapeamentos legados com prefixo cliente:/cliente_cf: ou sem prefixo
-      // são ignorados — esta integração não cria nem atualiza clientes.
+      // ── Mapeamento de campos da NEGOCIAÇÃO ──
+      // Modelo novo (campo_negocio_map): { "negocio:titulo": ["__meta__:campaign_name", "first_name"], ... }
+      //   Para cada coluna, resolve cada origem em valorPorKey e concatena com " - ".
+      // Modelo legado (campo_map): { formKey: { negocio: "negocio:col" | "negocio_cf:chave" } }
+      //   Aplica como fallback apenas para colunas ainda não preenchidas pelo modelo novo.
       const negBase: Record<string, any> = {}
       const negCustom: Record<string, any> = {}
-      const aplicar = (target: any, v: string) => {
+      const aplicarColuna = (colKey: string, valor: string) => {
+        if (!colKey || valor == null || valor === '') return
+        if (colKey.startsWith('negocio_cf:'))      negCustom[colKey.slice(11)] = valor
+        else if (colKey.startsWith('negocio:'))    negBase[colKey.slice(8)]    = valor
+      }
+
+      const negMap: Record<string, any> = (mapping?.campo_negocio_map && typeof mapping.campo_negocio_map === 'object') ? mapping.campo_negocio_map : {}
+      for (const [colKey, srcKeys] of Object.entries(negMap)) {
+        if (!Array.isArray(srcKeys)) continue
+        const partes = srcKeys
+          .map(k => valorPorKey[String(k)])
+          .filter(v => v != null && v !== '')
+        if (partes.length) aplicarColuna(colKey, partes.join(' - '))
+      }
+
+      // Fallback legado (campo_map). Só preenche colunas que ainda não vieram do mapa novo.
+      const aplicarLegado = (target: any, v: string) => {
         if (!target) return
         const t = String(target)
-        if (t.startsWith('negocio_cf:')) negCustom[t.slice(11)] = v
-        else if (t.startsWith('negocio:')) negBase[t.slice(8)] = v
-        // demais prefixos (cliente:, cliente_cf:, sem prefixo) → ignorados
+        if (t.startsWith('negocio_cf:')) {
+          const k = t.slice(11)
+          if (!(k in negCustom)) negCustom[k] = v
+        } else if (t.startsWith('negocio:')) {
+          const k = t.slice(8)
+          if (!(k in negBase)) negBase[k] = v
+        }
       }
       for (const [formKey, target] of Object.entries(campoMap)) {
         const v = valorPorKey[formKey]
         if (!v) continue
         if (typeof target === 'string') {
-          aplicar(target, v)
+          aplicarLegado(target, v)
         } else if (target && typeof target === 'object') {
-          aplicar((target as any).negocio, v)
+          aplicarLegado((target as any).negocio, v)
         }
       }
 
-      // Compõe título a partir de titulo_campos (lista ordenada de chaves do form).
-      // Quando há múltiplas chaves, junta os valores com " - ".
-      const tituloCampos: string[] = Array.isArray(mapping?.titulo_campos) ? mapping.titulo_campos : []
-      let tituloComposto: string | null = null
-      if (tituloCampos.length > 0) {
-        const partes = tituloCampos.map(k => valorPorKey[k]).filter(v => v != null && v !== '')
-        if (partes.length) tituloComposto = partes.join(' - ')
+      // Título: prioriza o que veio do mapa novo (negBase.titulo); senão usa
+      // titulo_campos legado; senão fallback heurístico mais abaixo.
+      let tituloComposto: string | null = negBase.titulo || null
+      if (!tituloComposto) {
+        const tituloCampos: string[] = Array.isArray(mapping?.titulo_campos) ? mapping.titulo_campos : []
+        if (tituloCampos.length > 0) {
+          const partes = tituloCampos.map(k => valorPorKey[k]).filter(v => v != null && v !== '')
+          if (partes.length) tituloComposto = partes.join(' - ')
+        }
       }
 
       // Fallback heurístico apenas para o título de fallback

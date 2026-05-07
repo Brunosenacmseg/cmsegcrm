@@ -116,13 +116,25 @@ export async function POST(req: NextRequest) {
   if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, vendedor_ids, ativo, criar_negocio, observacoes, campo_map, titulo_campos } = body
+  const { form_id, form_nome, page_id, funil_id, etapa, vendedor_id, vendedor_ids, ativo, criar_negocio, observacoes, campo_map, titulo_campos, campo_negocio_map } = body
   if (!form_id) return NextResponse.json({ error: 'form_id obrigatório' }, { status: 400 })
 
   const ids = Array.isArray(vendedor_ids) ? vendedor_ids.filter(Boolean) : []
   const tituloCampos = Array.isArray(titulo_campos)
     ? titulo_campos.filter((k: any) => typeof k === 'string' && k.trim() !== '')
     : []
+
+  // Sanitiza campo_negocio_map: { [coluna: string]: string[] } — descarta
+  // entradas inválidas e listas vazias.
+  const negocioMap: Record<string, string[]> = {}
+  if (campo_negocio_map && typeof campo_negocio_map === 'object' && !Array.isArray(campo_negocio_map)) {
+    for (const [col, srcs] of Object.entries(campo_negocio_map)) {
+      if (typeof col !== 'string' || !col.trim()) continue
+      if (!Array.isArray(srcs)) continue
+      const arr = srcs.filter((s: any) => typeof s === 'string' && s.trim() !== '')
+      if (arr.length) negocioMap[col] = arr
+    }
+  }
 
   const { error } = await admin.from('meta_form_mapeamento').upsert({
     form_id: String(form_id),
@@ -137,6 +149,7 @@ export async function POST(req: NextRequest) {
     observacoes:  observacoes || null,
     campo_map:    campo_map && typeof campo_map === 'object' ? campo_map : {},
     titulo_campos: tituloCampos,
+    campo_negocio_map: negocioMap,
     updated_at:   new Date().toISOString(),
   }, { onConflict: 'form_id' })
 
