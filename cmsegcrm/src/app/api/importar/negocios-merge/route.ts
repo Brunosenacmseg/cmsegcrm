@@ -223,6 +223,7 @@ export async function POST(req: NextRequest) {
         equipe_id:             equipeIdNovo,
         cargo_contato:         s(r['Cargo']),
         email_negocio:         s(r['Email'] ?? r['E-mail'])?.toLowerCase() || null,
+        telefone_negocio:      s(r['Telefone'] ?? r['Telefone 1'] ?? r['Celular'] ?? r['Fone'] ?? r['WhatsApp']) || null,
       }
 
       // Custom fields vindos da planilha
