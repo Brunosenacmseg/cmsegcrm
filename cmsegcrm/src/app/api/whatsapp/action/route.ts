@@ -100,49 +100,46 @@ export async function POST(request: NextRequest) {
         const { numero, mensagem } = params
         const r = await evoFetch(evo_url, api_key, `/message/sendText/${instance}`, 'POST', {
           number: numero,
-          textMessage: { text: mensagem },
+          text: mensagem,
         })
+        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
         return NextResponse.json(r.data)
       }
 
       case 'enviar_midia': {
-        // Envia imagem, vídeo, documento via URL ou base64
         const { numero, base64, mimetype, nome_arquivo, caption } = params
         const r = await evoFetch(evo_url, api_key, `/message/sendMedia/${instance}`, 'POST', {
           number: numero,
-          mediaMessage: {
-            mediatype: mimetype?.startsWith('image') ? 'image'
-                      : mimetype?.startsWith('video') ? 'video'
-                      : 'document',
-            media: base64,
-            mimetype,
-            fileName: nome_arquivo,
-            caption: caption || '',
-          },
+          mediatype: mimetype?.startsWith('image') ? 'image'
+                    : mimetype?.startsWith('video') ? 'video'
+                    : 'document',
+          media: base64,
+          mimetype,
+          fileName: nome_arquivo,
+          caption: caption || '',
         })
+        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
         return NextResponse.json(r.data)
       }
 
       case 'enviar_audio': {
-        // Envia áudio como PTT (mensagem de voz)
         const { numero, base64 } = params
         const r = await evoFetch(evo_url, api_key, `/message/sendWhatsAppAudio/${instance}`, 'POST', {
           number: numero,
-          audioMessage: {
-            audio: base64,
-            encoding: true,
-          },
+          audio: base64,
+          encoding: true,
         })
+        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
         return NextResponse.json(r.data)
       }
 
       case 'enviar_sticker': {
-        // Envia figurinha
         const { numero, base64 } = params
         const r = await evoFetch(evo_url, api_key, `/message/sendSticker/${instance}`, 'POST', {
           number: numero,
-          stickerMessage: { sticker: base64 },
+          sticker: base64,
         })
+        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
         return NextResponse.json(r.data)
       }
 
