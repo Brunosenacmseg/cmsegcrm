@@ -32,6 +32,10 @@ export async function getVisibleUserIds(): Promise<string[] | null> {
   // Admin e Financeiro veem todos
   if (profile.role === 'admin' || profile.role === 'financeiro') return null // null = sem filtro
 
+  // Equipe GESTÃO tem acesso total a funis e negociações,
+  // independente de vendedor.
+  if (await isMemberOfGestao(profile.id)) return null
+
   // Líder vê próprio + equipe
   if (profile.role === 'lider') {
     const { data: equipes } = await supabase
@@ -46,4 +50,23 @@ export async function getVisibleUserIds(): Promise<string[] | null> {
 
   // Corretor vê só o próprio
   return [profile.id]
+}
+
+async function isMemberOfGestao(userId: string): Promise<boolean> {
+  const supabase = createClient()
+  const norm = (s: string) =>
+    (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+  const isGestao = (n?: string | null) => {
+    const v = norm(n || '')
+    return v === 'gestao' || v === 'equipe gestao'
+  }
+
+  const [{ data: membros }, { data: lideradas }] = await Promise.all([
+    supabase.from('equipe_membros').select('equipes!inner(nome)').eq('user_id', userId),
+    supabase.from('equipes').select('nome').eq('lider_id', userId),
+  ])
+
+  if ((membros || []).some((m: any) => isGestao(m.equipes?.nome))) return true
+  if ((lideradas || []).some((e: any) => isGestao(e.nome))) return true
+  return false
 }

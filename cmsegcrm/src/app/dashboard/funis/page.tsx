@@ -532,6 +532,9 @@ function FunisPage() {
   }
   // Quando o funil é EMISSÃO E IMPLANTAÇÃO e o usuário está na EQUIPE
   // PÓS VENDA, ele enxerga todos os cards independente do vendedor.
+  // Para a EQUIPE GESTÃO, o bypass é total e já está tratado em
+  // `getVisibleUserIds()` (retorna null = sem filtro), portanto não
+  // precisa de tratamento adicional aqui.
   const bypassVisibleIds = (funilId?: string | null) =>
     userInPosvenda && isFunilEmissao(funilId)
 
