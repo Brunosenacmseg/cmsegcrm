@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -38,7 +39,7 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 
 let _sa: any = null
 function supabaseAdmin(): any {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 
 export const dynamic = 'force-dynamic'
 
@@ -7,7 +8,7 @@ export const maxDuration = 60
 
 let _sa: ReturnType<typeof createClient> | null = null
 function supabaseAdmin() {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 
