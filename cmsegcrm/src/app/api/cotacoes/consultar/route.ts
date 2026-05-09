@@ -21,7 +21,7 @@ export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
 export const maxDuration = 60
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1) Busca na base local
-    const { data: cli } = await supabaseAdmin
+    const { data: cli } = await supabaseAdmin()
       .from('clientes')
       .select('id, nome, cpf_cnpj, nascimento, sexo, estado_civil, telefone, telefone2, email, cep, endereco, numero, bairro, cidade, estado')
       .or(`cpf_cnpj.eq.${cpfLimpo},cpf_cnpj.ilike.%${cpfLimpo}%`)

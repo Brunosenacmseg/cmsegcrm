@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic'
 // pdf-parse precisa do runtime Node (Buffer, fs)
 export const runtime = 'nodejs'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function admin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -621,7 +621,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     (tipo === 'sinistros' && isEzze) ? mapSinistroEzze :
     tipo === 'sinistros'     ? mapSinistro :
     tipo === 'inadimplencia' ? mapInadimplencia :
-    tipo === 'propostas'     ? mapProposta :
     (tipo === 'comissoes' && isEzze) ? mapComissaoEzze :
                                 mapComissao
   const payloads = linhas.map(r => mapper(r, params.id, importacao_id))
@@ -630,7 +629,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   let inseridos = 0
   for (let i = 0; i < payloads.length; i += 500) {
     const chunk = payloads.slice(i, i + 500)
-    const { error } = await admin().from(tabela).insert(chunk)
+    const { error } = await (admin() as any).from(tabela).insert(chunk)
     if (error) {
       await admin().from('seg_importacoes').update({
         concluido_em: new Date().toISOString(),

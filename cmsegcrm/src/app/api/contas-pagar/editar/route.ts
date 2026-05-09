@@ -5,7 +5,7 @@ import type { Database } from '@/lib/supabase/database.types'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -64,7 +64,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Nada a atualizar' }, { status: 400 })
   }
 
-  const { error: errUpd } = await sa.from('contas_pagar').update(updates).eq('id', conta_id)
+  const { error: errUpd } = await sa.from('contas_pagar').update(updates as any).eq('id', conta_id)
   if (errUpd) return NextResponse.json({ error: errUpd.message }, { status: 500 })
 
   // Se já paga e existe despesa vinculada, propaga ao DRE
@@ -77,7 +77,7 @@ export async function PATCH(request: NextRequest) {
     if (updates.descricao !== undefined) desp.obs = updates.descricao
     if (updates.vencimento !== undefined) desp.data_vencimento = updates.vencimento
     if (Object.keys(desp).length > 0) {
-      const { error: errDesp } = await sa.from('financeiro_despesas').update(desp).eq('id', c.despesa_id)
+      const { error: errDesp } = await sa.from('financeiro_despesas').update(desp as any).eq('id', c.despesa_id)
       if (errDesp) console.warn('[contas_pagar/editar] falha sync despesa:', errDesp.message)
     }
   }

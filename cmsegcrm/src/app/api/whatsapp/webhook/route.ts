@@ -7,7 +7,7 @@ export const maxDuration = 60
 
 // lazy-init: evita que o build do Next falhe quando env vars
 // não estão disponíveis na fase 'Collecting page data'.
-const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+const supabase = new Proxy({} as ReturnType<typeof createClient<Database>>, {
   get(_t, prop) {
     const g = globalThis as any
     if (!g['__sa_supabase']) g['__sa_supabase'] = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -252,8 +252,8 @@ export async function POST(request: NextRequest) {
         .single()
       const inst = instRow ? {
         ...instRow,
-        evolution_url: instRow.evolution_url || process.env.EVOLUTION_API_URL,
-        api_key:       instRow.api_key       || process.env.EVOLUTION_API_KEY,
+        evolution_url: instRow.evolution_url || process.env.EVOLUTION_API_URL || '',
+        api_key:       instRow.api_key       || process.env.EVOLUTION_API_KEY || '',
       } : null
 
       if (inst) {

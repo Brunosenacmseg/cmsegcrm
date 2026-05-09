@@ -19,7 +19,7 @@ import type { Database } from '@/lib/supabase/database.types'
 export const maxDuration = 120
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -56,12 +56,12 @@ export async function POST(req: NextRequest) {
     if (!negocioId) {
       return NextResponse.json({ erro: 'Informe apolice_id ou negocio_id.' }, { status: 400 })
     }
-    const { data: neg } = await supabaseAdmin
+    const { data: neg } = await supabaseAdmin()
       .from('negocios').select('id, cliente_id, vendedor_id, produto, seguradora, premio, comissao_pct, vencimento, placa')
       .eq('id', negocioId).single()
     if (!neg) return NextResponse.json({ erro: 'Negócio não encontrado.' }, { status: 404 })
 
-    const { data: novaApol, error: errIns } = await supabaseAdmin
+    const { data: novaApol, error: errIns } = await supabaseAdmin()
       .from('apolices')
       .insert({
         negocio_id:    neg.id,
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Confirma a apólice e pega cliente_id para link cruzado
-  const { data: apo } = await supabaseAdmin
+  const { data: apo } = await supabaseAdmin()
     .from('apolices').select('id, cliente_id, negocio_id').eq('id', apoliceId).single()
   if (!apo) return NextResponse.json({ erro: 'Apólice não encontrada.' }, { status: 404 })
 
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
   if (errUp) return NextResponse.json({ erro: 'Erro ao subir PDF: '+errUp.message }, { status: 500 })
 
   // 4. Cria registro em anexos, sincronizado com a apólice
-  const { data: anexo, error: errAn } = await supabaseAdmin
+  const { data: anexo, error: errAn } = await supabaseAdmin()
     .from('anexos')
     .insert({
       bucket:       'cmsegcrm',

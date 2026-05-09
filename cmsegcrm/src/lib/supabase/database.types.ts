@@ -8782,6 +8782,1137 @@ export type Database = {
           },
         ]
       }
+      tokio_apolices_raw: {
+        Row: {
+          ano_fabricacao: string | null
+          ano_modelo: string | null
+          apolice_id: string | null
+          bairro: string | null
+          cd_corretor: string | null
+          cep: string | null
+          chassi: string | null
+          cidade: string | null
+          cliente_id: string | null
+          combustivel: string | null
+          complemento: string | null
+          cor: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          custo_apolice: number | null
+          dados_brutos: Json | null
+          data_cancelamento: string | null
+          data_emissao: string | null
+          data_recusa: string | null
+          ddd: string | null
+          email: string | null
+          emissao_endosso: string | null
+          endereco: string | null
+          fabricante: string | null
+          forma_cobranca: string | null
+          id: string
+          importacao_id: string | null
+          modelo: string | null
+          motivo_recusa: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          num_apolice: string | null
+          num_endosso: string
+          num_proposta: string | null
+          numero: string | null
+          pc_comissao: number | null
+          placa: string | null
+          premio_liquido: number | null
+          premio_total: number | null
+          produto: string | null
+          qtd_parcelas: number | null
+          ramo: string | null
+          status_apolice: string | null
+          telefone: string | null
+          tipo_seguro: string | null
+          tp_complemento: string | null
+          tp_pessoa: string | null
+          uf: string | null
+          valor_iof: number | null
+          vigencia_fim: string | null
+          vigencia_fim_endosso: string | null
+          vigencia_ini: string | null
+          vigencia_ini_endosso: string | null
+          vlr_comissao: number | null
+          zerokm: string | null
+        }
+        Insert: {
+          ano_fabricacao?: string | null
+          ano_modelo?: string | null
+          apolice_id?: string | null
+          bairro?: string | null
+          cd_corretor?: string | null
+          cep?: string | null
+          chassi?: string | null
+          cidade?: string | null
+          cliente_id?: string | null
+          combustivel?: string | null
+          complemento?: string | null
+          cor?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          custo_apolice?: number | null
+          dados_brutos?: Json | null
+          data_cancelamento?: string | null
+          data_emissao?: string | null
+          data_recusa?: string | null
+          ddd?: string | null
+          email?: string | null
+          emissao_endosso?: string | null
+          endereco?: string | null
+          fabricante?: string | null
+          forma_cobranca?: string | null
+          id?: string
+          importacao_id?: string | null
+          modelo?: string | null
+          motivo_recusa?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          num_apolice?: string | null
+          num_endosso?: string
+          num_proposta?: string | null
+          numero?: string | null
+          pc_comissao?: number | null
+          placa?: string | null
+          premio_liquido?: number | null
+          premio_total?: number | null
+          produto?: string | null
+          qtd_parcelas?: number | null
+          ramo?: string | null
+          status_apolice?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_complemento?: string | null
+          tp_pessoa?: string | null
+          uf?: string | null
+          valor_iof?: number | null
+          vigencia_fim?: string | null
+          vigencia_fim_endosso?: string | null
+          vigencia_ini?: string | null
+          vigencia_ini_endosso?: string | null
+          vlr_comissao?: number | null
+          zerokm?: string | null
+        }
+        Update: {
+          ano_fabricacao?: string | null
+          ano_modelo?: string | null
+          apolice_id?: string | null
+          bairro?: string | null
+          cd_corretor?: string | null
+          cep?: string | null
+          chassi?: string | null
+          cidade?: string | null
+          cliente_id?: string | null
+          combustivel?: string | null
+          complemento?: string | null
+          cor?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          custo_apolice?: number | null
+          dados_brutos?: Json | null
+          data_cancelamento?: string | null
+          data_emissao?: string | null
+          data_recusa?: string | null
+          ddd?: string | null
+          email?: string | null
+          emissao_endosso?: string | null
+          endereco?: string | null
+          fabricante?: string | null
+          forma_cobranca?: string | null
+          id?: string
+          importacao_id?: string | null
+          modelo?: string | null
+          motivo_recusa?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          num_apolice?: string | null
+          num_endosso?: string
+          num_proposta?: string | null
+          numero?: string | null
+          pc_comissao?: number | null
+          placa?: string | null
+          premio_liquido?: number | null
+          premio_total?: number | null
+          produto?: string | null
+          qtd_parcelas?: number | null
+          ramo?: string | null
+          status_apolice?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_complemento?: string | null
+          tp_pessoa?: string | null
+          uf?: string | null
+          valor_iof?: number | null
+          vigencia_fim?: string | null
+          vigencia_fim_endosso?: string | null
+          vigencia_ini?: string | null
+          vigencia_ini_endosso?: string | null
+          vlr_comissao?: number | null
+          zerokm?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_apolices_raw_apolice_id_fkey"
+            columns: ["apolice_id"]
+            isOneToOne: false
+            referencedRelation: "apolices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_apolices_raw_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_apolices_raw_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_detalhe_comissao: {
+        Row: {
+          apolice_id: string | null
+          cd_corretor: string | null
+          cd_natureza: string | null
+          cd_tipo_pagto: string | null
+          cliente_id: string | null
+          comissao_recebida_id: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_competencia: string | null
+          data_emissao: string | null
+          data_movimento: string | null
+          data_pagamento: string | null
+          ds_natureza: string | null
+          ds_tipo_pagto: string | null
+          extrato_id: string | null
+          id: string
+          importacao_id: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          num_apolice: string | null
+          num_endosso: string | null
+          num_extrato: string | null
+          num_parcela: number | null
+          num_proposta: string | null
+          pc_comissao: number | null
+          produto: string | null
+          qtde_parcela: number | null
+          ramo: string | null
+          status_apolice: string | null
+          tipo_seguro: string | null
+          tp_pessoa: string | null
+          vlr_comissao_parcela: number | null
+          vlr_iof: number | null
+          vlr_premio: number | null
+          vlr_premio_liquido: number | null
+        }
+        Insert: {
+          apolice_id?: string | null
+          cd_corretor?: string | null
+          cd_natureza?: string | null
+          cd_tipo_pagto?: string | null
+          cliente_id?: string | null
+          comissao_recebida_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_competencia?: string | null
+          data_emissao?: string | null
+          data_movimento?: string | null
+          data_pagamento?: string | null
+          ds_natureza?: string | null
+          ds_tipo_pagto?: string | null
+          extrato_id?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          num_apolice?: string | null
+          num_endosso?: string | null
+          num_extrato?: string | null
+          num_parcela?: number | null
+          num_proposta?: string | null
+          pc_comissao?: number | null
+          produto?: string | null
+          qtde_parcela?: number | null
+          ramo?: string | null
+          status_apolice?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+          vlr_comissao_parcela?: number | null
+          vlr_iof?: number | null
+          vlr_premio?: number | null
+          vlr_premio_liquido?: number | null
+        }
+        Update: {
+          apolice_id?: string | null
+          cd_corretor?: string | null
+          cd_natureza?: string | null
+          cd_tipo_pagto?: string | null
+          cliente_id?: string | null
+          comissao_recebida_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_competencia?: string | null
+          data_emissao?: string | null
+          data_movimento?: string | null
+          data_pagamento?: string | null
+          ds_natureza?: string | null
+          ds_tipo_pagto?: string | null
+          extrato_id?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          num_apolice?: string | null
+          num_endosso?: string | null
+          num_extrato?: string | null
+          num_parcela?: number | null
+          num_proposta?: string | null
+          pc_comissao?: number | null
+          produto?: string | null
+          qtde_parcela?: number | null
+          ramo?: string | null
+          status_apolice?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+          vlr_comissao_parcela?: number | null
+          vlr_iof?: number | null
+          vlr_premio?: number | null
+          vlr_premio_liquido?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_detalhe_comissao_apolice_id_fkey"
+            columns: ["apolice_id"]
+            isOneToOne: false
+            referencedRelation: "apolices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_detalhe_comissao_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_detalhe_comissao_comissao_recebida_id_fkey"
+            columns: ["comissao_recebida_id"]
+            isOneToOne: false
+            referencedRelation: "comissoes_recebidas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_detalhe_comissao_comissao_recebida_id_fkey"
+            columns: ["comissao_recebida_id"]
+            isOneToOne: false
+            referencedRelation: "vw_comissoes_vendedor"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_detalhe_comissao_extrato_id_fkey"
+            columns: ["extrato_id"]
+            isOneToOne: false
+            referencedRelation: "tokio_extrato_comissoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_detalhe_comissao_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_extrato_comissoes: {
+        Row: {
+          cd_corretor: string | null
+          competencia: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_emissao: string | null
+          data_pagamento: string | null
+          id: string
+          importacao_id: string | null
+          nm_corretor: string | null
+          num_extrato: string
+          qtd_detalhes: number | null
+          vlr_acrescimos: number | null
+          vlr_bruto: number | null
+          vlr_descontos: number | null
+          vlr_irrf: number | null
+          vlr_iss: number | null
+          vlr_liquido: number | null
+          vlr_total: number | null
+        }
+        Insert: {
+          cd_corretor?: string | null
+          competencia?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_emissao?: string | null
+          data_pagamento?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          num_extrato: string
+          qtd_detalhes?: number | null
+          vlr_acrescimos?: number | null
+          vlr_bruto?: number | null
+          vlr_descontos?: number | null
+          vlr_irrf?: number | null
+          vlr_iss?: number | null
+          vlr_liquido?: number | null
+          vlr_total?: number | null
+        }
+        Update: {
+          cd_corretor?: string | null
+          competencia?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_emissao?: string | null
+          data_pagamento?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          num_extrato?: string
+          qtd_detalhes?: number | null
+          vlr_acrescimos?: number | null
+          vlr_bruto?: number | null
+          vlr_descontos?: number | null
+          vlr_irrf?: number | null
+          vlr_iss?: number | null
+          vlr_liquido?: number | null
+          vlr_total?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_extrato_comissoes_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_parcelas: {
+        Row: {
+          agencia: string | null
+          apolice_id: string | null
+          banco_cobranca: string | null
+          cd_corretor: string | null
+          cliente_id: string | null
+          conta: string | null
+          conta_pagar_id: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_baixa: string | null
+          data_competencia: string | null
+          data_emissao: string | null
+          data_pagamento: string | null
+          data_vencimento: string | null
+          forma_cobranca: string | null
+          id: string
+          importacao_id: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          num_apolice: string | null
+          num_boleto: string | null
+          num_endosso: string | null
+          num_nota_fiscal: string | null
+          num_parcela: number | null
+          num_proposta: string | null
+          produto: string | null
+          qtde_parcela: number | null
+          ramo: string | null
+          situacao_parcela: string | null
+          status_parcela: string | null
+          vlr_comissao: number | null
+          vlr_desconto: number | null
+          vlr_iof: number | null
+          vlr_juros: number | null
+          vlr_liquido: number | null
+          vlr_multa: number | null
+          vlr_premio_parcela: number | null
+          vlr_total: number | null
+        }
+        Insert: {
+          agencia?: string | null
+          apolice_id?: string | null
+          banco_cobranca?: string | null
+          cd_corretor?: string | null
+          cliente_id?: string | null
+          conta?: string | null
+          conta_pagar_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_baixa?: string | null
+          data_competencia?: string | null
+          data_emissao?: string | null
+          data_pagamento?: string | null
+          data_vencimento?: string | null
+          forma_cobranca?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          num_apolice?: string | null
+          num_boleto?: string | null
+          num_endosso?: string | null
+          num_nota_fiscal?: string | null
+          num_parcela?: number | null
+          num_proposta?: string | null
+          produto?: string | null
+          qtde_parcela?: number | null
+          ramo?: string | null
+          situacao_parcela?: string | null
+          status_parcela?: string | null
+          vlr_comissao?: number | null
+          vlr_desconto?: number | null
+          vlr_iof?: number | null
+          vlr_juros?: number | null
+          vlr_liquido?: number | null
+          vlr_multa?: number | null
+          vlr_premio_parcela?: number | null
+          vlr_total?: number | null
+        }
+        Update: {
+          agencia?: string | null
+          apolice_id?: string | null
+          banco_cobranca?: string | null
+          cd_corretor?: string | null
+          cliente_id?: string | null
+          conta?: string | null
+          conta_pagar_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_baixa?: string | null
+          data_competencia?: string | null
+          data_emissao?: string | null
+          data_pagamento?: string | null
+          data_vencimento?: string | null
+          forma_cobranca?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          num_apolice?: string | null
+          num_boleto?: string | null
+          num_endosso?: string | null
+          num_nota_fiscal?: string | null
+          num_parcela?: number | null
+          num_proposta?: string | null
+          produto?: string | null
+          qtde_parcela?: number | null
+          ramo?: string | null
+          situacao_parcela?: string | null
+          status_parcela?: string | null
+          vlr_comissao?: number | null
+          vlr_desconto?: number | null
+          vlr_iof?: number | null
+          vlr_juros?: number | null
+          vlr_liquido?: number | null
+          vlr_multa?: number | null
+          vlr_premio_parcela?: number | null
+          vlr_total?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_parcelas_apolice_id_fkey"
+            columns: ["apolice_id"]
+            isOneToOne: false
+            referencedRelation: "apolices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_parcelas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_parcelas_conta_pagar_id_fkey"
+            columns: ["conta_pagar_id"]
+            isOneToOne: false
+            referencedRelation: "contas_pagar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_parcelas_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_pendencias: {
+        Row: {
+          apolice_id: string | null
+          area_responsavel: string | null
+          cd_corretor: string | null
+          cliente_id: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_abertura: string | null
+          data_limite: string | null
+          data_resolucao: string | null
+          data_vencimento: string | null
+          descricao: string | null
+          email: string | null
+          id: string
+          importacao_id: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          numero_apolice: string | null
+          numero_endosso: string | null
+          numero_proposta: string | null
+          observacao: string | null
+          prioridade: string | null
+          produto: string | null
+          ramo: string | null
+          responsavel: string | null
+          situacao: string | null
+          telefone: string | null
+          tipo_pendencia: string | null
+          tipo_seguro: string | null
+          tp_pessoa: string | null
+        }
+        Insert: {
+          apolice_id?: string | null
+          area_responsavel?: string | null
+          cd_corretor?: string | null
+          cliente_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_abertura?: string | null
+          data_limite?: string | null
+          data_resolucao?: string | null
+          data_vencimento?: string | null
+          descricao?: string | null
+          email?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          numero_apolice?: string | null
+          numero_endosso?: string | null
+          numero_proposta?: string | null
+          observacao?: string | null
+          prioridade?: string | null
+          produto?: string | null
+          ramo?: string | null
+          responsavel?: string | null
+          situacao?: string | null
+          telefone?: string | null
+          tipo_pendencia?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+        }
+        Update: {
+          apolice_id?: string | null
+          area_responsavel?: string | null
+          cd_corretor?: string | null
+          cliente_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_abertura?: string | null
+          data_limite?: string | null
+          data_resolucao?: string | null
+          data_vencimento?: string | null
+          descricao?: string | null
+          email?: string | null
+          id?: string
+          importacao_id?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          numero_apolice?: string | null
+          numero_endosso?: string | null
+          numero_proposta?: string | null
+          observacao?: string | null
+          prioridade?: string | null
+          produto?: string | null
+          ramo?: string | null
+          responsavel?: string | null
+          situacao?: string | null
+          telefone?: string | null
+          tipo_pendencia?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_pendencias_apolice_id_fkey"
+            columns: ["apolice_id"]
+            isOneToOne: false
+            referencedRelation: "apolices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_pendencias_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_pendencias_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_recusas: {
+        Row: {
+          area_recusante: string | null
+          cd_corretor: string | null
+          cliente_id: string | null
+          codigo_motivo: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_recusa: string | null
+          data_solicitacao: string | null
+          descricao_motivo: string | null
+          email: string | null
+          id: string
+          importacao_id: string | null
+          motivo_recusa: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          numero_apolice: string | null
+          numero_endosso: string | null
+          numero_proposta: string | null
+          observacao: string | null
+          produto: string | null
+          ramo: string | null
+          status_recusa: string | null
+          telefone: string | null
+          tipo_seguro: string | null
+          tp_pessoa: string | null
+        }
+        Insert: {
+          area_recusante?: string | null
+          cd_corretor?: string | null
+          cliente_id?: string | null
+          codigo_motivo?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_recusa?: string | null
+          data_solicitacao?: string | null
+          descricao_motivo?: string | null
+          email?: string | null
+          id?: string
+          importacao_id?: string | null
+          motivo_recusa?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          numero_apolice?: string | null
+          numero_endosso?: string | null
+          numero_proposta?: string | null
+          observacao?: string | null
+          produto?: string | null
+          ramo?: string | null
+          status_recusa?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+        }
+        Update: {
+          area_recusante?: string | null
+          cd_corretor?: string | null
+          cliente_id?: string | null
+          codigo_motivo?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_recusa?: string | null
+          data_solicitacao?: string | null
+          descricao_motivo?: string | null
+          email?: string | null
+          id?: string
+          importacao_id?: string | null
+          motivo_recusa?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          numero_apolice?: string | null
+          numero_endosso?: string | null
+          numero_proposta?: string | null
+          observacao?: string | null
+          produto?: string | null
+          ramo?: string | null
+          status_recusa?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_recusas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_recusas_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_renovacoes: {
+        Row: {
+          ano_modelo: string | null
+          apolice_id: string | null
+          cd_corretor: string | null
+          chassi: string | null
+          cliente_id: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_emissao: string | null
+          data_renovacao: string | null
+          email: string | null
+          fabricante: string | null
+          forma_pagamento: string | null
+          id: string
+          importacao_id: string | null
+          modelo: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          numero_apolice: string | null
+          numero_proposta: string | null
+          numero_renovacao: string | null
+          observacao: string | null
+          pc_comissao: number | null
+          placa: string | null
+          premio_atual: number | null
+          premio_renovacao: number | null
+          produto: string | null
+          qtd_parcelas: number | null
+          ramo: string | null
+          situacao_renovacao: string | null
+          status_renovacao: string | null
+          telefone: string | null
+          tipo_seguro: string | null
+          tp_pessoa: string | null
+          vigencia_fim: string | null
+          vigencia_fim_atual: string | null
+          vigencia_ini: string | null
+          vigencia_ini_atual: string | null
+          vlr_comissao: number | null
+        }
+        Insert: {
+          ano_modelo?: string | null
+          apolice_id?: string | null
+          cd_corretor?: string | null
+          chassi?: string | null
+          cliente_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_emissao?: string | null
+          data_renovacao?: string | null
+          email?: string | null
+          fabricante?: string | null
+          forma_pagamento?: string | null
+          id?: string
+          importacao_id?: string | null
+          modelo?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          numero_apolice?: string | null
+          numero_proposta?: string | null
+          numero_renovacao?: string | null
+          observacao?: string | null
+          pc_comissao?: number | null
+          placa?: string | null
+          premio_atual?: number | null
+          premio_renovacao?: number | null
+          produto?: string | null
+          qtd_parcelas?: number | null
+          ramo?: string | null
+          situacao_renovacao?: string | null
+          status_renovacao?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+          vigencia_fim?: string | null
+          vigencia_fim_atual?: string | null
+          vigencia_ini?: string | null
+          vigencia_ini_atual?: string | null
+          vlr_comissao?: number | null
+        }
+        Update: {
+          ano_modelo?: string | null
+          apolice_id?: string | null
+          cd_corretor?: string | null
+          chassi?: string | null
+          cliente_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_emissao?: string | null
+          data_renovacao?: string | null
+          email?: string | null
+          fabricante?: string | null
+          forma_pagamento?: string | null
+          id?: string
+          importacao_id?: string | null
+          modelo?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          numero_apolice?: string | null
+          numero_proposta?: string | null
+          numero_renovacao?: string | null
+          observacao?: string | null
+          pc_comissao?: number | null
+          placa?: string | null
+          premio_atual?: number | null
+          premio_renovacao?: number | null
+          produto?: string | null
+          qtd_parcelas?: number | null
+          ramo?: string | null
+          situacao_renovacao?: string | null
+          status_renovacao?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+          vigencia_fim?: string | null
+          vigencia_fim_atual?: string | null
+          vigencia_ini?: string | null
+          vigencia_ini_atual?: string | null
+          vlr_comissao?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_renovacoes_apolice_id_fkey"
+            columns: ["apolice_id"]
+            isOneToOne: false
+            referencedRelation: "apolices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_renovacoes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_renovacoes_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tokio_sinistros: {
+        Row: {
+          ano_modelo: string | null
+          apolice_id: string | null
+          causa: string | null
+          cd_corretor: string | null
+          cep_ocorrencia: string | null
+          chassi: string | null
+          cidade_ocorrencia: string | null
+          cliente_id: string | null
+          cpf_cnpj: string | null
+          criado_em: string | null
+          dados_brutos: Json | null
+          data_abertura: string | null
+          data_aviso: string | null
+          data_comunicacao: string | null
+          data_encerramento: string | null
+          data_ocorrencia: string | null
+          data_pagamento: string | null
+          ddd: string | null
+          email: string | null
+          fabricante: string | null
+          fase: string | null
+          grupo_causa: string | null
+          id: string
+          importacao_id: string | null
+          local_ocorrencia: string | null
+          modelo: string | null
+          nm_corretor: string | null
+          nome_segurado: string | null
+          nr_protocolo: string | null
+          num_proposta: string | null
+          numero_apolice: string | null
+          numero_endosso: string | null
+          numero_sinistro: string | null
+          observacao: string | null
+          placa: string | null
+          produto: string | null
+          ramo: string | null
+          regulador: string | null
+          situacao: string | null
+          telefone: string | null
+          tipo_seguro: string | null
+          tp_pessoa: string | null
+          uf_ocorrencia: string | null
+          valor_indenizacao: number | null
+          valor_reserva: number | null
+          vistoriador: string | null
+          vlr_despesas: number | null
+          vlr_franquia: number | null
+          vlr_pagamento: number | null
+        }
+        Insert: {
+          ano_modelo?: string | null
+          apolice_id?: string | null
+          causa?: string | null
+          cd_corretor?: string | null
+          cep_ocorrencia?: string | null
+          chassi?: string | null
+          cidade_ocorrencia?: string | null
+          cliente_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_abertura?: string | null
+          data_aviso?: string | null
+          data_comunicacao?: string | null
+          data_encerramento?: string | null
+          data_ocorrencia?: string | null
+          data_pagamento?: string | null
+          ddd?: string | null
+          email?: string | null
+          fabricante?: string | null
+          fase?: string | null
+          grupo_causa?: string | null
+          id?: string
+          importacao_id?: string | null
+          local_ocorrencia?: string | null
+          modelo?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          nr_protocolo?: string | null
+          num_proposta?: string | null
+          numero_apolice?: string | null
+          numero_endosso?: string | null
+          numero_sinistro?: string | null
+          observacao?: string | null
+          placa?: string | null
+          produto?: string | null
+          ramo?: string | null
+          regulador?: string | null
+          situacao?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+          uf_ocorrencia?: string | null
+          valor_indenizacao?: number | null
+          valor_reserva?: number | null
+          vistoriador?: string | null
+          vlr_despesas?: number | null
+          vlr_franquia?: number | null
+          vlr_pagamento?: number | null
+        }
+        Update: {
+          ano_modelo?: string | null
+          apolice_id?: string | null
+          causa?: string | null
+          cd_corretor?: string | null
+          cep_ocorrencia?: string | null
+          chassi?: string | null
+          cidade_ocorrencia?: string | null
+          cliente_id?: string | null
+          cpf_cnpj?: string | null
+          criado_em?: string | null
+          dados_brutos?: Json | null
+          data_abertura?: string | null
+          data_aviso?: string | null
+          data_comunicacao?: string | null
+          data_encerramento?: string | null
+          data_ocorrencia?: string | null
+          data_pagamento?: string | null
+          ddd?: string | null
+          email?: string | null
+          fabricante?: string | null
+          fase?: string | null
+          grupo_causa?: string | null
+          id?: string
+          importacao_id?: string | null
+          local_ocorrencia?: string | null
+          modelo?: string | null
+          nm_corretor?: string | null
+          nome_segurado?: string | null
+          nr_protocolo?: string | null
+          num_proposta?: string | null
+          numero_apolice?: string | null
+          numero_endosso?: string | null
+          numero_sinistro?: string | null
+          observacao?: string | null
+          placa?: string | null
+          produto?: string | null
+          ramo?: string | null
+          regulador?: string | null
+          situacao?: string | null
+          telefone?: string | null
+          tipo_seguro?: string | null
+          tp_pessoa?: string | null
+          uf_ocorrencia?: string | null
+          valor_indenizacao?: number | null
+          valor_reserva?: number | null
+          vistoriador?: string | null
+          vlr_despesas?: number | null
+          vlr_franquia?: number | null
+          vlr_pagamento?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tokio_sinistros_apolice_id_fkey"
+            columns: ["apolice_id"]
+            isOneToOne: false
+            referencedRelation: "apolices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_sinistros_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tokio_sinistros_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes_tokio"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_aliases_rd: {
         Row: {
           alias: string
@@ -9165,6 +10296,11 @@ export type Database = {
       can_see_user: { Args: { target_id: string }; Returns: boolean }
       current_user_role: { Args: never; Returns: string }
       financeiro_senha_definida: { Args: never; Returns: boolean }
+      fn_app_role: { Args: never; Returns: string }
+      fn_is_admin: { Args: never; Returns: boolean }
+      fn_is_admin_or_financeiro: { Args: never; Returns: boolean }
+      fn_lider_ve: { Args: { target_uid: string }; Returns: boolean }
+      fn_pode_ver_dados_de: { Args: { target_uid: string }; Returns: boolean }
       integrador_enq: {
         Args: { p_evento: string; p_payload: Json }
         Returns: undefined

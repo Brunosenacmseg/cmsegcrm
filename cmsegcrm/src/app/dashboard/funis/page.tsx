@@ -1230,7 +1230,7 @@ function FunisPage() {
             </button>
           </>
         )}
-        <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||''})}}>
+        <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||'',telefone:''})}}>
           + Novo Card
         </button>
       </div>

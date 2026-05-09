@@ -18,7 +18,7 @@ import type { Database } from '@/lib/supabase/database.types'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
     for (const perdedor of p.perdedores) {
       let okPerdedor = true
       for (const { table, col } of FK_TABLES) {
-        const { error, count } = await supabaseAdmin()
+        const { error, count } = await (supabaseAdmin() as any)
           .from(table)
           .update({ [col]: p.vencedor }, { count: 'exact' })
           .eq(col, perdedor)
@@ -203,6 +203,7 @@ export async function POST(req: NextRequest) {
 
       // Histórico do merge no vencedor.
       await supabaseAdmin().from('historico').insert({
+        cliente_id: null as any,
         negocio_id: p.vencedor,
         tipo: 'gray',
         titulo: '🧹 Negócio duplicado mesclado',

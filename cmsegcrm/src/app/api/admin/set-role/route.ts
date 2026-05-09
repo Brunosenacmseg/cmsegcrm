@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function getSupabaseAdmin() {
-  if (!_sa) _sa = createClient(
+  if (!_sa) _sa = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nada para atualizar' }, { status: 400 })
     }
 
-    const { error } = await getSupabaseAdmin().from('users').update(update).eq('id', userId)
+    const { error } = await getSupabaseAdmin().from('users').update(update as any).eq('id', userId)
     if (error) {
       console.error('[set-role] erro:', error.message)
       return NextResponse.json({ error: error.message }, { status: 500 })

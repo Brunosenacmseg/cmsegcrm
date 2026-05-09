@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 // lazy-init: evita que o build do Next falhe quando env vars
 // não estão disponíveis na fase 'Collecting page data'.
-const admin = new Proxy({} as ReturnType<typeof createClient>, {
+const admin = new Proxy({} as ReturnType<typeof createClient<Database>>, {
   get(_t, prop) {
     const g = globalThis as any
     if (!g['__sa_admin']) g['__sa_admin'] = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
