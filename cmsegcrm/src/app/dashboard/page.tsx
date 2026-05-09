@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Avatar from '@/components/Avatar'
+import { Skeleton } from '@/components/Skeleton'
 
 type Periodo = 'mes_atual' | 'mes_anterior' | 'semana' | 'custom'
 
@@ -169,7 +170,7 @@ export default function DashboardPage() {
 
     // — Tarefas pendentes (não fecha por período; mostra atual) —
     let qTar = supabase.from('tarefas')
-      .select('id, titulo, descricao, prazo, status, responsavel_id, cliente_id, clientes(nome)')
+      .select('id, titulo, descricao, prazo, status, responsavel_id, cliente_id, negocio_id, clientes(nome)')
       .eq('status', 'pendente')
       .order('prazo', { ascending: true, nullsFirst: false })
       .limit(50)
@@ -218,7 +219,22 @@ export default function DashboardPage() {
   const dPremio   = delta(dados.premioMes, dados.premioMesAnterior)
   const dClientes = delta(dados.novosClientes, dados.novosClientesAnterior)
 
-  if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
+  if (loading) return (
+    <div style={{padding:24}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
+        {[0,1,2,3].map(i => (
+          <div key={i} className="kpi" style={{padding:20}}>
+            <Skeleton width={120} height={11} />
+            <div style={{marginTop:12}}><Skeleton width={140} height={28} /></div>
+            <div style={{marginTop:10}}><Skeleton width={90} height={11} /></div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid var(--border)',borderRadius:12,padding:20,height:280,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <Skeleton width="60%" height={14} />
+      </div>
+    </div>
+  )
 
   const maxPremio = Math.max(1, ...ranking.map(r => r.premio))
   const maxLig    = Math.max(1, ...rankingLig.map(r => r.total))
@@ -366,12 +382,18 @@ export default function DashboardPage() {
         {/* ═════════ KPIs PRINCIPAIS ═════════ */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
           {[
-            {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor},
-            {label:'Novos Clientes (mês)', value:dados.novosClientes,     tone:'success' as const, sub: dClientes.texto, subCor: dClientes.cor},
-            {label:'Negócios Ativos',      value:dados.apolicesAtivas,    tone:'info'    as const, sub:'Em pipeline'},
-            {label:'Renovações (30d)',     value:dados.renovacoes30d,     tone:'danger'  as const, sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente', subCor: dados.renovacoes30d>0?'var(--danger)':'var(--text-muted)'},
-          ].map(({label,value,tone,sub,subCor})=>(
-            <div key={label} className={`kpi kpi-${tone} fade-up`}>
+            {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor, href: '/dashboard/funis?status=ganho'},
+            {label:'Novos Clientes (mês)', value:dados.novosClientes,     tone:'success' as const, sub: dClientes.texto, subCor: dClientes.cor, href: '/dashboard/clientes'},
+            {label:'Negócios Ativos',      value:dados.apolicesAtivas,    tone:'info'    as const, sub:'Em pipeline', href: '/dashboard/funis'},
+            {label:'Renovações (30d)',     value:dados.renovacoes30d,     tone:'danger'  as const, sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente', subCor: dados.renovacoes30d>0?'var(--danger)':'var(--text-muted)', href: '/dashboard/renovacoes'},
+          ].map(({label,value,tone,sub,subCor,href})=>(
+            <div
+              key={label}
+              className={`kpi kpi-${tone} fade-up`}
+              onClick={() => href && router.push(href)}
+              style={{cursor: href ? 'pointer' : 'default'}}
+              title={href ? 'Abrir detalhes' : undefined}
+            >
               <div className="kpi-label">{label}</div>
               <div className={`kpi-value ${tone === 'success' ? 'kpi-value-success' : tone === 'warning' ? 'kpi-value-warning' : tone === 'danger' ? 'kpi-value-danger' : ''}`}>{value}</div>
               {sub && <div style={{fontSize:12,color:subCor||'var(--text-muted)',marginTop:8}}>{sub}</div>}
@@ -437,8 +459,16 @@ export default function DashboardPage() {
                   const atrasada = prazo && prazo < hoje
                   const hoje0 = new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate())
                   const ehHoje = prazo && new Date(prazo.getFullYear(),prazo.getMonth(),prazo.getDate()).getTime() === hoje0.getTime()
+                  const link = t.negocio_id ? `/dashboard/funis?card=${t.negocio_id}` : '/dashboard/tarefas'
                   return (
-                    <div key={t.id} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'10px 12px',background:'rgba(255,255,255,0.03)',borderRadius:10,borderLeft:`3px solid ${atrasada?'var(--red)':ehHoje?'var(--gold)':'var(--teal)'}`,marginBottom:6}}>
+                    <div
+                      key={t.id}
+                      onClick={() => router.push(link)}
+                      title={t.negocio_id ? 'Abrir negócio' : 'Abrir tarefas'}
+                      style={{cursor:'pointer',display:'flex',gap:10,alignItems:'flex-start',padding:'10px 12px',background:'rgba(255,255,255,0.03)',borderRadius:10,borderLeft:`3px solid ${atrasada?'var(--red)':ehHoje?'var(--gold)':'var(--teal)'}`,marginBottom:6,transition:'background 0.12s'}}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                    >
                       <Avatar nome={resp?.nome} avatarUrl={resp?.avatar_url} role={resp?.role} size={32} />
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.titulo}</div>

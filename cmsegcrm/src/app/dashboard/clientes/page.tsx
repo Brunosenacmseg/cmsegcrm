@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { maskCpfCnpj, maskTelefone, maskCEP } from '@/lib/masks'
+import { useToast, confirmar } from '@/components/Toast'
+import { useDebounce } from '@/lib/use-debounce'
 import { getVisibleUserIds } from '@/lib/auth'
 import { exportarXLSX, fmt } from '@/lib/export-xlsx'
 
@@ -72,6 +74,7 @@ function EnderecoBloco({
 
 export default function ClientesPage() {
   const supabase = createClient()
+  const toast = useToast()
   const router   = useRouter()
 
   const [profile, setProfile]     = useState<any>(null)
@@ -171,7 +174,7 @@ export default function ClientesPage() {
   }
 
   async function salvar() {
-    if (!form.nome && !form.cpf_cnpj) { alert('Informe nome ou CPF/CNPJ'); return }
+    if (!form.nome && !form.cpf_cnpj) { toast.warning('Informe nome ou CPF/CNPJ'); return }
     setSalvando(true)
     const renda = form.renda_mensal ? parseFloat(String(form.renda_mensal).replace(/[R$\s.]/g,'').replace(',','.')) || null : null
     const payload: any = {
@@ -182,22 +185,30 @@ export default function ClientesPage() {
       renda_mensal:   renda,
       vendedor_id:    form.vendedor_id || profile?.id,
     }
-    if (editando) {
-      await supabase.from('clientes').update(payload).eq('id', editando.id)
-    } else {
-      await supabase.from('clientes').insert(payload)
-    }
+    const { error } = editando
+      ? await supabase.from('clientes').update(payload).eq('id', editando.id)
+      : await supabase.from('clientes').insert(payload)
+    setSalvando(false)
+    if (error) { toast.error(editando ? 'Falha ao atualizar cliente' : 'Falha ao criar cliente', error.message); return }
+    toast.success(editando ? 'Cliente atualizado' : 'Cliente criado')
     setModal(false)
     setEditando(null)
     setForm({ ...clienteVazio })
-    setSalvando(false)
     await carregar()
   }
 
   async function excluir(id: string) {
-    if (profile?.role !== 'admin') { alert('Apenas administradores podem excluir clientes'); return }
-    if (!confirm('Excluir este cliente? Esta ação não pode ser desfeita.')) return
-    await supabase.from('clientes').delete().eq('id', id)
+    if (profile?.role !== 'admin') { toast.error('Apenas administradores podem excluir clientes'); return }
+    const ok = await confirmar({
+      titulo: 'Excluir cliente?',
+      mensagem: 'Esta ação não pode ser desfeita. Apólices e negócios vinculados continuam existindo.',
+      confirmLabel: 'Excluir',
+      perigoso: true,
+    })
+    if (!ok) return
+    const { error } = await supabase.from('clientes').delete().eq('id', id)
+    if (error) { toast.error('Falha ao excluir', error.message); return }
+    toast.success('Cliente excluído')
     await carregar()
   }
 

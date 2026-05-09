@@ -7,6 +7,8 @@ import ChatIA from '@/components/ChatIA'
 import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 import BoasVindasLider from '@/components/BoasVindasLider'
+import CommandPalette from '@/components/CommandPalette'
+import { ToastProvider, ConfirmProvider } from '@/components/Toast'
 import { registrarLog } from '@/lib/logs'
 
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean; liderOnly?: boolean }> = [
@@ -52,6 +54,9 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  // Fecha drawer ao trocar de rota
+  useEffect(() => { setMobileNavOpen(false) }, [pathname])
   const supabase = createClient()
   const [user, setUser]                   = useState<any>(null)
   const [checked, setChecked]             = useState(false)
@@ -291,10 +296,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   })
 
   return (
+    <ToastProvider><ConfirmProvider>
+    <CommandPalette />
+    <style>{`
+      /* Mobile: sidebar vira drawer */
+      @media (max-width: 900px) {
+        .cm-sidebar { transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 8px 0 32px rgba(0,0,0,0.4); }
+        .cm-sidebar.open { transform: translateX(0); }
+        .cm-main { margin-left: 0 !important; padding-left: 12px !important; padding-right: 12px !important; }
+        .cm-mobile-toggle { display: inline-flex !important; }
+        .cm-mobile-overlay { display: block !important; }
+      }
+      .cm-mobile-toggle { display: none; }
+      .cm-mobile-overlay { display: none; }
+    `}</style>
+    {/* Botão hamburger flutuante (visível só mobile) */}
+    <button
+      onClick={() => setMobileNavOpen(o => !o)}
+      className="cm-mobile-toggle"
+      aria-label="Abrir menu"
+      style={{
+        position:'fixed', top:14, left:14, zIndex:40,
+        width:42, height:42, borderRadius:10, border:'1px solid var(--border)',
+        background:'var(--bg-soft)', color:'var(--gold)', fontSize:20, cursor:'pointer',
+        alignItems:'center', justifyContent:'center', boxShadow:'0 2px 10px rgba(0,0,0,0.3)',
+      }}
+    >☰</button>
+    {mobileNavOpen && (
+      <div
+        className="cm-mobile-overlay"
+        onClick={() => setMobileNavOpen(false)}
+        style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9}}
+      />
+    )}
     <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,background:'radial-gradient(ellipse 60% 50% at 80% 10%, rgba(201,168,76,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 10% 80%, rgba(28,181,160,0.06) 0%, transparent 60%)'}}/>
 
-      <aside style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
+      <aside className={`cm-sidebar ${mobileNavOpen ? 'open' : ''}`} style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
         <div style={{padding:'26px 22px 20px',borderBottom:'1px solid var(--border)'}}>
           <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM Seguros</div>
           <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:1,textTransform:'uppercase',marginTop:2,lineHeight:1.4,fontWeight:700}}>Transformando vidas através do seguro</div>
@@ -387,7 +425,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
+      <main className="cm-main" style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
         {/* Header com sino */}
         <div style={{height:48,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'#ffffff',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
           <div style={{flex:1}}/>
@@ -471,5 +509,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
     </div>
+    </ConfirmProvider></ToastProvider>
   )
 }
