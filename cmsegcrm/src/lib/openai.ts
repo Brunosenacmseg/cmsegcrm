@@ -33,6 +33,7 @@ export async function chamarChatGPT(opts: ChamarChatGPTOpts): Promise<string> {
       temperature: opts.temperatura ?? 0.7,
       messages,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!res.ok) {

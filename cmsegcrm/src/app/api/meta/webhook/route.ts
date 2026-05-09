@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 import { GRAPH, verifyMetaSignature } from '@/lib/meta-graph'
 import { processarLeadgen } from '@/lib/meta-lead'
 
@@ -21,7 +22,7 @@ export const runtime = 'nodejs'
 
 let _sa: ReturnType<typeof createClient> | null = null
 function supabaseAdmin() {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 
@@ -64,9 +65,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, erro: 'assinatura inválida' }, { status: 403 })
   }
   if (verif === null) {
-    // Sem app_secret configurado: aceita pra não bloquear setups iniciais,
-    // mas avisa em log. Em produção SEMPRE configure app_secret.
-    console.warn('[meta-webhook] app_secret não configurado — aceitando POST sem validar HMAC. Configure em /dashboard/integracoes/meta.')
+    // Sem app_secret configurado: NUNCA aceitar POST anônimo do Meta — é a
+    // única defesa contra injeção de leads falsos. Configure em
+    // /dashboard/integracoes/meta ou via env META_APP_SECRET.
+    console.error('[meta-webhook] app_secret não configurado — recusando POST.')
+    return NextResponse.json({ ok: false, erro: 'webhook não configurado (app_secret ausente)' }, { status: 503 })
   }
 
   // Estrutura típica: { object: 'page', entry: [{ changes: [{ field: 'leadgen', value: { leadgen_id, ad_id, ... } }] }] }

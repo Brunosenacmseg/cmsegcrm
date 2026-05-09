@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
+import { redactObj } from '@/lib/log-redact'
 
 export const dynamic = 'force-dynamic'
 
 let _sa: ReturnType<typeof createClient> | null = null
 function supabaseAdmin() {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log('[GoTo Webhook]', JSON.stringify(body))
+    console.log('[GoTo Webhook]', JSON.stringify(redactObj(body)))
 
     const { metadata, state } = body
     if (!state || !metadata) return NextResponse.json({ ok: true })

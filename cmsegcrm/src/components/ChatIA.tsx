@@ -29,7 +29,7 @@ export default function ChatIA() {
   const [mostrarSugestoes, setMostrarSugestoes] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user } }: any) => {
       if (user) setUserId(user.id)
     })
   }, [])
@@ -61,11 +61,15 @@ export default function ChatIA() {
     setCarregando(true)
 
     try {
+      const { data: sess } = await supabase.auth.getSession()
+      const tok = sess?.session?.access_token
       const res = await fetch('/api/ia/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tok ? { 'Authorization': `Bearer ${tok}` } : {}),
+        },
         body: JSON.stringify({
-          user_id: userId,
           mensagens: novasMensagens.map(m => ({ role: m.role, content: m.content })),
         }),
       })

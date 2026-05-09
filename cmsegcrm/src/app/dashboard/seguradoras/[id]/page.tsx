@@ -361,7 +361,7 @@ async function lerPortoRET(buf: ArrayBuffer, nomeOriginal: string, abaSelecionad
     })
   }
   if (rows.length === 0) {
-    throw new Error(`Porto .${tipoArquivo}: ${linhasOK.length} linhas lidas, nenhuma é registro de detalhe (verifique se o filtro do layout está correto).`)
+    throw new Error(`Porto .${tipoArquivo}: ${linhas.length} linhas lidas, nenhuma é registro de detalhe (verifique se o filtro do layout está correto).`)
   }
   return { rows, tipoArquivo }
 }

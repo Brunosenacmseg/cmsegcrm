@@ -103,12 +103,15 @@ export async function lerTokens(): Promise<RdOAuthTokens | null> {
   return data as RdOAuthTokens
 }
 
-// Retorna access_token válido, renovando se faltar < 60s pra expirar
+// Retorna access_token válido. Renova proativamente quando faltar
+// menos de 5 minutos pra expirar, com jitter pra evitar thundering herd
+// quando várias requisições simultâneas tentarem renovar ao mesmo tempo.
 export async function getAccessTokenValido(): Promise<string> {
   const tokens = await lerTokens()
   if (!tokens) throw new Error('OAuth não conectado. Acesse /dashboard/rdstation e clique em "Conectar conta RD Station".')
 
-  const expirou = !tokens.expires_at || new Date(tokens.expires_at).getTime() < Date.now() + 30000
+  const margemMs = 5 * 60 * 1000 + Math.floor(Math.random() * 30000) // 5min + 0-30s
+  const expirou = !tokens.expires_at || new Date(tokens.expires_at).getTime() < Date.now() + margemMs
   if (!expirou) return tokens.access_token
 
   const novos = await renovarTokens(tokens.refresh_token)

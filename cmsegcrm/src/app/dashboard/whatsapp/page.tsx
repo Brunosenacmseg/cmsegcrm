@@ -4,6 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { getVisibleUserIds } from '@/lib/auth'
 
+async function wppHeaders(supabase: any): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession()
+  const tok = data?.session?.access_token
+  return tok
+    ? { 'Content-Type':'application/json', 'Authorization': `Bearer ${tok}` }
+    : { 'Content-Type':'application/json' }
+}
+
 // Emojis mais usados
 const EMOJIS = ['😀','😂','🥰','😎','🤔','👍','👏','🙏','❤️','🔥','✅','⚠️','📋','📞','💰','🚗','🏠','📅','⏰','✉️','🎉','💪','👋','😊','🤝']
 
@@ -107,7 +115,7 @@ export default function WhatsAppPage() {
 
   useEffect(() => { carregarInstancia() }, [viewUserId])
   useEffect(() => {
-    supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }) => setAgentesIA(data || []))
+    supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }: any) => setAgentesIA(data || []))
   }, [])
   useEffect(() => { msgFimRef.current?.scrollIntoView({ behavior:'smooth' }) }, [mensagens])
   useEffect(() => {
@@ -156,7 +164,7 @@ export default function WhatsAppPage() {
       .eq('instancia_id', instanciaId)
       .order('created_at', { ascending: false })
     const map: Record<string, any> = {}
-    ;(data || []).forEach(m => {
+    ;(data || []).forEach((m: any) => {
       if (!map[m.remoto_jid]) map[m.remoto_jid] = { ...m, nao_lidas: 0 }
       if (!m.lida && m.direcao === 'recebida') map[m.remoto_jid].nao_lidas++
     })
@@ -180,7 +188,7 @@ export default function WhatsAppPage() {
 
   async function verificarStatus() {
     if (!instancia) return
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'status', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
+    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'status', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
     const data = await res.json()
     const novoStatus = data?.instance?.state==='open'?'connected':data?.instance?.state==='close'?'disconnected':instancia.status
     if (novoStatus !== instancia.status) {
@@ -191,7 +199,7 @@ export default function WhatsAppPage() {
 
   async function desconectar() {
     if (!instancia || !confirm('Desconectar WhatsApp?')) return
-    await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'desconectar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
+    await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'desconectar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome }) })
     await supabase.from('whatsapp_instancias').update({ status:'disconnected', qrcode:null }).eq('id', instancia.id)
     setInstancia((prev: any) => ({ ...prev, status:'disconnected', qrcode:null }))
   }
@@ -228,7 +236,7 @@ export default function WhatsAppPage() {
       }
       if (!inst) { setLoadingQR(false); alert('Não foi possível criar a instância no banco.'); return }
 
-      const r1 = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'criar_instancia', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome }) })
+      const r1 = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'criar_instancia', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome }) })
       const d1 = await r1.json()
       const qr1 = d1?.base64 || d1?.qrcode?.base64
       if (qr1) {
@@ -240,7 +248,7 @@ export default function WhatsAppPage() {
 
       let ultimoErro = d1?.error || ''
       for (let i = 0; i < 10; i++) {
-        const r2 = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'qrcode', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome }) })
+        const r2 = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'qrcode', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome }) })
         const d2 = await r2.json()
         if (d2?.base64) {
           await supabase.from('whatsapp_instancias').update({ qrcode: d2.base64, status:'qrcode' }).eq('id', inst.id)
@@ -276,7 +284,7 @@ export default function WhatsAppPage() {
     if (!textoEnvio.trim() || !conversa || !instancia) return
     setEnviando(true)
     setShowEmojis(false)
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, mensagem:textoEnvio }) })
+    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, mensagem:textoEnvio }) })
     const data = await res.json()
     if (!data.error) { await salvarMensagemBanco(textoEnvio, 'text'); setTextoEnvio('') }
     else alert('Erro ao enviar: ' + data.error)
@@ -291,7 +299,7 @@ export default function WhatsAppPage() {
     const reader = new FileReader()
     reader.onload = async () => {
       const base64 = (reader.result as string).split(',')[1]
-      const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'enviar_midia', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, base64, mimetype:file.type, nome_arquivo:file.name, caption:'' }) })
+      const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar_midia', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, base64, mimetype:file.type, nome_arquivo:file.name, caption:'' }) })
       const data = await res.json()
       if (!data.error) await salvarMensagemBanco(`📎 ${file.name}`, file.type.startsWith('image')?'image':'document')
       else alert('Erro ao enviar arquivo: ' + data.error)
@@ -326,7 +334,7 @@ export default function WhatsAppPage() {
       reader.onload = async () => {
         const base64 = (reader.result as string).split(',')[1]
         setEnviando(true)
-        const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'enviar_audio', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, base64 }) })
+        const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar_audio', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, base64 }) })
         const data = await res.json()
         if (!data.error) await salvarMensagemBanco('🎵 Áudio', 'audio')
         else alert('Erro ao enviar áudio: ' + data.error)
@@ -351,7 +359,7 @@ export default function WhatsAppPage() {
     if (!conversa || !instancia) return
     setShowStickers(false)
     setEnviando(true)
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, mensagem:sticker.emoji }) })
+    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, mensagem:sticker.emoji }) })
     const data = await res.json()
     if (!data.error) await salvarMensagemBanco(sticker.emoji, 'sticker')
     setEnviando(false)

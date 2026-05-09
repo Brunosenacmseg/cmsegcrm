@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 import { gunzipSync, inflateRawSync } from 'zlib'
 
 // Vercel: estender o tempo limite. Plano Hobby max 60s, Pro/Enterprise até 300s.
@@ -10,7 +11,7 @@ export const maxDuration = 300
 
 let _sa: ReturnType<typeof createClient> | null = null
 function supabaseAdmin() {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 
@@ -378,7 +379,8 @@ async function obterOuCriarCliente(c: CamposPorto, dadosBrutos?: any): Promise<s
   if (dadosBrutos) payload.dados_porto = dadosBrutos
   const { data: novo, error } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
   if (error) {
-    console.warn('[Porto] erro criando cliente:', error.message, payload)
+    const { redactObj } = await import('@/lib/log-redact')
+    console.warn('[Porto] erro criando cliente:', error.message, redactObj(payload))
     return null
   }
   return novo?.id || null

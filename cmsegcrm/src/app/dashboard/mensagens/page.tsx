@@ -66,7 +66,7 @@ export default function MensagensPage() {
       }
       // Lista de pessoas: todos os outros (do ponto de vista do alvo)
       const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
-      setUsuarios((usr || []).filter(u => u.id !== alvoId))
+      setUsuarios((usr || []).filter((u: any) => u.id !== alvoId))
       // Grupos do alvo
       const { data: g } = await supabase
         .from('mensagens_grupo_membros').select('mensagens_grupos(id,nome,descricao,criado_em,atualizado_em)')
@@ -88,7 +88,7 @@ export default function MensagensPage() {
     const { data: prof } = await supabase.from('users').select('id,nome,email,role,avatar_url').eq('id', user?.id||'').single()
     setProfile(prof)
     const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
-    setUsuarios((usr||[]).filter(u => u.id !== user?.id))
+    setUsuarios((usr||[]).filter((u: any) => u.id !== user?.id))
     await carregarGrupos(user?.id || '')
     await carregarNaoLidas(user?.id||'')
     setLoading(false)
@@ -111,7 +111,7 @@ export default function MensagensPage() {
       .eq('para_user_id', userId).eq('lida', false)
       .is('grupo_id', null)
     const map: Record<string,number> = {}
-    ;(dir||[]).forEach(m => { map['u_'+m.de_user_id] = (map['u_'+m.de_user_id]||0)+1 })
+    ;(dir||[]).forEach((m: any) => { map['u_'+m.de_user_id] = (map['u_'+m.de_user_id]||0)+1 })
     setNaoLidas(map)
   }
 

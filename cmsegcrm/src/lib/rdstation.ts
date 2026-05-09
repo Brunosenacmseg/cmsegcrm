@@ -35,6 +35,7 @@ async function rdFetch<T = any>(path: string, token: string, params: Record<stri
     }
     if (!res.ok) {
       const txt = await res.text().catch(() => '')
+      // Nunca incluir a URL completa (carrega o token na query). path é seguro.
       throw new Error(`RD ${res.status} em ${path}: ${txt.slice(0, 180)}`)
     }
     registrarSucesso()

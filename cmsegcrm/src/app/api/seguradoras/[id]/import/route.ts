@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 import { parseEzzeApolicePdf } from '@/lib/parsers/ezze-apolice-pdf'
 import { parseApolicePdf } from '@/lib/parsers/apolice-pdf'
 import { parsePropostaPdf } from '@/lib/parsers/proposta-pdf'
@@ -21,7 +22,7 @@ export const runtime = 'nodejs'
 
 let _sa: ReturnType<typeof createClient> | null = null
 function admin() {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 

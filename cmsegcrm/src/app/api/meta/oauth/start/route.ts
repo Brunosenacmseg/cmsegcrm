@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 import { randomBytes } from 'crypto'
 import { FB_OAUTH_DIALOG } from '@/lib/meta-graph'
 
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic'
 const admin = new Proxy({} as ReturnType<typeof createClient>, {
   get(_t, prop) {
     const g = globalThis as any
-    if (!g['__sa_admin']) g['__sa_admin'] = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    if (!g['__sa_admin']) g['__sa_admin'] = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
     return (g['__sa_admin'] as any)[prop]
   }
 })

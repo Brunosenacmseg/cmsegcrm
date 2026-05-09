@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/supabase/database.types'
 import { listarTodos } from '@/lib/rdstation'
 import { CAMPOS_RD_PADRAO, COLUNAS_LOCAIS_NEGOCIOS, RegraMapeamento } from '@/lib/rdstation-mapeamento'
 
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic'
 
 let _sa: ReturnType<typeof createClient> | null = null
 function supabaseAdmin() {
-  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
 }
 
