@@ -183,12 +183,18 @@ export default function FormulariosMetaPage() {
         body: JSON.stringify({ form_id: form.form_id }),
       })
       const j = await r.json().catch(() => ({}))
-      if (!r.ok) {
+      // Erros antes do pipeline (auth, form_id) vêm em `j.error`. Erros do
+      // pipeline (RLS, constraint, etc.) vêm em `j.erros[]` mesmo com 500.
+      if (!r.ok && !Array.isArray(j.erros)) {
         alert('❌ ' + (j.error || `HTTP ${r.status}`))
         return
       }
       const linhas: string[] = []
-      linhas.push(j.ok ? '✅ Lead de teste processado com sucesso.' : '⚠ Lead processado parcialmente.')
+      linhas.push(
+        r.ok && j.ok ? '✅ Lead de teste processado com sucesso.'
+        : j.negocio_id ? '⚠ Lead processado parcialmente.'
+        : '❌ Negociação não foi criada.'
+      )
       linhas.push('')
       linhas.push(`Cliente:    ${j.cliente_id || '— não criado —'}`)
       linhas.push(`Negociação: ${j.negocio_id || '— não criada —'}`)
