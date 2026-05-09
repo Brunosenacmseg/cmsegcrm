@@ -29,7 +29,7 @@ export default function ChatIA() {
   const [mostrarSugestoes, setMostrarSugestoes] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user } }: any) => {
       if (user) setUserId(user.id)
     })
   }, [])

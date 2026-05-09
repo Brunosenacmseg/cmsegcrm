@@ -42,10 +42,10 @@ export async function getVisibleUserIds(): Promise<string[] | null> {
     const { data: equipes } = await supabase
       .from('equipes').select('id').eq('lider_id', profile.id)
     if (!equipes?.length) return [profile.id]
-    const equipeIds = equipes.map(e => e.id)
+    const equipeIds = equipes.map((e: any) => e.id)
     const { data: membros } = await supabase
       .from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
-    const ids = [profile.id, ...(membros?.map(m => m.user_id) || [])]
+    const ids = [profile.id, ...(membros?.map((m: any) => m.user_id) || [])]
     return [...new Set(ids)]
   }
 

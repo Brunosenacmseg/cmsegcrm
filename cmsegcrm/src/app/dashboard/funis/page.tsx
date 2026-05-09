@@ -154,16 +154,16 @@ function FunisPage() {
     setModalCard(true)
   }, [searchParams, negocios])
   useEffect(() => {
-    supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setMotivosPerda(data || []))
-    supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }) => setOrigens(data || []))
-    supabase.from('tags').select('*').order('nome').then(({ data }) => setTagsAll(data || []))
-    supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }) => setProdutosAll(data || []))
-    supabase.from('seguradoras').select('id,nome').eq('ativo', true).order('nome').then(({ data }) => setSeguradorasAll(data || []))
-    supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }) => setCamposPers(data || []))
+    supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }: any) => setMotivosPerda(data || []))
+    supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }: any) => setOrigens(data || []))
+    supabase.from('tags').select('*').order('nome').then(({ data }: any) => setTagsAll(data || []))
+    supabase.from('produtos').select('*').eq('ativo', true).order('nome').then(({ data }: any) => setProdutosAll(data || []))
+    supabase.from('seguradoras').select('id,nome').eq('ativo', true).order('nome').then(({ data }: any) => setSeguradorasAll(data || []))
+    supabase.from('campos_personalizados').select('*').eq('entidade','negocio').eq('ativo', true).order('ordem').order('nome').then(({ data }: any) => setCamposPers(data || []))
     supabase.from('email_templates').select('*').eq('ativo', true)
       .in('categoria', ['assinatura','renovacao','cobranca','geral'])
       .order('categoria').order('is_default', { ascending: false }).order('nome')
-      .then(({ data }) => setTemplates(data || []))
+      .then(({ data }: any) => setTemplates(data || []))
   }, [])
 
   async function setCustomField(chave: string, valor: any) {
@@ -212,7 +212,7 @@ function FunisPage() {
       .in('negocio_id', ids)
       .not('status', 'in', '(concluida,cancelada)')
       .order('prazo', { ascending: true, nullsFirst: false })
-      .then(({ data }) => {
+      .then(({ data }: any) => {
         if (cancelled) return
         const map: Record<string, any> = {}
         for (const t of (data || []) as any[]) {

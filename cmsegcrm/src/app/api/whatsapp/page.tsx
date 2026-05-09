@@ -61,7 +61,7 @@ export default function WhatsAppPage() {
 
     // Agrupar por conversa (último msg de cada contato)
     const map: Record<string, any> = {}
-    ;(data || []).forEach(m => {
+    ;(data || []).forEach((m: any) => {
       if (!map[m.remoto_jid]) map[m.remoto_jid] = { ...m, nao_lidas: 0 }
       if (!m.lida && m.direcao === 'recebida') map[m.remoto_jid].nao_lidas++
     })

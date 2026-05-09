@@ -160,7 +160,7 @@ export default function MetasPage() {
     ;(async () => {
       const { data } = await supabase.from('equipe_membros').select('equipe_id,user_id')
       const map: Record<string, string[]> = {}
-      ;(data || []).forEach(r => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
+      ;(data || []).forEach((r: any) => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
       setEquipeMembros(map)
     })()
   }, [profile, equipes])

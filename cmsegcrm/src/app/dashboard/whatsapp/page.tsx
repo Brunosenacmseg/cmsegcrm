@@ -115,7 +115,7 @@ export default function WhatsAppPage() {
 
   useEffect(() => { carregarInstancia() }, [viewUserId])
   useEffect(() => {
-    supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }) => setAgentesIA(data || []))
+    supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }: any) => setAgentesIA(data || []))
   }, [])
   useEffect(() => { msgFimRef.current?.scrollIntoView({ behavior:'smooth' }) }, [mensagens])
   useEffect(() => {
@@ -164,7 +164,7 @@ export default function WhatsAppPage() {
       .eq('instancia_id', instanciaId)
       .order('created_at', { ascending: false })
     const map: Record<string, any> = {}
-    ;(data || []).forEach(m => {
+    ;(data || []).forEach((m: any) => {
       if (!map[m.remoto_jid]) map[m.remoto_jid] = { ...m, nao_lidas: 0 }
       if (!m.lida && m.direcao === 'recebida') map[m.remoto_jid].nao_lidas++
     })

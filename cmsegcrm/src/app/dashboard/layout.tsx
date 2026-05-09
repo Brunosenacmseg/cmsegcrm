@@ -83,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
       if (!session) { window.location.replace('/login') }
       else {
         setUser(session.user)
@@ -159,10 +159,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .select('equipes!inner(nome)')
       .eq('user_id', userId)
     const nomes = (eq || []).map((r: any) => (r.equipes?.nome || '').toString().toUpperCase().trim())
-    setEhPosVenda(nomes.some(n => n === 'EQUIPE PÓS VENDA' || n === 'EQUIPE POS VENDA'))
+    setEhPosVenda(nomes.some((n: string) => n === 'EQUIPE PÓS VENDA' || n === 'EQUIPE POS VENDA'))
     // Pertence à equipe GESTÃO? (libera módulo Seguradoras)
     const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
-    setEhGestao(nomes.some(n => norm(n) === 'gestao' || norm(n) === 'equipe gestao'))
+    setEhGestao(nomes.some((n: string) => norm(n) === 'gestao' || norm(n) === 'equipe gestao'))
     // É líder? role='lider' ou consta como lider_id em alguma equipe
     if (data?.role === 'lider' || data?.role === 'admin') {
       setEhLider(true)

@@ -41,7 +41,7 @@ export default function RelatoriosPage() {
       setEquipes(eq || [])
       const { data: em } = await supabase.from('equipe_membros').select('equipe_id,user_id')
       const map: Record<string, string[]> = {}
-      ;(em || []).forEach(r => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
+      ;(em || []).forEach((r: any) => { (map[r.equipe_id] = map[r.equipe_id] || []).push(r.user_id) })
       setEquipeMembros(map)
     }
     setIniciado(true)
