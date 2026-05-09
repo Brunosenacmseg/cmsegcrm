@@ -132,6 +132,23 @@ function FunisPage() {
   useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda, funis])
   useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros, userInPosvenda, funis])
 
+  // Listener global de dragend/drop — resolve o relato de "kanban trava o
+  // arrasto depois de alguns minutos". Quando o drag é interrompido fora
+  // de uma zona de drop válida (alt-tab, ESC, drop em região vazia), o
+  // onDragEnd dos elementos pode não disparar, deixando o estado
+  // `arrastando` preso e bloqueando arrastos seguintes.
+  useEffect(() => {
+    const reset = () => { setArrastando(null); setEtapaHover(null) }
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    window.addEventListener('blur', reset)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+      window.removeEventListener('blur', reset)
+    }
+  }, [])
+
   // Sincroniza a barra de rolagem horizontal de cima com o kanban
   useEffect(() => {
     const k = kanbanRef.current
@@ -2082,6 +2099,32 @@ function FunisPage() {
                   {' · '}
                   {cardAtivo.comissao_valor ? `R$ ${Number(cardAtivo.comissao_valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
                 </div>
+              )}
+            </div>
+
+            {/* Apólice anterior — útil em cards de renovação para o
+                corretor identificar a apólice que está vencendo. */}
+            <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>📋 Apólice anterior</div>
+              {podeEditarPremio(cardAtivo) ? (
+                <input
+                  type="text"
+                  defaultValue={cardAtivo.apolice_anterior_numero || ''}
+                  onBlur={async e => {
+                    const novo = e.target.value.trim() || null
+                    if (novo === (cardAtivo.apolice_anterior_numero || null)) return
+                    const { error } = await supabase.from('negocios')
+                      .update({ apolice_anterior_numero: novo })
+                      .eq('id', cardAtivo.id)
+                    if (error) { alert('Erro ao salvar nº da apólice anterior: ' + error.message); return }
+                    setCardAtivo({ ...cardAtivo, apolice_anterior_numero: novo })
+                    setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, apolice_anterior_numero: novo } : n))
+                  }}
+                  placeholder="Ex.: 123456789 (nº da apólice que está vencendo)"
+                  style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}
+                />
+              ) : (
+                <div style={{fontSize:13,fontFamily:'monospace'}}>{cardAtivo.apolice_anterior_numero || '—'}</div>
               )}
             </div>
 

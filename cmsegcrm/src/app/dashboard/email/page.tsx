@@ -188,6 +188,11 @@ export default function EmailPage() {
               {conta.ultimo_teste_em ? ` (${new Date(conta.ultimo_teste_em).toLocaleString('pt-BR')})` : ''}
             </div>
           )}
+          {temConta && conta.ultimo_teste_ok === false && /chave|criptografia|cadastra|formato/i.test(conta.ultimo_teste_msg || '') && (
+            <div style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.4)', borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: 'var(--gold)' }}>
+              💡 A senha do e-mail precisa ser cadastrada novamente. Cole sua senha (ou senha de app) no campo abaixo e clique em <strong>Salvar</strong>. Depois clique em <strong>Testar conexão</strong>.
+            </div>
+          )}
 
           <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
             Provedor:&nbsp;
