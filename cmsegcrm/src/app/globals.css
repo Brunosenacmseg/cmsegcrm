@@ -135,19 +135,27 @@ input[type="month"] {
   scrollbar-width: auto;
   scrollbar-gutter: stable;
 }
-.kanban-scroll::-webkit-scrollbar { height: 18px; width: 18px; }
+.kanban-scroll::-webkit-scrollbar { height: 14px; width: 14px; }
 .kanban-scroll::-webkit-scrollbar-track {
   background: rgba(184,146,63,0.10);
   border-top: 1px solid var(--border);
 }
 .kanban-scroll::-webkit-scrollbar-thumb {
   background: rgba(184,146,63,0.55);
-  border: 4px solid #ffffff;
+  border: 3px solid #ffffff;
   border-radius: 10px;
-  min-width: 80px;
+  min-width: 120px; /* polegar maior = scroll proporcionalmente mais "rápido" */
 }
 .kanban-scroll::-webkit-scrollbar-thumb:hover { background: rgba(184,146,63,0.85); }
 .kanban-scroll::-webkit-scrollbar-thumb:active { background: var(--gold); }
+/* Barra do topo do kanban precisa de altura maior pra ficar fácil de pegar */
+.kanban-scroll-top { scrollbar-width: thin; }
+
+/* Animação do toast de tarefas vencendo */
+@keyframes slide-in {
+  from { transform: translateX(40px); opacity: 0 }
+  to   { transform: translateX(0);    opacity: 1 }
+}
 
 /* ────────────────────────────────────────────────────────
    COMPONENTES UTILITÁRIOS
