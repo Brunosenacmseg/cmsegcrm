@@ -851,6 +851,7 @@ async function importarApolices(linhas: any[]) {
           premio:      nClamp(r.premio, MAX_VALOR),
           comissao_pct: nClamp(r.comissao_pct, MAX_PCT),
           vencimento:  dateBR(r.vigencia_fim || r.fim || r.vencimento),
+          apolice_anterior_numero: numero,
           obs:         `Importado de apólice nº ${numero}`,
         })
       }
