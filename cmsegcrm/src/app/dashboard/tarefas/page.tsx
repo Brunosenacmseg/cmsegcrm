@@ -37,6 +37,8 @@ export default function TarefasPage() {
     titulo:'', descricao:'', tipo:'tarefa', status:'pendente',
     prazo:'', responsaveis_ids: [],
   })
+  // Quando setado, o modal vira modo "edição" e atualiza essa tarefa em vez de criar.
+  const [editandoTarefa, setEditandoTarefa] = useState<any>(null)
 
   useEffect(() => { init() }, [])
 
@@ -91,39 +93,111 @@ export default function TarefasPage() {
     setClientesBusca(data||[])
   }
 
+  // Converte string de <input type="datetime-local"> para ISO em UTC.
+  // Defensivo: se vier só data ("YYYY-MM-DD"), assume 18:00 local; se a string
+  // já tiver timezone, preserva; senão deixa o construtor do Date parsear como
+  // hora local (comportamento padrão dos browsers modernos).
+  function prazoParaISO(s: string): string | null {
+    if (!s) return null
+    let v = s.trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) v = `${v}T18:00`
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }
+
   async function salvarTarefa() {
     if (!form.titulo.trim()) { alert('Informe o título'); return }
     setSalvando(true)
     const ids = form.responsaveis_ids.length > 0 ? form.responsaveis_ids : [profile?.id]
     const principalId = ids[0]
-    const { data: nova } = await supabase.from('tarefas').insert({
-      titulo:         form.titulo,
-      descricao:      form.descricao || null,
-      tipo:           form.tipo,
-      status:         form.status,
-      prazo:          form.prazo ? new Date(form.prazo).toISOString() : null,
-      responsavel_id: principalId,
-      cliente_id:     clienteSel?.id || null,
-      criado_por:     profile?.id,
-      atribuido_por:  principalId !== profile?.id ? profile?.id : null,
-    }).select('id').single()
-    if (nova?.id) {
-      const linhas = ids.map(uid => ({ tarefa_id: nova.id, user_id: uid }))
-      await supabase.from('tarefa_responsaveis').insert(linhas)
+    const prazoISO = prazoParaISO(form.prazo)
+
+    if (editandoTarefa) {
+      // Modo edição: atualiza tarefa e refaz lista de responsáveis.
+      const { error } = await supabase.from('tarefas').update({
+        titulo:         form.titulo,
+        descricao:      form.descricao || null,
+        tipo:           form.tipo,
+        status:         form.status,
+        prazo:          prazoISO,
+        responsavel_id: principalId,
+        cliente_id:     clienteSel?.id || null,
+        atribuido_por:  principalId !== profile?.id ? profile?.id : null,
+      }).eq('id', editandoTarefa.id)
+      if (error) {
+        alert('Erro ao atualizar tarefa: ' + error.message)
+        setSalvando(false); return
+      }
+      // Refaz responsáveis (drop + insert pra simplicidade; em última instância
+      // poderíamos diff, mas a lista costuma ser pequena).
+      await supabase.from('tarefa_responsaveis').delete().eq('tarefa_id', editandoTarefa.id)
+      if (ids.length > 0) {
+        await supabase.from('tarefa_responsaveis').insert(ids.map(uid => ({ tarefa_id: editandoTarefa.id, user_id: uid })))
+      }
+    } else {
+      const { data: nova } = await supabase.from('tarefas').insert({
+        titulo:         form.titulo,
+        descricao:      form.descricao || null,
+        tipo:           form.tipo,
+        status:         form.status,
+        prazo:          prazoISO,
+        responsavel_id: principalId,
+        cliente_id:     clienteSel?.id || null,
+        criado_por:     profile?.id,
+        atribuido_por:  principalId !== profile?.id ? profile?.id : null,
+      }).select('id').single()
+      if (nova?.id) {
+        const linhas = ids.map(uid => ({ tarefa_id: nova.id, user_id: uid }))
+        await supabase.from('tarefa_responsaveis').insert(linhas)
+      }
+      // Notifica todos os responsáveis (exceto o próprio criador)
+      const notificar = ids.filter(uid => uid && uid !== profile?.id)
+      if (notificar.length > 0) {
+        await supabase.from('notificacoes').insert(notificar.map(uid => ({
+          user_id: uid, tipo: 'tarefa',
+          titulo: `${profile?.nome} atribuiu uma tarefa para você`,
+          descricao: form.titulo, link: '/dashboard/tarefas',
+        })))
+      }
     }
-    // Notifica todos os responsáveis (exceto o próprio criador)
-    const notificar = ids.filter(uid => uid && uid !== profile?.id)
-    if (notificar.length > 0) {
-      await supabase.from('notificacoes').insert(notificar.map(uid => ({
-        user_id: uid, tipo: 'tarefa',
-        titulo: `${profile?.nome} atribuiu uma tarefa para você`,
-        descricao: form.titulo, link: '/dashboard/tarefas',
-      })))
-    }
+
     setModalAberto(false)
+    setEditandoTarefa(null)
     setForm({ titulo:'', descricao:'', tipo:'tarefa', status:'pendente', prazo:'', responsaveis_ids: [] })
     setClienteSel(null); setBuscaCliente('')
     setSalvando(false)
+    await carregarTarefas()
+  }
+
+  // Converte ISO (do banco) para string "YYYY-MM-DDTHH:MM" no fuso local,
+  // formato exigido pelo <input type="datetime-local">.
+  function isoParaInputLocal(iso: string | null): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  function iniciarEdicaoTarefa(t: any) {
+    setEditandoTarefa(t)
+    setForm({
+      titulo:           t.titulo || '',
+      descricao:        t.descricao || '',
+      tipo:             t.tipo || 'tarefa',
+      status:           t.status || 'pendente',
+      prazo:            isoParaInputLocal(t.prazo),
+      responsaveis_ids: responsaveisDeTarefa(t),
+    })
+    setClienteSel(t.clientes ? { id: t.cliente_id, nome: t.clientes.nome } : null)
+    setBuscaCliente(t.clientes?.nome || '')
+    setModalAberto(true)
+  }
+
+  async function excluirTarefa(id: string) {
+    if (!confirm('Excluir esta tarefa? Essa ação não pode ser desfeita.')) return
+    const { error } = await supabase.from('tarefas').delete().eq('id', id)
+    if (error) { alert('Erro ao excluir tarefa: ' + error.message); return }
     await carregarTarefas()
   }
 
@@ -156,10 +230,17 @@ export default function TarefasPage() {
     return true
   })
 
+  // Margem de 1 minuto pra evitar flicker em prazos exatos
+  const MARGEM_MS = 60 * 1000
   const vencendo = tarefas.filter(t => {
     if (!t.prazo || t.status === 'concluida' || t.status === 'cancelada') return false
     const diff = new Date(t.prazo).getTime() - Date.now()
     return diff > 0 && diff < 48*3600*1000 && responsaveisDeTarefa(t).includes(profile?.id)
+  })
+  const atrasadasMinhas = tarefas.filter(t => {
+    if (!t.prazo || t.status === 'concluida' || t.status === 'cancelada') return false
+    const diff = new Date(t.prazo).getTime() - Date.now()
+    return diff < -MARGEM_MS && responsaveisDeTarefa(t).includes(profile?.id)
   })
 
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
@@ -170,15 +251,20 @@ export default function TarefasPage() {
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>✅ Tarefas</div>
-        <button className="btn-primary" onClick={()=>{setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}>
+        <button className="btn-primary" onClick={()=>{setEditandoTarefa(null);setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}>
           + Nova Tarefa
         </button>
       </div>
 
       <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}>
+        {atrasadasMinhas.length > 0 && (
+          <div style={{marginBottom:10,padding:'12px 16px',background:'rgba(224,82,82,0.18)',border:'1px solid rgba(224,82,82,0.45)',borderRadius:10,fontSize:13,color:'var(--red)',fontWeight:600}}>
+            🔴 Você tem {atrasadasMinhas.length} tarefa{atrasadasMinhas.length>1?'s':''} ATRASADA{atrasadasMinhas.length>1?'S':''}!
+          </div>
+        )}
         {vencendo.length > 0 && (
-          <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',borderRadius:10,fontSize:13,color:'var(--red)'}}>
-            ⚠️ Você tem {vencendo.length} tarefa{vencendo.length>1?'s':''} vencendo nas próximas 48h!
+          <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(201,168,76,0.12)',border:'1px solid rgba(201,168,76,0.35)',borderRadius:10,fontSize:13,color:'var(--gold)'}}>
+            🟡 {vencendo.length} tarefa{vencendo.length>1?'s':''} vencendo nas próximas 48h.
           </div>
         )}
 
@@ -225,7 +311,7 @@ export default function TarefasPage() {
           <div style={{display:'flex',flexDirection:'column',gap:10}}>
             {tarefasFiltradas.map(t => {
               const vence = t.prazo ? new Date(t.prazo) : null
-              const atrasada = vence && vence < new Date() && t.status !== 'concluida'
+              const atrasada = !!vence && (vence.getTime() - Date.now()) < -MARGEM_MS && t.status !== 'concluida' && t.status !== 'cancelada'
               const vencendoEm48 = vence && !atrasada && (vence.getTime()-Date.now()) < 48*3600*1000
               const responsavel = t.responsavel
               const atribuidor  = t.atribuidor
@@ -265,7 +351,7 @@ export default function TarefasPage() {
                         )}
                       </div>
                     </div>
-                    <div style={{display:'flex',gap:6,flexShrink:0}}>
+                    <div style={{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap',justifyContent:'flex-end'}}>
                       {t.status === 'pendente' && (
                         <button onClick={()=>alterarStatus(t.id,'em_andamento')}
                           style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif'}}>
@@ -278,6 +364,20 @@ export default function TarefasPage() {
                           ✓ Concluir
                         </button>
                       )}
+                      {(t.criado_por === profile?.id || profile?.role === 'admin' || responsaveisDeTarefa(t).includes(profile?.id)) && (
+                        <button onClick={()=>iniciarEdicaoTarefa(t)}
+                          title="Editar tarefa"
+                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                          ✎ Editar
+                        </button>
+                      )}
+                      {(t.criado_por === profile?.id || profile?.role === 'admin') && (
+                        <button onClick={()=>excluirTarefa(t.id)}
+                          title="Excluir tarefa"
+                          style={{padding:'5px 8px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+                          🗑
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -287,12 +387,14 @@ export default function TarefasPage() {
         )}
       </div>
 
-      {/* Modal nova tarefa */}
+      {/* Modal nova / editar tarefa */}
       {modalAberto && (
         <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
-          onClick={e=>e.target===e.currentTarget&&setModalAberto(false)}>
+          onClick={e=>e.target===e.currentTarget&&(setModalAberto(false),setEditandoTarefa(null))}>
           <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:500,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,marginBottom:20}}>+ Nova Tarefa</div>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,marginBottom:20}}>
+              {editandoTarefa ? '✎ Editar tarefa' : '+ Nova Tarefa'}
+            </div>
             <div style={{marginBottom:14}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Título *</label>
               <input value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} placeholder="Título da tarefa" style={inp} autoFocus />
@@ -374,9 +476,9 @@ export default function TarefasPage() {
               )}
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
-              <button className="btn-secondary" onClick={()=>setModalAberto(false)}>Cancelar</button>
+              <button className="btn-secondary" onClick={()=>{setModalAberto(false);setEditandoTarefa(null)}}>Cancelar</button>
               <button className="btn-primary" onClick={salvarTarefa} disabled={salvando}>
-                {salvando?'Salvando...':'✓ Criar Tarefa'}
+                {salvando ? 'Salvando...' : editandoTarefa ? '✓ Salvar alterações' : '✓ Criar Tarefa'}
               </button>
             </div>
           </div>

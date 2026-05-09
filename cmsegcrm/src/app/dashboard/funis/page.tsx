@@ -113,6 +113,12 @@ function FunisPage() {
   const [salvandoPremio, setSalvandoPremio] = useState(false)
   const [telefoneInput, setTelefoneInput] = useState<string>('')
   const [salvandoTelefone, setSalvandoTelefone] = useState(false)
+  const [tituloInput, setTituloInput] = useState<string>('')
+  const [editandoTitulo, setEditandoTitulo] = useState(false)
+  const [salvandoTitulo, setSalvandoTitulo] = useState(false)
+  const [comissaoPctInput, setComissaoPctInput] = useState<string>('')
+  const [comissaoValorInput, setComissaoValorInput] = useState<string>('')
+  const [salvandoComissao, setSalvandoComissao] = useState(false)
   // Transferência do card aberto para outro funil
   const [transferFunilId, setTransferFunilId] = useState<string>('')
 
@@ -166,24 +172,62 @@ function FunisPage() {
       .then(({ data }: any) => setTemplates(data || []))
   }, [])
 
-  async function setCustomField(chave: string, valor: any) {
+  // Estado de salvamento dos campos personalizados — feedback visual e
+  // proteção contra corrida com a hidratação do cardAtivo.
+  const [cfSavingKey, setCfSavingKey] = useState<string | null>(null)
+  const [cfSavedKey,  setCfSavedKey]  = useState<string | null>(null)
+  const cfDebounceRef = useRef<Record<string, any>>({})
+  const cfPendingRef  = useRef<Record<string, any>>({})
+
+  function setCustomField(chave: string, valor: any) {
     if (!cardAtivo) return
     const cf = { ...(cardAtivo.custom_fields || {}), [chave]: valor }
-    await supabase.from('negocios').update({ custom_fields: cf }).eq('id', cardAtivo.id)
+    // Atualiza o estado local IMEDIATAMENTE para o input não perder caracteres
     setCardAtivo({ ...cardAtivo, custom_fields: cf })
+    // Marca como pendente; persiste com debounce para não bater no banco a cada tecla
+    cfPendingRef.current[chave] = valor
+    setCfSavingKey(chave); setCfSavedKey(null)
+    if (cfDebounceRef.current[chave]) clearTimeout(cfDebounceRef.current[chave])
+    const cardId = cardAtivo.id
+    cfDebounceRef.current[chave] = setTimeout(async () => {
+      const valorFinal = cfPendingRef.current[chave]
+      delete cfPendingRef.current[chave]
+      // Lê o estado mais recente para mesclar e evitar corrida com outros campos
+      const cfAtual = (cardAtivo.custom_fields || {})
+      const cfMerged = { ...cfAtual, [chave]: valorFinal }
+      const { error } = await supabase
+        .from('negocios')
+        .update({ custom_fields: cfMerged })
+        .eq('id', cardId)
+      if (error) {
+        alert('Erro ao salvar campo personalizado: ' + error.message)
+        setCfSavingKey(prev => prev === chave ? null : prev)
+        return
+      }
+      // Sincroniza a lista global de negócios para que ao reabrir o card os
+      // valores não sumam (era a causa do "não está salvando").
+      setNegocios(prev => prev.map(n => n.id === cardId ? { ...n, custom_fields: cfMerged } : n))
+      setCfSavingKey(prev => prev === chave ? null : prev)
+      setCfSavedKey(chave)
+      setTimeout(() => setCfSavedKey(prev => prev === chave ? null : prev), 1500)
+    }, 500)
   }
 
   // Quando abrir um card, carrega detalhes ricos
   useEffect(() => {
-    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTelefoneInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); setTransferFunilId(''); return }
+    if (!cardAtivo) { setTagsCard([]); setProdutosCard([]); setNotasCard([]); setOrigemCard(null); setAnexosCard([]); setPremioInput(''); setTelefoneInput(''); setTituloInput(''); setEditandoTitulo(false); setComissaoPctInput(''); setComissaoValorInput(''); setTarefasCard([]); setNovaTarefa({ titulo:'', prazo:'' }); setTransferFunilId(''); return }
     setTransferFunilId('')
     setPremioInput(cardAtivo.premio != null ? String(Number(cardAtivo.premio).toFixed(2)).replace('.', ',') : '')
     setTelefoneInput(cardAtivo.telefone_negocio || '')
+    setTituloInput(cardAtivo.titulo || '')
+    setEditandoTitulo(false)
+    setComissaoPctInput(cardAtivo.comissao_pct != null ? String(Number(cardAtivo.comissao_pct).toFixed(2)).replace('.', ',') : '')
+    setComissaoValorInput(cardAtivo.comissao_valor != null ? String(Number(cardAtivo.comissao_valor).toFixed(2)).replace('.', ',') : '')
     setNovaTarefa({ titulo:'', prazo:'' })
     Promise.all([
       supabase.from('negocio_tags').select('tag_id, tags(*)').eq('negocio_id', cardAtivo.id),
       supabase.from('negocio_produtos').select('*').eq('negocio_id', cardAtivo.id).order('criado_em'),
-      supabase.from('negocio_notas').select('*, users(nome,avatar_url)').eq('negocio_id', cardAtivo.id).order('criado_em', { ascending: false }),
+      supabase.from('negocio_notas').select('*, users(nome,avatar_url)').eq('negocio_id', cardAtivo.id).order('pinned', { ascending: false }).order('criado_em', { ascending: false }),
       cardAtivo.origem_id ? supabase.from('origens').select('*').eq('id', cardAtivo.origem_id).maybeSingle() : Promise.resolve({ data: null }),
       supabase.from('anexos').select('*, users(nome)').eq('negocio_id', cardAtivo.id).order('created_at', { ascending: false }),
       supabase.from('tarefas')
@@ -398,11 +442,36 @@ function FunisPage() {
   }
 
   async function excluirNota(id: string) {
-    if (profile?.role !== 'admin') { alert('Apenas administradores podem excluir notas'); return }
+    const nota = notasCard.find(n => n.id === id)
+    const ehAutor = nota?.user_id === profile?.id
+    if (profile?.role !== 'admin' && !ehAutor) {
+      alert('Apenas o autor da nota ou um administrador pode excluir.')
+      return
+    }
     if (!confirm('Excluir essa anotação?')) return
     const { error } = await supabase.from('negocio_notas').delete().eq('id', id)
     if (error) { alert('Erro ao excluir nota: ' + error.message); return }
     setNotasCard(prev => prev.filter(n => n.id !== id))
+  }
+
+  async function alternarFixarNota(id: string, pinnedAtual: boolean) {
+    const nota = notasCard.find(n => n.id === id)
+    const ehAutor = nota?.user_id === profile?.id
+    if (profile?.role !== 'admin' && !ehAutor) {
+      alert('Apenas o autor da nota ou um administrador pode fixar.')
+      return
+    }
+    const novo = !pinnedAtual
+    const { error } = await supabase.from('negocio_notas').update({ pinned: novo }).eq('id', id)
+    if (error) { alert('Erro ao fixar nota: ' + error.message); return }
+    setNotasCard(prev => {
+      const atualizadas = prev.map(n => n.id === id ? { ...n, pinned: novo } : n)
+      // Reordena: fixadas primeiro, depois por data desc
+      return atualizadas.slice().sort((a: any, b: any) => {
+        if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+        return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime()
+      })
+    })
   }
 
   function atualizarBadgeKanban(negocioId: string, lista: any[]) {
@@ -466,7 +535,12 @@ function FunisPage() {
   const [editandoNota, setEditandoNota] = useState<{ id: string; conteudo: string } | null>(null)
   async function salvarEdicaoNota() {
     if (!editandoNota) return
-    if (profile?.role !== 'admin') { alert('Apenas administradores podem editar notas'); return }
+    const nota = notasCard.find(n => n.id === editandoNota.id)
+    const ehAutor = nota?.user_id === profile?.id
+    if (profile?.role !== 'admin' && !ehAutor) {
+      alert('Apenas o autor da nota ou um administrador pode editar.')
+      return
+    }
     const { error } = await supabase.from('negocio_notas').update({ conteudo: editandoNota.conteudo }).eq('id', editandoNota.id)
     if (error) { alert('Erro ao editar nota: ' + error.message); return }
     setNotasCard(prev => prev.map(n => n.id === editandoNota.id ? { ...n, conteudo: editandoNota.conteudo } : n))
@@ -526,6 +600,52 @@ function FunisPage() {
     }
     setCardAtivo({ ...cardAtivo, premio: novo })
     setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, premio: novo } : n))
+  }
+
+  async function salvarTituloDoCard() {
+    if (!cardAtivo) return
+    const novo = (tituloInput || '').trim()
+    if (!novo) { setTituloInput(cardAtivo.titulo || ''); setEditandoTitulo(false); return }
+    if (novo === (cardAtivo.titulo || '')) { setEditandoTitulo(false); return }
+    setSalvandoTitulo(true)
+    const { error } = await supabase.from('negocios').update({ titulo: novo }).eq('id', cardAtivo.id)
+    setSalvandoTitulo(false)
+    if (error) { alert('Erro ao salvar título: ' + error.message); return }
+    setCardAtivo({ ...cardAtivo, titulo: novo })
+    setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, titulo: novo } : n))
+    setEditandoTitulo(false)
+  }
+
+  function parseValorBR(s: string): number | null {
+    const bruto = (s || '').replace(/\./g, '').replace(',', '.').trim()
+    if (bruto === '') return 0
+    const n = Number(bruto)
+    return Number.isNaN(n) || n < 0 ? null : n
+  }
+
+  async function salvarComissaoDoCard() {
+    if (!cardAtivo) return
+    if (!podeEditarPremio(cardAtivo)) {
+      alert('Apenas o responsável pela negociação ou um administrador pode editar a comissão.')
+      return
+    }
+    const pct  = parseValorBR(comissaoPctInput)
+    const valr = parseValorBR(comissaoValorInput)
+    if (pct === null || valr === null) {
+      alert('Comissão inválida. Use apenas números (ex.: 12,50).')
+      return
+    }
+    const pctAtual  = Number(cardAtivo.comissao_pct   || 0)
+    const valrAtual = Number(cardAtivo.comissao_valor || 0)
+    if (pct === pctAtual && valr === valrAtual) return
+    setSalvandoComissao(true)
+    const { error } = await supabase.from('negocios')
+      .update({ comissao_pct: pct, comissao_valor: valr })
+      .eq('id', cardAtivo.id)
+    setSalvandoComissao(false)
+    if (error) { alert('Erro ao salvar comissão: ' + error.message); return }
+    setCardAtivo({ ...cardAtivo, comissao_pct: pct, comissao_valor: valr })
+    setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, comissao_pct: pct, comissao_valor: valr } : n))
   }
 
   // Normaliza string ao mesmo padrão do `pt_norm` do banco (lower + sem acento)
@@ -1329,8 +1449,33 @@ function FunisPage() {
       )}
 
       {/* Kanban */}
-      {funiAtual && modoVisao==='kanban' && (
+      {funiAtual && modoVisao==='kanban' && (() => {
+        const totalEmAndamento = negociosFunil
+          .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
+          .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
+        const totalGanho = negociosFunil
+          .filter(n => n.status === 'ganho')
+          .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
+        const qtdAndamento = negociosFunil.filter(n => n.status !== 'ganho' && n.status !== 'perdido').length
+        const qtdGanho     = negociosFunil.filter(n => n.status === 'ganho').length
+        return (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+          {/* Resumo do funil — soma total para responder ao pedido do time */}
+          <div style={{display:'flex',gap:18,alignItems:'center',padding:'8px 20px 4px',flexWrap:'wrap',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+            <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase'}}>
+              Total do funil
+            </div>
+            <div title="Soma do prêmio das negociações em andamento (exclui ganhos/perdidos)"
+              style={{fontSize:13,fontWeight:600,color:'var(--teal)'}}>
+              📈 Em andamento: R$ {totalEmAndamento.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+              <span style={{fontWeight:400,color:'var(--text-muted)',marginLeft:6,fontSize:11}}>· {qtdAndamento} card{qtdAndamento===1?'':'s'}</span>
+            </div>
+            <div title="Soma do prêmio das negociações ganhas neste funil"
+              style={{fontSize:13,fontWeight:600,color:'var(--gold)'}}>
+              ✓ Ganhos: R$ {totalGanho.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+              <span style={{fontWeight:400,color:'var(--text-muted)',marginLeft:6,fontSize:11}}>· {qtdGanho} card{qtdGanho===1?'':'s'}</span>
+            </div>
+          </div>
           {/* Barra de rolagem horizontal sincronizada no topo */}
           <div className="kanban-scroll kanban-scroll-top" ref={topScrollRef}
             style={{overflowX:'auto',overflowY:'hidden',height:18,flexShrink:0,margin:'0 20px'}}>
@@ -1377,13 +1522,31 @@ function FunisPage() {
                     const isSel = selecionados.has(neg.id)
                     return (
                     <div key={neg.id}
-                      onClick={()=>{
+                      onClick={(e)=>{
                         if (modoSelecao) { toggleSel(neg.id); return }
+                        // Ctrl/Cmd+clique = abrir em nova guia (URL com ?card=ID)
+                        if (e.ctrlKey || e.metaKey) {
+                          window.open(`/dashboard/funis?card=${neg.id}`, '_blank')
+                          return
+                        }
                         setCardAtivo(neg); setModalCard(true)
+                      }}
+                      onAuxClick={(e)=>{
+                        // Botão do meio do mouse abre nova guia
+                        if (e.button === 1) {
+                          e.preventDefault()
+                          window.open(`/dashboard/funis?card=${neg.id}`, '_blank')
+                        }
+                      }}
+                      onContextMenu={(e)=>{
+                        // Permite "Abrir link em nova guia" pelo botão direito.
+                        // Aqui só atualizamos o href via data-attribute para o
+                        // browser entender o "link" — efetivo via anchor abaixo.
                       }}
                       draggable={!modoSelecao}
                       onDragStart={e=>{e.dataTransfer.setData('text/plain', neg.id);e.dataTransfer.effectAllowed='move';setArrastando(neg.id)}}
                       onDragEnd={()=>{setArrastando(null);setEtapaHover(null)}}
+                      title="Clique para abrir · Ctrl/Cmd+Clique ou botão do meio para abrir em nova guia"
                       style={{background: isSel?'rgba(74,128,240,0.18)':bgCard,border:'1px solid '+(isSel?'#4a80f0':corBorda),borderRadius:12,padding:'12px',cursor: modoSelecao?'pointer':(arrastando===neg.id?'grabbing':'grab'),transition:'all 0.15s',position:'relative',opacity:arrastando===neg.id?0.5:1}}
                       onMouseEnter={e=>(e.currentTarget.style.borderColor= isSel?'#4a80f0':'var(--gold)')}
                       onMouseLeave={e=>(e.currentTarget.style.borderColor= isSel?'#4a80f0':corBorda)}>
@@ -1399,9 +1562,24 @@ function FunisPage() {
                       )}
 
                       {(isGanho || isPerdido) && (
-                        <span style={{position:'absolute',top:8,right:8,fontSize:9,fontWeight:700,letterSpacing:'1px',padding:'2px 6px',borderRadius:5,textTransform:'uppercase',background:isGanho?'rgba(28,181,160,0.18)':'rgba(224,82,82,0.18)',color:isGanho?'var(--teal)':'var(--red)',border:'1px solid '+(isGanho?'rgba(28,181,160,0.4)':'rgba(224,82,82,0.4)')}}>
+                        <span style={{position:'absolute',top:8,right:32,fontSize:9,fontWeight:700,letterSpacing:'1px',padding:'2px 6px',borderRadius:5,textTransform:'uppercase',background:isGanho?'rgba(28,181,160,0.18)':'rgba(224,82,82,0.18)',color:isGanho?'var(--teal)':'var(--red)',border:'1px solid '+(isGanho?'rgba(28,181,160,0.4)':'rgba(224,82,82,0.4)')}}>
                           {isGanho?'✓ Ganho':'✕ Perdido'}
                         </span>
+                      )}
+
+                      {/* Atalho para abrir em nova guia (anchor real → botão direito do mouse funciona). */}
+                      {!modoSelecao && (
+                        <a
+                          href={`/dashboard/funis?card=${neg.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={e => { e.stopPropagation(); /* o target=_blank já abre nova guia */ }}
+                          onMouseDown={e => e.stopPropagation()}
+                          draggable={false}
+                          title="Abrir em nova guia"
+                          style={{position:'absolute',top:6,right:8,fontSize:12,padding:'1px 5px',borderRadius:4,background:'rgba(255,255,255,0.6)',border:'1px solid var(--border)',color:'var(--text-muted)',textDecoration:'none',lineHeight:1,fontWeight:600}}>
+                          ↗
+                        </a>
                       )}
 
                       <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3,paddingRight:isGanho||isPerdido?60:0,textDecoration:isPerdido?'line-through':'none',opacity:isPerdido?0.75:1}}>{neg.titulo}</div>
@@ -1525,7 +1703,8 @@ function FunisPage() {
             ›
           </button>
         </div>
-      )}
+        )
+      })()}
 
       {/* Visão lista de negociações */}
       {funiAtual && modoVisao==='lista' && (
@@ -1741,8 +1920,29 @@ function FunisPage() {
         <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalCard(false)}>
           <div style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:20,padding:'28px 32px',width:480,maxWidth:'95vw',maxHeight:'90vh',overflow:'auto'}}>
-            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>{cardAtivo.titulo}</div>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8,gap:10}}>
+              {editandoTitulo && podeEditarPremio(cardAtivo) ? (
+                <input
+                  autoFocus
+                  value={tituloInput}
+                  onChange={e => setTituloInput(e.target.value)}
+                  onBlur={salvarTituloDoCard}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                    if (e.key === 'Escape') { setTituloInput(cardAtivo.titulo || ''); setEditandoTitulo(false) }
+                  }}
+                  disabled={salvandoTitulo}
+                  maxLength={200}
+                  style={{flex:1,fontFamily:'DM Serif Display,serif',fontSize:18,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'4px 8px',color:'var(--text)',outline:'none'}}
+                />
+              ) : (
+                <div
+                  onClick={() => podeEditarPremio(cardAtivo) && setEditandoTitulo(true)}
+                  title={podeEditarPremio(cardAtivo) ? 'Clique para editar o título' : ''}
+                  style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1,cursor: podeEditarPremio(cardAtivo) ? 'text' : 'default'}}>
+                  {cardAtivo.titulo} {podeEditarPremio(cardAtivo) && <span style={{fontSize:11,color:'var(--text-muted)',marginLeft:6}}>✎</span>}
+                </div>
+              )}
               <button onClick={()=>setModalCard(false)} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:20,marginLeft:12}}>✕</button>
             </div>
 
@@ -1836,6 +2036,55 @@ function FunisPage() {
               />
             </div>
 
+            {/* Comissão do negócio */}
+            <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>💰 Comissão</div>
+              {podeEditarPremio(cardAtivo) ? (
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3}}>% sobre o prêmio</label>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={comissaoPctInput}
+                        onChange={e => setComissaoPctInput(e.target.value)}
+                        onBlur={salvarComissaoDoCard}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur() }}
+                        placeholder="0,00"
+                        disabled={salvandoComissao}
+                        style={{flex:1,minWidth:0,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 9px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                      />
+                      <span style={{fontSize:13,color:'var(--text-muted)'}}>%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3}}>Valor R$</label>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontSize:13,color:'var(--text-muted)'}}>R$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={comissaoValorInput}
+                        onChange={e => setComissaoValorInput(e.target.value)}
+                        onBlur={salvarComissaoDoCard}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur() }}
+                        placeholder="0,00"
+                        disabled={salvandoComissao}
+                        style={{flex:1,minWidth:0,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 9px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{fontSize:13}}>
+                  {cardAtivo.comissao_pct ? `${Number(cardAtivo.comissao_pct).toLocaleString('pt-BR',{minimumFractionDigits:2})}%` : '—'}
+                  {' · '}
+                  {cardAtivo.comissao_valor ? `R$ ${Number(cardAtivo.comissao_valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
+                </div>
+              )}
+            </div>
+
             {/* Obs */}
             {cardAtivo.obs && (
               <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(255,255,255,0.03)',borderRadius:10,border:'1px solid var(--border)',fontSize:12,color:'var(--text-muted)',lineHeight:1.6}}>
@@ -1921,9 +2170,13 @@ function FunisPage() {
                   {camposPers.map(c => {
                     const valor = (cardAtivo.custom_fields || {})[c.chave] ?? ''
                     const cmnInp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:6, padding:'5px 9px', color:'var(--text)', fontSize:12, outline:'none', boxSizing:'border-box' }
+                    const status = cfSavingKey === c.chave ? '⏳ salvando…' : cfSavedKey === c.chave ? '✓ salvo' : ''
                     return (
                       <div key={c.id}>
-                        <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3}}>{c.nome}{c.obrigatorio && <span style={{color:'var(--red)'}}> *</span>}</label>
+                        <label style={{fontSize:10,color:'var(--text-muted)',display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                          <span>{c.nome}{c.obrigatorio && <span style={{color:'var(--red)'}}> *</span>}</span>
+                          {status && <span style={{color: cfSavedKey === c.chave ? 'var(--teal)' : 'var(--text-muted)'}}>{status}</span>}
+                        </label>
                         {c.tipo === 'texto'    && <input value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
                         {c.tipo === 'textarea' && <textarea value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} rows={2} style={{...cmnInp,resize:'none'}} />}
                         {c.tipo === 'numero'   && <input type="number" value={valor} onChange={e=>setCustomField(c.chave, e.target.value)} style={cmnInp} />}
@@ -2145,7 +2398,7 @@ function FunisPage() {
             <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)',borderRadius:10}}>
               <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:8}}>
                 📝 Notas / Anotações
-                {profile?.role !== 'admin' && <span style={{fontWeight:400,marginLeft:8,textTransform:'none',letterSpacing:0,fontSize:9,color:'var(--text-muted)'}}>· apenas admin pode editar/excluir</span>}
+                <span style={{fontWeight:400,marginLeft:8,textTransform:'none',letterSpacing:0,fontSize:9,color:'var(--text-muted)'}}>· cada autor edita / exclui / fixa as próprias</span>
               </div>
               <div style={{display:'flex',gap:6,marginBottom:8}}>
                 <input value={novaNota} onChange={e=>setNovaNota(e.target.value)}
@@ -2159,8 +2412,10 @@ function FunisPage() {
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>Sem notas</div>
                 ) : notasCard.map(n => {
                   const editing = editandoNota?.id === n.id
+                  const ehAutor = n.user_id === profile?.id
+                  const podeMexer = profile?.role === 'admin' || ehAutor
                   return (
-                    <div key={n.id} style={{padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                    <div key={n.id} style={{padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',background: n.pinned ? 'rgba(201,168,76,0.06)' : 'transparent', borderLeft: n.pinned ? '2px solid var(--gold)' : 'none', paddingLeft: n.pinned ? 6 : 0}}>
                       {editing ? (
                         <div style={{display:'flex',gap:6,marginBottom:4}}>
                           <textarea value={editandoNota!.conteudo} onChange={e=>setEditandoNota(p=>p?{...p,conteudo:e.target.value}:p)}
@@ -2171,14 +2426,20 @@ function FunisPage() {
                           </div>
                         </div>
                       ) : (
-                        <div style={{fontSize:12,marginBottom:2,whiteSpace:'pre-wrap'}}>{n.conteudo}</div>
+                        <div style={{fontSize:12,marginBottom:2,whiteSpace:'pre-wrap'}}>
+                          {n.pinned && <span title="Nota fixada" style={{marginRight:4}}>📌</span>}
+                          {n.conteudo}
+                        </div>
                       )}
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
                         <div style={{fontSize:10,color:'var(--text-muted)'}}>
                           {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
                         </div>
-                        {profile?.role === 'admin' && !editing && (
+                        {podeMexer && !editing && (
                           <div style={{display:'flex',gap:4}}>
+                            <button onClick={()=>alternarFixarNota(n.id, !!n.pinned)}
+                              title={n.pinned ? 'Desafixar' : 'Fixar nota no topo'}
+                              style={{padding:'2px 6px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:n.pinned?'rgba(201,168,76,0.15)':'transparent',color:'var(--gold)',cursor:'pointer'}}>📌</button>
                             <button onClick={()=>setEditandoNota({id:n.id,conteudo:n.conteudo})}
                               style={{padding:'2px 6px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--gold)',cursor:'pointer'}}>✎</button>
                             <button onClick={()=>excluirNota(n.id)}

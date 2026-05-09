@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -101,9 +101,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       carregarBadges(user.id)
       carregarNotificacoes(user.id)
       carregarProfile(user.id) // Atualiza avatar periodicamente
+      verificarTarefasVencendoAgora(user.id)
     }, 15000)
     return () => clearInterval(interval)
   }, [user])
+
+  // Toasts de tarefas que acabaram de vencer (1 alerta por tarefa por sessão).
+  const [toasts, setToasts] = useState<Array<{ id: string; titulo: string; tarefa_id: string }>>([])
+  // useRef para evitar re-render ao marcar tarefas já notificadas
+  const tarefasJaAvisadasRef = useRef<Set<string>>(new Set())
+
+  async function verificarTarefasVencendoAgora(userId: string) {
+    // Pega tarefas do user com prazo nos últimos 5 min e ainda pendentes/em andamento.
+    const agora = Date.now()
+    const inicioJanela = new Date(agora - 5*60*1000).toISOString()
+    const fimJanela    = new Date(agora).toISOString()
+    const { data } = await supabase.from('tarefas')
+      .select('id,titulo,prazo,status,responsavel_id')
+      .eq('responsavel_id', userId)
+      .in('status', ['pendente','em_andamento'])
+      .gte('prazo', inicioJanela)
+      .lte('prazo', fimJanela)
+    if (!data) return
+    const novos: typeof toasts = []
+    for (const t of data) {
+      if (tarefasJaAvisadasRef.current.has(t.id)) continue
+      tarefasJaAvisadasRef.current.add(t.id)
+      novos.push({ id: `toast-${t.id}-${Date.now()}`, titulo: t.titulo, tarefa_id: t.id })
+    }
+    if (novos.length > 0) {
+      setToasts(prev => [...prev, ...novos])
+      novos.forEach(n => {
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== n.id)), 12000)
+      })
+    }
+  }
 
   // Bloqueia acesso direto via URL para rotas adminOnly e equipe-only.
   // Precisa estar ANTES de qualquer early return para respeitar as Rules of
@@ -173,11 +205,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   async function carregarBadges(userId: string) {
-    const [{ count: msg }, { count: tarefas }] = await Promise.all([
+    const agoraIso = new Date(Date.now() - 60*1000).toISOString()
+    const [
+      { count: msg },
+      { count: tarefasAtrasadas },
+      { count: tarefasPendentes },
+    ] = await Promise.all([
       supabase.from('mensagens_internas').select('*', { count:'exact', head:true }).eq('para_user_id', userId).eq('lida', false),
-      supabase.from('tarefas').select('*', { count:'exact', head:true }).eq('responsavel_id', userId).eq('status', 'pendente'),
+      // ATRASADAS = prazo já passou (mais de 1min) e ainda não concluídas
+      supabase.from('tarefas').select('*', { count:'exact', head:true })
+        .eq('responsavel_id', userId)
+        .in('status', ['pendente', 'em_andamento'])
+        .lt('prazo', agoraIso)
+        .not('prazo', 'is', null),
+      // PENDENTES TOTAIS (cor amarela quando não há atrasadas)
+      supabase.from('tarefas').select('*', { count:'exact', head:true })
+        .eq('responsavel_id', userId)
+        .eq('status', 'pendente'),
     ])
-    setBadges({ mensagens: msg||0, tarefas: tarefas||0 })
+    setBadges({
+      mensagens: msg||0,
+      tarefas: tarefasAtrasadas || 0,            // O badge vermelho mostra só atrasadas
+      tarefas_pendentes: tarefasPendentes || 0, // Total pendente para compor tooltip
+    })
   }
 
   async function carregarNotificacoes(userId: string) {
@@ -285,11 +335,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     onMouseLeave={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-muted)' }}>
                     <span style={{fontSize:15,width:20,textAlign:'center'}}>{item.icon}</span>
                     {item.label}
-                    {badgeCount > 0 && (
-                      <span style={{marginLeft:'auto',background:'var(--danger)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
-                        {badgeCount}
-                      </span>
-                    )}
+                    {(() => {
+                      // Para o item "tarefas", o número vermelho mostra só ATRASADAS.
+                      // Se não houver atrasadas mas houver pendentes, mostra um
+                      // indicador amarelo discreto. Outras badges seguem o padrão.
+                      if (item.badge === 'tarefas') {
+                        const atrasadas = badges['tarefas'] || 0
+                        const pendentes = (badges as any)['tarefas_pendentes'] || 0
+                        if (atrasadas > 0) {
+                          return (
+                            <span title={`${atrasadas} atrasada${atrasadas>1?'s':''} · ${pendentes} pendente${pendentes!==1?'s':''} no total`}
+                              style={{marginLeft:'auto',background:'var(--danger)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
+                              🔴 {atrasadas}
+                            </span>
+                          )
+                        }
+                        if (pendentes > 0) {
+                          return (
+                            <span title={`${pendentes} tarefa${pendentes>1?'s':''} pendente${pendentes>1?'s':''}`}
+                              style={{marginLeft:'auto',background:'rgba(201,168,76,0.18)',color:'var(--gold)',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
+                              {pendentes}
+                            </span>
+                          )
+                        }
+                        return null
+                      }
+                      return badgeCount > 0 ? (
+                        <span style={{marginLeft:'auto',background:'var(--danger)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
+                          {badgeCount}
+                        </span>
+                      ) : null
+                    })()}
                   </Link>
                 )}
               </div>
@@ -374,6 +450,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <ChatIA />
       <MetaPixel />
       <BoasVindasLider visivel={profile?.role === 'lider' && pathname !== '/dashboard/gestao-equipe'} />
+
+      {/* Toasts de tarefas vencendo agora */}
+      {toasts.length > 0 && (
+        <div style={{position:'fixed',bottom:24,right:24,zIndex:1000,display:'flex',flexDirection:'column',gap:10,maxWidth:360}}>
+          {toasts.map(t => (
+            <div key={t.id}
+              onClick={() => { router.push('/dashboard/tarefas'); setToasts(prev => prev.filter(x => x.id !== t.id)) }}
+              style={{cursor:'pointer',background:'#ffffff',border:'2px solid var(--red)',borderRadius:12,padding:'14px 18px',boxShadow:'0 8px 28px rgba(224,82,82,0.30)',display:'flex',alignItems:'flex-start',gap:10,animation:'slide-in 0.25s ease-out'}}>
+              <span style={{fontSize:22}}>⏰</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--red)',letterSpacing:0.5,textTransform:'uppercase',marginBottom:4}}>Tarefa vencendo agora</div>
+                <div style={{fontSize:13,fontWeight:500,color:'var(--text)',marginBottom:4}}>{t.titulo}</div>
+                <div style={{fontSize:11,color:'var(--text-muted)'}}>Clique para abrir tarefas →</div>
+              </div>
+              <button onClick={(e)=>{ e.stopPropagation(); setToasts(prev => prev.filter(x => x.id !== t.id)) }}
+                style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:16}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -25,6 +25,7 @@ export default function FichaClientePage() {
   const [apolices,  setApolices]  = useState<any[]>([])
   const [historico, setHistorico] = useState<any[]>([])
   const [abaAtiva,  setAbaAtiva]  = useState('negocios')
+  const [filtroHistNegocio, setFiltroHistNegocio] = useState<string>('todos')
   const [loading,   setLoading]   = useState(true)
   const [modalNeg,  setModalNeg]  = useState(false)
   const [funis,     setFunis]     = useState<any[]>([])
@@ -255,11 +256,45 @@ export default function FichaClientePage() {
         )}
 
         {/* HISTÓRICO */}
-        {abaAtiva === 'historico' && (
+        {abaAtiva === 'historico' && (() => {
+          // Lista de negócios distintos que aparecem no histórico, para o filtro
+          const negociosNoHistorico = Array.from(new Map(
+            historico.filter(h => h.negocio_id).map(h => [h.negocio_id, {
+              id: h.negocio_id,
+              label: `${h.negocios?.funis?.emoji || '📌'} ${h.negocios?.funis?.nome || 'Funil'} · ${h.negocios?.produto || '—'}`,
+            }])
+          ).values())
+          const historicoFiltrado = filtroHistNegocio === 'todos'
+            ? historico
+            : filtroHistNegocio === 'sem'
+              ? historico.filter(h => !h.negocio_id)
+              : historico.filter(h => h.negocio_id === filtroHistNegocio)
+          return (
+          <div>
+            {/* Filtro por negócio — resolve confusão de "notas do sinistro
+                aparecendo no card de renovação" mostrando só o que pertence
+                ao negócio escolhido. */}
+            {negociosNoHistorico.length > 1 && (
+              <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,color:'var(--text-muted)'}}>Filtrar por negócio:</span>
+                <select value={filtroHistNegocio} onChange={e => setFiltroHistNegocio(e.target.value)}
+                  style={{padding:'5px 10px',borderRadius:6,fontSize:12,border:'1px solid var(--border)',background:'#ffffff',color:'var(--text)',cursor:'pointer'}}>
+                  <option value="todos">— Todos os negócios —</option>
+                  <option value="sem">Sem negócio vinculado</option>
+                  {negociosNoHistorico.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                </select>
+                {filtroHistNegocio !== 'todos' && (
+                  <button onClick={()=>setFiltroHistNegocio('todos')}
+                    style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>
+                    Limpar filtro
+                  </button>
+                )}
+              </div>
+            )}
           <div style={{position:'relative',paddingLeft:28}}>
             <div style={{position:'absolute',left:9,top:0,bottom:0,width:2,background:'rgba(255,255,255,0.06)',borderRadius:2}}/>
-            {historico.length === 0 && <div style={{color:'var(--text-muted)'}}>Sem histórico ainda.</div>}
-            {historico.map((h,i) => (
+            {historicoFiltrado.length === 0 && <div style={{color:'var(--text-muted)'}}>Sem histórico para esse filtro.</div>}
+            {historicoFiltrado.map((h,i) => (
               <div key={i} style={{position:'relative',marginBottom:20}}>
                 <div style={{position:'absolute',left:-28,top:3,width:12,height:12,borderRadius:'50%',
                   background:corDot[h.tipo]||'var(--text-muted)',border:'2px solid var(--navy)'}}/>
@@ -278,7 +313,9 @@ export default function FichaClientePage() {
               </div>
             ))}
           </div>
-        )}
+          </div>
+          )
+        })()}
 
         {/* APÓLICES */}
         {abaAtiva === 'apolices' && (
