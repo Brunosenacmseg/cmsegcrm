@@ -57,9 +57,24 @@ export async function processarLeadgen(
 ): Promise<LeadgenResult> {
   const erros: string[] = []
   const log = (...a: any[]) => console.log('[meta-lead]', input.leadgenId, ...a)
+  // Erros do supabase-js trazem `code`, `details` e `hint` além de `message`.
+  // Antes só guardávamos `message`, perdendo o code (PGRST116 / 23502 / 42501)
+  // que é o que costuma diferenciar "RLS bloqueou" de "constraint violada"
+  // de "tabela inexistente" — informação crítica em testes do webhook.
   const logErr = (msg: string, e?: any) => {
-    const detail = e?.message || (typeof e === 'string' ? e : e ? JSON.stringify(e) : '')
-    erros.push(detail ? `${msg}: ${detail}` : msg)
+    const partes: string[] = [msg]
+    if (e) {
+      const code = e?.code || e?.status
+      if (code) partes.push(`[${code}]`)
+      const m = e?.message || (typeof e === 'string' ? e : '')
+      if (m) partes.push(m)
+      if (e?.details) partes.push(`details=${e.details}`)
+      if (e?.hint)    partes.push(`hint=${e.hint}`)
+      if (!m && !e?.details && !e?.hint && typeof e !== 'string') {
+        try { partes.push(JSON.stringify(e)) } catch { /* ignore */ }
+      }
+    }
+    erros.push(partes.join(' '))
     console.error('[meta-lead]', input.leadgenId, msg, e || '')
   }
 
@@ -234,9 +249,23 @@ export async function processarLeadgen(
       }
       if (Object.keys(negCustom).length) negPayload.custom_fields = negCustom
 
-      const { data: neg, error } = await sa.from('negocios').insert(negPayload).select('id').single()
-      if (error) logErr('insert negocio falhou', error)
-      negocioId = (neg as any)?.id || null
+      // `.maybeSingle()` em vez de `.single()` para distinguir "insert ok mas
+      // SELECT vazio (RLS)" de "insert falhou": o primeiro caso retorna
+      // data=null sem erro com `.single()`, fazendo a falha passar batido.
+      // try/catch protege contra exceções de rede/timeout que de outra forma
+      // viram erro 500 sem nenhum log no Vercel.
+      try {
+        const { data: neg, error } = await sa.from('negocios').insert(negPayload).select('id').maybeSingle()
+        if (error) {
+          logErr('insert negocio falhou', error)
+        } else if (!neg) {
+          logErr('insert negocio retornou vazio (provável RLS bloqueando SELECT após INSERT — verifique service_role e policy de negocios)')
+        } else {
+          negocioId = (neg as any).id || null
+        }
+      } catch (e) {
+        logErr('insert negocio threw', e)
+      }
     }
   }
 

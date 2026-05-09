@@ -109,6 +109,11 @@ export async function POST(req: NextRequest) {
     fieldData,
   })
 
+  // Quando a negociação não foi criada apesar de tentarmos, devolve 500 pra
+  // o botão "Enviar lead de teste" na UI mostrar erro em vermelho. Antes
+  // sempre era 200 e o vendedor confiava no `ok` no JSON, que ficava
+  // ignorado se o front tratasse só pelo status HTTP.
+  const status = resultado.ok ? 200 : 500
   return NextResponse.json({
     ok: resultado.ok,
     cliente_id: resultado.clienteId,
@@ -119,5 +124,5 @@ export async function POST(req: NextRequest) {
     erros: resultado.erros,
     campos_enviados: fieldData,
     form_nome: (mapping as any)?.form_nome || null,
-  })
+  }, { status })
 }
