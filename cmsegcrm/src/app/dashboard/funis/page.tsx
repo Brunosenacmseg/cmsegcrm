@@ -262,10 +262,11 @@ function FunisPage() {
     })
   }, [cardAtivo?.id])
 
-  // Carrega "próxima tarefa em aberto" de cada negócio visível para o badge
-  // do kanban. Roda quando muda a lista de negócios (ex.: troca de funil).
+  // Carrega "próxima tarefa em aberto" de cada negócio visível + contagem total
+  // de tarefas pendentes/atrasadas para o badge no kanban.
+  const [tarefasContPorNegocio, setTarefasContPorNegocio] = useState<Record<string, { total: number; atrasadas: number }>>({})
   useEffect(() => {
-    if (!negocios.length) { setTarefasPorNegocio({}); return }
+    if (!negocios.length) { setTarefasPorNegocio({}); setTarefasContPorNegocio({}); return }
     const ids = negocios.map(n => n.id)
     let cancelled = false
     supabase.from('tarefas')
@@ -276,11 +277,17 @@ function FunisPage() {
       .then(({ data }: any) => {
         if (cancelled) return
         const map: Record<string, any> = {}
+        const cont: Record<string, { total: number; atrasadas: number }> = {}
+        const agora = Date.now()
         for (const t of (data || []) as any[]) {
           if (!t.negocio_id) continue
-          if (!map[t.negocio_id]) map[t.negocio_id] = t // já vem ordenado: o 1º é o mais próximo
+          if (!map[t.negocio_id]) map[t.negocio_id] = t
+          if (!cont[t.negocio_id]) cont[t.negocio_id] = { total: 0, atrasadas: 0 }
+          cont[t.negocio_id].total += 1
+          if (t.prazo && new Date(t.prazo).getTime() < agora) cont[t.negocio_id].atrasadas += 1
         }
         setTarefasPorNegocio(map)
+        setTarefasContPorNegocio(cont)
       })
     return () => { cancelled = true }
   }, [funilAtivo, negocios.length])
@@ -1493,9 +1500,28 @@ function FunisPage() {
               <span style={{fontWeight:400,color:'var(--text-muted)',marginLeft:6,fontSize:11}}>· {qtdGanho} card{qtdGanho===1?'':'s'}</span>
             </div>
           </div>
+          {/* Empty state quando o funil está sem cards (após filtros) */}
+          {funiAtual && negociosFunil.length === 0 && (
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:40}}>
+              <div style={{textAlign:'center',maxWidth:400}}>
+                <div style={{fontSize:42,marginBottom:14}}>📭</div>
+                <div style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:6}}>Nenhum negócio neste funil</div>
+                <div style={{fontSize:13,color:'var(--text-muted)',lineHeight:1.5,marginBottom:18}}>
+                  {filtroBusca
+                    ? 'Tente limpar a busca para ver outros negócios.'
+                    : 'Comece criando seu primeiro negócio neste funil. É rápido!'}
+                </div>
+                {!filtroBusca && (
+                  <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||'',telefone:''})}}>
+                    + Criar primeiro negócio
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {/* Barra de rolagem horizontal sincronizada no topo */}
           <div className="kanban-scroll kanban-scroll-top" ref={topScrollRef}
-            style={{overflowX:'auto',overflowY:'hidden',height:18,flexShrink:0,margin:'0 20px'}}>
+            style={{overflowX:'auto',overflowY:'hidden',height:18,flexShrink:0,margin:'0 20px',display: funiAtual && negociosFunil.length === 0 ? 'none' : 'block'}}>
             <div style={{width:kanbanWidth,height:1}} />
           </div>
           <div className="kanban-scroll" ref={kanbanRef}
@@ -1654,8 +1680,10 @@ function FunisPage() {
 
                       {(() => {
                         const t = tarefasPorNegocio[neg.id]
+                        const cont = tarefasContPorNegocio[neg.id]
                         if (!t) return null
                         const atrasada = !!t.prazo && new Date(t.prazo).getTime() < Date.now()
+                        const totalAtrasadas = cont?.atrasadas || 0
                         return (
                           <div title={atrasada ? 'Tarefa atrasada' : 'Próxima tarefa'}
                             style={{
@@ -1668,6 +1696,11 @@ function FunisPage() {
                             }}>
                             <span style={{flexShrink:0}}>{atrasada ? '⚠️' : '📋'}</span>
                             <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.titulo}</span>
+                            {totalAtrasadas > 1 && (
+                              <span title={`${totalAtrasadas} tarefas atrasadas`} style={{fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:8,background:'rgba(224,82,82,0.25)',color:'var(--red)',flexShrink:0}}>
+                                +{totalAtrasadas - (atrasada ? 1 : 0)}
+                              </span>
+                            )}
                             {t.prazo && (
                               <span style={{fontSize:9,opacity:0.85,flexShrink:0}}>
                                 {new Date(t.prazo).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}

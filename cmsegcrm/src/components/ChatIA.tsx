@@ -121,11 +121,32 @@ export default function ChatIA() {
           fontSize: 24, boxShadow: '0 4px 20px rgba(201,168,76,0.4)',
           transition: 'all 0.3s ease',
           color: aberto ? 'var(--gold)' : '#000',
+          animation: !aberto && mensagens.length === 0 ? 'cm-ia-pulse 2.4s ease-in-out infinite' : 'none',
         }}
-        title={aberto ? 'Fechar assistente' : 'Abrir assistente IA'}
+        title={aberto ? 'Fechar assistente' : 'Abrir assistente IA — pergunte sobre seus dados, metas ou seguros'}
       >
         {aberto ? '✕' : '🤖'}
       </button>
+      {!aberto && mensagens.length === 0 && (
+        <div
+          onClick={() => setAberto(true)}
+          style={{
+            position: 'fixed', bottom: 36, right: 96, zIndex: 999,
+            background: '#0a1628', border: '1px solid var(--gold)', borderRadius: 10,
+            padding: '8px 14px', cursor: 'pointer', maxWidth: 240,
+            color: '#f5f5f7', fontSize: 12, fontWeight: 500,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
+            animation: 'cm-ia-tip-in 0.3s ease',
+          }}
+        >
+          <div style={{ fontSize: 11, color: 'var(--gold)', fontWeight: 700, marginBottom: 2 }}>CM Assistente</div>
+          <div>💬 Oi! Posso responder sobre seus dados, metas ou seguros. Clique aqui!</div>
+        </div>
+      )}
+      <style>{`
+        @keyframes cm-ia-pulse { 0%,100% { box-shadow: 0 4px 20px rgba(201,168,76,0.4); } 50% { box-shadow: 0 4px 28px rgba(201,168,76,0.85), 0 0 0 6px rgba(201,168,76,0.18); } }
+        @keyframes cm-ia-tip-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+      `}</style>
 
       {/* Painel do chat */}
       {aberto && (
