@@ -71,6 +71,14 @@ export default function UsuariosPage() {
 
   useEffect(() => { carregar() }, [])
 
+  async function authHeaders(): Promise<Record<string, string>> {
+    const { data } = await supabase.auth.getSession()
+    const tok = data?.session?.access_token
+    return tok
+      ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` }
+      : { 'Content-Type': 'application/json' }
+  }
+
   async function carregar() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -90,8 +98,18 @@ export default function UsuariosPage() {
     if (error) { setMsg('Erro: '+error.message); setMsgType('err'); return }
     if (novoRole !== 'corretor') {
       setTimeout(async () => {
-        const { data: nu } = await supabase.from('users').select('id').eq('email', novoEmail).single()
-        if (nu) await fetch('/api/admin/set-role', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: nu.id, role: novoRole }) })
+        try {
+          const { data: nu } = await supabase.from('users').select('id').eq('email', novoEmail).single()
+          if (!nu) return
+          const headers = await authHeaders()
+          const res = await fetch('/api/admin/set-role', { method:'POST', headers, body: JSON.stringify({ userId: nu.id, role: novoRole }) })
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}))
+            console.error('[usuarios] set-role pós-signup falhou', d)
+          }
+        } catch (err) {
+          console.error('[usuarios] set-role pós-signup', err)
+        }
       }, 2000)
     }
     setMsg(`✅ ${novoNome} cadastrado!`); setMsgType('ok')
@@ -103,8 +121,9 @@ export default function UsuariosPage() {
     if (profile?.role !== 'admin') return
     if (!nomeTemp.trim()) { alert('Nome não pode ser vazio'); return }
     setSalvandoNome(userId)
+    const headers = await authHeaders()
     const res = await fetch('/api/admin/set-role', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers,
       body: JSON.stringify({ userId, nome: nomeTemp.trim() }),
     })
     const data = await res.json()
@@ -116,7 +135,8 @@ export default function UsuariosPage() {
   async function alterarRole(userId: string, role: string) {
     if (profile?.role !== 'admin') return
     setSalvandoRole(userId)
-    const res = await fetch('/api/admin/set-role', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId, role }) })
+    const headers = await authHeaders()
+    const res = await fetch('/api/admin/set-role', { method:'POST', headers, body: JSON.stringify({ userId, role }) })
     const data = await res.json()
     if (data.ok) await carregar()
     else alert('Erro ao alterar role: ' + data.error)
@@ -127,7 +147,8 @@ export default function UsuariosPage() {
     setSalvandoRamal(userId)
     setMsgRamal(m => ({...m, [userId]: ''}))
     try {
-      const res = await fetch('/api/admin/set-role', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId, ramal: ramalTemp }) })
+      const headers = await authHeaders()
+      const res = await fetch('/api/admin/set-role', { method:'POST', headers, body: JSON.stringify({ userId, ramal: ramalTemp }) })
       const data = await res.json()
       if (data.ok) {
         setMsgRamal(m => ({...m, [userId]: '✅ Ramal salvo!'}))

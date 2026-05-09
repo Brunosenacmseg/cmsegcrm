@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+
+let _sa: ReturnType<typeof createClient> | null = null
+function supabaseAdmin() {
+  if (!_sa) _sa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  return _sa
+}
+
+async function exigirAutenticado(req: NextRequest): Promise<{ ok: true; userId: string } | { ok: false; status: number; msg: string }> {
+  const auth = req.headers.get('authorization') || ''
+  const token = auth.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return { ok: false, status: 401, msg: 'não autenticado' }
+  const { data, error } = await supabaseAdmin().auth.getUser(token)
+  if (error || !data?.user) return { ok: false, status: 401, msg: 'sessão inválida' }
+  return { ok: true, userId: data.user.id }
+}
 
 type EvoResp = { ok: boolean; status: number; data: any }
 
@@ -47,10 +63,13 @@ function mensagemErro(r: EvoResp): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await exigirAutenticado(request)
+    if (!guard.ok) return NextResponse.json({ error: guard.msg }, { status: guard.status })
+
     const body = await request.json()
     const { action, instance, ...params } = body
-    const evo_url = body.evo_url || process.env.EVOLUTION_API_URL
-    const api_key = body.api_key || process.env.EVOLUTION_API_KEY
+    const evo_url = process.env.EVOLUTION_API_URL || body.evo_url
+    const api_key = process.env.EVOLUTION_API_KEY || body.api_key
     if (!evo_url || !api_key) {
       return NextResponse.json({ error: 'Evolution API não configurada' }, { status: 500 })
     }

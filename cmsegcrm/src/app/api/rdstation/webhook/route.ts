@@ -231,8 +231,14 @@ function detectarEvento(body: any): string {
 
 // ─── Handler principal ─────────────────────────────────────
 export async function POST(request: NextRequest) {
-  // Validar secret — aceita ?secret=X (v1), x-webhook-secret, Authorization Bearer X, ou header customizado
+  // Validar secret — aceita ?secret=X (v1), x-webhook-secret, Authorization Bearer X, ou header customizado.
+  // Fail-closed: se o secret não estiver configurado no servidor, recusamos para não aceitar
+  // qualquer POST anônimo na rota.
   const expected = process.env.RDSTATION_WEBHOOK_SECRET
+  if (!expected) {
+    console.error('[rdstation/webhook] RDSTATION_WEBHOOK_SECRET não configurado — recusando.')
+    return NextResponse.json({ error: 'Webhook não configurado' }, { status: 503 })
+  }
   const auth = request.headers.get('authorization') || ''
   const bearer = auth.replace(/^Bearer\s+/i, '').trim()
   const provided = request.nextUrl.searchParams.get('secret')
@@ -240,7 +246,13 @@ export async function POST(request: NextRequest) {
     || request.headers.get('x-auth-key')
     || bearer
     || ''
-  if (expected && provided !== expected) {
+  let secretOk = false
+  try {
+    const a = Buffer.from(provided)
+    const b = Buffer.from(expected)
+    secretOk = a.length === b.length && require('crypto').timingSafeEqual(a, b)
+  } catch { secretOk = false }
+  if (!secretOk) {
     return NextResponse.json({ error: 'Secret inválido' }, { status: 401 })
   }
 

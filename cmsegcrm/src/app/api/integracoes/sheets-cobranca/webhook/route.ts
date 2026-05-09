@@ -24,9 +24,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ba.length !== bb.length) return false
+  return crypto.timingSafeEqual(ba, bb)
+}
 
 let _sa: any = null
 function supabaseAdmin(): any {
@@ -103,7 +111,7 @@ export async function POST(req: NextRequest) {
   if (!cfg.webhook_token) {
     return NextResponse.json({ ok: false, error: 'webhook_token não configurado' }, { status: 503 })
   }
-  if (token !== cfg.webhook_token) {
+  if (!timingSafeEqualStr(token, String(cfg.webhook_token))) {
     return NextResponse.json({ ok: false, error: 'Token inválido' }, { status: 401 })
   }
 

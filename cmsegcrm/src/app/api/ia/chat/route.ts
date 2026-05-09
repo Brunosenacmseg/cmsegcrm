@@ -11,7 +11,14 @@ function supabaseAdmin() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { mensagens, user_id } = await request.json()
+    const auth = request.headers.get('authorization') || ''
+    const token = auth.replace(/^Bearer\s+/i, '').trim()
+    if (!token) return NextResponse.json({ error: 'não autenticado' }, { status: 401 })
+    const { data: u, error: errU } = await supabaseAdmin().auth.getUser(token)
+    if (errU || !u?.user) return NextResponse.json({ error: 'sessão inválida' }, { status: 401 })
+    const userId = u.user.id
+
+    const { mensagens } = await request.json()
 
     const [
       { data: profile },
@@ -21,12 +28,12 @@ export async function POST(request: NextRequest) {
       { data: clientesRaw },
       { count: totalClientes },
     ] = await Promise.all([
-      supabaseAdmin().from('users').select('nome,role').eq('id', user_id).single(),
-      supabaseAdmin().from('negocios').select('etapa,produto,premio,clientes(nome)').eq('vendedor_id', user_id).not('etapa', 'in', '("Fechado Ganho","Fechado Perdido")').limit(10),
-      supabaseAdmin().from('tarefas').select('titulo,prazo,status').eq('responsavel_id', user_id).eq('status', 'pendente').order('prazo', { ascending: true }).limit(5),
-      supabaseAdmin().from('metas').select('titulo,tipo,valor_meta,valor_atual,periodo_fim').eq('user_id', user_id).eq('status', 'ativa'),
-      supabaseAdmin().from('clientes').select('nome,tipo').eq('vendedor_id', user_id).order('created_at', { ascending: false }).limit(5),
-      supabaseAdmin().from('clientes').select('*', { count: 'exact', head: true }).eq('vendedor_id', user_id),
+      supabaseAdmin().from('users').select('nome,role').eq('id', userId).single(),
+      supabaseAdmin().from('negocios').select('etapa,produto,premio,clientes(nome)').eq('vendedor_id', userId).not('etapa', 'in', '("Fechado Ganho","Fechado Perdido")').limit(10),
+      supabaseAdmin().from('tarefas').select('titulo,prazo,status').eq('responsavel_id', userId).eq('status', 'pendente').order('prazo', { ascending: true }).limit(5),
+      supabaseAdmin().from('metas').select('titulo,tipo,valor_meta,valor_atual,periodo_fim').eq('user_id', userId).eq('status', 'ativa'),
+      supabaseAdmin().from('clientes').select('nome,tipo').eq('vendedor_id', userId).order('created_at', { ascending: false }).limit(5),
+      supabaseAdmin().from('clientes').select('*', { count: 'exact', head: true }).eq('vendedor_id', userId),
     ])
 
     const negocios = (negociosRaw || []) as any[]
@@ -84,12 +91,13 @@ ${clientes.map((c: any) => `- ${c.nome} (${c.tipo})`).join('\n') || 'Nenhum clie
           ...mensagens,
         ],
       }),
+      signal: AbortSignal.timeout(30_000),
     })
 
     const data = await response.json()
 
     if (!response.ok) {
-      console.error('[IA] OpenAI error:', data)
+      console.error('[IA] OpenAI error:', data?.error?.message || response.status)
       return NextResponse.json({ error: data.error?.message || 'Erro na API do OpenAI' }, { status: 500 })
     }
 
@@ -97,7 +105,7 @@ ${clientes.map((c: any) => `- ${c.nome} (${c.tipo})`).join('\n') || 'Nenhum clie
     return NextResponse.json({ resposta })
 
   } catch (err: any) {
-    console.error('[IA] Erro:', err)
+    console.error('[IA] Erro:', err?.message)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

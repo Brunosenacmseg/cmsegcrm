@@ -6,6 +6,7 @@
 //     Authorization: Bearer <CRON_SECRET> (opcional — só obrigatório se a env existir)
 
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { supabaseAdmin, dispararWebhooksSaida, EventoIntegrador } from '@/lib/integrador'
 
 export const dynamic = 'force-dynamic'
@@ -14,13 +15,23 @@ export const maxDuration = 60
 const MAX_TENTATIVAS = 5
 const LOTE = 50
 
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ba.length !== bb.length) return false
+  return crypto.timingSafeEqual(ba, bb)
+}
+
 export async function POST(req: NextRequest) {
   const cronSecret = process.env.INTEGRADOR_CRON_SECRET
-  if (cronSecret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth.replace(/^Bearer\s+/i, '').trim() !== cronSecret) {
-      return NextResponse.json({ ok: false, erro: 'não autorizado' }, { status: 401 })
-    }
+  if (!cronSecret) {
+    console.error('[integrador/cron] INTEGRADOR_CRON_SECRET não configurado — recusando.')
+    return NextResponse.json({ ok: false, erro: 'cron secret não configurado' }, { status: 503 })
+  }
+  const auth = req.headers.get('authorization') || ''
+  const provided = auth.replace(/^Bearer\s+/i, '').trim()
+  if (!timingSafeEqualStr(provided, cronSecret)) {
+    return NextResponse.json({ ok: false, erro: 'não autorizado' }, { status: 401 })
   }
   const sa = supabaseAdmin()
   const { data: pend, error } = await sa

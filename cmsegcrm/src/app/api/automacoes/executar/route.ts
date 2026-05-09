@@ -142,6 +142,23 @@ export async function POST(request: NextRequest) {
   const { data: negocio } = await supabaseAdmin().from('negocios').select('*').eq('id', negocioId).maybeSingle()
   if (!negocio) return NextResponse.json({ error: 'negócio não encontrado' }, { status: 404 })
 
+  // Ownership: o usuário precisa ser admin/financeiro, dono do negócio,
+  // ou líder de uma equipe à qual o vendedor responsável pertença.
+  const { data: prof } = await supabaseAdmin().from('users').select('role').eq('id', user.id).single()
+  const role = (prof as any)?.role
+  let permitido = role === 'admin' || role === 'financeiro' || (negocio as any).vendedor_id === user.id
+  if (!permitido && role === 'lider' && (negocio as any).vendedor_id) {
+    const { data: equipes } = await supabaseAdmin().from('equipes').select('id').eq('lider_id', user.id)
+    const equipeIds = ((equipes as any[]) || []).map(e => e.id)
+    if (equipeIds.length) {
+      const { data: membros } = await supabaseAdmin()
+        .from('equipe_membros').select('user_id').in('equipe_id', equipeIds)
+      const ids = ((membros as any[]) || []).map(m => m.user_id)
+      permitido = ids.includes((negocio as any).vendedor_id)
+    }
+  }
+  if (!permitido) return NextResponse.json({ error: 'sem permissão para executar automações neste negócio' }, { status: 403 })
+
   // Carrega automações ativas que batem com o trigger e o funil
   const { data: automacoes } = await supabaseAdmin().from('automacoes').select('*')
     .eq('ativo', true).eq('trigger', trigger)

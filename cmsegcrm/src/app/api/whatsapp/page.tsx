@@ -3,6 +3,14 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
+async function wppHeaders(supabase: any): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession()
+  const tok = data?.session?.access_token
+  return tok
+    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tok}` }
+    : { 'Content-Type': 'application/json' }
+}
+
 export default function WhatsAppPage() {
   const supabase = createClient()
   const router   = useRouter()
@@ -87,7 +95,7 @@ export default function WhatsAppPage() {
     if (!instancia) return
     const res = await fetch('/api/whatsapp/action', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await wppHeaders(supabase),
       body: JSON.stringify({ action:'status', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome })
     })
     const data = await res.json()
@@ -108,7 +116,7 @@ export default function WhatsAppPage() {
     for (let i = 0; i < 10; i++) {
       const res = await fetch('/api/whatsapp/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await wppHeaders(supabase),
         body: JSON.stringify({ action:'qrcode', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome })
       })
       const data = await res.json()
@@ -132,7 +140,7 @@ export default function WhatsAppPage() {
     if (!instancia || !confirm('Desconectar WhatsApp?')) return
     await fetch('/api/whatsapp/action', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await wppHeaders(supabase),
       body: JSON.stringify({ action:'desconectar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome })
     })
     await supabase.from('whatsapp_instancias').update({ status:'disconnected', qrcode:null }).eq('id', instancia.id)
@@ -158,7 +166,7 @@ export default function WhatsAppPage() {
     // Criar instância na Evolution API via server-side
     const res = await fetch('/api/whatsapp/action', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await wppHeaders(supabase),
       body: JSON.stringify({ action:'criar_instancia', evo_url:config.evo_url, api_key:config.api_key, instance:nomeInst })
     })
     const data = await res.json()
@@ -174,7 +182,7 @@ export default function WhatsAppPage() {
 
     const res = await fetch('/api/whatsapp/action', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await wppHeaders(supabase),
       body: JSON.stringify({
         action:'enviar', evo_url:instancia.evolution_url,
         api_key:instancia.api_key, instance:instancia.nome,

@@ -9,19 +9,24 @@ export interface UserProfile {
   role: UserRole
 }
 
-let cachedProfile: UserProfile | null = null
+// Cache por id de usuário (em vez de cache global single-slot): evita que
+// um perfil "vaze" para outra requisição quando esta lib é carregada em
+// runtime compartilhado (Server Components, edge). Best-effort para
+// reduzir round-trips no client; sempre re-consulta se id muda.
+const profileById = new Map<string, UserProfile>()
 
 export async function getUserProfile(): Promise<UserProfile | null> {
-  if (cachedProfile) return cachedProfile
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
+  const cached = profileById.get(user.id)
+  if (cached) return cached
   const { data } = await supabase.from('users').select('*').eq('id', user.id).single()
-  if (data) cachedProfile = data
-  return data
+  if (data) profileById.set(user.id, data as UserProfile)
+  return (data as UserProfile) || null
 }
 
-export function clearProfileCache() { cachedProfile = null }
+export function clearProfileCache() { profileById.clear() }
 
 // Retorna IDs visíveis para o usuário atual
 export async function getVisibleUserIds(): Promise<string[] | null> {

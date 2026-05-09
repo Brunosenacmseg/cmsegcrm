@@ -64,9 +64,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, erro: 'assinatura inválida' }, { status: 403 })
   }
   if (verif === null) {
-    // Sem app_secret configurado: aceita pra não bloquear setups iniciais,
-    // mas avisa em log. Em produção SEMPRE configure app_secret.
-    console.warn('[meta-webhook] app_secret não configurado — aceitando POST sem validar HMAC. Configure em /dashboard/integracoes/meta.')
+    // Sem app_secret configurado: NUNCA aceitar POST anônimo do Meta — é a
+    // única defesa contra injeção de leads falsos. Configure em
+    // /dashboard/integracoes/meta ou via env META_APP_SECRET.
+    console.error('[meta-webhook] app_secret não configurado — recusando POST.')
+    return NextResponse.json({ ok: false, erro: 'webhook não configurado (app_secret ausente)' }, { status: 503 })
   }
 
   // Estrutura típica: { object: 'page', entry: [{ changes: [{ field: 'leadgen', value: { leadgen_id, ad_id, ... } }] }] }

@@ -12,21 +12,24 @@
 // recebam 200.
 
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { supabaseAdmin, aplicarMapa, registrarLog } from '@/lib/integrador'
 import { upsertCliente, criarNegocio, criarTarefa, criarNota } from '@/lib/integrador-upsert'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-export async function GET(_req: NextRequest, ctx: { params: { token: string } }) {
-  const sa = supabaseAdmin()
-  const { data } = await sa
-    .from('integracoes_webhooks_in')
-    .select('id, ativo')
-    .eq('token', ctx.params.token)
-    .maybeSingle()
-  if (!data) return NextResponse.json({ ok: false, erro: 'Webhook não encontrado' }, { status: 404 })
-  return NextResponse.json({ ok: true, ativo: !!data.ativo })
+// Sempre 200 — alguns provedores (Meta, Slack) fazem GET para verificação.
+// Não retornamos se o token existe ou não para evitar enumeração.
+export async function GET() {
+  return NextResponse.json({ ok: true })
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ba.length !== bb.length) return false
+  return crypto.timingSafeEqual(ba, bb)
 }
 
 export async function POST(req: NextRequest, ctx: { params: { token: string } }) {
@@ -47,13 +50,19 @@ export async function POST(req: NextRequest, ctx: { params: { token: string } })
     return NextResponse.json({ ok: false, erro: 'payload inválido' }, { status: 400 })
   }
 
-  const { data: wh } = await sa
+  // Carrega todos os webhooks ativos e faz comparação timing-safe contra o token recebido,
+  // evitando que tempo de resposta vaze info sobre tokens válidos.
+  const { data: webhooks } = await sa
     .from('integracoes_webhooks_in')
-    .select('id, conexao_id, entidade_alvo, funil_id, etapa_inicial, responsavel_id, mapa_campos, ativo')
-    .eq('token', ctx.params.token)
-    .maybeSingle()
+    .select('id, conexao_id, entidade_alvo, funil_id, etapa_inicial, responsavel_id, mapa_campos, ativo, token')
+    .eq('ativo', true)
+  let wh: any = null
+  for (const w of (webhooks || []) as any[]) {
+    if (typeof w.token === 'string' && timingSafeEqualStr(w.token, ctx.params.token)) { wh = w; break }
+  }
   if (!wh) {
-    await registrarLog({ direcao: 'in', recurso: `webhook_in:token=${ctx.params.token}`, status: 'erro', http_status: 404, payload, erro: 'webhook não encontrado' })
+    // Não logar o token completo recebido, evita PII em logs.
+    await registrarLog({ direcao: 'in', recurso: `webhook_in:token=invalid`, status: 'erro', http_status: 404, payload, erro: 'webhook não encontrado' })
     return NextResponse.json({ ok: false, erro: 'Webhook não encontrado' }, { status: 404 })
   }
   if (!wh.ativo) {
