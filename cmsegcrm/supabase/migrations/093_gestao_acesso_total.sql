@@ -29,7 +29,7 @@ as $$
     from public.equipe_membros em
     join public.equipes e on e.id = em.equipe_id
     where em.user_id = auth.uid()
-      and public.pt_norm(e.nome) in (
+      and trim(public.pt_norm(e.nome)) in (
         public.pt_norm('GESTÃO'),
         public.pt_norm('GESTAO'),
         public.pt_norm('EQUIPE GESTÃO'),
@@ -39,7 +39,7 @@ as $$
     select 1
     from public.equipes e
     where e.lider_id = auth.uid()
-      and public.pt_norm(e.nome) in (
+      and trim(public.pt_norm(e.nome)) in (
         public.pt_norm('GESTÃO'),
         public.pt_norm('GESTAO'),
         public.pt_norm('EQUIPE GESTÃO'),
