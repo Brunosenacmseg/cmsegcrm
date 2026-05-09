@@ -67,6 +67,8 @@ export default function FormulariosMetaPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState<string | null>(null)
   const [statusMeta, setStatusMeta] = useState<any>(null)
+  const [diagnostico, setDiagnostico] = useState<any>(null)
+  const [diagnosticando, setDiagnosticando] = useState(false)
   // picker aberto: identifica formulário + linha (coluna da negociação)
   const [picker, setPicker] = useState<{ form_id: string; col: string } | null>(null)
 
@@ -174,6 +176,22 @@ export default function FormulariosMetaPage() {
     } finally { setSalvando(null) }
   }
 
+  async function rodarDiagnostico() {
+    setDiagnosticando(true)
+    setDiagnostico(null)
+    try {
+      const r = await fetch('/api/meta/diagnose', { headers: await authHeaders() })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        alert('❌ ' + (j.error || `HTTP ${r.status}`))
+        return
+      }
+      setDiagnostico(j)
+    } catch (e: any) {
+      alert('❌ ' + (e?.message || 'erro de rede'))
+    } finally { setDiagnosticando(false) }
+  }
+
   async function enviarLeadTeste(form: Form) {
     setSalvando(form.form_id)
     try {
@@ -232,7 +250,90 @@ export default function FormulariosMetaPage() {
         <button onClick={carregarForms} style={{padding:'8px 14px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text)',cursor:'pointer',fontSize:13}}>
           🔄 Atualizar
         </button>
+        <button onClick={rodarDiagnostico} disabled={diagnosticando}
+          style={{padding:'8px 14px',borderRadius:8,border:'1px solid var(--gold)',background:'var(--gold-soft)',color:'var(--gold)',cursor:diagnosticando?'wait':'pointer',fontSize:13,fontWeight:600}}>
+          {diagnosticando ? '⏳ Diagnosticando…' : '🔬 Diagnosticar webhook'}
+        </button>
       </div>
+
+      {diagnostico && (
+        <div onClick={() => setDiagnostico(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(3px)',zIndex:900,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'40px 20px',overflow:'auto'}}>
+          <div onClick={(e) => e.stopPropagation()} className="card" style={{maxWidth:780,width:'100%',padding:24,fontSize:13,lineHeight:1.55}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>🔬 Diagnóstico Meta → CRM</div>
+              <button onClick={() => setDiagnostico(null)} style={{background:'none',border:'none',color:'var(--text-muted)',fontSize:18,cursor:'pointer'}}>✕</button>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{fontWeight:600,marginBottom:6}}>Configuração local</div>
+              <div style={{paddingLeft:8,color:'var(--text-muted)',fontSize:12}}>
+                Page: <code>{diagnostico.config?.page_id || '—'}</code> · App: <code>{diagnostico.config?.app_id || '—'}</code> · Ad Account: <code>{diagnostico.config?.ad_account_id || '—'}</code><br/>
+                Page token: {diagnostico.config?.tem_page_access_token ? '✅' : '❌'} · User token: {diagnostico.config?.tem_user_access_token ? '✅' : '❌'} · webhook_subscribed (banco): {diagnostico.config?.webhook_subscribed_local ? '✅' : '❌'}
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{fontWeight:600,marginBottom:6}}>1️⃣ Page subscribed_apps (Meta confirma a inscrição?)</div>
+              {!diagnostico.subscribed_apps?.ok ? (
+                <div style={{paddingLeft:8,color:'var(--red)',fontSize:12}}>❌ {diagnostico.subscribed_apps?.erro || diagnostico.subscribed_apps?.motivo || 'falhou'}</div>
+              ) : (
+                <div style={{paddingLeft:8,fontSize:12}}>
+                  <div>{diagnostico.subscribed_apps.nosso_app_inscrito ? '✅' : '❌'} Nosso app está inscrito na page</div>
+                  <div>{diagnostico.subscribed_apps.leadgen_subscribed ? '✅' : '❌'} Campo <code>leadgen</code> está nas <code>subscribed_fields</code></div>
+                  {diagnostico.subscribed_apps.nosso_app && (
+                    <div style={{color:'var(--text-muted)',marginTop:4}}>App: {diagnostico.subscribed_apps.nosso_app.name} · fields: {(diagnostico.subscribed_apps.nosso_app.subscribed_fields || []).join(', ') || '∅'}</div>
+                  )}
+                  {diagnostico.subscribed_apps.outros_apps?.length > 0 && (
+                    <div style={{color:'var(--text-muted)',marginTop:4}}>Outros apps inscritos: {diagnostico.subscribed_apps.outros_apps.map((a: any) => a.name).join(', ')}</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{fontWeight:600,marginBottom:6}}>2️⃣ Forms ativos × leads recebidos no Meta vs CRM</div>
+              <div style={{paddingLeft:8,fontSize:12,color:'var(--text-muted)'}}>
+                {(diagnostico.forms || []).length === 0 && <div>Nenhum form ativo mapeado.</div>}
+                {(diagnostico.forms || []).map((f: any) => (
+                  <div key={f.form_id} style={{marginBottom:6,paddingBottom:6,borderBottom:'1px solid var(--border-soft)'}}>
+                    <div style={{color:'var(--text)'}}>
+                      <code>{f.form_id}</code> {f.form_nome ? `· ${f.form_nome}` : ''}
+                    </div>
+                    {f.ok === false ? (
+                      <div style={{color:'var(--red)'}}>❌ Meta: {f.erro}</div>
+                    ) : (
+                      <div>
+                        Meta (últimos 5): {f.leads_no_meta ?? '—'} · CRM: {f.leads_no_crm ?? '—'} · Último lead Meta: {f.ultimo_lead_meta || '—'}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{fontWeight:600,marginBottom:6}}>3️⃣ Campanhas no ad account</div>
+              {!diagnostico.campanhas?.ok ? (
+                <div style={{paddingLeft:8,color:'var(--red)',fontSize:12}}>❌ {diagnostico.campanhas?.erro || diagnostico.campanhas?.motivo || 'falhou'}</div>
+              ) : (
+                <div style={{paddingLeft:8,fontSize:12,color:'var(--text-muted)'}}>
+                  <div>Total: {diagnostico.campanhas.total} · Ativas: {diagnostico.campanhas.ativas}</div>
+                  {(diagnostico.campanhas.amostra || []).slice(0, 5).map((c: any) => (
+                    <div key={c.id} style={{marginTop:2}}><code>{c.effective_status || c.status}</code> · {c.name}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{marginBottom:8}}>
+              <div style={{fontWeight:600,marginBottom:6}}>4️⃣ Resumo do banco</div>
+              <div style={{paddingLeft:8,fontSize:12,color:'var(--text-muted)'}}>
+                meta_leads total: {diagnostico.crm?.leads_total} · testes: {diagnostico.crm?.leads_teste} · reais: {diagnostico.crm?.leads_reais}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{flex:1,overflow:'auto',padding:'24px 28px'}}>
         <div style={{maxWidth:1100,margin:'0 auto'}}>
