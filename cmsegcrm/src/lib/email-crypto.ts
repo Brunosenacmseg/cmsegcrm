@@ -22,13 +22,23 @@ export function encryptSecret(plain: string): string {
 }
 
 export function decryptSecret(payload: string): string {
+  if (!payload) throw new Error('Senha do e-mail não cadastrada. Recadastre a senha em /dashboard/email.')
   const key = getKey()
   const parts = payload.split(':')
-  if (parts.length !== 4 || parts[0] !== 'v1') throw new Error('ciphertext inválido')
-  const iv  = Buffer.from(parts[1], 'base64')
-  const tag = Buffer.from(parts[2], 'base64')
-  const data = Buffer.from(parts[3], 'base64')
-  const decipher = createDecipheriv('aes-256-gcm', key, iv)
-  decipher.setAuthTag(tag)
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8')
+  if (parts.length !== 4 || parts[0] !== 'v1') {
+    throw new Error('Senha em formato antigo. Recadastre a senha em /dashboard/email.')
+  }
+  try {
+    const iv  = Buffer.from(parts[1], 'base64')
+    const tag = Buffer.from(parts[2], 'base64')
+    const data = Buffer.from(parts[3], 'base64')
+    const decipher = createDecipheriv('aes-256-gcm', key, iv)
+    decipher.setAuthTag(tag)
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8')
+  } catch (err: any) {
+    // Erro mais comum: a EMAIL_ENC_KEY mudou no servidor e não consegue
+    // mais decifrar senhas salvas com a chave anterior. A solução é o
+    // próprio usuário recadastrar a senha em /dashboard/email.
+    throw new Error('Não foi possível ler a senha do e-mail (chave de criptografia mudou). Recadastre a senha em /dashboard/email.')
+  }
 }

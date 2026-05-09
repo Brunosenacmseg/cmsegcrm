@@ -62,6 +62,17 @@ function mensagemErro(r: EvoResp): string {
   return `Evolution API retornou status ${r.status}`
 }
 
+// Evolution v2 espera só dígitos no campo `number` (com DDI/DDD).
+// Remove @s.whatsapp.net, @g.us, espaços, parênteses, hífens. Se for número
+// brasileiro de celular sem DDI, prepende 55. Mantém grupo (16+ dígitos)
+// como está.
+function normalizarNumero(raw: string): string {
+  if (!raw) return ''
+  let n = String(raw).split('@')[0].replace(/\D/g, '')
+  if (n.length >= 10 && n.length <= 11 && !n.startsWith('55')) n = '55' + n
+  return n
+}
+
 export async function POST(request: NextRequest) {
   try {
     const guard = await exigirAutenticado(request)
@@ -118,18 +129,25 @@ export async function POST(request: NextRequest) {
 
       case 'enviar': {
         const { numero, mensagem } = params
+        const numClean = normalizarNumero(numero)
+        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendText/${instance}`, 'POST', {
-          number: numero,
+          number: numClean,
           text: mensagem,
         })
-        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
+        if (!r.ok) {
+          console.error('[wpp:enviar] falha', { instance, numero, numClean, status: r.status, data: r.data })
+          return NextResponse.json({ error: mensagemErro(r), numero_enviado: numClean, raw: r.data }, { status: 502 })
+        }
         return NextResponse.json(r.data)
       }
 
       case 'enviar_midia': {
         const { numero, base64, mimetype, nome_arquivo, caption } = params
+        const numClean = normalizarNumero(numero)
+        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendMedia/${instance}`, 'POST', {
-          number: numero,
+          number: numClean,
           mediatype: mimetype?.startsWith('image') ? 'image'
                     : mimetype?.startsWith('video') ? 'video'
                     : 'document',
@@ -138,28 +156,41 @@ export async function POST(request: NextRequest) {
           fileName: nome_arquivo,
           caption: caption || '',
         })
-        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
+        if (!r.ok) {
+          console.error('[wpp:enviar_midia] falha', { instance, numero, numClean, status: r.status })
+          return NextResponse.json({ error: mensagemErro(r), numero_enviado: numClean, raw: r.data }, { status: 502 })
+        }
         return NextResponse.json(r.data)
       }
 
       case 'enviar_audio': {
         const { numero, base64 } = params
+        const numClean = normalizarNumero(numero)
+        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendWhatsAppAudio/${instance}`, 'POST', {
-          number: numero,
+          number: numClean,
           audio: base64,
           encoding: true,
         })
-        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
+        if (!r.ok) {
+          console.error('[wpp:enviar_audio] falha', { instance, numero, numClean, status: r.status })
+          return NextResponse.json({ error: mensagemErro(r), numero_enviado: numClean, raw: r.data }, { status: 502 })
+        }
         return NextResponse.json(r.data)
       }
 
       case 'enviar_sticker': {
         const { numero, base64 } = params
+        const numClean = normalizarNumero(numero)
+        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendSticker/${instance}`, 'POST', {
-          number: numero,
+          number: numClean,
           sticker: base64,
         })
-        if (!r.ok) return NextResponse.json({ error: mensagemErro(r), raw: r.data }, { status: 502 })
+        if (!r.ok) {
+          console.error('[wpp:enviar_sticker] falha', { instance, numero, numClean, status: r.status })
+          return NextResponse.json({ error: mensagemErro(r), numero_enviado: numClean, raw: r.data }, { status: 502 })
+        }
         return NextResponse.json(r.data)
       }
 
