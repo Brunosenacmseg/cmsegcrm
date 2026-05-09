@@ -201,6 +201,9 @@ export async function POST(req: NextRequest) {
       const equipeNome = s(r['Equipes do responsável'] ?? r['Equipes do responsavel'])
       const equipeIdNovo = equipeNome ? equipePorNome[equipeNome.toLowerCase()] || null : null
 
+      const placaPlanilha  = s(r['PLACA'] ?? r['Placa'] ?? r['placa'])
+      const modeloPlanilha = s(r['MODELO DO VEICULO'] ?? r['Modelo do veículo'] ?? r['Modelo do veiculo'])
+
       const valoresPlanilha: Record<string, any> = {
         empresa:               s(r['Empresa']),
         etapa:                 s(r['Etapa']),
@@ -224,6 +227,12 @@ export async function POST(req: NextRequest) {
         cargo_contato:         s(r['Cargo']),
         email_negocio:         s(r['Email'] ?? r['E-mail'])?.toLowerCase() || null,
         telefone_negocio:      s(r['Telefone'] ?? r['Telefone 1'] ?? r['Celular'] ?? r['Fone'] ?? r['WhatsApp']) || null,
+        // Placa/Modelo tambem entram nas colunas dedicadas (alem do
+        // custom_fields). Sem isso, ficha do cliente/exports/renovacoes
+        // (que leem n.placa) ficavam vazios.
+        placa:                 placaPlanilha,
+        placa_veiculo:         placaPlanilha,
+        modelo_veiculo:        modeloPlanilha,
       }
 
       // Custom fields vindos da planilha

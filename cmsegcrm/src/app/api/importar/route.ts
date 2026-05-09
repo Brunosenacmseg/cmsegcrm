@@ -303,7 +303,7 @@ async function importarNegocios(linhas: any[]) {
   const negocioPorTitCpf:  Record<string, any> = {}
   // Seleciona todas as colunas que o payload de import preenche, pra
   // permitir merge não-destrutivo (só preenche o que está vazio).
-  const COLS_NEG = 'id, rd_id, titulo, cpf_cnpj, cliente_id, funil_id, etapa, produto, seguradora, seguradora_atual, premio, valor_unico, valor_recorrente, comissao_pct, comissao_valor, cep, fonte, fonte_origem, campanha, empresa, cargo_contato, vencimento, previsao_fechamento, data_primeiro_contato, data_ultimo_contato, data_proxima_tarefa, pausada, anotacao_motivo_perda, placa_veiculo, modelo_veiculo, rastreador, tipo_seguro, operadora, tipo_cnpj, funcionario_clt, particular, possui_plano, plano_atual, motivo_troca_plano, mensalidade_atual, idade_beneficiarios, possui_hospital_pref, qual_hospital, cpf_2, cep_negocio, email_negocio, telefone_negocio, status, data_fechamento, motivo_perda, qualificacao, vendedor_id, equipe_id, custom_fields, obs'
+  const COLS_NEG = 'id, rd_id, titulo, cpf_cnpj, cliente_id, funil_id, etapa, produto, seguradora, seguradora_atual, premio, valor_unico, valor_recorrente, comissao_pct, comissao_valor, cep, fonte, fonte_origem, campanha, empresa, cargo_contato, vencimento, previsao_fechamento, data_primeiro_contato, data_ultimo_contato, data_proxima_tarefa, pausada, anotacao_motivo_perda, placa, placa_veiculo, modelo_veiculo, rastreador, tipo_seguro, operadora, tipo_cnpj, funcionario_clt, particular, possui_plano, plano_atual, motivo_troca_plano, mensalidade_atual, idade_beneficiarios, possui_hospital_pref, qual_hospital, cpf_2, cep_negocio, email_negocio, telefone_negocio, status, data_fechamento, motivo_perda, qualificacao, vendedor_id, equipe_id, custom_fields, obs'
   if (rdIdsLote.length) {
     for (let i = 0; i < rdIdsLote.length; i += 500) {
       const chunk = rdIdsLote.slice(i, i + 500)
@@ -442,6 +442,13 @@ async function importarNegocios(linhas: any[]) {
         const kn = k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
         if (!camposConhecidos.has(kn)) customFields[k] = v
       }
+      // O editor do kanban renderiza Placa/Modelo a partir de custom_fields
+      // (chaves cadastradas em campos_personalizados). Replica os valores
+      // pra que o card abra preenchido — alem das colunas dedicadas.
+      const placaVal  = s(r.placa)
+      const modeloVal = s(r.modelo || r['modelo do veículo'] || r['modelo do veiculo'])
+      if (placaVal)  customFields['placa']          = placaVal
+      if (modeloVal) customFields['modelo_veiculo'] = modeloVal
 
       const payload: any = {
         titulo,
@@ -471,9 +478,11 @@ async function importarNegocios(linhas: any[]) {
         data_proxima_tarefa:   combinaDataHora(r.data_proxima_tarefa   || r['data da próxima tarefa'] || r['data da proxima tarefa'], r.hora_proxima_tarefa || r['hora da próxima tarefa']),
         pausada: parseBoolOpt(r.pausada) ?? false,
         anotacao_motivo_perda: s(r.anotacao_motivo_perda || r['anotação do motivo de perda']),
-        // Veículo
-        placa_veiculo:  s(r.placa),
-        modelo_veiculo: s(r.modelo || r['modelo do veículo'] || r['modelo do veiculo']),
+        // Veículo. Grava em `placa` (coluna legada lida pelas telas de
+        // cliente/renovações/exports) e `placa_veiculo` (índice/integração).
+        placa:          placaVal,
+        placa_veiculo:  placaVal,
+        modelo_veiculo: modeloVal,
         rastreador:     s(r.rastreador),
         // Saúde / plano
         tipo_seguro: s(r['tipo do seguro'] || r.tipo_seguro),
