@@ -257,17 +257,28 @@ export default function FormulariosMetaPage() {
       </div>
 
       {diagnostico && (
-        <div onClick={() => setDiagnostico(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(3px)',zIndex:900,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'40px 20px',overflow:'auto'}}>
-          <div onClick={(e) => e.stopPropagation()} className="card" style={{maxWidth:780,width:'100%',padding:24,fontSize:13,lineHeight:1.55}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>🔬 Diagnóstico Meta → CRM</div>
-              <button onClick={() => setDiagnostico(null)} style={{background:'none',border:'none',color:'var(--text-muted)',fontSize:18,cursor:'pointer'}}>✕</button>
+        <div onClick={() => setDiagnostico(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(3px)',zIndex:900,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'20px 12px',overflow:'auto'}}>
+          <div onClick={(e) => e.stopPropagation()} className="card" style={{maxWidth:780,width:'100%',padding:20,fontSize:13,lineHeight:1.55,overflowWrap:'anywhere',wordBreak:'break-word'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1,minWidth:0}}>🔬 Diagnóstico Meta → CRM</div>
+              <button
+                onClick={() => {
+                  try {
+                    navigator.clipboard.writeText(JSON.stringify(diagnostico, null, 2))
+                    alert('JSON copiado para a área de transferência. Cola no chat.')
+                  } catch { alert('Não foi possível copiar — abra o console do navegador.') }
+                }}
+                style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--gold)',background:'var(--gold-soft)',color:'var(--gold)',cursor:'pointer',fontSize:12,fontWeight:600}}
+              >📋 Copiar JSON</button>
+              <button onClick={() => setDiagnostico(null)} style={{background:'none',border:'none',color:'var(--text-muted)',fontSize:18,cursor:'pointer',padding:'4px 8px'}}>✕</button>
             </div>
 
             <div style={{marginBottom:16}}>
               <div style={{fontWeight:600,marginBottom:6}}>Configuração local</div>
               <div style={{paddingLeft:8,color:'var(--text-muted)',fontSize:12}}>
-                Page: <code>{diagnostico.config?.page_id || '—'}</code> · App: <code>{diagnostico.config?.app_id || '—'}</code> · Ad Account: <code>{diagnostico.config?.ad_account_id || '—'}</code><br/>
+                Page: <code>{diagnostico.config?.page_id || '—'}</code><br/>
+                App: <code>{diagnostico.config?.app_id || '—'}</code><br/>
+                Ad Account: <code>{diagnostico.config?.ad_account_id || '—'}</code><br/>
                 Page token: {diagnostico.config?.tem_page_access_token ? '✅' : '❌'} · User token: {diagnostico.config?.tem_user_access_token ? '✅' : '❌'} · webhook_subscribed (banco): {diagnostico.config?.webhook_subscribed_local ? '✅' : '❌'}
               </div>
             </div>
@@ -295,15 +306,16 @@ export default function FormulariosMetaPage() {
               <div style={{paddingLeft:8,fontSize:12,color:'var(--text-muted)'}}>
                 {(diagnostico.forms || []).length === 0 && <div>Nenhum form ativo mapeado.</div>}
                 {(diagnostico.forms || []).map((f: any) => (
-                  <div key={f.form_id} style={{marginBottom:6,paddingBottom:6,borderBottom:'1px solid var(--border-soft)'}}>
+                  <div key={f.form_id} style={{marginBottom:8,paddingBottom:8,borderBottom:'1px solid var(--border-soft)'}}>
                     <div style={{color:'var(--text)'}}>
-                      <code>{f.form_id}</code> {f.form_nome ? `· ${f.form_nome}` : ''}
+                      <code>{f.form_id}</code>{f.form_nome ? <> · {f.form_nome}</> : null}
                     </div>
                     {f.ok === false ? (
-                      <div style={{color:'var(--red)'}}>❌ Meta: {f.erro}</div>
+                      <div style={{color:'var(--red)',whiteSpace:'pre-wrap'}}>❌ Meta: {f.erro}</div>
                     ) : (
                       <div>
-                        Meta (últimos 5): {f.leads_no_meta ?? '—'} · CRM: {f.leads_no_crm ?? '—'} · Último lead Meta: {f.ultimo_lead_meta || '—'}
+                        Meta (últimos 5): {f.leads_no_meta ?? '—'} · CRM: {f.leads_no_crm ?? '—'}<br/>
+                        Último lead Meta: {f.ultimo_lead_meta || '—'}
                       </div>
                     )}
                   </div>
@@ -314,7 +326,7 @@ export default function FormulariosMetaPage() {
             <div style={{marginBottom:16}}>
               <div style={{fontWeight:600,marginBottom:6}}>3️⃣ Campanhas no ad account</div>
               {!diagnostico.campanhas?.ok ? (
-                <div style={{paddingLeft:8,color:'var(--red)',fontSize:12}}>❌ {diagnostico.campanhas?.erro || diagnostico.campanhas?.motivo || 'falhou'}</div>
+                <div style={{paddingLeft:8,color:'var(--red)',fontSize:12,whiteSpace:'pre-wrap'}}>❌ {diagnostico.campanhas?.erro || diagnostico.campanhas?.motivo || 'falhou'}</div>
               ) : (
                 <div style={{paddingLeft:8,fontSize:12,color:'var(--text-muted)'}}>
                   <div>Total: {diagnostico.campanhas.total} · Ativas: {diagnostico.campanhas.ativas}</div>
@@ -331,6 +343,11 @@ export default function FormulariosMetaPage() {
                 meta_leads total: {diagnostico.crm?.leads_total} · testes: {diagnostico.crm?.leads_teste} · reais: {diagnostico.crm?.leads_reais}
               </div>
             </div>
+
+            <details style={{marginTop:16,fontSize:11,color:'var(--text-muted)'}}>
+              <summary style={{cursor:'pointer'}}>Ver JSON cru</summary>
+              <pre style={{marginTop:8,padding:10,background:'rgba(0,0,0,0.25)',borderRadius:6,overflowX:'auto',fontSize:10,lineHeight:1.4,maxHeight:300}}>{JSON.stringify(diagnostico, null, 2)}</pre>
+            </details>
           </div>
         </div>
       )}
