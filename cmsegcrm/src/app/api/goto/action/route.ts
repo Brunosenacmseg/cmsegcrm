@@ -4,7 +4,7 @@ import type { Database } from '@/lib/supabase/database.types'
 
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -17,7 +17,7 @@ async function getValidToken(userId: string) {
   const { data } = await supabaseAdmin().from('goto_tokens').select('*').eq('user_id', userId).single()
   if (!data) return null
   const now = new Date()
-  const expiresAt = new Date(data.expires_at)
+  const expiresAt = new Date(data.expires_at || '')
   if (now >= expiresAt && data.refresh_token) {
     try {
       const credentials = Buffer.from(`${process.env.GOTO_CLIENT_ID}:${process.env.GOTO_CLIENT_SECRET}`).toString('base64')

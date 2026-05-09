@@ -15,7 +15,7 @@ import type { Database } from '@/lib/supabase/database.types'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -263,12 +263,12 @@ async function bulkInsert(
   const TAM = 200
   for (let i = 0; i < payloads.length; i += TAM) {
     const chunk = payloads.slice(i, i + TAM)
-    const q = supabaseAdmin().from(tabela).upsert(chunk, conflito ? { onConflict: conflito, ignoreDuplicates: false } : undefined)
+    const q = (supabaseAdmin() as any).from(tabela).upsert(chunk, conflito ? { onConflict: conflito, ignoreDuplicates: false } : undefined)
     const { error } = await q
     if (error) {
       // fallback row-by-row
       for (const p of chunk) {
-        const q2 = supabaseAdmin().from(tabela).upsert(p, conflito ? { onConflict: conflito } : undefined)
+        const q2 = (supabaseAdmin() as any).from(tabela).upsert(p, conflito ? { onConflict: conflito } : undefined)
         const { error: e2 } = await q2
         if (e2) {
           stats.qtd_erros++
@@ -307,7 +307,7 @@ export async function POST(req: NextRequest) {
     tipo,
     qtd_lidos: linhas.length,
   }).select('id').single()
-  const importacaoId = imp?.id || null
+  const importacaoId = (imp?.id || null) as string
 
   const stats = { qtd_lidos: linhas.length, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
 

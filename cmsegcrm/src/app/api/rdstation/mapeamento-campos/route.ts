@@ -14,7 +14,7 @@ import { CAMPOS_RD_PADRAO, COLUNAS_LOCAIS_NEGOCIOS, RegraMapeamento } from '@/li
 
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    mapeamento: (data?.mapeamento as RegraMapeamento[]) || [],
+    mapeamento: ((data?.mapeamento as unknown) as RegraMapeamento[]) || [],
     atualizado_em: data?.atualizado_em || null,
     rd_fields: [...CAMPOS_RD_PADRAO, ...rdCustom],
     local_fields: COLUNAS_LOCAIS_NEGOCIOS,
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
     .upsert({
       id: 1,
       entidade: 'negocios',
-      mapeamento: limpas,
+      mapeamento: limpas as any,
       atualizado_em: new Date().toISOString(),
       atualizado_por: auth.userId,
     })

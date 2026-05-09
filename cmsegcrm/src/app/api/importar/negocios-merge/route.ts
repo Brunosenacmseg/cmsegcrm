@@ -17,7 +17,7 @@ import type { Database } from '@/lib/supabase/database.types'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     const chunks: string[][] = []
     for (let i = 0; i < titulos.length; i += 500) chunks.push(titulos.slice(i, i+500))
     for (const ch of chunks) {
-      const { data } = await supabaseAdmin
+      const { data } = await supabaseAdmin()
         .from('negocios')
         .select('*')
         .in('titulo', ch as any)
@@ -265,7 +265,7 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        const { error } = await supabaseAdmin().from('negocios').update(patch).eq('id', existing.id)
+        const { error } = await supabaseAdmin().from('negocios').update(patch as any).eq('id', existing.id)
         if (error) {
           stats.qtd_erros++
           if (stats.erros.length < 30) stats.erros.push(`${nome}: ${error.message?.slice(0,100)}`)

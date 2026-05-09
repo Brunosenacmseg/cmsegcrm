@@ -10,7 +10,7 @@ import { aplicarMapeamento, RegraMapeamento } from '@/lib/rdstation-mapeamento'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -247,7 +247,7 @@ async function gravarCacheRD(chave: string, valor: any) {
 }
 
 async function importarNegocios(token: string, from?: string, to?: string, incluirDetalhes = false) {
-  const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, erros: [] as string[] }
+  const stats = { qtd_lidos: 0, qtd_criados: 0, qtd_atualizados: 0, qtd_erros: 0, qtd_pulados: 0, erros: [] as string[] }
 
   // Mapeamento configurável (admin define em /dashboard/rdstation/mapeamento).
   // Carregado uma vez e aplicado por deal. Tolera tabela vazia/erro: mantém
@@ -257,7 +257,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
     const { data } = await supabaseAdmin()
       .from('rdstation_mapeamento_campos')
       .select('mapeamento').eq('id', 1).maybeSingle()
-    regrasMapeamento = (data?.mapeamento as RegraMapeamento[]) || []
+    regrasMapeamento = ((data?.mapeamento as unknown) as RegraMapeamento[]) || []
   } catch {}
 
   // ─── PIPELINES DO RD: nome + etapas (para resolver mismatch) ──
