@@ -378,7 +378,8 @@ async function obterOuCriarCliente(c: CamposPorto, dadosBrutos?: any): Promise<s
   if (dadosBrutos) payload.dados_porto = dadosBrutos
   const { data: novo, error } = await supabaseAdmin().from('clientes').insert(payload).select('id').single()
   if (error) {
-    console.warn('[Porto] erro criando cliente:', error.message, payload)
+    const { redactObj } = await import('@/lib/log-redact')
+    console.warn('[Porto] erro criando cliente:', error.message, redactObj(payload))
     return null
   }
   return novo?.id || null

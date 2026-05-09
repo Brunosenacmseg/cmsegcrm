@@ -41,12 +41,34 @@ export default function UploadAnexo({
   const [erro, setErro]           = useState('')
   const [drag, setDrag]           = useState(false)
 
+  // Whitelist de MIME aceitos: PDF, imagens comuns, Office, e áudio/vídeo
+  // que aparecem em mídias de WhatsApp. Qualquer coisa fora disso é bloqueada
+  // mesmo que a extensão pareça inocente — defesa de profundidade contra
+  // .exe renomeado pra .pdf, etc.
+  const MIMES_PERMITIDOS = new Set([
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain', 'text/csv',
+    'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm',
+    'video/mp4', 'video/quicktime', 'video/webm',
+  ])
+
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
     setErro('')
     for (const file of Array.from(files)) {
       if (file.size > maxMB * 1024 * 1024) {
         setErro(`Arquivo "${file.name}" excede ${maxMB}MB.`)
+        continue
+      }
+      if (file.type && !MIMES_PERMITIDOS.has(file.type)) {
+        setErro(`Tipo "${file.type || 'desconhecido'}" não permitido.`)
         continue
       }
       await uploadFile(file)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { redactObj } from '@/lib/log-redact'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +13,7 @@ function supabaseAdmin() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log('[GoTo Webhook]', JSON.stringify(body))
+    console.log('[GoTo Webhook]', JSON.stringify(redactObj(body)))
 
     const { metadata, state } = body
     if (!state || !metadata) return NextResponse.json({ ok: true })
