@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Compilação passa, mas há ~362 erros de tipagem do Supabase (data: never)
-  // por falta de Database types gerados. Não bloqueia o build até gerarmos.
-  typescript: { ignoreBuildErrors: true },
+  // ESLint segue ignorado durante build até passarmos no projeto.
+  // TypeScript: 0 erros — build estrito ativado.
   eslint: { ignoreDuringBuilds: true },
 }
 module.exports = nextConfig

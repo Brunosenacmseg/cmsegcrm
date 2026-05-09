@@ -12,7 +12,7 @@ import { GRAPH } from '@/lib/meta-graph'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -87,10 +87,10 @@ async function syncCampanhas(cfg: any) {
     }
     const { data: existente } = await supabaseAdmin().from('meta_campanhas').select('id').eq('meta_id', String(c.id)).maybeSingle()
     if (existente) {
-      await supabaseAdmin().from('meta_campanhas').update(payload).eq('id', existente.id)
+      await supabaseAdmin().from('meta_campanhas').update(payload as any).eq('id', existente.id)
       atualizadas++
     } else {
-      await supabaseAdmin().from('meta_campanhas').insert(payload)
+      await supabaseAdmin().from('meta_campanhas').insert(payload as any)
       criadas++
     }
   }

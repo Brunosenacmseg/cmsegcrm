@@ -5,7 +5,7 @@ import { redactObj } from '@/lib/log-redact'
 
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa

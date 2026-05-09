@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export const maxDuration = 30
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -45,10 +45,13 @@ export async function POST(request: NextRequest) {
   let cliente: any = null
   let negocio: any = null
   if (negocio_id) {
+    // Busca o negócio + meta_lead vinculado (se existir).
     const { data: neg } = await supabaseAdmin().from('negocios')
-      .select('id, cliente_id, meta_lead_id, etapa, funil_id, funis(nome)')
-      .eq('id', negocio_id).maybeSingle()
+      .select('id, cliente_id, etapa, funil_id, funis(nome), meta_leads(meta_lead_id)')
+      .eq('id', negocio_id).maybeSingle() as any
     negocio = neg
+    const negMetaLeadId = neg?.meta_leads?.[0]?.meta_lead_id
+      || (Array.isArray(neg?.meta_leads) ? null : neg?.meta_leads?.meta_lead_id)
 
     // REGRA DE NEGÓCIO: a API de Conversão só dispara para o funil
     // "META + MULTICANAL". Outros funis ficam fora da otimização da Meta.
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
         .select('id, email, telefone, nome, cpf_cnpj, cidade, estado, cep, meta_lead_id')
         .eq('id', neg.cliente_id).maybeSingle()
       cliente = cli
-      if (cli && !cli.meta_lead_id && neg.meta_lead_id) cliente.meta_lead_id = neg.meta_lead_id
+      if (cli && !cli.meta_lead_id && negMetaLeadId) cliente.meta_lead_id = negMetaLeadId
     }
   }
 

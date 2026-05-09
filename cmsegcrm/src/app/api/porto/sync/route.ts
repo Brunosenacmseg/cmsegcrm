@@ -9,7 +9,7 @@ export const runtime  = 'nodejs'
 export const dynamic  = 'force-dynamic'
 export const maxDuration = 300
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -597,7 +597,7 @@ async function processarAPP(arquivo: any, texto: string) {
             premio:       apolice.premio || campos.premio || 1,
             comissao_pct: apolice.comissao_pct || 0,
             obs:          `Apólice Porto ${num}${campos.placa ? ' · '+campos.placa : ''}${campos.modelo ? ' · '+campos.modelo : ''} (importação Porto)`,
-          })
+          } as any)
         }
       }
       importados++

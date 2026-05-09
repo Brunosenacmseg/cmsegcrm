@@ -12,7 +12,7 @@ import { montarArquivoHDI, nomeArquivoHDI } from '@/lib/hdi-export'
 export const maxDuration = 120
 export const dynamic = 'force-dynamic'
 
-let _sa: ReturnType<typeof createClient> | null = null
+let _sa: ReturnType<typeof createClient<Database>> | null = null
 function supabaseAdmin() {
   if (!_sa) _sa = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   return _sa
@@ -24,7 +24,7 @@ async function checarAuth(req: NextRequest) {
   if (!token) return { ok: false as const, erro: 'Não autenticado' }
   const { data: userData } = await supabaseAdmin().auth.getUser(token)
   if (!userData?.user) return { ok: false as const, erro: 'Sessão inválida' }
-  const { data: u } = await supabaseAdmin
+  const { data: u } = await supabaseAdmin()
     .from('users').select('role').eq('id', userData.user.id).single()
   if (!u || (u.role !== 'admin' && u.role !== 'lider')) {
     return { ok: false as const, erro: 'Apenas admin/líder' }
@@ -33,7 +33,7 @@ async function checarAuth(req: NextRequest) {
 }
 
 async function carregarApolices(ids: string[]) {
-  const { data: apolices } = await supabaseAdmin
+  const { data: apolices } = await supabaseAdmin()
     .from('apolices')
     .select('*, clientes(*)')
     .in('id', ids)
