@@ -379,17 +379,29 @@ function FunisPage() {
 
   async function adicionarNota() {
     if (!cardAtivo || !novaNota.trim() || !profile?.id) return
-    const { data } = await supabase.from('negocio_notas').insert({
-      negocio_id: cardAtivo.id, user_id: profile.id, conteudo: novaNota.trim(),
+    const conteudo = novaNota.trim()
+    const { data, error } = await supabase.from('negocio_notas').insert({
+      negocio_id: cardAtivo.id, user_id: profile.id, conteudo,
     }).select('*, users(nome,avatar_url)').single()
+    if (error) { alert('Erro ao salvar nota: ' + error.message); return }
     if (data) setNotasCard(prev => [data, ...prev])
+    // Espelha no histórico do cliente pra aparecer na aba "🕐 Histórico" da
+    // ficha. Se faltar cliente_id (negócio sem cliente vinculado), pula.
+    if (cardAtivo.cliente_id) {
+      const { error: errHist } = await supabase.from('historico').insert({
+        cliente_id: cardAtivo.cliente_id, negocio_id: cardAtivo.id,
+        tipo: 'gray', titulo: '📝 Nota adicionada', descricao: conteudo, user_id: profile.id,
+      })
+      if (errHist) console.warn('Falha ao espelhar nota no histórico:', errHist.message)
+    }
     setNovaNota('')
   }
 
   async function excluirNota(id: string) {
     if (profile?.role !== 'admin') { alert('Apenas administradores podem excluir notas'); return }
     if (!confirm('Excluir essa anotação?')) return
-    await supabase.from('negocio_notas').delete().eq('id', id)
+    const { error } = await supabase.from('negocio_notas').delete().eq('id', id)
+    if (error) { alert('Erro ao excluir nota: ' + error.message); return }
     setNotasCard(prev => prev.filter(n => n.id !== id))
   }
 
@@ -455,7 +467,8 @@ function FunisPage() {
   async function salvarEdicaoNota() {
     if (!editandoNota) return
     if (profile?.role !== 'admin') { alert('Apenas administradores podem editar notas'); return }
-    await supabase.from('negocio_notas').update({ conteudo: editandoNota.conteudo }).eq('id', editandoNota.id)
+    const { error } = await supabase.from('negocio_notas').update({ conteudo: editandoNota.conteudo }).eq('id', editandoNota.id)
+    if (error) { alert('Erro ao editar nota: ' + error.message); return }
     setNotasCard(prev => prev.map(n => n.id === editandoNota.id ? { ...n, conteudo: editandoNota.conteudo } : n))
     setEditandoNota(null)
   }
