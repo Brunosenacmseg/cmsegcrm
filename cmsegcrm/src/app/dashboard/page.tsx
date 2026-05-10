@@ -65,6 +65,7 @@ export default function DashboardPage() {
   const [tarefasPend, setTarefasPend] = useState<any[]>([])
   const [erroLoad, setErroLoad]     = useState<string | null>(null)
   const [kpisParciais, setKpisParciais] = useState(false)
+  const [errosKPIs, setErrosKPIs] = useState<Record<string, string>>({})
 
   const [dados, setDados] = useState<any>({
     premioMes:0, premioMesAnterior:0,
@@ -136,6 +137,8 @@ export default function DashboardPage() {
     let alertas: any[] = []
     let tendencia: { mes: string; valor: number }[] = []
     let parciais = false
+    const erros: Record<string, string> = {}
+    const errMsg = (e: any) => e?.message || e?.error?.message || String(e)
 
     // ─── Prêmio fechado no período (TODOS os funis) ────────────────
     try {
@@ -147,7 +150,7 @@ export default function DashboardPage() {
           .lte('data_fechamento', intervalo.fim))
       )
       premioMes = fechadosNoPeriodo.reduce((s, n: any) => s + Number(n.premio || 0), 0)
-    } catch (e) { console.error('KPI prêmio mês:', e); parciais = true }
+    } catch (e) { console.error('KPI prêmio mês:', e); parciais = true; erros.premio = errMsg(e) }
 
     // ─── Prêmio fechado período anterior (delta) ───────────────────
     try {
@@ -159,39 +162,46 @@ export default function DashboardPage() {
           .lte('data_fechamento', periodoAntFim))
       )
       premioMesAnterior = fechadosAnt.reduce((s, n: any) => s + Number(n.premio || 0), 0)
-    } catch (e) { console.error('KPI prêmio ant:', e); parciais = true }
+    } catch (e) { console.error('KPI prêmio ant:', e); parciais = true; erros.premioAnt = errMsg(e) }
 
     // ─── Novos clientes no período ─────────────────────────────────
+    // Conta via fetch+length em vez de count:'exact' (mais robusto p/ RLS).
     try {
-      const { count } = await scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
-        .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim))
-      novosClientes = count || 0
-    } catch (e) { console.error('KPI novos clientes:', e); parciais = true }
+      const data = await fetchAllPaged<any>(
+        scoped(supabase.from('clientes').select('id')
+          .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim))
+      )
+      novosClientes = data.length
+    } catch (e) { console.error('KPI novos clientes:', e); parciais = true; erros.novos = errMsg(e) }
 
     try {
-      const { count } = await scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
-        .gte('created_at', periodoAntInicio).lte('created_at', periodoAntFim))
-      novosClientesAnterior = count || 0
-    } catch (e) { console.error('KPI novos clientes ant:', e); parciais = true }
+      const data = await fetchAllPaged<any>(
+        scoped(supabase.from('clientes').select('id')
+          .gte('created_at', periodoAntInicio).lte('created_at', periodoAntFim))
+      )
+      novosClientesAnterior = data.length
+    } catch (e) { console.error('KPI novos clientes ant:', e); parciais = true; erros.novosAnt = errMsg(e) }
 
     // ─── Negócios ativos (status NÃO em ganho/perdido) ─────────────
-    // Usa neq+neq em vez de not.in.(…) — sintaxe mais simples e segura.
     try {
-      const { count } = await scoped(supabase.from('negocios').select('id', { count: 'exact', head: true })
-        .neq('status', 'ganho').neq('status', 'perdido'))
-      apolicesAtivas = count || 0
-    } catch (e) { console.error('KPI ativos:', e); parciais = true }
+      const data = await fetchAllPaged<any>(
+        scoped(supabase.from('negocios').select('id')
+          .neq('status', 'ganho').neq('status', 'perdido'))
+      )
+      apolicesAtivas = data.length
+    } catch (e) { console.error('KPI ativos:', e); parciais = true; erros.ativos = errMsg(e) }
 
     // ─── Renovações 30 dias ────────────────────────────────────────
     try {
-      const { data: renovs } = await scoped(supabase.from('negocios')
+      const { data: renovs, error: errRenovs } = await scoped(supabase.from('negocios')
         .select('id, vencimento, produto, clientes(nome)')
         .lte('vencimento', em30dias)
         .gt('vencimento', hoje.toISOString().slice(0,10))
         .order('vencimento'))
+      if (errRenovs) throw errRenovs
       renovacoes30d = (renovs || []).length
       alertas = (renovs || []).slice(0, 3)
-    } catch (e) { console.error('KPI renovações:', e); parciais = true }
+    } catch (e) { console.error('KPI renovações:', e); parciais = true; erros.renovacoes = errMsg(e) }
 
     // ─── Tendência últimos 6 meses ─────────────────────────────────
     try {
@@ -210,7 +220,7 @@ export default function DashboardPage() {
           .reduce((s: number, n: any) => s + Number(n.premio || 0), 0)
         tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
       }
-    } catch (e) { console.error('KPI tendência:', e); parciais = true }
+    } catch (e) { console.error('KPI tendência:', e); parciais = true; erros.tendencia = errMsg(e) }
 
     setDados({
       premioMes, premioMesAnterior,
@@ -222,6 +232,7 @@ export default function DashboardPage() {
       tendencia,
     })
     setKpisParciais(parciais)
+    setErrosKPIs(erros)
   }
 
   async function carregarRankings() {
@@ -506,9 +517,16 @@ export default function DashboardPage() {
 
         {/* ═════════ KPIs PRINCIPAIS ═════════ */}
         {kpisParciais && (
-          <div style={{marginBottom:14, padding:'10px 14px', borderRadius:8, background:'rgba(224,82,82,0.08)', border:'1px solid rgba(224,82,82,0.3)', color:'var(--red)', fontSize:12, display:'flex', alignItems:'center', gap:8}}>
-            <span>⚠</span>
-            <span>Alguns KPIs falharam ao carregar (veja o console). Os valores abaixo podem estar incompletos.</span>
+          <div style={{marginBottom:14, padding:'10px 14px', borderRadius:8, background:'rgba(224,82,82,0.08)', border:'1px solid rgba(224,82,82,0.3)', color:'var(--red)', fontSize:12}}>
+            <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
+              <span>⚠</span>
+              <strong>Alguns KPIs falharam ao carregar:</strong>
+            </div>
+            <ul style={{margin:0, paddingLeft:24, fontSize:11}}>
+              {Object.entries(errosKPIs).map(([k, v]) => (
+                <li key={k}><strong>{k}:</strong> {v}</li>
+              ))}
+            </ul>
           </div>
         )}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
