@@ -530,10 +530,10 @@ export default function WhatsAppPage() {
       )}
 
       {instancia && (
-        <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+        <div style={{flex:1,display:'flex',overflow:'hidden',minHeight:0}}>
 
           {/* Lista conversas */}
-          <div style={{width:300,flexShrink:0,borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column'}}>
+          <div style={{width:300,flexShrink:0,borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',minHeight:0}}>
             <div style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',background:'rgba(255,255,255,0.02)'}}>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
                 <div style={{width:8,height:8,borderRadius:'50%',background:statusCor[instancia.status]||'var(--text-muted)'}}/>
@@ -587,7 +587,7 @@ export default function WhatsAppPage() {
               </div>
             )}
 
-            <div style={{flex:1,overflowY:'auto'}}>
+            <div style={{flex:1,overflowY:'auto',minHeight:0}}>
               {conversas.length===0&&<div style={{padding:20,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>{instancia.status==='connected'?'Nenhuma conversa ainda':'Conecte o WhatsApp'}</div>}
               {conversas.map(conv=>(
                 <div key={conv.remoto_jid} onClick={()=>selecionarConversa(conv)}
@@ -609,7 +609,7 @@ export default function WhatsAppPage() {
           </div>
 
           {/* Chat */}
-          <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
             {!conversa ? (
               <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>
                 <div style={{textAlign:'center'}}><div style={{fontSize:40,marginBottom:8}}>💬</div><div>Selecione uma conversa</div></div>
@@ -702,7 +702,7 @@ export default function WhatsAppPage() {
                 })()}
 
                 {/* Mensagens */}
-                <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
+                <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8,minHeight:0}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
                   {mensagens.map(m=>(
                     <div key={m.id} style={{display:'flex',justifyContent:m.direcao==='enviada'?'flex-end':'flex-start'}}>
                       <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'#dcf8c6':'#ffffff',color:'#1a1a2e',border:`1px solid ${m.direcao==='enviada'?'#bcdc99':'#e5e7eb'}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)'}}>
@@ -959,12 +959,12 @@ function MidiaMensagem({ m }: { m: any }) {
 
 function Shell({ children, topRight }: { children: React.ReactNode; topRight?: React.ReactNode }) {
   return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+    <div style={{height:'calc(100vh - 48px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>💬 WhatsApp</div>
         {topRight}
       </div>
-      <div style={{flex:1,display:'flex',overflow:'hidden'}}>{children}</div>
+      <div style={{flex:1,display:'flex',overflow:'hidden',minHeight:0}}>{children}</div>
     </div>
   )
 }
