@@ -26,8 +26,8 @@ import { horarioUtilAdd } from '@/lib/horario-util'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const LOTE_INIT_POR_FLUXO     = 20
-const LOTE_FOLLOWUP_POR_FLUXO = 20
+const LOTE_INIT_POR_FLUXO     = 1
+const LOTE_FOLLOWUP_POR_FLUXO = 1
 
 let _sa: ReturnType<typeof createClient<Database>> | null = null
 function sa() {
