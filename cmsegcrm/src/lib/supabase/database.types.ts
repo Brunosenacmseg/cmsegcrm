@@ -6125,6 +6125,7 @@ export type Database = {
           created_at: string | null
           etapa_sdr: string
           finalizado_em: string | null
+          fluxo_id: string | null
           instancia_id: string | null
           motivo: string | null
           negocio_id: string
@@ -6137,6 +6138,7 @@ export type Database = {
           created_at?: string | null
           etapa_sdr?: string
           finalizado_em?: string | null
+          fluxo_id?: string | null
           instancia_id?: string | null
           motivo?: string | null
           negocio_id: string
@@ -6149,6 +6151,7 @@ export type Database = {
           created_at?: string | null
           etapa_sdr?: string
           finalizado_em?: string | null
+          fluxo_id?: string | null
           instancia_id?: string | null
           motivo?: string | null
           negocio_id?: string
@@ -6158,6 +6161,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "negocios_suhai_state_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "sdr_fluxos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "negocios_suhai_state_instancia_id_fkey"
             columns: ["instancia_id"]
@@ -8617,6 +8627,85 @@ export type Database = {
             columns: ["seguradora_id"]
             isOneToOne: false
             referencedRelation: "seguradoras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sdr_fluxos: {
+        Row: {
+          agente_id: string
+          ativo: boolean
+          created_at: string | null
+          created_by: string | null
+          descricao: string | null
+          etapa_interacao: string
+          etapa_perdido: string
+          etapas_tentativas: string[]
+          funil_id: string
+          horario_util_fim: string
+          horario_util_inicio: string
+          horas_entre_tentativas: number
+          id: string
+          nome: string
+          prompt_template: string
+          updated_at: string | null
+        }
+        Insert: {
+          agente_id: string
+          ativo?: boolean
+          created_at?: string | null
+          created_by?: string | null
+          descricao?: string | null
+          etapa_interacao: string
+          etapa_perdido: string
+          etapas_tentativas: string[]
+          funil_id: string
+          horario_util_fim?: string
+          horario_util_inicio?: string
+          horas_entre_tentativas?: number
+          id?: string
+          nome: string
+          prompt_template: string
+          updated_at?: string | null
+        }
+        Update: {
+          agente_id?: string
+          ativo?: boolean
+          created_at?: string | null
+          created_by?: string | null
+          descricao?: string | null
+          etapa_interacao?: string
+          etapa_perdido?: string
+          etapas_tentativas?: string[]
+          funil_id?: string
+          horario_util_fim?: string
+          horario_util_inicio?: string
+          horas_entre_tentativas?: number
+          id?: string
+          nome?: string
+          prompt_template?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sdr_fluxos_agente_id_fkey"
+            columns: ["agente_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agentes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sdr_fluxos_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sdr_fluxos_funil_id_fkey"
+            columns: ["funil_id"]
+            isOneToOne: false
+            referencedRelation: "funis"
             referencedColumns: ["id"]
           },
         ]
