@@ -309,6 +309,32 @@ export async function POST(request: NextRequest) {
           transcricao:    transcricao,
         })
 
+        // Detecção SDR SUHAI: se essa conversa pertence a um fluxo
+        // SDR ativo (Tentativa 1/2/3), o cliente respondeu — encerra
+        // o fluxo automático e move o card pra INTERAÇÃO.
+        try {
+          const { data: stateSdr } = await supabase
+            .from('negocios_suhai_state')
+            .select('negocio_id, etapa_sdr')
+            .eq('instancia_id', inst.id)
+            .eq('remoto_jid', remotoJid)
+            .is('finalizado_em', null)
+            .in('etapa_sdr', ['tentativa_1','tentativa_2','tentativa_3'])
+            .maybeSingle()
+          if (stateSdr?.negocio_id) {
+            await supabase.from('negocios_suhai_state').update({
+              etapa_sdr: 'interagiu',
+              finalizado_em: new Date().toISOString(),
+              motivo: 'Cliente respondeu — encerrado pelo webhook',
+            }).eq('negocio_id', stateSdr.negocio_id)
+            await supabase.from('negocios')
+              .update({ etapa: 'INTERAÇÃO' })
+              .eq('id', stateSdr.negocio_id)
+          }
+        } catch (e) {
+          console.error('[SUHAI webhook] falha ao processar resposta:', e)
+        }
+
         // Auto-resposta com agente IA. Se for áudio, usa transcrição como
         // entrada; se for outra mídia sem caption, ignora.
         // A configuração da CONVERSA (whatsapp_conversa_agentes) sobrepõe a
