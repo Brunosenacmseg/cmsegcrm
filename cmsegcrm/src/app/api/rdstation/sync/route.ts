@@ -304,18 +304,6 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
     }
   }
 
-  // ─── FUNIL FALLBACK ────────────────────────────────────────────
-  // Em vez de cair na primeira venda (vira lixão de "VENDA"), criamos
-  // um funil dedicado "📥 RD: Importados" pra debugar facilmente.
-  let funilFallback: any = (funis || []).find((f: any) => f.nome === 'RD: Importados')
-  if (!funilFallback) {
-    const { data } = await supabaseAdmin().from('funis').insert({
-      nome: 'RD: Importados', tipo: 'venda', emoji: '📥', cor: '#c9a84c',
-      etapas: ['Novo', 'Em andamento', 'Ganho', 'Perdido'], ordem: 99,
-    }).select('id, rd_id, etapas, nome, tipo').single()
-    funilFallback = data
-  }
-
   // Stages → pipeline (cacheado, mesmo motivo das pipelines)
   let stages: RDStage[] = (await lerCacheRD<RDStage[]>('stages')) || []
   if (!stages.length) {
@@ -372,7 +360,6 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
       //   3) deal só tem stage_id → resolve pipeline_id pela stage e
       //      tenta nome do pipeline buscado em rdPipelineNomePorId
       //   4) cria-se um funil novo automaticamente com o nome do RD
-      //      (pra não cair no "RD: Importados" silenciosamente)
       const stageId = rdId(dx.deal_stage)
       const pipelineId = rdId(dx.deal_pipeline) || (stageId ? pipelinePorStage[stageId] : null)
       const pipeNomeFromDeal   = dx.deal_pipeline?.name || ''
@@ -405,8 +392,6 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
         }
       }
 
-      // Último recurso: fallback dedicado.
-      if (!funil) funil = funilFallback
       if (!funil) { stats.qtd_erros++; stats.erros.push(`deal ${dx.name}: funil não encontrado`); continue }
 
       // Match etapa case-insensitive / sem acento
@@ -423,7 +408,7 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
 
       // Pula deals cujo cliente foi criado por importação de seguradora.
       // Esses cadastros não devem virar negócios (carteira é gerida pelo
-      // módulo Seguradoras / Apólices), evitando lixo em "RD: Importados".
+      // módulo Seguradoras / Apólices).
       if (clienteId) {
         const { data: cli } = await supabaseAdmin().from('clientes')
           .select('fonte').eq('id', clienteId).maybeSingle()
