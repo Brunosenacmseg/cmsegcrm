@@ -12,7 +12,8 @@ function intervaloDoPeriodo(p: Periodo, inicioCustom?: string, fimCustom?: strin
   const fimDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
   if (p === 'mes_atual') {
     const i = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-    return { inicio: i.toISOString(), fim: hoje.toISOString(), rotulo: i.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}) }
+    const f = fimDia(hoje)
+    return { inicio: i.toISOString(), fim: f.toISOString(), rotulo: i.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}) }
   }
   if (p === 'mes_anterior') {
     const i = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
@@ -23,12 +24,26 @@ function intervaloDoPeriodo(p: Periodo, inicioCustom?: string, fimCustom?: strin
     const dia = hoje.getDay() // 0=dom
     const offsetParaSegunda = (dia + 6) % 7 // dias desde segunda
     const i = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - offsetParaSegunda)
-    return { inicio: i.toISOString(), fim: hoje.toISOString(), rotulo: 'Esta semana' }
+    const f = fimDia(hoje)
+    return { inicio: i.toISOString(), fim: f.toISOString(), rotulo: 'Esta semana' }
   }
   // custom
   const i = inicioCustom ? new Date(inicioCustom + 'T00:00:00') : new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-  const f = fimCustom    ? fimDia(new Date(fimCustom + 'T00:00:00')) : hoje
+  const f = fimCustom    ? fimDia(new Date(fimCustom + 'T00:00:00')) : fimDia(hoje)
   return { inicio: i.toISOString(), fim: f.toISOString(), rotulo: `${i.toLocaleDateString('pt-BR')} – ${f.toLocaleDateString('pt-BR')}` }
+}
+
+// Carrega TODAS as linhas (acima do limite default de 1000 do PostgREST) via paginação.
+async function fetchAllPaged<T = any>(builder: any, pageSize = 1000): Promise<T[]> {
+  const acc: T[] = []
+  for (let off = 0; ; off += pageSize) {
+    const { data, error } = await builder.range(off, off + pageSize - 1)
+    if (error || !data || !data.length) break
+    acc.push(...(data as T[]))
+    if (data.length < pageSize) break
+    if (acc.length >= 50000) break
+  }
+  return acc
 }
 
 export default function DashboardPage() {
@@ -59,46 +74,21 @@ export default function DashboardPage() {
 
   const intervalo = useMemo(() => intervaloDoPeriodo(periodo, ini, fim), [periodo, ini, fim])
 
-  useEffect(() => { carregarKPIs() }, [])
-  useEffect(() => { if (!loading) carregarRankings() }, [periodo, ini, fim, filtroEquipe, filtroUser, loading])
+  useEffect(() => { carregarTudo() }, [])
+  useEffect(() => { if (!loading) { carregarKPIs(); carregarRankings() } }, [periodo, ini, fim, filtroEquipe, filtroUser, loading])
 
-  async function carregarKPIs() {
-    const hoje = new Date()
-    const inicioMes      = new Date(hoje.getFullYear(), hoje.getMonth(),   1).toISOString()
-    const inicioMesAnt   = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1).toISOString()
-    const em30dias       = new Date(hoje.getTime() + 30*24*60*60*1000).toISOString().slice(0,10)
-    const inicioSemestre = new Date(hoje.getFullYear(), hoje.getMonth()-5, 1).toISOString()
-
+  async function carregarTudo() {
+    // Carga inicial: usuários, equipes, profile e KPIs/rankings.
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
-    const onlyMine = prof?.role === 'corretor'
-    const meId = user?.id || ''
-    const scoped = (q: any, col: string = 'vendedor_id') => onlyMine ? q.eq(col, meId) : q
 
-    const [
-      { data: negs },
-      { count: novosCount },
-      { count: novosCountAnterior },
-      { data: renovs },
-      { data: usr },
-      { data: negsSemestre },
-    ] = await Promise.all([
-      scoped(supabase.from('negocios').select('premio, comissao_pct, etapa, status, funil_id, vendedor_id, created_at, data_fechamento')),
-      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMes)),
-      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true }).gte('created_at', inicioMesAnt).lt('created_at', inicioMes)),
-      scoped(supabase.from('negocios').select('id, vencimento, produto, clientes(nome)').lte('vencimento', em30dias).gt('vencimento', hoje.toISOString().slice(0,10)).order('vencimento')),
+    const [{ data: usr }, { data: eqs }, { data: mems }] = await Promise.all([
       supabase.from('users').select('id, nome, avatar_url, role').order('nome'),
-      scoped(supabase.from('negocios').select('premio, status, data_fechamento').eq('status', 'ganho').gte('data_fechamento', inicioSemestre)),
-    ])
-
-    setUsuarios(usr || [])
-
-    // Carrega equipes + membros para os filtros
-    const [{ data: eqs }, { data: mems }] = await Promise.all([
       supabase.from('equipes').select('id, nome').order('nome'),
       supabase.from('equipe_membros').select('equipe_id, user_id'),
     ])
+    setUsuarios(usr || [])
     setEquipes(eqs || [])
     const map: Record<string, string[]> = {}
     for (const m of (mems || []) as any[]) {
@@ -107,69 +97,130 @@ export default function DashboardPage() {
     }
     setEquipeMembros(map)
 
-    const fechadasNoMes = (negs||[]).filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= inicioMes)
-    const fechadasNoMesAnt = (negs||[]).filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= inicioMesAnt && n.data_fechamento < inicioMes)
-    const premioMes = fechadasNoMes.reduce((s:number,n:any)=>s+(n.premio||0),0)
-    const premioMesAnterior = fechadasNoMesAnt.reduce((s:number,n:any)=>s+(n.premio||0),0)
-    const ativos = (negs||[]).filter((n:any) => n.status !== 'ganho' && n.status !== 'perdido')
-    const comissoes = ativos.filter((n:any)=>n.comissao_pct>0).map((n:any)=>n.comissao_pct)
-    const mediaComissao = comissoes.length ? comissoes.reduce((a:number,b:number)=>a+b,0)/comissoes.length : 0
+    await Promise.all([carregarKPIs(prof, usr || []), carregarRankings(prof, usr || [], map)])
+    setLoading(false)
+  }
 
+  async function carregarKPIs(profArg?: any, _usuariosArg?: any[]) {
+    const prof = profArg || profile
+    const onlyMine = prof?.role === 'corretor'
+    const { data: { user } } = await supabase.auth.getUser()
+    const meId = user?.id || ''
+    const scoped = (q: any, col: string = 'vendedor_id') => onlyMine ? q.eq(col, meId) : q
+
+    const hoje = new Date()
+    const em30dias       = new Date(hoje.getTime() + 30*24*60*60*1000).toISOString().slice(0,10)
+    const inicioSemestre = new Date(hoje.getFullYear(), hoje.getMonth()-5, 1).toISOString()
+
+    // Período "anterior" para comparação: mesmo tamanho, imediatamente antes.
+    const dInicio = new Date(intervalo.inicio).getTime()
+    const dFim    = new Date(intervalo.fim).getTime()
+    const tamanho = Math.max(1, dFim - dInicio)
+    const periodoAntInicio = new Date(dInicio - tamanho).toISOString()
+    const periodoAntFim    = new Date(dInicio - 1).toISOString()
+
+    // Prêmio fechado no período (paginado p/ não estourar 1000) — TODOS os funis.
+    const fechadosNoPeriodo = await fetchAllPaged<any>(
+      scoped(supabase.from('negocios')
+        .select('premio')
+        .eq('status', 'ganho')
+        .gte('data_fechamento', intervalo.inicio)
+        .lte('data_fechamento', intervalo.fim))
+    )
+    const premioMes = fechadosNoPeriodo.reduce((s, n: any) => s + Number(n.premio || 0), 0)
+
+    const fechadosAnt = await fetchAllPaged<any>(
+      scoped(supabase.from('negocios')
+        .select('premio')
+        .eq('status', 'ganho')
+        .gte('data_fechamento', periodoAntInicio)
+        .lte('data_fechamento', periodoAntFim))
+    )
+    const premioMesAnterior = fechadosAnt.reduce((s, n: any) => s + Number(n.premio || 0), 0)
+
+    // Novos clientes no período (count exato, sem 1000-cap)
+    const [
+      { count: novosCount },
+      { count: novosCountAnterior },
+      { count: ativosCount },
+      { data: renovs },
+    ] = await Promise.all([
+      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
+        .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim)),
+      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
+        .gte('created_at', periodoAntInicio).lte('created_at', periodoAntFim)),
+      scoped(supabase.from('negocios').select('id', { count: 'exact', head: true })
+        .not('status', 'in', '(ganho,perdido)')),
+      scoped(supabase.from('negocios')
+        .select('id, vencimento, produto, clientes(nome)')
+        .lte('vencimento', em30dias)
+        .gt('vencimento', hoje.toISOString().slice(0,10))
+        .order('vencimento')),
+    ])
+
+    // Tendência últimos 6 meses — paginado.
+    const negsSemestre = await fetchAllPaged<any>(
+      scoped(supabase.from('negocios')
+        .select('premio, data_fechamento')
+        .eq('status', 'ganho')
+        .gte('data_fechamento', inicioSemestre))
+    )
     const tendencia: { mes: string; valor: number }[] = []
     for (let i = 5; i >= 0; i--) {
       const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1)
       const iniM = d.toISOString()
       const fimM = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
-      const valor = (negsSemestre||[])
-        .filter((n:any) => n.status === 'ganho' && n.data_fechamento && n.data_fechamento >= iniM && n.data_fechamento < fimM)
-        .reduce((s:number,n:any) => s+(n.premio||0), 0)
+      const valor = negsSemestre
+        .filter((n: any) => n.data_fechamento && n.data_fechamento >= iniM && n.data_fechamento < fimM)
+        .reduce((s: number, n: any) => s + Number(n.premio || 0), 0)
       tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
     }
 
     setDados({
       premioMes, premioMesAnterior,
       novosClientes: novosCount||0, novosClientesAnterior: novosCountAnterior||0,
-      apolicesAtivas: ativos.length,
+      apolicesAtivas: ativosCount||0,
       renovacoes30d: (renovs||[]).length,
-      mediaComissao,
+      mediaComissao: 0,
       alertas: (renovs||[]).slice(0,3),
       tendencia,
     })
-    setLoading(false)
   }
 
-  async function carregarRankings() {
+  async function carregarRankings(profArg?: any, usuariosArg?: any[], equipeMembrosArg?: Record<string,string[]>) {
+    const prof = profArg || profile
+    const usrs = usuariosArg || usuarios
+    const equipeMap = equipeMembrosArg || equipeMembros
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: prof } = await supabase.from('users').select('role').eq('id', user?.id||'').single()
     const onlyMine = (prof as any)?.role === 'corretor'
     const meId = user?.id || ''
 
     // Resolve a lista de user_ids permitida pelos filtros
     let userIdsFiltro: string[] | null = null
     if (filtroUser) userIdsFiltro = [filtroUser]
-    else if (filtroEquipe) userIdsFiltro = equipeMembros[filtroEquipe] || []
+    else if (filtroEquipe) userIdsFiltro = equipeMap[filtroEquipe] || []
 
-    // — Ranking de Vendas (negócios marcados como Ganho no período, pela data de fechamento) —
-    let qNegs = supabase.from('negocios')
+    // — Ranking de Vendas (negócios marcados como Ganho no período, pela data de fechamento, em TODOS os funis) —
+    let qNegs: any = supabase.from('negocios')
       .select('premio, comissao_pct, vendedor_id, status, data_fechamento')
       .eq('status', 'ganho')
       .gte('data_fechamento', intervalo.inicio).lte('data_fechamento', intervalo.fim)
     if (onlyMine) qNegs = qNegs.eq('vendedor_id', meId)
     else if (userIdsFiltro && userIdsFiltro.length) qNegs = qNegs.in('vendedor_id', userIdsFiltro)
     else if (userIdsFiltro) qNegs = qNegs.eq('vendedor_id', '00000000-0000-0000-0000-000000000000') // equipe vazia
-    const { data: negs } = await qNegs
+    const negs = await fetchAllPaged<any>(qNegs)
 
-    // — Ranking de Ligações (sainte+encerrada) —
-    let qLig = supabase.from('ligacoes')
+    // — Ranking de Ligações —
+    let qLig: any = supabase.from('ligacoes')
       .select('user_id, duracao_seg, status')
       .gte('criado_em', intervalo.inicio).lte('criado_em', intervalo.fim)
     if (onlyMine) qLig = qLig.eq('user_id', meId)
     else if (userIdsFiltro && userIdsFiltro.length) qLig = qLig.in('user_id', userIdsFiltro)
     else if (userIdsFiltro) qLig = qLig.eq('user_id', '00000000-0000-0000-0000-000000000000')
-    const { data: ligs } = await qLig
+    const ligs = await fetchAllPaged<any>(qLig)
 
     // — Tarefas pendentes (não fecha por período; mostra atual) —
-    let qTar = supabase.from('tarefas')
+    let qTar: any = supabase.from('tarefas')
       .select('id, titulo, descricao, prazo, status, responsavel_id, cliente_id, negocio_id, clientes(nome)')
       .eq('status', 'pendente')
       .order('prazo', { ascending: true, nullsFirst: false })
@@ -180,25 +231,28 @@ export default function DashboardPage() {
     const { data: tar } = await qTar
     setTarefasPend(tar || [])
 
-    // Mapear vendas
-    const mapV: Record<string,{user_id:string,nome:string,avatar_url?:string,role?:string,premio:number,apolices:number,comissao:number}> = {}
-    ;(usuarios||[]).forEach((u:any) => { mapV[u.id] = { user_id:u.id, nome:u.nome, avatar_url:u.avatar_url, role:u.role, premio:0, apolices:0, comissao:0 } })
+    // Mapear vendas — inclui também uma linha agregada para negócios sem vendedor cadastrado
+    type LinhaV = { user_id: string; nome: string; avatar_url?: string; role?: string; premio: number; apolices: number; comissao: number }
+    const mapV: Record<string, LinhaV> = {}
+    ;(usrs||[]).forEach((u:any) => { mapV[u.id] = { user_id:u.id, nome:u.nome, avatar_url:u.avatar_url, role:u.role, premio:0, apolices:0, comissao:0 } })
+    const SEM_VENDEDOR = '__sem_vendedor__'
+    mapV[SEM_VENDEDOR] = { user_id: SEM_VENDEDOR, nome: 'Sem vendedor / desativado', premio: 0, apolices: 0, comissao: 0 }
     ;(negs||[]).forEach((n:any) => {
-      if (!n.vendedor_id || !mapV[n.vendedor_id]) return
-      mapV[n.vendedor_id].premio   += n.premio||0
-      mapV[n.vendedor_id].apolices += 1
-      mapV[n.vendedor_id].comissao += (n.premio||0)*(n.comissao_pct||0)/100
+      const key = n.vendedor_id && mapV[n.vendedor_id] ? n.vendedor_id : SEM_VENDEDOR
+      mapV[key].premio   += Number(n.premio || 0)
+      mapV[key].apolices += 1
+      mapV[key].comissao += Number(n.premio || 0) * Number(n.comissao_pct || 0) / 100
     })
     const arrV = Object.values(mapV).filter(v => v.premio > 0 || v.apolices > 0).sort((a,b)=>b.premio - a.premio)
     setRanking(arrV)
 
     // Mapear ligações
     const mapL: Record<string,{user_id:string,nome:string,avatar_url?:string,role?:string,total:number,duracao:number}> = {}
-    ;(usuarios||[]).forEach((u:any) => { mapL[u.id] = { user_id:u.id, nome:u.nome, avatar_url:u.avatar_url, role:u.role, total:0, duracao:0 } })
+    ;(usrs||[]).forEach((u:any) => { mapL[u.id] = { user_id:u.id, nome:u.nome, avatar_url:u.avatar_url, role:u.role, total:0, duracao:0 } })
     ;(ligs||[]).forEach((l:any) => {
       if (!l.user_id || !mapL[l.user_id]) return
       mapL[l.user_id].total += 1
-      mapL[l.user_id].duracao += l.duracao_seg || 0
+      mapL[l.user_id].duracao += Number(l.duracao_seg || 0)
     })
     const arrL = Object.values(mapL).filter(v => v.total > 0).sort((a,b)=>b.total-a.total)
     setRankingLig(arrL)
@@ -212,9 +266,9 @@ export default function DashboardPage() {
     if (anterior === 0 && atual === 0) return { texto: '—', cor: 'var(--text-muted)' }
     if (anterior === 0)                return { texto: '+ novo', cor: 'var(--teal)' }
     const pct = Math.round(((atual - anterior) / anterior) * 100)
-    if (pct === 0) return { texto: '= mês ant.', cor: 'var(--text-muted)' }
+    if (pct === 0) return { texto: '= período ant.', cor: 'var(--text-muted)' }
     const sinal = pct > 0 ? '↑' : '↓'
-    return { texto: `${sinal} ${Math.abs(pct)}% vs mês ant.`, cor: pct > 0 ? 'var(--teal)' : 'var(--red)' }
+    return { texto: `${sinal} ${Math.abs(pct)}% vs período ant.`, cor: pct > 0 ? 'var(--teal)' : 'var(--red)' }
   }
   const dPremio   = delta(dados.premioMes, dados.premioMesAnterior)
   const dClientes = delta(dados.novosClientes, dados.novosClientesAnterior)
@@ -333,13 +387,31 @@ export default function DashboardPage() {
                   const pct = (r.premio / maxPremio) * 100
                   const medalha = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`
                   const corMed = i===0?'var(--gold)':i===1?'#9ba3b0':i===2?'#c07830':'var(--text-muted)'
+                  const semVendedor = r.user_id === '__sem_vendedor__'
+                  const abrirDetalhe = () => {
+                    if (semVendedor) return
+                    const params = new URLSearchParams({
+                      vendedor: r.user_id,
+                      nome: r.nome || '',
+                      inicio: intervalo.inicio,
+                      fim: intervalo.fim,
+                      rotulo: intervalo.rotulo,
+                    })
+                    router.push(`/dashboard/vendas-vendedor?${params.toString()}`)
+                  }
                   return (
-                    <div key={r.user_id} style={{display:'flex',alignItems:'center',gap:14}}>
+                    <div key={r.user_id}
+                      onClick={abrirDetalhe}
+                      title={semVendedor ? 'Negócios sem vendedor cadastrado' : `Ver vendas de ${r.nome} no período`}
+                      style={{display:'flex',alignItems:'center',gap:14, cursor: semVendedor ? 'default' : 'pointer', borderRadius:8, padding:'4px 6px', transition:'background 0.12s'}}
+                      onMouseEnter={e => { if (!semVendedor) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
                       <div style={{width:36,fontSize:i<3?22:14,fontWeight:700,color:corMed,textAlign:'center',flexShrink:0}}>{medalha}</div>
                       <div style={{minWidth:150, display:'flex', alignItems:'center', gap:10, flexShrink:0}}>
                         <Avatar nome={r.nome} avatarUrl={r.avatar_url} role={r.role} size={40} />
                         <div style={{minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:140}}>{r.nome}</div>
+                          <div style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:140, color: semVendedor ? 'var(--text-muted)' : (i===0 ? 'var(--gold)' : 'var(--text)'), textDecoration: semVendedor ? 'none' : 'underline', textUnderlineOffset:3}}>{r.nome}</div>
                           <div style={{fontSize:10,color:'var(--text-muted)'}}>{r.apolices} apólice{r.apolices!==1?'s':''}</div>
                         </div>
                       </div>
@@ -382,8 +454,8 @@ export default function DashboardPage() {
         {/* ═════════ KPIs PRINCIPAIS ═════════ */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
           {[
-            {label:'Prêmio Fechado (mês)', value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor, href: '/dashboard/funis?status=ganho'},
-            {label:'Novos Clientes (mês)', value:dados.novosClientes,     tone:'success' as const, sub: dClientes.texto, subCor: dClientes.cor, href: '/dashboard/clientes'},
+            {label:`Prêmio Fechado · ${intervalo.rotulo}`, value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor, href: '/dashboard/funis?status=ganho'},
+            {label:`Novos Clientes · ${intervalo.rotulo}`, value:dados.novosClientes,     tone:'success' as const, sub: dClientes.texto, subCor: dClientes.cor, href: '/dashboard/clientes'},
             {label:'Negócios Ativos',      value:dados.apolicesAtivas,    tone:'info'    as const, sub:'Em pipeline', href: '/dashboard/funis'},
             {label:'Renovações (30d)',     value:dados.renovacoes30d,     tone:'danger'  as const, sub:dados.renovacoes30d>0?`⚠ ${dados.renovacoes30d} a vencer`:'Nenhuma urgente', subCor: dados.renovacoes30d>0?'var(--danger)':'var(--text-muted)', href: '/dashboard/renovacoes'},
           ].map(({label,value,tone,sub,subCor,href})=>(
