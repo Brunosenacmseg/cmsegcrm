@@ -309,30 +309,40 @@ export async function POST(request: NextRequest) {
           transcricao:    transcricao,
         })
 
-        // Detecção SDR SUHAI: se essa conversa pertence a um fluxo
-        // SDR ativo (Tentativa 1/2/3), o cliente respondeu — encerra
-        // o fluxo automático e move o card pra INTERAÇÃO.
+        // Detecção SDR: se essa conversa pertence a um fluxo SDR ativo
+        // (qualquer tentativa em qualquer fluxo configurado), o cliente
+        // respondeu — encerra o fluxo automático e move o card pra
+        // etapa_interacao do fluxo (configurada por flow).
         try {
+          const tentativasSdr = ['tentativa_1','tentativa_2','tentativa_3','tentativa_4','tentativa_5','tentativa_6','tentativa_7','tentativa_8','tentativa_9','tentativa_10']
           const { data: stateSdr } = await supabase
             .from('negocios_suhai_state')
-            .select('negocio_id, etapa_sdr')
+            .select('negocio_id, etapa_sdr, fluxo_id')
             .eq('instancia_id', inst.id)
             .eq('remoto_jid', remotoJid)
             .is('finalizado_em', null)
-            .in('etapa_sdr', ['tentativa_1','tentativa_2','tentativa_3'])
+            .in('etapa_sdr', tentativasSdr)
             .maybeSingle()
           if (stateSdr?.negocio_id) {
+            // Etapa de "interação" depende do fluxo. Se não houver
+            // fluxo_id (state legado de #185), default pra 'INTERAÇÃO'.
+            let etapaInteracao = 'INTERAÇÃO'
+            if (stateSdr.fluxo_id) {
+              const { data: f } = await supabase.from('sdr_fluxos')
+                .select('etapa_interacao').eq('id', stateSdr.fluxo_id).maybeSingle()
+              if (f?.etapa_interacao) etapaInteracao = f.etapa_interacao
+            }
             await supabase.from('negocios_suhai_state').update({
               etapa_sdr: 'interagiu',
               finalizado_em: new Date().toISOString(),
               motivo: 'Cliente respondeu — encerrado pelo webhook',
             }).eq('negocio_id', stateSdr.negocio_id)
             await supabase.from('negocios')
-              .update({ etapa: 'INTERAÇÃO' })
+              .update({ etapa: etapaInteracao })
               .eq('id', stateSdr.negocio_id)
           }
         } catch (e) {
-          console.error('[SUHAI webhook] falha ao processar resposta:', e)
+          console.error('[SDR webhook] falha ao processar resposta:', e)
         }
 
         // Auto-resposta com agente IA. Se for áudio, usa transcrição como
