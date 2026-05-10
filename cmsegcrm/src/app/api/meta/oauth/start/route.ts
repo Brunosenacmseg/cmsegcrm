@@ -52,6 +52,10 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('state', state)
   url.searchParams.set('scope', SCOPES)
   url.searchParams.set('response_type', 'code')
+  // Força o Facebook a re-pedir permissões que o usuário negou anteriormente
+  // (ex.: ads_read/ads_management). Sem isso, o FB silenciosamente concede
+  // o token sem as permissões recusadas e a Marketing API retorna #200.
+  url.searchParams.set('auth_type', 'rerequest')
 
   const res = NextResponse.redirect(url.toString())
   res.cookies.set('meta_oauth_state', state, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600, path: '/' })
