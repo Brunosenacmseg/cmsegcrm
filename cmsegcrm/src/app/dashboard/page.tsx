@@ -63,6 +63,7 @@ export default function DashboardPage() {
   const [ranking, setRanking]       = useState<any[]>([])
   const [rankingLig, setRankingLig] = useState<any[]>([])
   const [tarefasPend, setTarefasPend] = useState<any[]>([])
+  const [erroLoad, setErroLoad]     = useState<string | null>(null)
 
   const [dados, setDados] = useState<any>({
     premioMes:0, premioMesAnterior:0,
@@ -75,34 +76,42 @@ export default function DashboardPage() {
   const intervalo = useMemo(() => intervaloDoPeriodo(periodo, ini, fim), [periodo, ini, fim])
 
   useEffect(() => { carregarTudo() }, [])
-  useEffect(() => { if (!loading) { carregarKPIs(); carregarRankings() } }, [periodo, ini, fim, filtroEquipe, filtroUser, loading])
+  useEffect(() => { if (!loading) { carregarKPIs().catch(e => console.error('carregarKPIs', e)); carregarRankings().catch(e => console.error('carregarRankings', e)) } }, [periodo, ini, fim, filtroEquipe, filtroUser, loading])
 
   async function carregarTudo() {
-    // Carga inicial: usuários, equipes, profile e KPIs/rankings.
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
-    setProfile(prof)
+    // Carga inicial: usuários, equipes, profile. Os KPIs/rankings disparam
+    // via useEffect logo que `loading` vira false (mantém uma única fonte
+    // de verdade para a re-execução quando os filtros mudam).
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
 
-    const [{ data: usr }, { data: eqs }, { data: mems }] = await Promise.all([
-      supabase.from('users').select('id, nome, avatar_url, role').order('nome'),
-      supabase.from('equipes').select('id, nome').order('nome'),
-      supabase.from('equipe_membros').select('equipe_id, user_id'),
-    ])
-    setUsuarios(usr || [])
-    setEquipes(eqs || [])
-    const map: Record<string, string[]> = {}
-    for (const m of (mems || []) as any[]) {
-      if (!map[m.equipe_id]) map[m.equipe_id] = []
-      map[m.equipe_id].push(m.user_id)
+      const [{ data: usr }, { data: eqs }, { data: mems }] = await Promise.all([
+        supabase.from('users').select('id, nome, avatar_url, role').order('nome'),
+        supabase.from('equipes').select('id, nome').order('nome'),
+        supabase.from('equipe_membros').select('equipe_id, user_id'),
+      ])
+      const map: Record<string, string[]> = {}
+      for (const m of (mems || []) as any[]) {
+        if (!map[m.equipe_id]) map[m.equipe_id] = []
+        map[m.equipe_id].push(m.user_id)
+      }
+
+      setProfile(prof)
+      setUsuarios(usr || [])
+      setEquipes(eqs || [])
+      setEquipeMembros(map)
+    } catch (e: any) {
+      console.error('Dashboard: erro ao carregar dados iniciais', e)
+      setErroLoad(e?.message || 'Erro ao carregar o dashboard')
+    } finally {
+      setLoading(false)
     }
-    setEquipeMembros(map)
-
-    await Promise.all([carregarKPIs(prof, usr || []), carregarRankings(prof, usr || [], map)])
-    setLoading(false)
   }
 
-  async function carregarKPIs(profArg?: any, _usuariosArg?: any[]) {
-    const prof = profArg || profile
+  async function carregarKPIs() {
+    try {
+    const prof = profile
     const onlyMine = prof?.role === 'corretor'
     const { data: { user } } = await supabase.auth.getUser()
     const meId = user?.id || ''
@@ -185,12 +194,16 @@ export default function DashboardPage() {
       alertas: (renovs||[]).slice(0,3),
       tendencia,
     })
+    } catch (e: any) {
+      console.error('Dashboard.carregarKPIs erro:', e)
+    }
   }
 
-  async function carregarRankings(profArg?: any, usuariosArg?: any[], equipeMembrosArg?: Record<string,string[]>) {
-    const prof = profArg || profile
-    const usrs = usuariosArg || usuarios
-    const equipeMap = equipeMembrosArg || equipeMembros
+  async function carregarRankings() {
+    try {
+    const prof = profile
+    const usrs = usuarios
+    const equipeMap = equipeMembros
     const { data: { user } } = await supabase.auth.getUser()
     const onlyMine = (prof as any)?.role === 'corretor'
     const meId = user?.id || ''
@@ -256,6 +269,9 @@ export default function DashboardPage() {
     })
     const arrL = Object.values(mapL).filter(v => v.total > 0).sort((a,b)=>b.total-a.total)
     setRankingLig(arrL)
+    } catch (e: any) {
+      console.error('Dashboard.carregarRankings erro:', e)
+    }
   }
 
   const fmt = (n: number) => n >= 1000 ? `R$ ${(n/1000).toFixed(0)}k` : `R$ ${n.toLocaleString('pt-BR')}`
@@ -272,6 +288,19 @@ export default function DashboardPage() {
   }
   const dPremio   = delta(dados.premioMes, dados.premioMesAnterior)
   const dClientes = delta(dados.novosClientes, dados.novosClientesAnterior)
+
+  if (erroLoad) return (
+    <div style={{padding:24}}>
+      <div className="card" style={{padding:24, borderColor:'var(--red)'}}>
+        <div style={{fontFamily:'DM Serif Display,serif', fontSize:18, color:'var(--red)', marginBottom:8}}>Não foi possível carregar o dashboard</div>
+        <div style={{fontSize:13, color:'var(--text-muted)', marginBottom:14}}>{erroLoad}</div>
+        <button onClick={() => { setErroLoad(null); setLoading(true); carregarTudo() }}
+          style={{padding:'8px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', border:'1px solid var(--border)', background:'rgba(201,168,76,0.12)', color:'var(--gold)'}}>
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+  )
 
   if (loading) return (
     <div style={{padding:24}}>
