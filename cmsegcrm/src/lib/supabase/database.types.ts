@@ -6120,6 +6120,60 @@ export type Database = {
           },
         ]
       }
+      negocios_suhai_state: {
+        Row: {
+          created_at: string | null
+          etapa_sdr: string
+          finalizado_em: string | null
+          instancia_id: string | null
+          motivo: string | null
+          negocio_id: string
+          proxima_acao_em: string | null
+          remoto_jid: string | null
+          ultima_msg_em: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          etapa_sdr?: string
+          finalizado_em?: string | null
+          instancia_id?: string | null
+          motivo?: string | null
+          negocio_id: string
+          proxima_acao_em?: string | null
+          remoto_jid?: string | null
+          ultima_msg_em?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          etapa_sdr?: string
+          finalizado_em?: string | null
+          instancia_id?: string | null
+          motivo?: string | null
+          negocio_id?: string
+          proxima_acao_em?: string | null
+          remoto_jid?: string | null
+          ultima_msg_em?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negocios_suhai_state_instancia_id_fkey"
+            columns: ["instancia_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instancias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negocios_suhai_state_negocio_id_fkey"
+            columns: ["negocio_id"]
+            isOneToOne: true
+            referencedRelation: "negocios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notificacoes: {
         Row: {
           criado_em: string | null

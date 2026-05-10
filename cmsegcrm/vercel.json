@@ -3,6 +3,10 @@
     {
       "path": "/api/integrador/cron/dispatch",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/suhai-followup",
+      "schedule": "* * * * *"
     }
   ]
 }
