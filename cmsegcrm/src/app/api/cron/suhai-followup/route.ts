@@ -159,7 +159,7 @@ async function processarInitsDoFluxo(fluxo: Fluxo): Promise<{ processados: numbe
     .from('negocios')
     .select('id, titulo, etapa, funil_id, vendedor_id, cliente_id, telefone_negocio, status')
     .eq('funil_id', fluxo.funil_id)
-    .or('status.is.null,status.eq.aberto')
+    .eq('status', 'em_andamento')
     .order('created_at', { ascending: true })
     .limit(LOTE_INIT_POR_FLUXO * 3)
 
@@ -328,6 +328,15 @@ async function processarFollowupsDoFluxo(fluxo: Fluxo): Promise<{ processados: n
         await supabase.from('negocios_suhai_state').update({
           etapa_sdr: 'interagiu', finalizado_em: agora.toISOString(),
           motivo: `Etapa alterada manualmente para ${negocio.etapa}`,
+        }).eq('negocio_id', state.negocio_id)
+        continue
+      }
+
+      // Status alterado manualmente (ganho/perdido) → encerra
+      if (negocio.status && negocio.status !== 'em_andamento') {
+        await supabase.from('negocios_suhai_state').update({
+          etapa_sdr: 'interagiu', finalizado_em: agora.toISOString(),
+          motivo: `Status alterado manualmente para ${negocio.status}`,
         }).eq('negocio_id', state.negocio_id)
         continue
       }
