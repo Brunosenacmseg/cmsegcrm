@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const [rankingLig, setRankingLig] = useState<any[]>([])
   const [tarefasPend, setTarefasPend] = useState<any[]>([])
   const [erroLoad, setErroLoad]     = useState<string | null>(null)
+  const [kpisParciais, setKpisParciais] = useState(false)
 
   const [dados, setDados] = useState<any>({
     premioMes:0, premioMesAnterior:0,
@@ -110,11 +111,9 @@ export default function DashboardPage() {
   }
 
   async function carregarKPIs() {
-    try {
     const prof = profile
     const onlyMine = prof?.role === 'corretor'
-    const { data: { user } } = await supabase.auth.getUser()
-    const meId = user?.id || ''
+    const meId = onlyMine ? ((await supabase.auth.getUser()).data.user?.id || '') : ''
     const scoped = (q: any, col: string = 'vendedor_id') => onlyMine ? q.eq(col, meId) : q
 
     const hoje = new Date()
@@ -128,75 +127,101 @@ export default function DashboardPage() {
     const periodoAntInicio = new Date(dInicio - tamanho).toISOString()
     const periodoAntFim    = new Date(dInicio - 1).toISOString()
 
-    // Prêmio fechado no período (paginado p/ não estourar 1000) — TODOS os funis.
-    const fechadosNoPeriodo = await fetchAllPaged<any>(
-      scoped(supabase.from('negocios')
-        .select('premio')
-        .eq('status', 'ganho')
-        .gte('data_fechamento', intervalo.inicio)
-        .lte('data_fechamento', intervalo.fim))
-    )
-    const premioMes = fechadosNoPeriodo.reduce((s, n: any) => s + Number(n.premio || 0), 0)
+    let premioMes = 0
+    let premioMesAnterior = 0
+    let novosClientes = 0
+    let novosClientesAnterior = 0
+    let apolicesAtivas = 0
+    let renovacoes30d = 0
+    let alertas: any[] = []
+    let tendencia: { mes: string; valor: number }[] = []
+    let parciais = false
 
-    const fechadosAnt = await fetchAllPaged<any>(
-      scoped(supabase.from('negocios')
-        .select('premio')
-        .eq('status', 'ganho')
-        .gte('data_fechamento', periodoAntInicio)
-        .lte('data_fechamento', periodoAntFim))
-    )
-    const premioMesAnterior = fechadosAnt.reduce((s, n: any) => s + Number(n.premio || 0), 0)
+    // ─── Prêmio fechado no período (TODOS os funis) ────────────────
+    try {
+      const fechadosNoPeriodo = await fetchAllPaged<any>(
+        scoped(supabase.from('negocios')
+          .select('premio')
+          .eq('status', 'ganho')
+          .gte('data_fechamento', intervalo.inicio)
+          .lte('data_fechamento', intervalo.fim))
+      )
+      premioMes = fechadosNoPeriodo.reduce((s, n: any) => s + Number(n.premio || 0), 0)
+    } catch (e) { console.error('KPI prêmio mês:', e); parciais = true }
 
-    // Novos clientes no período (count exato, sem 1000-cap)
-    const [
-      { count: novosCount },
-      { count: novosCountAnterior },
-      { count: ativosCount },
-      { data: renovs },
-    ] = await Promise.all([
-      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
-        .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim)),
-      scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
-        .gte('created_at', periodoAntInicio).lte('created_at', periodoAntFim)),
-      scoped(supabase.from('negocios').select('id', { count: 'exact', head: true })
-        .not('status', 'in', '(ganho,perdido)')),
-      scoped(supabase.from('negocios')
+    // ─── Prêmio fechado período anterior (delta) ───────────────────
+    try {
+      const fechadosAnt = await fetchAllPaged<any>(
+        scoped(supabase.from('negocios')
+          .select('premio')
+          .eq('status', 'ganho')
+          .gte('data_fechamento', periodoAntInicio)
+          .lte('data_fechamento', periodoAntFim))
+      )
+      premioMesAnterior = fechadosAnt.reduce((s, n: any) => s + Number(n.premio || 0), 0)
+    } catch (e) { console.error('KPI prêmio ant:', e); parciais = true }
+
+    // ─── Novos clientes no período ─────────────────────────────────
+    try {
+      const { count } = await scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
+        .gte('created_at', intervalo.inicio).lte('created_at', intervalo.fim))
+      novosClientes = count || 0
+    } catch (e) { console.error('KPI novos clientes:', e); parciais = true }
+
+    try {
+      const { count } = await scoped(supabase.from('clientes').select('id', { count: 'exact', head: true })
+        .gte('created_at', periodoAntInicio).lte('created_at', periodoAntFim))
+      novosClientesAnterior = count || 0
+    } catch (e) { console.error('KPI novos clientes ant:', e); parciais = true }
+
+    // ─── Negócios ativos (status NÃO em ganho/perdido) ─────────────
+    // Usa neq+neq em vez de not.in.(…) — sintaxe mais simples e segura.
+    try {
+      const { count } = await scoped(supabase.from('negocios').select('id', { count: 'exact', head: true })
+        .neq('status', 'ganho').neq('status', 'perdido'))
+      apolicesAtivas = count || 0
+    } catch (e) { console.error('KPI ativos:', e); parciais = true }
+
+    // ─── Renovações 30 dias ────────────────────────────────────────
+    try {
+      const { data: renovs } = await scoped(supabase.from('negocios')
         .select('id, vencimento, produto, clientes(nome)')
         .lte('vencimento', em30dias)
         .gt('vencimento', hoje.toISOString().slice(0,10))
-        .order('vencimento')),
-    ])
+        .order('vencimento'))
+      renovacoes30d = (renovs || []).length
+      alertas = (renovs || []).slice(0, 3)
+    } catch (e) { console.error('KPI renovações:', e); parciais = true }
 
-    // Tendência últimos 6 meses — paginado.
-    const negsSemestre = await fetchAllPaged<any>(
-      scoped(supabase.from('negocios')
-        .select('premio, data_fechamento')
-        .eq('status', 'ganho')
-        .gte('data_fechamento', inicioSemestre))
-    )
-    const tendencia: { mes: string; valor: number }[] = []
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1)
-      const iniM = d.toISOString()
-      const fimM = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
-      const valor = negsSemestre
-        .filter((n: any) => n.data_fechamento && n.data_fechamento >= iniM && n.data_fechamento < fimM)
-        .reduce((s: number, n: any) => s + Number(n.premio || 0), 0)
-      tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
-    }
+    // ─── Tendência últimos 6 meses ─────────────────────────────────
+    try {
+      const negsSemestre = await fetchAllPaged<any>(
+        scoped(supabase.from('negocios')
+          .select('premio, data_fechamento')
+          .eq('status', 'ganho')
+          .gte('data_fechamento', inicioSemestre))
+      )
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1)
+        const iniM = d.toISOString()
+        const fimM = new Date(d.getFullYear(), d.getMonth()+1, 1).toISOString()
+        const valor = negsSemestre
+          .filter((n: any) => n.data_fechamento && n.data_fechamento >= iniM && n.data_fechamento < fimM)
+          .reduce((s: number, n: any) => s + Number(n.premio || 0), 0)
+        tendencia.push({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }), valor })
+      }
+    } catch (e) { console.error('KPI tendência:', e); parciais = true }
 
     setDados({
       premioMes, premioMesAnterior,
-      novosClientes: novosCount||0, novosClientesAnterior: novosCountAnterior||0,
-      apolicesAtivas: ativosCount||0,
-      renovacoes30d: (renovs||[]).length,
+      novosClientes, novosClientesAnterior,
+      apolicesAtivas,
+      renovacoes30d,
       mediaComissao: 0,
-      alertas: (renovs||[]).slice(0,3),
+      alertas,
       tendencia,
     })
-    } catch (e: any) {
-      console.error('Dashboard.carregarKPIs erro:', e)
-    }
+    setKpisParciais(parciais)
   }
 
   async function carregarRankings() {
@@ -204,9 +229,8 @@ export default function DashboardPage() {
     const prof = profile
     const usrs = usuarios
     const equipeMap = equipeMembros
-    const { data: { user } } = await supabase.auth.getUser()
     const onlyMine = (prof as any)?.role === 'corretor'
-    const meId = user?.id || ''
+    const meId = onlyMine ? ((await supabase.auth.getUser()).data.user?.id || '') : ''
 
     // Resolve a lista de user_ids permitida pelos filtros
     let userIdsFiltro: string[] | null = null
@@ -481,6 +505,12 @@ export default function DashboardPage() {
         )}
 
         {/* ═════════ KPIs PRINCIPAIS ═════════ */}
+        {kpisParciais && (
+          <div style={{marginBottom:14, padding:'10px 14px', borderRadius:8, background:'rgba(224,82,82,0.08)', border:'1px solid rgba(224,82,82,0.3)', color:'var(--red)', fontSize:12, display:'flex', alignItems:'center', gap:8}}>
+            <span>⚠</span>
+            <span>Alguns KPIs falharam ao carregar (veja o console). Os valores abaixo podem estar incompletos.</span>
+          </div>
+        )}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:20}}>
           {[
             {label:`Prêmio Fechado · ${intervalo.rotulo}`, value:fmt(dados.premioMes),    tone:'warning' as const, sub: dPremio.texto, subCor: dPremio.cor, href: '/dashboard/funis?status=ganho'},
