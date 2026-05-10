@@ -1474,6 +1474,7 @@ function FunisPage() {
 
       {/* Kanban */}
       {funiAtual && modoVisao==='kanban' && (() => {
+        const ocultarValor = isFunilEmissao(funilAtivo)
         const totalEmAndamento = negociosFunil
           .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
           .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
@@ -1485,6 +1486,7 @@ function FunisPage() {
         return (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
           {/* Resumo do funil — soma total para responder ao pedido do time */}
+          {!ocultarValor && (
           <div style={{display:'flex',gap:18,alignItems:'center',padding:'8px 20px 4px',flexWrap:'wrap',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
             <div style={{fontSize:11,color:'var(--text-muted)',fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase'}}>
               Total do funil
@@ -1500,6 +1502,7 @@ function FunisPage() {
               <span style={{fontWeight:400,color:'var(--text-muted)',marginLeft:6,fontSize:11}}>· {qtdGanho} card{qtdGanho===1?'':'s'}</span>
             </div>
           </div>
+          )}
           {/* Empty state quando o funil está sem cards (após filtros) */}
           {funiAtual && negociosFunil.length === 0 && (
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:40}}>
@@ -1550,10 +1553,12 @@ function FunisPage() {
                       <span style={{fontSize:12,fontWeight:600}}>{etapa}</span>
                       <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.08)',padding:'1px 7px',borderRadius:10}}>{cards.length}</span>
                     </div>
+                    {!ocultarValor && (
                     <div title="Soma do prêmio das negociações em andamento nesta etapa"
                       style={{fontSize:11,fontWeight:600,color:'var(--teal)'}}>
                       R$ {valorEmAndamento.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
                     </div>
+                    )}
                   </div>
 
                   {/* Cards */}
@@ -1674,7 +1679,7 @@ function FunisPage() {
                       )}
 
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
-                        {neg.premio ? <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span> : <span/>}
+                        {!ocultarValor && neg.premio ? <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span> : <span/>}
                         {neg.produto && <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 6px',borderRadius:8}}>{neg.produto}</span>}
                       </div>
 
@@ -1788,8 +1793,8 @@ function FunisPage() {
                       {neg.clientes?.nome || <span style={{color:'var(--text-muted)'}}>—</span>}
                     </div>
                     <div style={{color:'var(--text-muted)'}}>{neg.etapa}</div>
-                    <div style={{color:neg.premio?'var(--teal)':'var(--text-muted)',fontWeight:neg.premio?600:400}}>
-                      {neg.premio ? `R$ ${Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
+                    <div style={{color:!isFunilEmissao(funilAtivo) && neg.premio?'var(--teal)':'var(--text-muted)',fontWeight:!isFunilEmissao(funilAtivo) && neg.premio?600:400}}>
+                      {!isFunilEmissao(funilAtivo) && neg.premio ? `R$ ${Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
                     </div>
                     <div style={{color:'var(--text-muted)',fontSize:11}}>
                       {neg.created_at ? new Date(neg.created_at).toLocaleDateString('pt-BR') : '—'}
@@ -2017,10 +2022,10 @@ function FunisPage() {
 
             {/* Info */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-              {([
-                ['Etapa', cardAtivo.etapa],
-                ['Produto', cardAtivo.produto||'—'],
-                ['Prêmio', podeEditarPremio(cardAtivo) ? (
+              {(([
+                ['Etapa', cardAtivo.etapa] as [string, React.ReactNode],
+                ['Produto', cardAtivo.produto||'—'] as [string, React.ReactNode],
+                isFunilEmissao(cardAtivo.funil_id) ? null : (['Prêmio', podeEditarPremio(cardAtivo) ? (
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     <span style={{fontSize:13,color:'var(--text-muted)'}}>R$</span>
                     <input
@@ -2035,11 +2040,11 @@ function FunisPage() {
                       style={{flex:1,minWidth:0,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 9px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box'}}
                     />
                   </div>
-                ) : (cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—')],
-                ['Responsável', cardAtivo.users?.nome||'—'],
-                ['🆕 Criado em', cardAtivo.created_at ? new Date(cardAtivo.created_at).toLocaleString('pt-BR') : '—'],
-                ['🏁 Fechado em', cardAtivo.data_fechamento ? new Date(cardAtivo.data_fechamento).toLocaleString('pt-BR') : '— (em andamento)'],
-              ] as Array<[string, React.ReactNode]>).map(([l,v])=>(
+                ) : (cardAtivo.premio ? `R$ ${Number(cardAtivo.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—')] as [string, React.ReactNode]),
+                ['Responsável', cardAtivo.users?.nome||'—'] as [string, React.ReactNode],
+                ['🆕 Criado em', cardAtivo.created_at ? new Date(cardAtivo.created_at).toLocaleString('pt-BR') : '—'] as [string, React.ReactNode],
+                ['🏁 Fechado em', cardAtivo.data_fechamento ? new Date(cardAtivo.data_fechamento).toLocaleString('pt-BR') : '— (em andamento)'] as [string, React.ReactNode],
+              ] as Array<[string, React.ReactNode] | null>).filter(Boolean) as Array<[string, React.ReactNode]>).map(([l,v])=>(
                 <div key={l}><div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
                   <div style={{fontSize:13}}>{v}</div></div>
               ))}

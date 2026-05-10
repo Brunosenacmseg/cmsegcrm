@@ -10,6 +10,16 @@ function getAdmin() {
   )
 }
 
+const NOMES_FUNIS_SEM_VALOR = ['EMISSÃO E IMPLANTAÇÃO']
+function ptNorm(s: string | null | undefined) {
+  return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+async function funilIdsSemValor(supabaseAdmin: ReturnType<typeof getAdmin>): Promise<string[]> {
+  const { data } = await supabaseAdmin.from('funis').select('id, nome')
+  const alvo = NOMES_FUNIS_SEM_VALOR.map(ptNorm)
+  return (data || []).filter((f: any) => alvo.includes(ptNorm(f.nome))).map((f: any) => f.id as string)
+}
+
 export async function POST(request: NextRequest) {
   const supabaseAdmin = getAdmin()
   try {
@@ -20,6 +30,7 @@ export async function POST(request: NextRequest) {
     if (!negocio) return NextResponse.json({ ok: true })
 
     const dataGanho = new Date(negocio.updated_at || new Date())
+    const funisExcluidos = await funilIdsSemValor(supabaseAdmin)
 
     const { data: metas } = await supabaseAdmin
       .from('metas')
@@ -33,12 +44,16 @@ export async function POST(request: NextRequest) {
       let novoValor = meta.valor_atual
 
       if (meta.tipo === 'premio') {
-        const { data } = await supabaseAdmin.from('negocios').select('premio').eq('vendedor_id', vendedor_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        let q: any = supabaseAdmin.from('negocios').select('premio').eq('vendedor_id', vendedor_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        if (funisExcluidos.length) q = q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
+        const { data } = await q
         novoValor = (data || []).reduce((s: number, n: any) => s + (n.premio || 0), 0)
       }
 
       if (meta.tipo === 'negocios') {
-        const { count } = await supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', vendedor_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        let q: any = supabaseAdmin.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', vendedor_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        if (funisExcluidos.length) q = q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
+        const { count } = await q
         novoValor = count || 0
       }
 

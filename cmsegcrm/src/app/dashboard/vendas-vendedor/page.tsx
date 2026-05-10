@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Avatar from '@/components/Avatar'
+import { getFunilIdsSemValor } from '@/lib/funis-excluidos'
 
 export default function VendasVendedorWrapper() {
   return (
@@ -68,16 +69,18 @@ function VendasVendedorPage() {
       .eq('id', vendedorId).maybeSingle()
     setVendedor(u || (nomeUrl ? { id: vendedorId, nome: nomeUrl } : null))
 
-    // Negócios "ganho" desse vendedor no período, somando TODOS os funis.
-    const dados = await fetchAllPaged<Linha>(
-      supabase.from('negocios')
-        .select('id, premio, comissao_pct, data_fechamento, produto, seguradora, funil_id, funis(nome,emoji), clientes(nome)')
-        .eq('status', 'ganho')
-        .eq('vendedor_id', vendedorId)
-        .gte('data_fechamento', inicio)
-        .lte('data_fechamento', fim)
-        .order('data_fechamento', { ascending: false })
-    )
+    // Negócios "ganho" desse vendedor no período. Exclui o funil
+    // EMISSÃO E IMPLANTAÇÃO (não soma no ranking nem na produção).
+    const funisExcluidos = await getFunilIdsSemValor()
+    let q: any = supabase.from('negocios')
+      .select('id, premio, comissao_pct, data_fechamento, produto, seguradora, funil_id, funis(nome,emoji), clientes(nome)')
+      .eq('status', 'ganho')
+      .eq('vendedor_id', vendedorId)
+      .gte('data_fechamento', inicio)
+      .lte('data_fechamento', fim)
+      .order('data_fechamento', { ascending: false })
+    if (funisExcluidos.length) q = q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
+    const dados = await fetchAllPaged<Linha>(q)
     setLinhas(dados)
     setLoading(false)
   }
@@ -120,7 +123,7 @@ function VendasVendedorPage() {
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontFamily:'DM Serif Display,serif', fontSize:22}}>{vendedor?.nome || nomeUrl || '—'}</div>
                 <div style={{fontSize:12, color:'var(--text-muted)', marginTop:2}}>
-                  Período: <strong style={{color:'var(--gold)'}}>{rotulo || `${new Date(inicio).toLocaleDateString('pt-BR')} – ${new Date(fim).toLocaleDateString('pt-BR')}`}</strong> · Soma de TODOS os funis
+                  Período: <strong style={{color:'var(--gold)'}}>{rotulo || `${new Date(inicio).toLocaleDateString('pt-BR')} – ${new Date(fim).toLocaleDateString('pt-BR')}`}</strong> · Exclui funil EMISSÃO E IMPLANTAÇÃO
                 </div>
               </div>
               <div style={{display:'flex', gap:24, alignItems:'center'}}>
