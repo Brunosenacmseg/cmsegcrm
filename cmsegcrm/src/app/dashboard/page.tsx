@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Avatar from '@/components/Avatar'
 import { Skeleton } from '@/components/Skeleton'
+import { getFunilIdsSemValor } from '@/lib/funis-excluidos'
 
 type Periodo = 'mes_atual' | 'mes_anterior' | 'semana' | 'custom'
 
@@ -115,6 +116,10 @@ export default function DashboardPage() {
     const prof = profile
     const onlyMine = prof?.role === 'corretor'
     const meId = onlyMine ? ((await supabase.auth.getUser()).data.user?.id || '') : ''
+    const funisExcluidos = await getFunilIdsSemValor()
+    const semFunisExcluidos = (q: any) => funisExcluidos.length
+      ? q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
+      : q
     const scoped = (q: any, col: string = 'vendedor_id') => onlyMine ? q.eq(col, meId) : q
 
     const hoje = new Date()
@@ -140,14 +145,14 @@ export default function DashboardPage() {
     const erros: Record<string, string> = {}
     const errMsg = (e: any) => e?.message || e?.error?.message || String(e)
 
-    // ─── Prêmio fechado no período (TODOS os funis) ────────────────
+    // ─── Prêmio fechado no período (exclui funil EMISSÃO E IMPLANTAÇÃO) ─
     try {
       const fechadosNoPeriodo = await fetchAllPaged<any>(
-        scoped(supabase.from('negocios')
+        semFunisExcluidos(scoped(supabase.from('negocios')
           .select('premio')
           .eq('status', 'ganho')
           .gte('data_fechamento', intervalo.inicio)
-          .lte('data_fechamento', intervalo.fim))
+          .lte('data_fechamento', intervalo.fim)))
       )
       premioMes = fechadosNoPeriodo.reduce((s, n: any) => s + Number(n.premio || 0), 0)
     } catch (e) { console.error('KPI prêmio mês:', e); parciais = true; erros.premio = errMsg(e) }
@@ -155,11 +160,11 @@ export default function DashboardPage() {
     // ─── Prêmio fechado período anterior (delta) ───────────────────
     try {
       const fechadosAnt = await fetchAllPaged<any>(
-        scoped(supabase.from('negocios')
+        semFunisExcluidos(scoped(supabase.from('negocios')
           .select('premio')
           .eq('status', 'ganho')
           .gte('data_fechamento', periodoAntInicio)
-          .lte('data_fechamento', periodoAntFim))
+          .lte('data_fechamento', periodoAntFim)))
       )
       premioMesAnterior = fechadosAnt.reduce((s, n: any) => s + Number(n.premio || 0), 0)
     } catch (e) { console.error('KPI prêmio ant:', e); parciais = true; erros.premioAnt = errMsg(e) }
@@ -185,8 +190,8 @@ export default function DashboardPage() {
     // ─── Negócios ativos (status NÃO em ganho/perdido) ─────────────
     try {
       const data = await fetchAllPaged<any>(
-        scoped(supabase.from('negocios').select('id')
-          .neq('status', 'ganho').neq('status', 'perdido'))
+        semFunisExcluidos(scoped(supabase.from('negocios').select('id')
+          .neq('status', 'ganho').neq('status', 'perdido')))
       )
       apolicesAtivas = data.length
     } catch (e) { console.error('KPI ativos:', e); parciais = true; erros.ativos = errMsg(e) }
@@ -206,10 +211,10 @@ export default function DashboardPage() {
     // ─── Tendência últimos 6 meses ─────────────────────────────────
     try {
       const negsSemestre = await fetchAllPaged<any>(
-        scoped(supabase.from('negocios')
+        semFunisExcluidos(scoped(supabase.from('negocios')
           .select('premio, data_fechamento')
           .eq('status', 'ganho')
-          .gte('data_fechamento', inicioSemestre))
+          .gte('data_fechamento', inicioSemestre)))
       )
       for (let i = 5; i >= 0; i--) {
         const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1)
@@ -248,11 +253,13 @@ export default function DashboardPage() {
     if (filtroUser) userIdsFiltro = [filtroUser]
     else if (filtroEquipe) userIdsFiltro = equipeMap[filtroEquipe] || []
 
-    // — Ranking de Vendas (negócios marcados como Ganho no período, pela data de fechamento, em TODOS os funis) —
+    // — Ranking de Vendas (negócios marcados como Ganho no período, pela data de fechamento; exclui funil EMISSÃO E IMPLANTAÇÃO) —
+    const funisExcluidosRanking = await getFunilIdsSemValor()
     let qNegs: any = supabase.from('negocios')
-      .select('premio, comissao_pct, vendedor_id, status, data_fechamento')
+      .select('premio, comissao_pct, vendedor_id, status, data_fechamento, funil_id')
       .eq('status', 'ganho')
       .gte('data_fechamento', intervalo.inicio).lte('data_fechamento', intervalo.fim)
+    if (funisExcluidosRanking.length) qNegs = qNegs.not('funil_id', 'in', `(${funisExcluidosRanking.join(',')})`)
     if (onlyMine) qNegs = qNegs.eq('vendedor_id', meId)
     else if (userIdsFiltro && userIdsFiltro.length) qNegs = qNegs.in('vendedor_id', userIdsFiltro)
     else if (userIdsFiltro) qNegs = qNegs.eq('vendedor_id', '00000000-0000-0000-0000-000000000000') // equipe vazia

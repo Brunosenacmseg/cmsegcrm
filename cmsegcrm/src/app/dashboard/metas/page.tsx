@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getVisibleUserIds } from '@/lib/auth'
+import { getFunilIdsSemValor } from '@/lib/funis-excluidos'
 
 const TIPOS_META = [
   { key:'premio',   label:'Prêmio (R$)',    icon:'💰', desc:'Total em prêmios fechados' },
@@ -87,14 +88,19 @@ export default function MetasPage() {
   }
 
   async function recalcularTodas() {
+    const funisExcluidos = await getFunilIdsSemValor()
     for (const meta of metas) {
       let novoValor = 0
       if (meta.tipo === 'premio') {
-        const { data } = await supabase.from('negocios').select('premio').eq('vendedor_id', meta.user_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        let q: any = supabase.from('negocios').select('premio').eq('vendedor_id', meta.user_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        if (funisExcluidos.length) q = q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
+        const { data } = await q
         novoValor = (data || []).reduce((s: number, n: any) => s + (n.premio || 0), 0)
       }
       if (meta.tipo === 'negocios') {
-        const { count } = await supabase.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', meta.user_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        let q: any = supabase.from('negocios').select('*', { count: 'exact', head: true }).eq('vendedor_id', meta.user_id).eq('status', 'ganho').gte('data_fechamento', meta.periodo_inicio).lte('data_fechamento', meta.periodo_fim + 'T23:59:59')
+        if (funisExcluidos.length) q = q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
+        const { count } = await q
         novoValor = count || 0
       }
       if (meta.tipo === 'clientes') {

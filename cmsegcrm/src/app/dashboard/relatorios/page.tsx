@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getVisibleUserIds } from '@/lib/auth'
+import { getFunilIdsSemValor } from '@/lib/funis-excluidos'
 
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
@@ -65,6 +66,7 @@ export default function RelatoriosPage() {
     else                         dataInicio = new Date(hoje.getFullYear(), 0, 1).toISOString()
 
     const ids = userIdsParaFiltro()
+    const funisExcluidos = await getFunilIdsSemValor()
 
     // Query slim: so campos que o relatorio usa, filtrada por created_at
     // (relatorio mostra dados do periodo). Pagina ate 5000 por seguranca.
@@ -81,6 +83,7 @@ export default function RelatoriosPage() {
           if (ids.length === 0) q = q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
           else                  q = q.in('vendedor_id', ids)
         }
+        if (funisExcluidos.length) q = q.not('funil_id', 'in', `(${funisExcluidos.join(',')})`)
         const { data } = await q
         if (!data || !data.length) break
         acc.push(...data)
