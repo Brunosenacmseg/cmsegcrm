@@ -65,6 +65,21 @@ export default function TarefasPage() {
   }
 
   async function carregarTarefas(prof = profile, ids: string[] | null = visibleIds) {
+    // Tarefas onde sou (ou alguém visível pra mim é) responsável secundário
+    // via tarefa_responsaveis precisam aparecer. Buscamos esses ids antes
+    // pra incluí-los no filtro principal.
+    let extraTarefaIds: string[] = []
+    const lookupIds =
+      prof?.role === 'corretor' ? [prof.id]
+      : ids ?? []
+    if (lookupIds.length > 0) {
+      const { data: rs } = await supabase
+        .from('tarefa_responsaveis')
+        .select('tarefa_id')
+        .in('user_id', lookupIds)
+      extraTarefaIds = Array.from(new Set((rs || []).map((r: any) => r.tarefa_id).filter(Boolean)))
+    }
+
     let q = supabase
       .from('tarefas')
       .select(`
@@ -75,12 +90,19 @@ export default function TarefasPage() {
         tarefa_responsaveis(user_id, users(id,nome,role,avatar_url))
       `)
       .order('prazo', { ascending: true, nullsFirst: false })
-    // Visibilidade: corretor vê só onde ele é responsável (ou criador);
-    // líder vê apenas tarefas em que o responsável principal é do time.
+    // Visibilidade: corretor vê tarefas em que é responsável principal,
+    // criador OU responsável secundário. Líder vê tarefas em que o
+    // responsável principal OU qualquer co-responsável seja do time.
     if (prof?.role === 'corretor') {
-      q = q.or(`responsavel_id.eq.${prof.id},criado_por.eq.${prof.id}`)
+      const ors = [`responsavel_id.eq.${prof.id}`, `criado_por.eq.${prof.id}`]
+      if (extraTarefaIds.length > 0) ors.push(`id.in.(${extraTarefaIds.join(',')})`)
+      q = q.or(ors.join(','))
     } else if (ids) {
-      q = q.in('responsavel_id', ids)
+      if (extraTarefaIds.length > 0) {
+        q = q.or(`responsavel_id.in.(${ids.join(',')}),id.in.(${extraTarefaIds.join(',')})`)
+      } else {
+        q = q.in('responsavel_id', ids)
+      }
     }
     const { data } = await q
     setTarefas(data || [])
