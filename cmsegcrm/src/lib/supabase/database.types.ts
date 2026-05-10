@@ -9999,6 +9999,51 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_conversa_agentes: {
+        Row: {
+          agente_ativo: boolean
+          agente_id: string | null
+          created_at: string | null
+          id: string
+          instancia_id: string
+          remoto_jid: string
+          updated_at: string | null
+        }
+        Insert: {
+          agente_ativo?: boolean
+          agente_id?: string | null
+          created_at?: string | null
+          id?: string
+          instancia_id: string
+          remoto_jid: string
+          updated_at?: string | null
+        }
+        Update: {
+          agente_ativo?: boolean
+          agente_id?: string | null
+          created_at?: string | null
+          id?: string
+          instancia_id?: string
+          remoto_jid?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversa_agentes_agente_id_fkey"
+            columns: ["agente_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agentes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversa_agentes_instancia_id_fkey"
+            columns: ["instancia_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instancias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_instancias: {
         Row: {
           agente_ativo: boolean | null

@@ -311,10 +311,21 @@ export async function POST(request: NextRequest) {
 
         // Auto-resposta com agente IA. Se for áudio, usa transcrição como
         // entrada; se for outra mídia sem caption, ignora.
+        // A configuração da CONVERSA (whatsapp_conversa_agentes) sobrepõe a
+        // da instância: se houver linha pra esse remoto_jid, manda nela;
+        // senão, cai no agente padrão da instância.
         const entradaIA = transcricao || conteudoTexto
-        if (inst.agente_ativo && inst.agente_id && remotoJid && entradaIA) {
+        const { data: convCfg } = await supabase
+          .from('whatsapp_conversa_agentes')
+          .select('agente_id, agente_ativo')
+          .eq('instancia_id', inst.id)
+          .eq('remoto_jid', remotoJid)
+          .maybeSingle()
+        const agenteAtivo = convCfg ? convCfg.agente_ativo : inst.agente_ativo
+        const agenteId    = convCfg?.agente_id ?? inst.agente_id
+        if (agenteAtivo && agenteId && remotoJid && entradaIA) {
           try {
-            const { data: agente } = await supabase.from('ai_agentes').select('*').eq('id', inst.agente_id).maybeSingle()
+            const { data: agente } = await supabase.from('ai_agentes').select('*').eq('id', agenteId).maybeSingle()
             if (agente?.ativo) {
               const { data: hist } = await supabase.from('whatsapp_mensagens')
                 .select('conteudo, transcricao, direcao').eq('instancia_id', inst.id).eq('remoto_jid', remotoJid)

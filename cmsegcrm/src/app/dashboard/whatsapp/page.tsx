@@ -105,6 +105,11 @@ export default function WhatsAppPage() {
   // Agentes IA disponíveis (admin cadastra em /dashboard/agentes-ia)
   const [agentesIA, setAgentesIA] = useState<any[]>([])
 
+  // Override de agente por CONVERSA (sobrepõe o agente padrão da instância).
+  // null = usa o agente da instância; objeto = config específica desta conversa.
+  const [convAgenteCfg, setConvAgenteCfg] = useState<{ agente_id: string|null; agente_ativo: boolean } | null>(null)
+  const [salvandoAgenteConv, setSalvandoAgenteConv] = useState(false)
+
   // Visualização do WhatsApp de outro usuário (admin → todos; líder → time).
   // Quando viewUserId !== meuUserId o envio é bloqueado (modo somente leitura).
   const [meuUserId, setMeuUserId]               = useState<string>('')
@@ -183,7 +188,50 @@ export default function WhatsAppPage() {
     setEditandoContato(false)
     setShowEmojis(false)
     setShowStickers(false)
-    await carregarMensagens(conv.remoto_jid)
+    setConvAgenteCfg(null)
+    await Promise.all([
+      carregarMensagens(conv.remoto_jid),
+      carregarAgenteConversa(conv.remoto_jid),
+    ])
+  }
+
+  async function carregarAgenteConversa(jid: string) {
+    if (!instancia) return
+    const { data } = await supabase
+      .from('whatsapp_conversa_agentes')
+      .select('agente_id, agente_ativo')
+      .eq('instancia_id', instancia.id)
+      .eq('remoto_jid', jid)
+      .maybeSingle()
+    setConvAgenteCfg(data ? { agente_id: data.agente_id, agente_ativo: !!data.agente_ativo } : null)
+  }
+
+  async function upsertAgenteConversa(patch: { agente_id?: string|null; agente_ativo?: boolean }) {
+    if (!instancia || !conversa) return
+    setSalvandoAgenteConv(true)
+    const atual = convAgenteCfg || { agente_id: null, agente_ativo: false }
+    const proximo = { ...atual, ...patch }
+    const { error } = await supabase
+      .from('whatsapp_conversa_agentes')
+      .upsert({
+        instancia_id: instancia.id,
+        remoto_jid:   conversa.remoto_jid,
+        agente_id:    proximo.agente_id,
+        agente_ativo: !!proximo.agente_ativo,
+      }, { onConflict: 'instancia_id,remoto_jid' })
+    setSalvandoAgenteConv(false)
+    if (error) { alert('Não foi possível salvar o agente desta conversa: ' + error.message); return }
+    setConvAgenteCfg(proximo)
+  }
+
+  async function definirAgenteConversa(agenteId: string) {
+    await upsertAgenteConversa({ agente_id: agenteId || null })
+  }
+
+  async function alternarAgenteConversa(ativo: boolean) {
+    const cfg = convAgenteCfg || { agente_id: null, agente_ativo: false }
+    if (ativo && !cfg.agente_id) { alert('Selecione um agente antes de ativar.'); return }
+    await upsertAgenteConversa({ agente_ativo: ativo })
   }
 
   async function verificarStatus() {
@@ -610,6 +658,48 @@ export default function WhatsAppPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Agente IA desta conversa (sobrepõe o agente padrão da instância) */}
+                {(() => {
+                  const cfgEfetivo = convAgenteCfg ?? { agente_id: instancia.agente_id || null, agente_ativo: !!instancia.agente_ativo }
+                  const ativo = !!cfgEfetivo.agente_ativo
+                  const agenteAtualId = cfgEfetivo.agente_id || ''
+                  const usandoPadrao = !convAgenteCfg
+                  return (
+                    <div style={{padding:'8px 20px',borderBottom:'1px solid var(--border)',background:ativo?'rgba(28,181,160,0.05)':'rgba(255,255,255,0.02)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                      <div style={{fontSize:11,fontWeight:600,color:ativo?'var(--teal)':'var(--text-muted)',letterSpacing:'1px',textTransform:'uppercase',display:'flex',alignItems:'center',gap:6}}>
+                        🤖 Agente IA nesta conversa
+                      </div>
+                      <select
+                        value={agenteAtualId}
+                        onChange={e=>definirAgenteConversa(e.target.value)}
+                        disabled={somenteLeitura||salvandoAgenteConv}
+                        style={{flex:1,minWidth:180,maxWidth:280,padding:'5px 8px',borderRadius:6,border:'1px solid var(--border)',background:'#ffffff',color:'var(--text)',fontSize:11,cursor:somenteLeitura?'not-allowed':'pointer'}}
+                      >
+                        <option value="">— selecione um agente —</option>
+                        {agentesIA.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                      </select>
+                      <label style={{position:'relative',display:'inline-flex',alignItems:'center',gap:8,cursor:somenteLeitura?'not-allowed':'pointer',fontSize:11,color:'var(--text-muted)'}}>
+                        <input type="checkbox"
+                          checked={ativo}
+                          disabled={somenteLeitura||salvandoAgenteConv}
+                          onChange={e=>alternarAgenteConversa(e.target.checked)}
+                          style={{opacity:0,width:0,height:0,position:'absolute'}} />
+                        <span style={{position:'relative',display:'inline-block',width:34,height:18,borderRadius:18,background:ativo?'var(--teal)':'rgba(255,255,255,0.15)',transition:'background 0.2s'}}>
+                          <span style={{position:'absolute',top:2,left:ativo?18:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}}/>
+                        </span>
+                        {ativo ? 'Ativo' : 'Inativo'}
+                      </label>
+                      <span style={{fontSize:10,color:'var(--text-muted)'}}>
+                        {salvandoAgenteConv
+                          ? 'salvando...'
+                          : usandoPadrao
+                            ? 'usando padrão da instância'
+                            : 'override desta conversa'}
+                      </span>
+                    </div>
+                  )
+                })()}
 
                 {/* Mensagens */}
                 <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
