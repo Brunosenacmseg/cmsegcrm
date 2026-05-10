@@ -479,7 +479,7 @@ async function handler(req: NextRequest) {
     detalhes.push({ fluxo: fluxo.nome, inits, followups })
   }
 
-  return NextResponse.json({
+  const resumo = {
     ok: true,
     fluxos_ativos: fluxos.length,
     inits: totalInits,
@@ -487,7 +487,9 @@ async function handler(req: NextRequest) {
     falhas: totalFalhas,
     detalhes,
     rodou_em: new Date().toISOString(),
-  })
+  }
+  console.log('[SDR cron]', JSON.stringify(resumo))
+  return NextResponse.json(resumo)
 }
 
 export async function GET(req: NextRequest) { return handler(req) }
