@@ -75,7 +75,7 @@ export default function RelatoriosPage() {
       const acc: any[] = []
       for (let off = 0; ; off += PAGE) {
         let q = supabase.from('negocios')
-          .select('id, etapa, status, premio, comissao_pct, produto, funil_id, vendedor_id, created_at, data_fechamento, funis(tipo,nome,emoji), clientes(nome)')
+          .select('id, etapa, status, premio, comissao_pct, produto, seguradora, funil_id, vendedor_id, created_at, data_fechamento, funis(tipo,nome,emoji), clientes(nome)')
           .gte('created_at', dataInicio)
           .order('created_at', { ascending: false })
           .range(off, off + PAGE - 1)
@@ -110,41 +110,42 @@ export default function RelatoriosPage() {
     const ganhos = todos.filter((n:any) => n.status === 'ganho')
     const perdidos = todos.filter((n:any) => n.status === 'perdido')
 
-    // Prêmio por ramo
+    // Prêmio por ramo — apenas negócios ganhos (receita realizada)
     const porRamo: Record<string,number> = {}
-    ativos.forEach((n:any) => {
+    ganhos.forEach((n:any) => {
       const ramo = (n.produto||'Outros').split(' — ')[0]
       porRamo[ramo] = (porRamo[ramo]||0) + (n.premio||0)
     })
 
-    // Prêmio por seguradora
+    // Prêmio por seguradora — apenas ganhos
     const porSeg: Record<string,{premio:number,qtd:number}> = {}
-    ativos.forEach((n:any) => {
+    ganhos.forEach((n:any) => {
       const s = n.seguradora||'Outros'
       if (!porSeg[s]) porSeg[s] = {premio:0,qtd:0}
       porSeg[s].premio += n.premio||0
       porSeg[s].qtd++
     })
 
-    // Prêmio por funil
+    // Prêmio por funil — apenas ganhos
     const porFunil: Record<string,number> = {}
-    ativos.forEach((n:any) => {
+    ganhos.forEach((n:any) => {
       const f = n.funis?.nome||'Sem funil'
       porFunil[f] = (porFunil[f]||0) + (n.premio||0)
     })
 
-    // Prêmio por mês (ano atual)
+    // Prêmio por mês (ano atual) — apenas ganhos, usando data de fechamento
     const porMes = Array(12).fill(0)
-    todos.forEach((n:any) => {
-      const m = new Date(n.created_at||Date.now()).getMonth()
+    ganhos.forEach((n:any) => {
+      const ref = n.data_fechamento || n.created_at || Date.now()
+      const m = new Date(ref).getMonth()
       porMes[m] += n.premio||0
     })
 
-    // Comissão total
-    const comissaoTotal = ativos.reduce((s:number,n:any) => s+(n.premio&&n.comissao_pct?n.premio*n.comissao_pct/100:0),0)
-    const premioTotal   = ativos.reduce((s:number,n:any) => s+(n.premio||0),0)
-    const mediaComissao = ativos.filter((n:any)=>n.comissao_pct>0).length
-      ? ativos.filter((n:any)=>n.comissao_pct>0).reduce((s:number,n:any)=>s+n.comissao_pct,0) / ativos.filter((n:any)=>n.comissao_pct>0).length
+    // Totais financeiros — somente negócios ganhos (receita/comissão realizada)
+    const comissaoTotal = ganhos.reduce((s:number,n:any) => s+(n.premio&&n.comissao_pct?n.premio*n.comissao_pct/100:0),0)
+    const premioTotal   = ganhos.reduce((s:number,n:any) => s+(n.premio||0),0)
+    const mediaComissao = ganhos.filter((n:any)=>n.comissao_pct>0).length
+      ? ganhos.filter((n:any)=>n.comissao_pct>0).reduce((s:number,n:any)=>s+n.comissao_pct,0) / ganhos.filter((n:any)=>n.comissao_pct>0).length
       : 0
     const taxaConversao = todos.length ? (ganhos.length/todos.length*100) : 0
 
