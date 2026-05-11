@@ -176,6 +176,28 @@ export default function FormulariosMetaPage() {
     } finally { setSalvando(null) }
   }
 
+  const [reprocessando, setReprocessando] = useState<string | null>(null)
+  async function reprocessarUltimo(formId: string | null) {
+    const alvo = formId || 'todos forms ativos'
+    if (!confirm(`Buscar o último lead real de ${alvo} no Meta e reenviar pro CRM?`)) return
+    setReprocessando(formId || 'all')
+    try {
+      const r = await fetch('/api/meta/leads/reprocess', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify(formId ? { form_id: formId, limit: 1 } : { limit: 1 }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { alert('❌ ' + (j.error || `HTTP ${r.status}`)); return }
+      const okCount = (j.processados || []).filter((p: any) => p.ok).length
+      const falhas = (j.falhas || []).length + (j.processados || []).filter((p: any) => !p.ok).length
+      alert(`✅ Reprocessados: ${okCount}\n${falhas ? `⚠ Falhas: ${falhas}\n` : ''}\nDetalhes:\n${JSON.stringify(j, null, 2).slice(0, 1500)}`)
+      await rodarDiagnostico()
+    } catch (e: any) {
+      alert('❌ ' + (e?.message || 'erro de rede'))
+    } finally { setReprocessando(null) }
+  }
+
   async function rodarDiagnostico() {
     setDiagnosticando(true)
     setDiagnostico(null)
@@ -270,6 +292,11 @@ export default function FormulariosMetaPage() {
                 }}
                 style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--gold)',background:'var(--gold-soft)',color:'var(--gold)',cursor:'pointer',fontSize:12,fontWeight:600}}
               >📋 Copiar JSON</button>
+              <button
+                onClick={() => reprocessarUltimo(null)}
+                disabled={reprocessando === 'all'}
+                style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--gold)',background:'transparent',color:'var(--gold)',cursor:reprocessando==='all'?'wait':'pointer',fontSize:12,fontWeight:600}}
+              >{reprocessando === 'all' ? '⏳ Reenviando…' : '↻ Reenviar último de todos'}</button>
               <button onClick={() => setDiagnostico(null)} style={{background:'none',border:'none',color:'var(--text-muted)',fontSize:18,cursor:'pointer',padding:'4px 8px'}}>✕</button>
             </div>
 
@@ -316,6 +343,12 @@ export default function FormulariosMetaPage() {
                       <div>
                         Meta (últimos 5): {f.leads_no_meta ?? '—'} · CRM: {f.leads_no_crm ?? '—'}<br/>
                         Último lead Meta: {f.ultimo_lead_meta || '—'}
+                        <button
+                          onClick={() => reprocessarUltimo(f.form_id)}
+                          disabled={reprocessando === f.form_id || !f.ultimo_lead_meta}
+                          style={{marginLeft:8,padding:'2px 8px',borderRadius:6,border:'1px solid var(--gold)',background:'transparent',color:'var(--gold)',cursor:reprocessando===f.form_id?'wait':'pointer',fontSize:11}}>
+                          {reprocessando === f.form_id ? '⏳' : '↻ Reenviar último'}
+                        </button>
                       </div>
                     )}
                   </div>
