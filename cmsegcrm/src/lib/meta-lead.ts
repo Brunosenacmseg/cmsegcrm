@@ -39,6 +39,8 @@ export type LeadgenInput = {
   campaignId?: string | null
   pageId?: string | null
   fieldData: MetaFieldData[] | null
+  /** created_time do lead na Meta (ISO ou epoch). Quando ausente, fica null. */
+  createdTime?: string | null
 }
 
 export type LeadgenResult = {
@@ -115,6 +117,15 @@ export async function processarLeadgen(
   setMeta('__meta__:page_id',     input.pageId)
   setMeta('__meta__:lead_id',     input.leadgenId)
   setMeta('__meta__:form_name',   mapping?.form_nome)
+  // Normaliza created_time vindo da Meta (ISO ou epoch) para ISO.
+  let leadCriadoEmIso: string | null = null
+  if (input.createdTime) {
+    const raw = String(input.createdTime).trim()
+    const asNum = Number(raw)
+    const d = Number.isFinite(asNum) && raw.match(/^\d+$/) ? new Date(asNum * (raw.length <= 10 ? 1000 : 1)) : new Date(raw)
+    if (!isNaN(d.getTime())) leadCriadoEmIso = d.toISOString()
+  }
+  if (leadCriadoEmIso) setMeta('__meta__:created_time', leadCriadoEmIso)
   if (input.campaignId) {
     const { data: row } = await sa.from('meta_campanhas')
       .select('nome').eq('meta_id', String(input.campaignId)).maybeSingle()
@@ -237,6 +248,7 @@ export async function processarLeadgen(
         vendedor_id:       vendedorId,
         meta_campaign_id:  input.campaignId || null,
         meta_ad_id:        input.adId || null,
+        data_primeiro_contato: leadCriadoEmIso,
       }
       // Aplica negBase (sobrescreve defaults), exceto titulo (já resolvido).
       for (const [k, v] of Object.entries(negBase)) {
@@ -282,6 +294,7 @@ export async function processarLeadgen(
     negocio_id:    negocioId,
     vendedor_id:   vendedorId,
     processado_em: new Date().toISOString(),
+    lead_criado_em: leadCriadoEmIso,
   })
   if (errLead) logErr('insert meta_leads falhou', errLead)
 
