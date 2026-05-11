@@ -377,7 +377,42 @@ export default function ImportarPage() {
     setNomeArquivo(file.name)
     const ext = file.name.toLowerCase().split('.').pop() || ''
     if (ext === 'pdf') {
-      alert('Importação de PDF ainda não suportada. Use CSV ou XLSX por enquanto.')
+      // PDF só é suportado quando importando NEGÓCIOS (export do RD CRM).
+      // Para outras entidades, exige CSV/XLSX.
+      if (entidade !== 'negocios') {
+        alert('Importação de PDF só é suportada para a entidade "Negociações". Use CSV ou XLSX para ' + entidade + '.')
+        return
+      }
+      setFormato('pdf')
+      try {
+        const fd = new FormData()
+        fd.append('file', file)
+        const headers = await authHeaders()
+        // Remove Content-Type pra deixar o browser setar o boundary do multipart
+        delete (headers as any)['Content-Type']
+        const r = await fetch('/api/importar/parse-pdf', { method: 'POST', headers, body: fd })
+        const j = await r.json()
+        if (!r.ok || j.erro) {
+          alert('Erro ao ler o PDF: ' + (j.erro || `HTTP ${r.status}`))
+          return
+        }
+        const rows: any[] = j.rows || []
+        if (!rows.length) {
+          alert('PDF sem negociações detectadas.')
+          return
+        }
+        // Constrói lista de headers a partir da união de chaves de todas
+        // as rows — preserva a ordem da primeira ocorrência pra que a UI
+        // mostre os campos na ordem do PDF.
+        const headersSet = new Set<string>()
+        for (const row of rows) for (const k of Object.keys(row)) headersSet.add(k)
+        const headersList = Array.from(headersSet)
+        setExcelData({ headers: headersList, rows })
+        setMapeamento(autoMapear(headersList, entidade))
+        setStep('mapear')
+      } catch (e: any) {
+        alert('Erro ao ler o PDF: ' + (e?.message || ''))
+      }
       return
     }
     setFormato(ext === 'csv' ? 'csv' : 'xlsx')
@@ -709,11 +744,15 @@ export default function ImportarPage() {
                   onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)handleFile(f)}}
                   onClick={()=>inputRef.current?.click()}
                   style={{border:`2px dashed ${drag?'var(--gold)':'rgba(201,168,76,0.3)'}`,borderRadius:14,padding:'48px 24px',textAlign:'center',cursor:'pointer',background:drag?'rgba(201,168,76,0.06)':'rgba(255,255,255,0.02)',transition:'all 0.2s'}}>
-                  <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{display:'none'}}
+                  <input ref={inputRef} type="file"
+                    accept={entidade === 'negocios' ? '.csv,.xlsx,.xls,.pdf' : '.csv,.xlsx,.xls'}
+                    style={{display:'none'}}
                     onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f)}} />
                   <div style={{fontSize:48,marginBottom:12}}>📄</div>
                   <div style={{fontSize:14,fontWeight:500}}>Clique ou arraste o arquivo aqui</div>
-                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>.csv · .xlsx · .xls</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>
+                    .csv · .xlsx · .xls{entidade === 'negocios' ? ' · .pdf (export do RD CRM)' : ''}
+                  </div>
                 </div>
               </div>
 
