@@ -93,7 +93,9 @@ export default function ComissoesPage(){
       }else visibleIds=[user?.id||'']
     }
 
-    let negQuery=supabase.from('negocios').select('*,clientes(id,nome,tipo),funis(tipo,nome,emoji),users!negocios_vendedor_id_fkey(nome)').gt('premio',0).gt('comissao_pct',0).order('created_at',{ascending:false})
+    // Comissões só existem sobre negócios ganhos — filtramos por status='ganho'
+    // para evitar incluir prêmios de negociações em andamento ou perdidas na soma.
+    let negQuery=supabase.from('negocios').select('*,clientes(id,nome,tipo),funis(tipo,nome,emoji),users!negocios_vendedor_id_fkey(nome)').eq('status','ganho').gt('premio',0).gt('comissao_pct',0).order('data_fechamento',{ascending:false,nullsFirst:false})
     if(visibleIds) negQuery=(negQuery as any).in('vendedor_id',visibleIds)
 
     let recQuery=supabase.from('vw_comissoes_vendedor').select('*').order('data_recebimento',{ascending:false})
@@ -114,8 +116,11 @@ export default function ComissoesPage(){
   const negociosFiltrados = aplicarFiltro(negocios)
   const recebidasFiltradas = aplicarFiltro(recebidas)
 
-  const doMes=negociosFiltrados.filter((n:any)=>{const d=new Date(n.created_at);return d.getFullYear()===anoSel&&d.getMonth()===mesSel})
-  const doAno=negociosFiltrados.filter((n:any)=>new Date(n.created_at).getFullYear()===anoSel)
+  // Para comissões/prêmios "ganhos no período" usamos a data de fechamento
+  // do negócio (quando ele foi efetivamente ganho), com fallback para created_at.
+  const refDataNeg = (n:any) => new Date(n.data_fechamento || n.created_at)
+  const doMes=negociosFiltrados.filter((n:any)=>{const d=refDataNeg(n);return d.getFullYear()===anoSel&&d.getMonth()===mesSel})
+  const doAno=negociosFiltrados.filter((n:any)=>refDataNeg(n).getFullYear()===anoSel)
   const lista=vistaAno?doAno:doMes
 
   // Comissões efetivamente recebidas — período
@@ -132,7 +137,7 @@ export default function ComissoesPage(){
   const premioLista  =lista.reduce((s:number,n:any)=>s+(n.premio||0),0)
   const comissaoLista=lista.reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)
   const mediaComissao=lista.length?lista.reduce((s:number,n:any)=>s+n.comissao_pct,0)/lista.length:0
-  const porMes=Array(12).fill(0).map((_,i)=>({mes:i,com:negociosFiltrados.filter((n:any)=>{const d=new Date(n.created_at);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)}))
+  const porMes=Array(12).fill(0).map((_,i)=>({mes:i,com:negociosFiltrados.filter((n:any)=>{const d=refDataNeg(n);return d.getFullYear()===anoSel&&d.getMonth()===i}).reduce((s:number,n:any)=>s+n.premio*n.comissao_pct/100,0)}))
   const maxComMes=Math.max(...porMes.map(m=>m.com),1)
   const porSeg:Record<string,{com:number;qtd:number}>= {}
   lista.forEach((n:any)=>{const s=n.seguradora||'Outros';if(!porSeg[s])porSeg[s]={com:0,qtd:0};porSeg[s].com+=n.premio*n.comissao_pct/100;porSeg[s].qtd++})

@@ -1549,9 +1549,19 @@ function FunisPage() {
             <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
               {(funiAtual.etapas||[]).map((etapa: string) => {
                 const cards = negociosFunil.filter(n => n.etapa === etapa)
-                const valorEmAndamento = cards
-                  .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
+                // Soma de acordo com o filtro de status ativo.
+                // 'todos' considera em_andamento + ganho (pipeline + realizado, exclui perdido).
+                // Demais filtros somam todos os cards visíveis (já filtrados pelo status).
+                const cardsParaSoma = filtroStatus === 'todos'
+                  ? cards.filter(n => (n.status || 'em_andamento') !== 'perdido')
+                  : cards
+                const valorEtapa = cardsParaSoma
                   .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
+                const tituloSoma =
+                  filtroStatus === 'ganho'        ? 'Soma do prêmio das negociações ganhas nesta etapa'
+                  : filtroStatus === 'perdido'    ? 'Soma do prêmio das negociações perdidas nesta etapa'
+                  : filtroStatus === 'em_andamento' ? 'Soma do prêmio das negociações em andamento nesta etapa'
+                  : 'Soma do prêmio das negociações nesta etapa (em andamento + ganhas)'
                 const ehHover = etapaHover === etapa && arrastando
                 return (
                   <div key={etapa}
@@ -1571,9 +1581,9 @@ function FunisPage() {
                       <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.08)',padding:'1px 7px',borderRadius:10}}>{cards.length}</span>
                     </div>
                     {!ocultarValor && (
-                    <div title="Soma do prêmio das negociações em andamento nesta etapa"
+                    <div title={tituloSoma}
                       style={{fontSize:11,fontWeight:600,color:'var(--teal)'}}>
-                      R$ {valorEmAndamento.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                      R$ {valorEtapa.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
                     </div>
                     )}
                   </div>
