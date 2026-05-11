@@ -16,6 +16,7 @@ export default function TarefasPage() {
   const [profile, setProfile]       = useState<any>(null)
   const [usuarios, setUsuarios]     = useState<any[]>([])
   const [tarefas, setTarefas]       = useState<any[]>([])
+  const [titulosHist, setTitulosHist] = useState<string[]>([])
   const [loading, setLoading]       = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [filtroStatus, setFiltroStatus] = useState('pendente')
@@ -61,6 +62,21 @@ export default function TarefasPage() {
       setEquipeMembros(map)
     }
     await carregarTarefas(prof, ids)
+    // Histórico de títulos pra autocomplete (próprias + atribuídas pelo usuário)
+    const { data: hist } = await supabase
+      .from('tarefas')
+      .select('titulo')
+      .or(`criado_por.eq.${prof?.id||''},responsavel_id.eq.${prof?.id||''}`)
+      .order('created_at', { ascending: false })
+      .limit(500)
+    const uniq: string[] = []
+    const seen = new Set<string>()
+    for (const r of (hist || []) as any[]) {
+      const t = (r.titulo || '').trim()
+      if (t && !seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); uniq.push(t) }
+      if (uniq.length >= 50) break
+    }
+    setTitulosHist(uniq)
     setLoading(false)
   }
 
@@ -85,6 +101,7 @@ export default function TarefasPage() {
       .select(`
         *,
         clientes(nome),
+        negocios:negocios!tarefas_negocio_id_fkey(id,titulo,etapa,funil_id,funis(id,nome)),
         responsavel:users!tarefas_responsavel_id_fkey(id,nome,role,avatar_url),
         atribuidor:users!tarefas_atribuido_por_fkey(id,nome,role,avatar_url),
         tarefa_responsaveis(user_id, users(id,nome,role,avatar_url))
@@ -224,7 +241,9 @@ export default function TarefasPage() {
   }
 
   async function alterarStatus(id: string, status: string) {
-    await supabase.from('tarefas').update({ status }).eq('id', id)
+    const { error } = await supabase.from('tarefas').update({ status }).eq('id', id)
+    if (error) { alert('Erro ao alterar status: ' + error.message); return }
+    if (status === 'em_andamento' && filtroStatus === 'pendente') setFiltroStatus('em_andamento')
     await carregarTarefas()
   }
 
@@ -351,6 +370,7 @@ export default function TarefasPage() {
                         <span>📌 {t.tipo}</span>
                         {t.prazo && <span style={{color:atrasada?'var(--red)':vencendoEm48?'var(--gold)':'var(--text-muted)'}}>📅 {new Date(t.prazo).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>}
                         {t.clientes?.nome && <span style={{cursor:'pointer',color:'var(--gold)'}} onClick={()=>router.push(`/dashboard/clientes/${t.cliente_id}`)}>👤 {t.clientes.nome}</span>}
+                        {t.negocios?.id && <span style={{cursor:'pointer',color:'var(--teal)'}} onClick={()=>router.push(`/dashboard/funis?card=${t.negocios.id}`)} title="Abrir card">🗂 {[t.negocios.funis?.nome, t.negocios.etapa, t.negocios.titulo].filter(Boolean).join(' › ')}</span>}
                         {(() => {
                           const detalhes = (Array.isArray(t.tarefa_responsaveis) ? t.tarefa_responsaveis : [])
                             .map((r: any) => r.users).filter(Boolean)
@@ -419,7 +439,10 @@ export default function TarefasPage() {
             </div>
             <div style={{marginBottom:14}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Título *</label>
-              <input value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} placeholder="Título da tarefa" style={inp} autoFocus />
+              <input list="titulos-hist-tarefas" value={form.titulo} onChange={e=>setForm(f=>({...f,titulo:e.target.value}))} placeholder="Título da tarefa" style={inp} autoFocus />
+              <datalist id="titulos-hist-tarefas">
+                {titulosHist.map(t => <option key={t} value={t} />)}
+              </datalist>
             </div>
             <div style={{marginBottom:14}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Descrição</label>

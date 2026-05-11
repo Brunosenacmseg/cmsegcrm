@@ -126,6 +126,7 @@ function FunisPage() {
   const [tarefasCard, setTarefasCard]           = useState<any[]>([])
   const [tarefasPorNegocio, setTarefasPorNegocio] = useState<Record<string, any>>({})
   const [novaTarefa, setNovaTarefa]             = useState<{ titulo: string; prazo: string }>({ titulo:'', prazo:'' })
+  const [titulosHistTarefa, setTitulosHistTarefa] = useState<string[]>([])
   const [salvandoTarefa, setSalvandoTarefa]     = useState(false)
 
   useEffect(() => { init() }, [])
@@ -728,6 +729,23 @@ function FunisPage() {
     setUserInPosvenda(ehPosvenda)
 
     await carregarFunis()
+    // Histórico de títulos de tarefa pra autocomplete no card
+    if (prof?.id) {
+      const { data: hist } = await supabase
+        .from('tarefas')
+        .select('titulo')
+        .or(`criado_por.eq.${prof.id},responsavel_id.eq.${prof.id}`)
+        .order('created_at', { ascending: false })
+        .limit(500)
+      const uniq: string[] = []
+      const seen = new Set<string>()
+      for (const r of (hist || []) as any[]) {
+        const t = (r.titulo || '').trim()
+        if (t && !seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); uniq.push(t) }
+        if (uniq.length >= 50) break
+      }
+      setTitulosHistTarefa(uniq)
+    }
     setLoading(false)
   }
 
@@ -875,6 +893,17 @@ function FunisPage() {
       }
     }
     await supabase.from('negocios').update(patch).eq('id', negocioId)
+
+    // Ao marcar perda/ganho, encerra tarefas pendentes vinculadas ao negócio
+    // (cancela as pendentes/em andamento). Evita ficar lembrando o usuário
+    // de tarefas de um lead já fechado.
+    if (status === 'perdido' || status === 'ganho') {
+      await supabase
+        .from('tarefas')
+        .update({ status: 'cancelada' })
+        .eq('negocio_id', negocioId)
+        .in('status', ['pendente','em_andamento'])
+    }
 
     // Dispara automações vinculadas ao trigger
     if (status === 'ganho')   disparaAutomacao('status_ganho',   negocioId)
@@ -1141,6 +1170,14 @@ function FunisPage() {
     setBulkLoading(false)
     if (error) { alert('Erro: ' + error.message); return }
     setNegocios(prev => prev.map(n => ids.includes(n.id) ? { ...n, ...patch } : n))
+    // Encerra tarefas em aberto vinculadas a esses negócios
+    if (status === 'ganho' || status === 'perdido') {
+      await supabase
+        .from('tarefas')
+        .update({ status: 'cancelada' })
+        .in('negocio_id', ids)
+        .in('status', ['pendente','em_andamento'])
+    }
     // Dispara automações para ganho/perdido (uma por uma — engine é idempotente)
     if (status === 'ganho' || status === 'perdido') {
       for (const id of ids) disparaAutomacao(`status_${status}` as any, id)
@@ -2091,6 +2128,37 @@ function FunisPage() {
               />
             </div>
 
+            {/* Rastreador? (somente funil EMISSÃO E IMPLANTAÇÃO) */}
+            {isFunilEmissao(cardAtivo.funil_id) && (
+              <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>📡 Rastreador?</div>
+                <div style={{display:'flex',gap:8}}>
+                  {['SIM','NAO'].map(v => {
+                    const ativo = (cardAtivo.rastreador || '').toUpperCase() === v
+                    return (
+                      <button key={v}
+                        disabled={!podeEditarPremio(cardAtivo)}
+                        onClick={async () => {
+                          if (!podeEditarPremio(cardAtivo)) return
+                          const novo = ativo ? null : v
+                          const { error } = await supabase.from('negocios').update({ rastreador: novo }).eq('id', cardAtivo.id)
+                          if (error) { alert('Erro: '+error.message); return }
+                          setCardAtivo({ ...cardAtivo, rastreador: novo })
+                          setNegocios(prev => prev.map(n => n.id === cardAtivo.id ? { ...n, rastreador: novo } : n))
+                          if (v === 'SIM' && !ativo) alert('Rastreador marcado. Um card foi criado automaticamente no FUNIL RASTREADOR.')
+                        }}
+                        style={{flex:1,padding:'8px 12px',borderRadius:6,fontSize:12,fontWeight:600,cursor:podeEditarPremio(cardAtivo)?'pointer':'not-allowed',border:'1px solid '+(ativo?(v==='SIM'?'rgba(28,181,160,0.5)':'rgba(224,82,82,0.4)'):'var(--border)'),background:ativo?(v==='SIM'?'rgba(28,181,160,0.12)':'rgba(224,82,82,0.10)'):'rgba(255,255,255,0.04)',color:ativo?(v==='SIM'?'var(--teal)':'var(--red)'):'var(--text-muted)'}}>
+                        {v === 'SIM' ? '✓ Sim' : '✕ Não'}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:6}}>
+                  Ao marcar SIM, um card é criado automaticamente no FUNIL RASTREADOR com cliente, telefone e placa.
+                </div>
+              </div>
+            )}
+
             {/* Comissão do negócio */}
             <div style={{marginBottom:16,padding:'12px 16px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid var(--border)'}}>
               <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>💰 Comissão</div>
@@ -2363,11 +2431,15 @@ function FunisPage() {
               {/* Form de criar tarefa rápida */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 170px auto',gap:6,marginBottom:8}}>
                 <input
+                  list="titulos-hist-tarefa-card"
                   value={novaTarefa.titulo}
                   onChange={e=>setNovaTarefa(f => ({...f, titulo:e.target.value}))}
                   onKeyDown={e=>{ if (e.key==='Enter' && novaTarefa.titulo.trim()) criarTarefaDoCard() }}
                   placeholder="Título da tarefa..."
                   style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
+                <datalist id="titulos-hist-tarefa-card">
+                  {titulosHistTarefa.map(t => <option key={t} value={t} />)}
+                </datalist>
                 <input
                   type="datetime-local"
                   value={novaTarefa.prazo}
