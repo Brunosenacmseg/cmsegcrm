@@ -512,7 +512,9 @@ export default function DashboardPage() {
                         <div style={{fontSize:14, fontWeight:700, color:i===0?'var(--gold)':'var(--teal)'}}>
                           R$ {r.premio>=1000 ? (r.premio/1000).toFixed(1)+'k' : r.premio.toFixed(0)}
                         </div>
-                        <div style={{fontSize:10, color:'var(--text-muted)'}}>R$ {Math.round(r.comissao).toLocaleString('pt-BR')} com.</div>
+                        {isAdmin && (
+                          <div style={{fontSize:10, color:'var(--text-muted)'}}>R$ {Math.round(r.comissao).toLocaleString('pt-BR')} com.</div>
+                        )}
                       </div>
                     </div>
                   )
