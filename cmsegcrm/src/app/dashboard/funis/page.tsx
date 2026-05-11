@@ -41,6 +41,13 @@ function FunisPage() {
   const [bulkLoading, setBulkLoading] = useState(false)
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('em_andamento')
+  // Totais agregados do funil por status (do servidor). Mantém o card
+  // "Total do funil" coerente mesmo quando os cards visíveis são filtrados.
+  const [totaisFunil, setTotaisFunil] = useState<{ em_andamento:{qtd:number,premio:number}, ganho:{qtd:number,premio:number}, perdido:{qtd:number,premio:number} }>({
+    em_andamento: { qtd: 0, premio: 0 },
+    ganho:        { qtd: 0, premio: 0 },
+    perdido:      { qtd: 0, premio: 0 },
+  })
   const [modoVisao, setModoVisao] = useState<'kanban'|'lista'>('kanban')
   const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'>('recentes')
   // Filtro por data (criação ou fechamento) com período opcional
@@ -129,7 +136,8 @@ function FunisPage() {
   const [salvandoTarefa, setSalvandoTarefa]     = useState(false)
 
   useEffect(() => { init() }, [])
-  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda, funis])
+  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda, funis, filtroStatus])
+  useEffect(() => { if (funilAtivo) carregarTotaisFunil() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda])
   useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros, userInPosvenda, funis])
 
   // Listener global de dragend/drop — resolve o relato de "kanban trava o
@@ -782,6 +790,11 @@ function FunisPage() {
     setNegocios([])
     const PRIMEIRA = 200
     const PAGE = 1000
+    // Em funis grandes (ex.: META com 14k+ leads) carregar todos os cards
+    // estoura a request. Filtramos por status no servidor quando o usuário
+    // selecionou um status específico; só fazemos o load completo no modo
+    // 'todos', limitado por LIMITE_TODOS.
+    const LIMITE_TODOS = 5_000
     let offset = 0
     while (true) {
       const tamanho = offset === 0 ? PRIMEIRA : PAGE
@@ -793,6 +806,7 @@ function FunisPage() {
         clientes(id,nome,cpf_cnpj,telefone,email),
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
+      if (filtroStatus !== 'todos') q = q.eq('status', filtroStatus)
       if (filtroUsuario) q = q.eq('vendedor_id', filtroUsuario)
       else if (filtroEquipe) {
         const ids = equipeMembros[filtroEquipe] || []
@@ -807,8 +821,34 @@ function FunisPage() {
       setNegocios(prev => [...prev, ...data])
       if (data.length < tamanho) break
       offset += tamanho
-      if (offset >= 50_000) break
+      const limite = filtroStatus === 'todos' ? LIMITE_TODOS : 50_000
+      if (offset >= limite) break
     }
+  }
+
+  async function carregarTotaisFunil() {
+    if (!funilAtivo) {
+      setTotaisFunil({ em_andamento:{qtd:0,premio:0}, ganho:{qtd:0,premio:0}, perdido:{qtd:0,premio:0} })
+      return
+    }
+    // Determina o escopo de vendedores conforme os filtros aplicados.
+    // null = sem filtro (admin sem restrição).
+    let vendedorIds: string[] | null = null
+    if (filtroUsuario) vendedorIds = [filtroUsuario]
+    else if (filtroEquipe) vendedorIds = equipeMembros[filtroEquipe] || []
+    else if (bypassVisibleIds(funilAtivo)) vendedorIds = null
+    else vendedorIds = visibleIds
+    const { data, error } = await supabase.rpc('totais_funil', {
+      p_funil_id: funilAtivo,
+      p_vendedor_ids: vendedorIds,
+    })
+    if (error || !data) return
+    const tot = { em_andamento:{qtd:0,premio:0}, ganho:{qtd:0,premio:0}, perdido:{qtd:0,premio:0} } as any
+    for (const r of (data as any[])) {
+      const s = r.status as 'em_andamento'|'ganho'|'perdido'
+      if (tot[s]) tot[s] = { qtd: Number(r.total) || 0, premio: Number(r.premio_total) || 0 }
+    }
+    setTotaisFunil(tot)
   }
 
   async function buscarClientes(q: string, setter: (v:any[])=>void) {
@@ -838,12 +878,12 @@ function FunisPage() {
     setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'' })
     setClienteSel(null); setClienteBusca('')
     setSalvando(false)
-    await carregarNegocios()
+    await Promise.all([carregarNegocios(), carregarTotaisFunil()])
   }
 
   async function moverEtapa(negocioId: string, novaEtapa: string) {
     await supabase.from('negocios').update({ etapa: novaEtapa }).eq('id', negocioId)
-    await carregarNegocios()
+    await Promise.all([carregarNegocios(), carregarTotaisFunil()])
   }
 
   async function disparaAutomacao(trigger: string, negocioId: string) {
@@ -870,7 +910,7 @@ function FunisPage() {
     const { error } = await supabase.from('negocios').update({ etapa: novaEtapa }).eq('id', negocioId)
     if (error) {
       alert('Erro ao mover: ' + error.message)
-      await carregarNegocios()
+      await Promise.all([carregarNegocios(), carregarTotaisFunil()])
     } else {
       disparaAutomacao('etapa_alterada', negocioId)
     }
@@ -930,7 +970,7 @@ function FunisPage() {
     }
 
     setModalCard(false)
-    await carregarNegocios()
+    await Promise.all([carregarNegocios(), carregarTotaisFunil()])
   }
 
   async function vincularCliente(clienteId: string) {
@@ -941,7 +981,7 @@ function FunisPage() {
     setNegocioVincular(null)
     setVincularBusca(''); setVincularRes([])
     setVinculando(false)
-    await carregarNegocios()
+    await Promise.all([carregarNegocios(), carregarTotaisFunil()])
   }
 
   async function criarEVincularCliente() {
@@ -963,7 +1003,7 @@ function FunisPage() {
     if (!confirm('Excluir este card?')) return
     await supabase.from('negocios').delete().eq('id', id)
     setModalCard(false)
-    await carregarNegocios()
+    await Promise.all([carregarNegocios(), carregarTotaisFunil()])
   }
 
   async function renomearFunil(f: any) {
@@ -1004,7 +1044,7 @@ function FunisPage() {
 
     if (funilAtivo === f.id) setFunilAtivo(null)
     await carregarFunis()
-    await carregarNegocios()
+    await Promise.all([carregarNegocios(), carregarTotaisFunil()])
   }
 
   const funiAtual = funis.find(f => f.id === funilAtivo)
@@ -1492,23 +1532,14 @@ function FunisPage() {
       {/* Kanban */}
       {funiAtual && modoVisao==='kanban' && (() => {
         const ocultarValor = isFunilEmissao(funilAtivo)
-        // "Total do funil" deve mostrar a soma real de em_andamento e ganhos
-        // do funil, IGNORANDO o filtro de status (caso contrário, ao filtrar
-        // por "Andamento" o card de "Ganhos" zera). Os demais filtros
-        // (busca, data, usuário/equipe — já aplicados na query) continuam valendo.
-        const negociosFunilSemStatus = negocios.filter(n =>
-          n.funil_id === funilAtivo &&
-          passaFiltroData(n) &&
-          passaFiltroBusca(n)
-        )
-        const totalEmAndamento = negociosFunilSemStatus
-          .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
-          .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
-        const totalGanho = negociosFunilSemStatus
-          .filter(n => n.status === 'ganho')
-          .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
-        const qtdAndamento = negociosFunilSemStatus.filter(n => n.status !== 'ganho' && n.status !== 'perdido').length
-        const qtdGanho     = negociosFunilSemStatus.filter(n => n.status === 'ganho').length
+        // "Total do funil" usa os totais agregados do servidor (RPC totais_funil),
+        // que SEMPRE refletem o funil inteiro independente do filtro de status
+        // aplicado nos cards. Em funis grandes (10k+) calcular isso no client a
+        // partir de `negocios` falhava porque o load era filtrado por status.
+        const totalEmAndamento = totaisFunil.em_andamento.premio
+        const totalGanho       = totaisFunil.ganho.premio
+        const qtdAndamento     = totaisFunil.em_andamento.qtd
+        const qtdGanho         = totaisFunil.ganho.qtd
         return (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
           {/* Resumo do funil — soma total para responder ao pedido do time */}
