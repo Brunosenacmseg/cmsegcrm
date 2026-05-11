@@ -175,13 +175,33 @@ export async function POST(req: NextRequest) {
     return fallbackId
   }
 
-  // 3. Pré-carrega motivos de perda + equipes
+  // 3. Pré-carrega motivos de perda + equipes + origens
   const { data: motivos } = await supabaseAdmin().from('motivos_perda').select('id, nome')
   const motivoPorNome: Record<string,string> = {}
   for (const m of motivos || []) motivoPorNome[m.nome.toLowerCase().trim()] = m.id
   const { data: equipes } = await supabaseAdmin().from('equipes').select('id, nome')
   const equipePorNome: Record<string,string> = {}
   for (const e of equipes || []) if (e.nome) equipePorNome[e.nome.toLowerCase().trim()] = e.id
+
+  // Origens (lookup + auto-create). A UI do card mostra "Origem do lead"
+  // a partir de origem_id (FK), não da coluna `fonte` (texto livre).
+  // Antes, este endpoint só preenchia `fonte` e o select de Origem ficava
+  // sempre vazio no kanban. Agora resolvemos (e criamos quando necessário)
+  // a origem em `origens` e gravamos origem_id também.
+  const { data: origens } = await supabaseAdmin().from('origens').select('id, nome')
+  const origemPorNome: Record<string,string> = {}
+  for (const o of origens || []) if (o.nome) origemPorNome[o.nome.toLowerCase().trim()] = o.id
+  async function resolverOrigemId(fonte: string | null): Promise<string | null> {
+    if (!fonte) return null
+    const k = fonte.toLowerCase().trim()
+    if (origemPorNome[k]) return origemPorNome[k]
+    const { data: nova } = await supabaseAdmin().from('origens').insert({ nome: fonte }).select('id').single()
+    if (nova?.id) {
+      origemPorNome[k] = nova.id
+      return nova.id
+    }
+    return null
+  }
 
   // 4. Processa linha a linha, monta patch e aplica
   for (const r of linhas) {
@@ -210,6 +230,9 @@ export async function POST(req: NextRequest) {
       const equipeNome = s(r['Equipes do responsável'] ?? r['Equipes do responsavel'])
       const equipeIdNovo = equipeNome ? equipePorNome[equipeNome.toLowerCase()] || null : null
 
+      const fontePlanilha = s(r['Fonte'])
+      const origemIdNovo = await resolverOrigemId(fontePlanilha)
+
       const placaPlanilha  = s(r['PLACA'] ?? r['Placa'] ?? r['placa'])
       const modeloPlanilha = s(r['MODELO DO VEICULO'] ?? r['Modelo do veículo'] ?? r['Modelo do veiculo'])
 
@@ -228,7 +251,9 @@ export async function POST(req: NextRequest) {
         data_proxima_tarefa:   combinaDataHora(r['Data da próxima tarefa'],   r['Hora da próxima tarefa']),
         previsao_fechamento:   dateBR(r['Previsão de fechamento']),
         data_fechamento:       combinaDataHora(r['Data de fechamento'],       r['Hora de fechamento']),
-        fonte:                 s(r['Fonte']),
+        fonte:                 fontePlanilha,
+        fonte_origem:          fontePlanilha,
+        origem_id:             origemIdNovo,
         campanha:              s(r['Campanha']),
         produto:               s(r['Produtos']),
         vendedor_id:           vendedorIdNovo,
@@ -249,6 +274,20 @@ export async function POST(req: NextRequest) {
       for (const [colName, slug] of Object.entries(CUSTOM_FIELD_MAP)) {
         const v = s(r[colName])
         if (v !== null) customNovos[slug] = v
+      }
+      // Fallbacks específicos: o RD exporta DOIS campos de email:
+      //   - "E-MAIL" (custom field, ~9% de fill)
+      //   - "Email" (contato principal, ~95% de fill)
+      // O CUSTOM_FIELD_MAP só pegava 'E-MAIL', deixando custom_fields.email
+      // vazio na maioria dos cards. Falamos primeiro com a coluna populada.
+      if (customNovos.email === undefined) {
+        const emailContato = s(r['Email'] ?? r['email'])
+        if (emailContato) customNovos.email = emailContato.toLowerCase()
+      }
+      // Idem para telefone: o RD popular "Telefone" na maioria dos casos.
+      if (customNovos.telefone_1 === undefined) {
+        const telContato = s(r['Telefone'] ?? r['telefone'])
+        if (telContato) customNovos.telefone_1 = telContato
       }
 
       for (const existing of matches) {
