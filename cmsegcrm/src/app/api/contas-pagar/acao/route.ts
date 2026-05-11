@@ -20,20 +20,19 @@ async function autenticar(request: NextRequest) {
   return data?.user || null
 }
 
-async function ehAdmin(userId: string): Promise<boolean> {
+async function podeGerenciar(userId: string): Promise<boolean> {
   const { data } = await supabaseAdmin().from('users').select('role').eq('id', userId).single()
-  return data?.role === 'admin'
+  return data?.role === 'admin' || data?.role === 'financeiro'
 }
 
 // POST { conta_id, acao: 'aprovar'|'pagar'|'recusar', categoria_id?, forma_pagto?, data_pagamento?, obs? }
-// Apenas admin pode aprovar/pagar/recusar.
+// Admin e financeiro podem aprovar/pagar/recusar.
 // Quando "pagar", cria automaticamente uma despesa em financeiro_despesas
 // pra alimentar o DRE.
 export async function POST(request: NextRequest) {
   const user = await autenticar(request)
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  const isAdmin = await ehAdmin(user.id)
-  if (!isAdmin) return NextResponse.json({ error: 'Apenas administradores' }, { status: 403 })
+  if (!(await podeGerenciar(user.id))) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   const body = await request.json().catch(() => ({}))
   const { conta_id, acao, categoria_id, forma_pagto, data_pagamento, obs } = body

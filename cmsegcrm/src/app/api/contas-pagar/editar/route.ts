@@ -19,22 +19,23 @@ async function autenticar(request: NextRequest) {
   return data?.user || null
 }
 
-async function ehAdmin(userId: string): Promise<boolean> {
+async function podeGerenciar(userId: string): Promise<boolean> {
   const { data } = await supabaseAdmin().from('users').select('role').eq('id', userId).single()
-  return (data as any)?.role === 'admin'
+  const role = (data as any)?.role
+  return role === 'admin' || role === 'financeiro'
 }
 
 // PATCH /api/contas-pagar/editar
 // body: { conta_id, nome?, valor?, categoria_id?, fornecedor?, descricao?, vencimento? }
 //
-// Permite edição mesmo quando status = 'pago'. Apenas admin.
+// Permite edição mesmo quando status = 'pago'. Admin e financeiro.
 // Se a conta já estiver paga e tiver despesa_id, propaga as mudanças
 // relevantes (descricao=nome, valor, categoria_id, fornecedor) para
 // `financeiro_despesas` para o DRE refletir a correção.
 export async function PATCH(request: NextRequest) {
   const user = await autenticar(request)
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  if (!(await ehAdmin(user.id))) return NextResponse.json({ error: 'Apenas administradores' }, { status: 403 })
+  if (!(await podeGerenciar(user.id))) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   const body = await request.json().catch(() => ({}))
   const { conta_id, nome, valor, categoria_id, fornecedor, descricao, vencimento } = body
