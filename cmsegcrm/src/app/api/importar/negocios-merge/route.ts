@@ -118,12 +118,20 @@ export async function POST(req: NextRequest) {
 
   // 1. Pré-carrega negócios existentes (titulo lower -> [{id, ...}]).
   //    Pode haver duplicatas de título; nesse caso atualizamos todos.
-  const titulos = Array.from(new Set(linhas.map(r => s(r['Nome'] ?? r.nome ?? r.titulo)?.toLowerCase()).filter(Boolean))) as string[]
+  //
+  // BUG corrigido: o .in('titulo', titulos) é case-sensitive no Postgres,
+  // mas as chaves estavam sendo lowercased ANTES do filtro — então o match
+  // falhava em 100% das linhas do export do RD (que vem com case misto,
+  // ex.: "Simone - SUHAI MOTO SP 6"). Agora enviamos o título com o case
+  // original ao banco e mantemos o índice em JS lowercase só pra lookup.
+  const titulosOriginais = Array.from(new Set(
+    linhas.map(r => s(r['Nome'] ?? r.nome ?? r.titulo)).filter(Boolean)
+  )) as string[]
   const negPorTitulo: Record<string, any[]> = {}
-  if (titulos.length) {
+  if (titulosOriginais.length) {
     // Supabase aceita filtros .in() até ~1000 por vez — fatiamos
     const chunks: string[][] = []
-    for (let i = 0; i < titulos.length; i += 500) chunks.push(titulos.slice(i, i+500))
+    for (let i = 0; i < titulosOriginais.length; i += 500) chunks.push(titulosOriginais.slice(i, i+500))
     for (const ch of chunks) {
       const { data } = await supabaseAdmin()
         .from('negocios')
