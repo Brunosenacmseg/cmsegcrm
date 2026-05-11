@@ -160,7 +160,7 @@ async function processarInitsDoFluxo(fluxo: Fluxo): Promise<{ processados: numbe
     .select('id, titulo, etapa, funil_id, vendedor_id, cliente_id, telefone_negocio, status')
     .eq('funil_id', fluxo.funil_id)
     .eq('status', 'em_andamento')
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(LOTE_INIT_POR_FLUXO * 3)
 
   if (!candidatos?.length) return { processados: 0, falhas: 0 }
