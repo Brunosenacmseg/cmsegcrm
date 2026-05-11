@@ -310,13 +310,34 @@ export default function ImportarPage() {
 
   // Sync completo da planilha RD: atualiza negocios existentes (match por
   // titulo) preenchendo apenas campos vazios + custom_fields faltantes.
+  // Aceita XLSX/CSV (parse em JS) e PDF (parse no servidor via
+  // /api/importar/parse-pdf, que conhece o formato do export antigo).
   async function sincronizarPlanilhaCompleta() {
     if (!mergeFile) return
     setMergeProcessando(true)
     setMergeResultado(null)
     try {
-      const { rows } = await lerArquivo(mergeFile)
-      if (!rows.length) { setMergeResultado({ erro: 'Planilha vazia' }); setMergeProcessando(false); return }
+      let rows: any[] = []
+      const ext = mergeFile.name.toLowerCase().split('.').pop() || ''
+      if (ext === 'pdf') {
+        setMergeResultado({ _progresso: 'Extraindo dados do PDF…' })
+        const fd = new FormData()
+        fd.append('file', mergeFile)
+        const headers = await authHeaders()
+        // Remove Content-Type pra deixar o browser setar o boundary do multipart
+        delete (headers as any)['Content-Type']
+        const rPdf = await fetch('/api/importar/parse-pdf', { method: 'POST', headers, body: fd })
+        const j = await rPdf.json()
+        if (!rPdf.ok || j.erro) {
+          setMergeResultado({ erro: j.erro || 'Falha ao ler PDF' })
+          setMergeProcessando(false); return
+        }
+        rows = j.rows || []
+      } else {
+        const lido = await lerArquivo(mergeFile)
+        rows = lido.rows
+      }
+      if (!rows.length) { setMergeResultado({ erro: 'Arquivo sem negociações' }); setMergeProcessando(false); return }
 
       const TAM = 500
       const ag: any = {
@@ -616,10 +637,10 @@ export default function ImportarPage() {
               <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--teal)'}}>
                 <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>📋 Sincronizar planilha completa do RD CRM</div>
                 <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>
-                  Sobe a planilha exportada do RD e atualiza as negociações existentes (match por <b>Nome</b>) preenchendo apenas os campos que estão <b>vazios</b> no seu CRM. Inclui os 25 campos personalizados, responsável (via aliases) e dados gerais. Não sobrescreve nada já preenchido.
+                  Sobe a planilha (CSV/XLSX) ou o <b>PDF</b> exportado do RD e atualiza as negociações existentes (match por <b>Nome</b>) preenchendo apenas os campos que estão <b>vazios</b> no seu CRM. Inclui os 25 campos personalizados, responsável (via aliases) e dados gerais. Não sobrescreve nada já preenchido.
                 </div>
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-                  <input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{setMergeFile(e.target.files?.[0]||null);setMergeResultado(null)}}
+                  <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={e=>{setMergeFile(e.target.files?.[0]||null);setMergeResultado(null)}}
                     style={{flex:1,minWidth:220,fontSize:12}} />
                   <button className="btn-primary" disabled={!mergeFile||mergeProcessando}
                     onClick={()=>{ if (confirm('Aplicar sync? Vai preencher os campos vazios das negociações existentes.')) sincronizarPlanilhaCompleta() }}>

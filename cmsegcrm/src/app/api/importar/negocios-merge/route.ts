@@ -322,6 +322,9 @@ export async function POST(req: NextRequest) {
         idade_beneficiarios:   s(r['IDADE DOS BENEFICIARIOS']),
         possui_hospital_pref:  parseBool(r['POSSUI HOSPITAL DE PREFERENCIA']),
         qual_hospital:         s(r['QUAL HOSPITAL']),
+        // "Anotações" só vem do parser de PDF (Últimas anotações). XLSX não
+        // tem essa coluna, então valor é null nesse caso.
+        obs:                   s(r['Anotações']),
       }
 
       // Custom fields vindos da planilha
