@@ -1492,14 +1492,23 @@ function FunisPage() {
       {/* Kanban */}
       {funiAtual && modoVisao==='kanban' && (() => {
         const ocultarValor = isFunilEmissao(funilAtivo)
-        const totalEmAndamento = negociosFunil
+        // "Total do funil" deve mostrar a soma real de em_andamento e ganhos
+        // do funil, IGNORANDO o filtro de status (caso contrário, ao filtrar
+        // por "Andamento" o card de "Ganhos" zera). Os demais filtros
+        // (busca, data, usuário/equipe — já aplicados na query) continuam valendo.
+        const negociosFunilSemStatus = negocios.filter(n =>
+          n.funil_id === funilAtivo &&
+          passaFiltroData(n) &&
+          passaFiltroBusca(n)
+        )
+        const totalEmAndamento = negociosFunilSemStatus
           .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
           .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
-        const totalGanho = negociosFunil
+        const totalGanho = negociosFunilSemStatus
           .filter(n => n.status === 'ganho')
           .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
-        const qtdAndamento = negociosFunil.filter(n => n.status !== 'ganho' && n.status !== 'perdido').length
-        const qtdGanho     = negociosFunil.filter(n => n.status === 'ganho').length
+        const qtdAndamento = negociosFunilSemStatus.filter(n => n.status !== 'ganho' && n.status !== 'perdido').length
+        const qtdGanho     = negociosFunilSemStatus.filter(n => n.status === 'ganho').length
         return (
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
           {/* Resumo do funil — soma total para responder ao pedido do time */}
