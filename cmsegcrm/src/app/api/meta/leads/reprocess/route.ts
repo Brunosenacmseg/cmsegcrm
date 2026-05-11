@@ -59,6 +59,7 @@ async function processarUm(leadgenId: string, fallbackFormId: string | null, fal
     campaignId: det.campaign_id || null,
     pageId:     fallbackPageId,
     fieldData:  det.field_data || null,
+    createdTime: det.created_time || null,
   })
   return {
     leadgen_id: leadgenId,

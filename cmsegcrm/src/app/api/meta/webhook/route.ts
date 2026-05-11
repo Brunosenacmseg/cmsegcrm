@@ -90,12 +90,13 @@ export async function POST(req: NextRequest) {
       let campaignId: string | null = null
       const pageId: string | null = v.page_id ? String(v.page_id) : null
       let fieldData: any = null
+      let createdTime: string | null = v.created_time ? String(v.created_time) : null
 
       // Busca o lead detalhado na Graph API. Idealmente com page_access_token
       // (leads_retrieval é page-scoped); cai pra user token como fallback.
       if (accessToken) {
         try {
-          const r = await fetch(`${GRAPH}/${leadgenId}?fields=field_data,ad_id,adset_id,campaign_id,form_id&access_token=${encodeURIComponent(accessToken)}`, {
+          const r = await fetch(`${GRAPH}/${leadgenId}?fields=field_data,ad_id,adset_id,campaign_id,form_id,created_time&access_token=${encodeURIComponent(accessToken)}`, {
             signal: AbortSignal.timeout(10000),
           })
           const j = await r.json().catch(() => ({}))
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
             adsetId    = j.adset_id || adsetId
             campaignId = j.campaign_id || null
             formId     = j.form_id || formId
+            createdTime = j.created_time || createdTime
           } else {
             console.error('[meta-webhook] falha ao buscar leadgen', leadgenId, j?.error || `HTTP ${r.status}`)
           }
@@ -123,6 +125,7 @@ export async function POST(req: NextRequest) {
         campaignId,
         pageId,
         fieldData,
+        createdTime,
       })
 
       if (!resultado.ok) {

@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
     campaignId: body.campaign_id ? String(body.campaign_id) : 'TEST_CAMP',
     pageId:     body.page_id ? String(body.page_id) : ((mapping as any)?.page_id || null),
     fieldData,
+    createdTime: body.created_time ? String(body.created_time) : new Date().toISOString(),
   })
 
   // Quando a negociação não foi criada apesar de tentarmos, devolve 500 pra
