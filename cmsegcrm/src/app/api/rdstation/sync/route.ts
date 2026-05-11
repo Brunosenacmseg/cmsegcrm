@@ -520,12 +520,53 @@ async function importarNegocios(token: string, from?: string, to?: string, inclu
       payload.origem_id = origemId
 
       let negocioId: string | null = null
+      // 1) Match preferencial por rd_id (exato).
       const { data: existente, error: errSel } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
       if (errSel) throw new Error(`select negocios: ${errSel.message}`)
+
+      // 2) Fallback: planilha importada (/api/importar) cria cards SEM rd_id.
+      //    Antes esse caminho duplicava cards a cada sync. Agora, quando o
+      //    match por rd_id falha, tentamos titulo (case-insensitive) + cpf do
+      //    primeiro contato. Se achar, fazemos UPDATE e BACKFILLAMOS o rd_id
+      //    pra que futuros syncs casem direto pela chave preferencial.
+      let existenteSemRd: { id: string } | null = null
+      if (!existente && payload.titulo) {
+        const primeiroContato = dx.contacts?.[0]
+        const cpfRD = primeiroContato ? (soDigitos(primeiroContato.cpf) || soDigitos(primeiroContato.cnpj)) : null
+        let q = supabaseAdmin().from('negocios')
+          .select('id, rd_id')
+          .ilike('titulo', payload.titulo)
+          .is('rd_id', null)
+        if (cpfRD) q = q.eq('cpf_cnpj', cpfRD)
+        const { data: candidatos } = await q.limit(2)
+        // Só usa o fallback quando há candidato único — evita backfill ambíguo
+        // em títulos genéricos.
+        if (candidatos && candidatos.length === 1) {
+          existenteSemRd = { id: candidatos[0].id as string }
+        }
+      }
+
       if (existente) {
         const { error: errUp } = await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
         if (errUp) throw new Error(`update negocios: ${errUp.message}`)
         negocioId = existente.id
+        stats.qtd_atualizados++
+      } else if (existenteSemRd) {
+        // Atualiza preservando dados locais não nulos (merge) e BACKFILLA rd_id
+        const { data: atual } = await supabaseAdmin().from('negocios').select('*').eq('id', existenteSemRd.id).maybeSingle()
+        const merged: any = { ...payload }
+        if (atual) {
+          for (const [k, v] of Object.entries(payload)) {
+            // Para campos não-FK e não-rd_id: só sobrescreve se o valor local for vazio.
+            if (k === 'rd_id') continue
+            const local = (atual as any)[k]
+            const localVazio = local === null || local === undefined || local === ''
+            if (!localVazio) merged[k] = local
+          }
+        }
+        const { error: errUp } = await supabaseAdmin().from('negocios').update(merged).eq('id', existenteSemRd.id)
+        if (errUp) throw new Error(`update (backfill rd_id) negocios: ${errUp.message}`)
+        negocioId = existenteSemRd.id
         stats.qtd_atualizados++
       } else {
         const { data: novo, error: errIns } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()

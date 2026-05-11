@@ -126,20 +126,38 @@ async function aplicarDeal(d: RDDeal, eventType: string) {
     aplicarMapeamento(payload, d, regras)
   } catch {}
 
+  // 1) Match preferencial por rd_id.
   const { data: existente, error: errSel } = await supabaseAdmin().from('negocios').select('id, etapa').eq('rd_id', id).maybeSingle()
   if (errSel) return { ok: false, motivo: `select negocios: ${errSel.message}` }
-  if (existente) {
-    const { error: errUp } = await supabaseAdmin().from('negocios').update(payload).eq('id', existente.id)
+
+  // 2) Fallback: planilha importada cria cards sem rd_id. Tenta titulo+cpf
+  //    (apenas se houver um candidato único pra evitar backfill ambíguo).
+  let existenteSemRd: { id: string; etapa: string } | null = null
+  if (!existente && d.name) {
+    let q = supabaseAdmin().from('negocios')
+      .select('id, etapa, rd_id')
+      .ilike('titulo', d.name)
+      .is('rd_id', null)
+    if (docContato) q = q.eq('cpf_cnpj', docContato)
+    const { data: candidatos } = await q.limit(2)
+    if (candidatos && candidatos.length === 1) {
+      existenteSemRd = { id: candidatos[0].id as string, etapa: candidatos[0].etapa as string }
+    }
+  }
+
+  if (existente || existenteSemRd) {
+    const alvo = existente || existenteSemRd!
+    const { error: errUp } = await supabaseAdmin().from('negocios').update(payload).eq('id', alvo.id)
     if (errUp) return { ok: false, motivo: `update negocios: ${errUp.message}` }
-    if (existente.etapa !== etapa) {
+    if (alvo.etapa !== etapa) {
       const { error: errHist } = await supabaseAdmin().from('historico').insert({
-        negocio_id: existente.id, cliente_id: clienteId as string, tipo: 'blue',
+        negocio_id: alvo.id, cliente_id: clienteId as string, tipo: 'blue',
         titulo: `🔄 Etapa atualizada via RD Station`,
-        descricao: `${existente.etapa} → ${etapa}`,
+        descricao: `${alvo.etapa} → ${etapa}`,
       })
       if (errHist) return { ok: false, motivo: `insert historico: ${errHist.message}` }
     }
-    return { ok: true, action: 'updated', id: existente.id }
+    return { ok: true, action: 'updated', id: alvo.id }
   } else {
     if (!payload.cliente_id) {
       // Tenta criar com dados reais do contato (nome/email/telefone/CPF) — só

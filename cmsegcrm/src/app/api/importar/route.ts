@@ -366,12 +366,15 @@ async function importarNegocios(linhas: any[]) {
     'data_fechamento','data de fechamento','hora_fechamento','hora de fechamento',
     'fonte','origem','campanha','responsavel','responsável','produtos','produto','ramo',
     'equipe','equipes do responsável','equipes do responsavel','anotacao_motivo_perda','anotação do motivo de perda',
-    'data_nascimento','data de nascimento','seguradora','vigencia','vigência','vigencia do seguro','vigência do seguro',
+    'seguradora','vigencia','vigência','vigencia do seguro','vigência do seguro',
     'email','e-mail','telefone','fone','celular','whatsapp','comissao','comissao_pct',
     'particular','rastreador','cpf','cpf_cnpj','cnpj','placa','modelo','modelo do veiculo','modelo do veículo',
     'cpf_2','cpf 2','cep','tipo_seguro','tipo do seguro','operadora','tipo_cnpj','tipo de cnpj',
     'funcionario_clt','funcionário clt','funcionario clt','profissao','profissão','possui_plano','possui plano',
-    'plano_atual','plano atual','motivo_troca_plano','motivo troca de plano','cidade',
+    'plano_atual','plano atual','motivo_troca_plano','motivo troca de plano',
+    // Nota: 'cidade' e 'data_nascimento' são propositalmente EXCLUÍDOS de
+    // camposConhecidos para que caiam em custom_fields (não há coluna direta
+    // pra eles em negocios). Antes da correção, eram descartados silenciosamente.
     'mensalidade_atual','mensalidade atual','idade_beneficiarios','idade dos beneficiarios','idade dos beneficiários',
     'possui_hospital_preferencia','possui hospital de preferencia','possui hospital de preferência','qual_hospital','qual hospital',
     'contatos','cargo','vencimento','obs','observacoes','observações','observacao','observação',
@@ -471,7 +474,7 @@ async function importarNegocios(linhas: any[]) {
         fonte_origem: s(r.origem),
         campanha: s(r.campanha),
         empresa: s(r.empresa),
-        cargo_contato: s(r.cargo),
+        cargo_contato: s(r.cargo) || s(r.profissao) || s(r['profissão']),
         vencimento: dateBR(r.vencimento || r.previsao_fechamento || r['previsão de fechamento']),
         previsao_fechamento: dateBR(r.previsao_fechamento || r['previsão de fechamento']),
         data_primeiro_contato: combinaDataHora(r.data_primeiro_contato || r['data do primeiro contato'], r.hora_primeiro_contato || r['hora do primeiro contato']),
@@ -496,13 +499,13 @@ async function importarNegocios(linhas: any[]) {
         motivo_troca_plano: s(r['motivo troca de plano'] || r.motivo_troca_plano),
         mensalidade_atual: nClamp(r['mensalidade atual'] || r.mensalidade_atual, MAX_VALOR),
         idade_beneficiarios: s(r['idade dos beneficiarios'] || r['idade dos beneficiários']),
-        possui_hospital_pref: parseBoolOpt(r['possui hospital de preferencia'] || r['possui hospital de preferência']),
+        possui_hospital_pref: parseBoolOpt(r['possui hospital de preferencia'] || r['possui hospital de preferência'] || r.possui_hospital_preferencia || r.possui_hospital_pref),
         qual_hospital: s(r['qual hospital']),
         // Outros docs
         cpf_2: s(r['cpf 2'] || r.cpf_2),
         cep_negocio: s(r.cep),
         email_negocio: s(r.email || r['e-mail'])?.toLowerCase() || null,
-        telefone_negocio: s(r.telefone || r.telefone1 || r['telefone 1'] || r.fone || r.celular || r.whatsapp) || null,
+        telefone_negocio: s(r.telefone || r.telefone1 || r.telefone_1 || r['telefone 1'] || r.fone || r.celular || r.whatsapp) || null,
         // Status
         status, data_fechamento: dataFech,
         motivo_perda: status === 'perdido' ? (s(r.motivo_perda) || s(r.motivo) || null) : null,
