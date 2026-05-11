@@ -68,6 +68,7 @@ export default function UsuariosPage() {
   const [ramalTemp, setRamalTemp]         = useState('')
   const [salvandoRamal, setSalvandoRamal] = useState<string|null>(null)
   const [msgRamal, setMsgRamal]           = useState<Record<string,string>>({})
+  const [excluindo, setExcluindo]         = useState<string|null>(null)
 
   useEffect(() => { carregar() }, [])
 
@@ -84,7 +85,7 @@ export default function UsuariosPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const [{ data: prof }, { data: usr }, { data: eq }] = await Promise.all([
       supabase.from('users').select('*').eq('id', user?.id||'').single(),
-      supabase.from('users').select('id,nome,email,role,avatar_url,ramal_goto').order('nome'),
+      supabase.from('users').select('id,nome,email,role,avatar_url,ramal_goto').is('deleted_at', null).order('nome'),
       supabase.from('equipes').select('*, users!equipes_lider_id_fkey(nome), equipe_membros(user_id, users(id,nome,avatar_url,role))').order('nome'),
     ])
     setProfile(prof); setUsuarios(usr||[]); setEquipes(eq||[])
@@ -162,6 +163,39 @@ export default function UsuariosPage() {
     }
     setSalvandoRamal(null)
     setTimeout(() => setMsgRamal(m => ({...m, [userId]: ''})), 3000)
+  }
+
+  async function excluirUsuario(u: any) {
+    if (profile?.role !== 'admin') return
+    if (u.id === profile.id) { alert('Você não pode excluir a si mesmo.'); return }
+    const ok = confirm(
+      `Excluir ${u.nome}?\n\n` +
+      `• Negociações JÁ FECHADAS (ganho/perdido) permanecem com ${u.nome} como responsável.\n` +
+      `• Negociações EM ANDAMENTO serão transferidas para o líder da equipe.\n` +
+      `• O acesso de ${u.nome} ao sistema será bloqueado.\n\n` +
+      `Esta ação não pode ser desfeita.`
+    )
+    if (!ok) return
+    setExcluindo(u.id)
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/admin/delete-user', {
+        method: 'POST', headers,
+        body: JSON.stringify({ userId: u.id }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        alert('Erro ao excluir: ' + (data.error || res.statusText))
+      } else {
+        const qtd = data.transferidos || 0
+        alert(`✅ ${u.nome} excluído. ${qtd} negociação(ões) em andamento transferida(s) para o líder.`)
+        await carregar()
+      }
+    } catch (err: any) {
+      alert('Erro ao excluir: ' + err.message)
+    } finally {
+      setExcluindo(null)
+    }
   }
 
   async function criarEquipe() {
@@ -265,6 +299,13 @@ export default function UsuariosPage() {
                             style={{background:'#ffffff',border:`1px solid ${r.cor}50`,borderRadius:6,padding:'4px 10px',color:r.cor,fontFamily:'DM Sans,sans-serif',fontSize:11,cursor:'pointer'}}>
                             {ROLES.map(x=><option key={x.key} value={x.key} style={{background:'#ffffff'}}>{x.label}</option>)}
                           </select>
+                          {u.id !== profile?.id && (
+                            <button onClick={()=>excluirUsuario(u)} disabled={excluindo===u.id}
+                              title="Excluir usuário (transfere negociações em andamento para o líder)"
+                              style={{padding:'4px 8px',borderRadius:6,fontSize:11,cursor:excluindo===u.id?'wait':'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)'}}>
+                              {excluindo===u.id?'...':'🗑'}
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span style={{fontSize:11,fontWeight:600,borderRadius:10,padding:'2px 10px',background:`${r.cor}18`,color:r.cor}}>{r.label}</span>
