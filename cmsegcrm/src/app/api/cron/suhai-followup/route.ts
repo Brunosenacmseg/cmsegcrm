@@ -21,7 +21,7 @@ import crypto from 'crypto'
 import type { Database } from '@/lib/supabase/database.types'
 import { chamarChatGPT } from '@/lib/openai'
 import { enviarTextoEvo, numeroParaJid } from '@/lib/whatsapp-evo'
-import { horarioUtilAdd } from '@/lib/horario-util'
+import { horarioUtilAdd, dentroDaJanelaUtil } from '@/lib/horario-util'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -470,7 +470,12 @@ async function handler(req: NextRequest) {
   let totalFollowups = 0
   let totalFalhas = 0
 
+  const agora = new Date()
   for (const fluxo of fluxos) {
+    if (!dentroDaJanelaUtil(agora, fluxo.horario_util_inicio, fluxo.horario_util_fim)) {
+      detalhes.push({ fluxo: fluxo.nome, fora_horario: true })
+      continue
+    }
     const inits     = await processarInitsDoFluxo(fluxo)
     const followups = await processarFollowupsDoFluxo(fluxo)
     totalInits     += inits.processados

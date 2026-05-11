@@ -37,6 +37,18 @@ function dataBRT(y: number, m: number, dia: number, hh: number, mm: number): Dat
   return new Date(iso)
 }
 
+// Verifica se a Date d está dentro da janela útil [inicio, fim) em BRT.
+// inicio/fim no formato "HH:MM" ou "HH:MM:SS".
+export function dentroDaJanelaUtil(d: Date, inicio: string, fim: string): boolean {
+  const p = partesBRT(d)
+  const [hi, mi] = inicio.split(':').map(Number)
+  const [hf, mf] = fim.split(':').map(Number)
+  const minutosAgora = p.hh * 60 + p.mm
+  const minutosInicio = hi * 60 + mi
+  const minutosFim = hf * 60 + mf
+  return minutosAgora >= minutosInicio && minutosAgora < minutosFim
+}
+
 // Soma N horas úteis (8:30-18:00 BRT) a uma Date.
 // Se start está fora da janela, alinha para o próximo 8:30 antes de somar.
 export function horarioUtilAdd(start: Date, horas: number): Date {
