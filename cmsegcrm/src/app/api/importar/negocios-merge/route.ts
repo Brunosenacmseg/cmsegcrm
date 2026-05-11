@@ -236,10 +236,38 @@ export async function POST(req: NextRequest) {
       const placaPlanilha  = s(r['PLACA'] ?? r['Placa'] ?? r['placa'])
       const modeloPlanilha = s(r['MODELO DO VEICULO'] ?? r['Modelo do veículo'] ?? r['Modelo do veiculo'])
 
+      // Normaliza CPF: só dígitos
+      const onlyDigits = (v: any) => {
+        const t = s(v); if (!t) return null
+        const d = t.replace(/\D/g, '')
+        return d || null
+      }
+      // Vigência do seguro vem no formato "DD/MM/YYYY a DD/MM/YYYY" ou
+      // "DD/MM/YYYY - DD/MM/YYYY". Faz best-effort de parse.
+      const vigenciaRaw = s(r['VIGÊNCIA DO SEGURO'] ?? r['Vigência do seguro'])
+      let vigenciaIni: string | null = null
+      let vigenciaFim: string | null = null
+      if (vigenciaRaw) {
+        const partes = vigenciaRaw.split(/\s*(?:a|-|até|to)\s*/i).map(x => x.trim())
+        vigenciaIni = dateBR(partes[0]) || null
+        vigenciaFim = partes[1] ? dateBR(partes[1]) : null
+      }
+      // Qualificação: 1-5 ou estrelas
+      const qualificacaoNum = (() => {
+        const v = r['Qualificação'] ?? r['qualificacao']
+        if (v === null || v === undefined || v === '') return null
+        const t = String(v).trim()
+        const stars = (t.match(/⭐|★/g) || []).length
+        if (stars > 0) return Math.min(stars, 5)
+        const num = parseInt(t.replace(/\D/g, '')) || 0
+        return Math.min(Math.max(num, 0), 5) || null
+      })()
+
       const valoresPlanilha: Record<string, any> = {
         empresa:               s(r['Empresa']),
         etapa:                 s(r['Etapa']),
         status:                statusNovo,
+        qualificacao:          qualificacaoNum,
         motivo_perda:          s(r['Motivo de Perda']),
         motivo_perda_id:       motivoIdNovo,
         anotacao_motivo_perda: s(r['Anotação do motivo de perda']),
@@ -258,15 +286,42 @@ export async function POST(req: NextRequest) {
         produto:               s(r['Produtos']),
         vendedor_id:           vendedorIdNovo,
         equipe_id:             equipeIdNovo,
-        cargo_contato:         s(r['Cargo']),
-        email_negocio:         s(r['Email'] ?? r['E-mail'])?.toLowerCase() || null,
+        // cargo_contato: usa 'Cargo' (contato) com fallback para 'PROFISSAO'
+        // (custom field do RD). Sem o fallback, planilhas com PROFISSAO mas
+        // sem Cargo deixavam cargo_contato sempre nulo.
+        cargo_contato:         s(r['Cargo']) ?? s(r['PROFISSAO']) ?? null,
+        email_negocio:         s(r['Email'] ?? r['E-mail'] ?? r['E-MAIL'])?.toLowerCase() || null,
         telefone_negocio:      s(r['Telefone'] ?? r['Telefone 1'] ?? r['Celular'] ?? r['Fone'] ?? r['WhatsApp']) || null,
-        // Placa/Modelo tambem entram nas colunas dedicadas (alem do
-        // custom_fields). Sem isso, ficha do cliente/exports/renovacoes
-        // (que leem n.placa) ficavam vazios.
+        // Documentos / endereço — colunas dedicadas (antes só iam em
+        // custom_fields, deixando dashboards/relatórios sem dados).
+        cpf_cnpj:              onlyDigits(r['CPF']),
+        cpf_2:                 onlyDigits(r['CPF 2']),
+        cep:                   onlyDigits(r['CEP']),
+        cep_negocio:           onlyDigits(r['CEP']),
+        // Veículo (placa, modelo).
         placa:                 placaPlanilha,
         placa_veiculo:         placaPlanilha,
         modelo_veiculo:        modeloPlanilha,
+        // Seguro / produto
+        seguradora:            s(r['SEGURADORA']),
+        seguradora_atual:      s(r['SEGURADORA']),
+        vigencia_seguro_ini:   vigenciaIni,
+        vigencia_seguro_fim:   vigenciaFim,
+        tipo_seguro:           s(r['TIPO DO SEGURO']),
+        operadora:             s(r['OPERADORA']),
+        rastreador:            s(r['RASTREADOR']),
+        comissao_valor:        n(r['COMISSAO']),
+        particular:            parseBool(r['PARTICULAR?']),
+        // PJ / saúde
+        tipo_cnpj:             s(r['TIPO DE CNPJ']),
+        funcionario_clt:       s(r['FUNCIONARIO CLT']),
+        possui_plano:          parseBool(r['POSSUI PLANO']),
+        plano_atual:           s(r['PLANO ATUAL']),
+        motivo_troca_plano:    s(r['MOTIVO TROCA DE PLANO']),
+        mensalidade_atual:     n(r['MENSALIDADE ATUAL']),
+        idade_beneficiarios:   s(r['IDADE DOS BENEFICIARIOS']),
+        possui_hospital_pref:  parseBool(r['POSSUI HOSPITAL DE PREFERENCIA']),
+        qual_hospital:         s(r['QUAL HOSPITAL']),
       }
 
       // Custom fields vindos da planilha
