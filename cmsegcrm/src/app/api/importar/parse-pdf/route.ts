@@ -168,6 +168,25 @@ function parseDealsPdf(texto: string): Record<string, any>[] {
       }
     }
 
+    // 2b) Últimas anotações (opcional): bloco multilinha entre "Últimas anotações"
+    // e o próximo marcador conhecido. Junta as linhas com newline e grava em `obs`.
+    const idxAnotacoes = bloco.findIndex(l => l.trim() === 'Últimas anotações')
+    if (idxAnotacoes >= 0) {
+      const limites = new Set(['Campos Personalizados', 'Produtos', 'Contatos'])
+      const linhasNota: string[] = []
+      for (let i = idxAnotacoes + 1; i < bloco.length; i++) {
+        const ln = bloco[i]
+        const t = ln.trim()
+        if (limites.has(t)) break
+        // "Produtos <valor>" também é fim — não consumimos como nota
+        if (t.startsWith('Produtos ')) break
+        if (t) linhasNota.push(t)
+      }
+      if (linhasNota.length) {
+        row['Anotações'] = linhasNota.join('\n')
+      }
+    }
+
     // 3) Campos Personalizados: cada label conhecido vira chave do row.
     const idxCustom = bloco.findIndex(l => l.trim() === 'Campos Personalizados')
     if (idxCustom >= 0) {
