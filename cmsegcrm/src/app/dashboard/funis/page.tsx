@@ -154,16 +154,33 @@ function FunisPage() {
     const k = kanbanRef.current
     const t = topScrollRef.current
     if (!k || !t) return
-    let lock = false
-    const onK = () => { if (lock) return; lock = true; t.scrollLeft = k.scrollLeft; lock = false }
-    const onT = () => { if (lock) return; lock = true; k.scrollLeft = t.scrollLeft; lock = false }
-    k.addEventListener('scroll', onK)
-    t.addEventListener('scroll', onT)
+    // Lock assíncrono: eventos `scroll` chegam em frames diferentes, por isso
+    // resetar o lock no mesmo tick não funciona — gerava feedback infinito
+    // entre as duas barras (kanban ↔ topo), travando a rolagem.
+    let syncing: 'k' | 't' | null = null
+    let rafId = 0
+    const release = () => { rafId = 0; syncing = null }
+    const onK = () => {
+      if (syncing === 't') return
+      syncing = 'k'
+      t.scrollLeft = k.scrollLeft
+      if (rafId) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(release)
+    }
+    const onT = () => {
+      if (syncing === 'k') return
+      syncing = 't'
+      k.scrollLeft = t.scrollLeft
+      if (rafId) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(release)
+    }
+    k.addEventListener('scroll', onK, { passive: true })
+    t.addEventListener('scroll', onT, { passive: true })
     const update = () => setKanbanWidth(k.scrollWidth)
     update()
     const ro = new ResizeObserver(update)
     ro.observe(k)
-    return () => { k.removeEventListener('scroll', onK); t.removeEventListener('scroll', onT); ro.disconnect() }
+    return () => { if (rafId) cancelAnimationFrame(rafId); k.removeEventListener('scroll', onK); t.removeEventListener('scroll', onT); ro.disconnect() }
   }, [funilAtivo, negocios.length])
 
   // Abre o card automaticamente quando navegado via ?card=<negocio_id>
@@ -1528,7 +1545,7 @@ function FunisPage() {
             <div style={{width:kanbanWidth,height:1}} />
           </div>
           <div className="kanban-scroll" ref={kanbanRef}
-            style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px 60px 20px 20px',scrollBehavior:'smooth'}}>
+            style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',padding:'20px 60px 20px 20px'}}>
             <div style={{display:'flex',gap:14,alignItems:'flex-start',minWidth:'max-content'}}>
               {(funiAtual.etapas||[]).map((etapa: string) => {
                 const cards = negociosFunil.filter(n => n.etapa === etapa)
