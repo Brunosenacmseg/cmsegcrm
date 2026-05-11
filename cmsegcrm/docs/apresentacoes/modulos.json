@@ -1,0 +1,378 @@
+[
+  {
+    "slug": "clientes",
+    "titulo": "Módulo Clientes",
+    "responsavel": "Atendimento / Comercial",
+    "objetivo": "Centralizar o cadastro de pessoas físicas e jurídicas, com histórico completo de apólices, propostas, comunicações e tarefas.",
+    "telas": [
+      "Listagem com busca por nome, CPF/CNPJ, telefone e e-mail",
+      "Filtros por status, vendedor responsável e origem",
+      "Ficha do cliente (/dashboard/clientes/[id]) com abas: dados, apólices, propostas, histórico, anexos"
+    ],
+    "fluxos": [
+      "Cadastrar novo cliente manualmente ou via importação",
+      "Vincular cliente a uma cotação/proposta/apólice",
+      "Registrar interações e tarefas a partir da ficha"
+    ],
+    "campos": ["Dados pessoais", "Endereço", "Contato", "Vendedor responsável", "Tags", "Observações"],
+    "dicas": [
+      "Sempre preencher CPF/CNPJ — chave de deduplicação",
+      "Usar tags para segmentar campanhas",
+      "Confirmar telefone/WhatsApp antes de salvar"
+    ]
+  },
+  {
+    "slug": "apolices",
+    "titulo": "Módulo Apólices",
+    "responsavel": "Operações / Pós-venda",
+    "objetivo": "Gerenciar o ciclo de vida das apólices emitidas: emissão, vigência, endossos e renovações.",
+    "telas": ["Listagem com filtros por seguradora, ramo, vigência e status", "Detalhe da apólice com anexos e histórico"],
+    "fluxos": [
+      "Registrar apólice manualmente ou via integração da seguradora",
+      "Acompanhar vencimentos próximos",
+      "Encaminhar para o módulo Renovações automaticamente"
+    ],
+    "campos": ["Segurado", "Seguradora", "Ramo", "Número da apólice", "Vigência", "Prêmio", "Comissão", "Vendedor"],
+    "dicas": ["Atenção à data de vigência — alimenta renovação", "Anexar PDF da apólice sempre"]
+  },
+  {
+    "slug": "cotacoes",
+    "titulo": "Módulo Cotações",
+    "responsavel": "Comercial",
+    "objetivo": "Criar, comparar e acompanhar cotações de seguro até a conversão em proposta.",
+    "telas": ["Listagem de cotações por status e vendedor", "Editor de cotação com múltiplas seguradoras lado a lado"],
+    "fluxos": ["Criar cotação a partir de um lead ou cliente", "Comparar coberturas e preços", "Converter cotação em proposta"],
+    "campos": ["Cliente", "Tipo de seguro", "Coberturas", "Vigência prevista", "Valores por seguradora"],
+    "dicas": ["Sempre comparar pelo menos 3 seguradoras", "Anexar PDFs das cotações originais"]
+  },
+  {
+    "slug": "propostas",
+    "titulo": "Módulo Propostas",
+    "responsavel": "Comercial",
+    "objetivo": "Formalizar a oferta ao cliente e acompanhar o aceite até a emissão da apólice.",
+    "telas": ["Listagem de propostas", "Detalhe com status (rascunho, enviada, aceita, recusada)"],
+    "fluxos": ["Gerar proposta a partir da cotação", "Enviar para assinatura via Autentique", "Converter em apólice após aceite"],
+    "campos": ["Cliente", "Cotação base", "Valores", "Forma de pagamento", "Validade da proposta"],
+    "dicas": ["Definir validade clara", "Integrar com Autentique para assinatura digital"]
+  },
+  {
+    "slug": "vendas-vendedor",
+    "titulo": "Módulo Vendas do Vendedor",
+    "responsavel": "Vendedor / Liderança comercial",
+    "objetivo": "Visão pessoal de cada vendedor sobre suas vendas, conversão e ranking.",
+    "telas": ["Painel pessoal com KPIs", "Histórico de vendas e comissões previstas"],
+    "fluxos": ["Acompanhar próprio funil", "Comparar com metas individuais"],
+    "campos": ["Vendas no período", "Ticket médio", "Conversão", "Comissão prevista"],
+    "dicas": ["Conferir diariamente", "Cruzar com módulo Metas"]
+  },
+  {
+    "slug": "comissoes",
+    "titulo": "Módulo Comissões",
+    "responsavel": "Financeiro / Comercial",
+    "objetivo": "Calcular e acompanhar as comissões devidas a cada vendedor por apólice/parcela.",
+    "telas": ["Listagem de comissões por status (a pagar, paga)", "Demonstrativo por vendedor"],
+    "fluxos": ["Apurar comissões do período", "Aprovar e liberar pagamento", "Exportar relatório"],
+    "campos": ["Apólice", "Vendedor", "Percentual", "Valor", "Status", "Data prevista"],
+    "dicas": ["Conferir regras de comissionamento por ramo/seguradora", "Conciliar com Financeiro"]
+  },
+  {
+    "slug": "financeiro",
+    "titulo": "Módulo Financeiro",
+    "responsavel": "Financeiro",
+    "objetivo": "Controlar entradas, saídas e fluxo de caixa da corretora.",
+    "telas": ["Dashboard financeiro", "Listagem de lançamentos a receber/pagar"],
+    "fluxos": ["Registrar recebimentos", "Conciliar com comissões e contas a pagar", "Gerar relatórios"],
+    "campos": ["Categoria", "Valor", "Data", "Origem", "Status"],
+    "dicas": ["Categorizar todos os lançamentos", "Fechar mensalmente"]
+  },
+  {
+    "slug": "contas-pagar",
+    "titulo": "Módulo Contas a Pagar",
+    "responsavel": "Financeiro",
+    "objetivo": "Cadastrar e acompanhar despesas e pagamentos a fornecedores.",
+    "telas": ["Listagem por status e vencimento", "Cadastro/edição de conta"],
+    "fluxos": ["Lançar nova conta", "Marcar como paga", "Anexar comprovante"],
+    "campos": ["Fornecedor", "Categoria", "Valor", "Vencimento", "Status", "Anexo"],
+    "dicas": ["Programar pagamentos recorrentes", "Anexar nota fiscal sempre"]
+  },
+  {
+    "slug": "renovacoes",
+    "titulo": "Módulo Renovações",
+    "responsavel": "Pós-venda / Comercial",
+    "objetivo": "Identificar apólices próximas do vencimento e conduzir o processo de renovação.",
+    "telas": ["Listagem de renovações por janela de vencimento", "Detalhe da renovação"],
+    "fluxos": ["Disparar campanha de renovação", "Gerar nova cotação", "Converter em nova apólice"],
+    "campos": ["Apólice atual", "Vencimento", "Cliente", "Status da renovação"],
+    "dicas": ["Iniciar contato 60 dias antes do vencimento", "Acompanhar taxa de retenção"]
+  },
+  {
+    "slug": "funis",
+    "titulo": "Módulo Funis",
+    "responsavel": "Liderança comercial",
+    "objetivo": "Configurar e visualizar funis de vendas em formato kanban.",
+    "telas": ["Visão kanban por etapa", "Configuração de etapas (/funis/configurar)"],
+    "fluxos": ["Criar/editar funil", "Mover leads entre etapas", "Definir regras por etapa"],
+    "campos": ["Nome do funil", "Etapas", "Cores", "Responsáveis"],
+    "dicas": ["Manter no máximo 6-7 etapas", "Padronizar nomenclatura"]
+  },
+  {
+    "slug": "campanhas",
+    "titulo": "Módulo Campanhas",
+    "responsavel": "Marketing / Comercial",
+    "objetivo": "Planejar e disparar campanhas de comunicação para segmentos de clientes.",
+    "telas": ["Listagem de campanhas", "Editor de campanha com público-alvo e canal"],
+    "fluxos": ["Criar campanha", "Definir segmento", "Disparar via WhatsApp/E-mail", "Acompanhar resultados"],
+    "campos": ["Nome", "Canal", "Segmento", "Mensagem", "Status"],
+    "dicas": ["Testar com público pequeno antes", "Medir taxa de resposta"]
+  },
+  {
+    "slug": "tarefas",
+    "titulo": "Módulo Tarefas",
+    "responsavel": "Todos os usuários",
+    "objetivo": "Organizar atividades individuais e da equipe vinculadas a clientes, apólices e propostas.",
+    "telas": ["Lista do dia", "Calendário", "Tarefas por responsável"],
+    "fluxos": ["Criar tarefa", "Atribuir responsável", "Marcar como concluída"],
+    "campos": ["Título", "Descrição", "Data/hora", "Prioridade", "Vinculação"],
+    "dicas": ["Sempre vincular à entidade origem", "Usar prioridade alta com critério"]
+  },
+  {
+    "slug": "metas",
+    "titulo": "Módulo Metas",
+    "responsavel": "Liderança comercial",
+    "objetivo": "Definir e acompanhar metas individuais e por equipe.",
+    "telas": ["Painel de metas", "Recalcular metas (/metas/recalcular)"],
+    "fluxos": ["Cadastrar meta", "Acompanhar atingimento em tempo real", "Recalcular após ajustes"],
+    "campos": ["Período", "Vendedor/Equipe", "Valor da meta", "Atingido"],
+    "dicas": ["Definir metas SMART", "Revisar mensalmente"]
+  },
+  {
+    "slug": "mural",
+    "titulo": "Módulo Mural",
+    "responsavel": "Comunicação interna",
+    "objetivo": "Publicar avisos, comunicados e novidades para toda a equipe.",
+    "telas": ["Feed do mural", "Editor de post"],
+    "fluxos": ["Publicar comunicado", "Fixar mensagem importante"],
+    "campos": ["Título", "Conteúdo", "Autor", "Data"],
+    "dicas": ["Fixar comunicados críticos", "Manter linguagem objetiva"]
+  },
+  {
+    "slug": "mensagens",
+    "titulo": "Módulo Mensagens",
+    "responsavel": "Atendimento",
+    "objetivo": "Caixa de entrada unificada de mensagens dos canais conectados.",
+    "telas": ["Inbox", "Conversa selecionada"],
+    "fluxos": ["Responder cliente", "Encaminhar para responsável", "Vincular a cliente/proposta"],
+    "campos": ["Canal", "Contato", "Status", "Última mensagem"],
+    "dicas": ["Responder em até X minutos (SLA)", "Vincular sempre ao cliente"]
+  },
+  {
+    "slug": "whatsapp",
+    "titulo": "Módulo WhatsApp",
+    "responsavel": "Atendimento / Comercial",
+    "objetivo": "Integrar conversas de WhatsApp ao CRM, com disparo de templates e histórico.",
+    "telas": ["Lista de conversas", "Chat", "Templates aprovados"],
+    "fluxos": ["Atender cliente", "Disparar template", "Vincular conversa ao cliente"],
+    "campos": ["Número", "Contato", "Última interação", "Status"],
+    "dicas": ["Usar templates para iniciar conversa após 24h", "Evitar mensagens em massa fora do permitido"]
+  },
+  {
+    "slug": "email",
+    "titulo": "Módulo E-mail",
+    "responsavel": "Atendimento / Comercial",
+    "objetivo": "Enviar e receber e-mails diretamente do CRM, com histórico por cliente.",
+    "telas": ["Caixa de entrada", "Compositor", "Templates"],
+    "fluxos": ["Enviar e-mail individual ou em massa", "Vincular ao cliente", "Acompanhar abertura"],
+    "campos": ["Remetente", "Destinatário", "Assunto", "Corpo", "Anexos"],
+    "dicas": ["Cuidar do remetente para evitar spam", "Usar templates aprovados"]
+  },
+  {
+    "slug": "telefone",
+    "titulo": "Módulo Telefone",
+    "responsavel": "Atendimento / Comercial",
+    "objetivo": "Registrar ligações realizadas/recebidas e seu desfecho.",
+    "telas": ["Histórico de chamadas", "Detalhe da chamada"],
+    "fluxos": ["Registrar ligação", "Vincular ao cliente", "Criar tarefa de follow-up"],
+    "campos": ["Número", "Duração", "Resultado", "Anotação"],
+    "dicas": ["Anotar sempre o resultado", "Criar tarefa se houver retorno pendente"]
+  },
+  {
+    "slug": "agentes-ia",
+    "titulo": "Módulo Agentes IA",
+    "responsavel": "Tecnologia / Operações",
+    "objetivo": "Configurar agentes de inteligência artificial para apoiar atendimento e automações.",
+    "telas": ["Lista de agentes", "Editor de agente (prompt, conexões)"],
+    "fluxos": ["Criar agente", "Definir base de conhecimento", "Plugar em automações"],
+    "campos": ["Nome", "Prompt", "Modelo", "Ferramentas"],
+    "dicas": ["Iniciar com escopo pequeno", "Monitorar respostas semanalmente"]
+  },
+  {
+    "slug": "automacoes",
+    "titulo": "Módulo Automações",
+    "responsavel": "Operações",
+    "objetivo": "Criar regras automáticas (gatilho → ação) para padronizar processos.",
+    "telas": ["Lista de automações", "Editor de fluxo"],
+    "fluxos": ["Criar automação", "Definir gatilho e ações", "Ativar e monitorar"],
+    "campos": ["Gatilho", "Condições", "Ações", "Status"],
+    "dicas": ["Testar em sandbox antes de ativar", "Documentar cada automação"]
+  },
+  {
+    "slug": "relatorios",
+    "titulo": "Módulo Relatórios",
+    "responsavel": "Gestão",
+    "objetivo": "Gerar relatórios analíticos sobre vendas, comissões, atendimentos e produção.",
+    "telas": ["Galeria de relatórios", "Visualização com filtros e exportação"],
+    "fluxos": ["Selecionar relatório", "Aplicar filtros", "Exportar Excel/PDF"],
+    "campos": ["Período", "Vendedor", "Seguradora", "Ramo"],
+    "dicas": ["Salvar filtros recorrentes", "Cruzar relatórios para insights"]
+  },
+  {
+    "slug": "gestao-equipe",
+    "titulo": "Módulo Gestão de Equipe",
+    "responsavel": "Liderança",
+    "objetivo": "Visão consolidada da equipe: produção, atividades e performance.",
+    "telas": ["Painel da equipe", "Detalhe por colaborador"],
+    "fluxos": ["Acompanhar KPIs", "Identificar gargalos", "Tomar decisões"],
+    "campos": ["Colaborador", "Vendas", "Tarefas", "Atendimentos"],
+    "dicas": ["Revisar semanalmente", "Comparar períodos"]
+  },
+  {
+    "slug": "rh",
+    "titulo": "Módulo RH",
+    "responsavel": "Recursos Humanos",
+    "objetivo": "Gerir colaboradores: cadastro, documentos e movimentações.",
+    "telas": ["Listagem de colaboradores", "Ficha individual"],
+    "fluxos": ["Admitir/demitir", "Atualizar dados", "Anexar documentos"],
+    "campos": ["Dados pessoais", "Cargo", "Data de admissão", "Documentos"],
+    "dicas": ["Manter documentação digital atualizada", "Confidencialidade dos dados"]
+  },
+  {
+    "slug": "usuarios",
+    "titulo": "Módulo Usuários",
+    "responsavel": "TI / Administração",
+    "objetivo": "Gerenciar usuários do sistema, papéis e permissões.",
+    "telas": ["Listagem de usuários", "Edição de papel e permissões"],
+    "fluxos": ["Criar usuário", "Definir papel", "Resetar senha", "Desativar acesso"],
+    "campos": ["Nome", "E-mail", "Papel", "Status", "Último acesso"],
+    "dicas": ["Princípio do menor privilégio", "Revisar acessos trimestralmente"]
+  },
+  {
+    "slug": "seguradoras",
+    "titulo": "Módulo Seguradoras",
+    "responsavel": "Operações",
+    "objetivo": "Cadastrar seguradoras parceiras e configurar regras (comissão, ramos).",
+    "telas": ["Listagem", "Detalhe da seguradora (/seguradoras/[id])"],
+    "fluxos": ["Cadastrar seguradora", "Definir ramos e comissões", "Anexar contatos"],
+    "campos": ["Nome", "CNPJ", "Contatos", "Ramos atendidos", "Tabela de comissão"],
+    "dicas": ["Manter contatos atualizados", "Revisar tabela de comissão anualmente"]
+  },
+  {
+    "slug": "porto",
+    "titulo": "Módulo Porto Seguro",
+    "responsavel": "Operações",
+    "objetivo": "Integração específica com a Porto Seguro para consultas e operações.",
+    "telas": ["Painel de integração Porto", "Consultas/cotações"],
+    "fluxos": ["Autenticar integração", "Consultar dados", "Trazer cotações"],
+    "campos": ["Credenciais", "Status da conexão", "Última sincronização"],
+    "dicas": ["Validar credenciais periodicamente", "Acompanhar logs de erro"]
+  },
+  {
+    "slug": "tokio",
+    "titulo": "Módulo Tokio Marine",
+    "responsavel": "Operações",
+    "objetivo": "Integração específica com a Tokio Marine.",
+    "telas": ["Painel de integração Tokio", "Consultas/cotações"],
+    "fluxos": ["Autenticar", "Consultar/cotar", "Sincronizar"],
+    "campos": ["Credenciais", "Status", "Última sincronização"],
+    "dicas": ["Conferir limite de chamadas", "Acompanhar logs"]
+  },
+  {
+    "slug": "rdstation",
+    "titulo": "Módulo RD Station",
+    "responsavel": "Marketing",
+    "objetivo": "Integrar com RD Station para receber leads e sincronizar contatos.",
+    "telas": ["Painel de integração", "Mapeamento de campos (/rdstation/mapeamento)"],
+    "fluxos": ["Conectar conta RD", "Mapear campos", "Receber leads automaticamente"],
+    "campos": ["Token", "Mapeamento", "Status"],
+    "dicas": ["Mapear campos obrigatórios antes de ativar", "Monitorar leads recebidos"]
+  },
+  {
+    "slug": "autentique",
+    "titulo": "Módulo Autentique",
+    "responsavel": "Comercial / Operações",
+    "objetivo": "Enviar documentos para assinatura digital via Autentique.",
+    "telas": ["Lista de documentos enviados", "Detalhe com status de assinatura"],
+    "fluxos": ["Gerar documento", "Enviar para assinatura", "Acompanhar status"],
+    "campos": ["Documento", "Signatários", "Status", "Data de envio"],
+    "dicas": ["Conferir e-mails dos signatários", "Acompanhar prazos"]
+  },
+  {
+    "slug": "integracoes",
+    "titulo": "Módulo Integrações",
+    "responsavel": "TI / Operações",
+    "objetivo": "Painel central de todas as integrações (Allianz, HDI, Meta, Sheets, Integrador).",
+    "telas": ["Listagem por parceiro", "Configuração individual"],
+    "fluxos": ["Ativar/desativar integração", "Configurar credenciais", "Monitorar"],
+    "campos": ["Parceiro", "Status", "Credenciais", "Logs"],
+    "dicas": ["Documentar cada integração", "Monitorar falhas via Logs"]
+  },
+  {
+    "slug": "importar",
+    "titulo": "Módulo Importar",
+    "responsavel": "Operações",
+    "objetivo": "Importar dados em massa (clientes, apólices) via planilha.",
+    "telas": ["Upload de arquivo", "Mapeamento de colunas", "Resumo da importação"],
+    "fluxos": ["Baixar template", "Subir planilha", "Mapear", "Confirmar"],
+    "campos": ["Arquivo", "Mapeamento", "Resultado"],
+    "dicas": ["Usar template oficial", "Validar amostra antes de importar tudo"]
+  },
+  {
+    "slug": "logs",
+    "titulo": "Módulo Logs",
+    "responsavel": "TI",
+    "objetivo": "Auditoria e rastreamento de eventos do sistema.",
+    "telas": ["Listagem de logs com filtros"],
+    "fluxos": ["Filtrar por usuário/ação/data", "Exportar"],
+    "campos": ["Usuário", "Ação", "Entidade", "Data/hora", "IP"],
+    "dicas": ["Revisar logs de segurança", "Manter histórico mínimo de 90 dias"]
+  },
+  {
+    "slug": "manuais",
+    "titulo": "Módulo Manuais",
+    "responsavel": "Todos",
+    "objetivo": "Base de conhecimento interna com manuais e procedimentos.",
+    "telas": ["Listagem de manuais", "Visualização do conteúdo"],
+    "fluxos": ["Consultar manual", "Sugerir melhoria"],
+    "campos": ["Título", "Categoria", "Conteúdo"],
+    "dicas": ["Manter manuais atualizados", "Indicar versão"]
+  },
+  {
+    "slug": "melhorias",
+    "titulo": "Módulo Melhorias",
+    "responsavel": "Todos",
+    "objetivo": "Canal interno para sugestões de melhoria no sistema/processos.",
+    "telas": ["Lista de sugestões", "Detalhe com votos e status"],
+    "fluxos": ["Sugerir melhoria", "Votar", "Acompanhar status"],
+    "campos": ["Título", "Descrição", "Status", "Votos"],
+    "dicas": ["Descrever problema antes da solução", "Acompanhar status"]
+  },
+  {
+    "slug": "configuracoes",
+    "titulo": "Módulo Configurações",
+    "responsavel": "Administração",
+    "objetivo": "Configurar parâmetros globais do CRM.",
+    "telas": ["Abas de configurações (geral, integrações, segurança)"],
+    "fluxos": ["Ajustar parâmetros", "Salvar"],
+    "campos": ["Diversos parâmetros do sistema"],
+    "dicas": ["Documentar mudanças", "Restringir acesso a administradores"]
+  },
+  {
+    "slug": "perfil",
+    "titulo": "Módulo Perfil",
+    "responsavel": "Cada usuário",
+    "objetivo": "Dados pessoais do usuário logado e preferências.",
+    "telas": ["Edição de perfil", "Troca de senha"],
+    "fluxos": ["Atualizar dados", "Alterar senha", "Configurar preferências"],
+    "campos": ["Nome", "Foto", "E-mail", "Senha", "Preferências"],
+    "dicas": ["Usar senha forte", "Manter foto profissional"]
+  }
+]
