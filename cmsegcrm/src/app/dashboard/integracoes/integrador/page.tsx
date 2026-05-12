@@ -39,7 +39,7 @@ export default function IntegradorPage() {
   const [novaKey, setNovaKey] = useState({ nome: '', escopos: ['read','write'] as string[] })
   const [tokenRevelado, setTokenRevelado] = useState<string | null>(null)
   const [modalWhIn, setModalWhIn] = useState(false)
-  const [novoWhIn, setNovoWhIn] = useState<any>({ nome: '', entidade_alvo: 'negocio', funil_id: '', etapa_inicial: '', responsavel_id: '', mapa_campos: '' })
+  const [novoWhIn, setNovoWhIn] = useState<any>({ nome: '', entidade_alvo: 'negocio', funil_id: '', etapa_inicial: '', responsavel_id: '', responsavel_modo: 'fixo', responsaveis_ids: [] as string[], mapa_campos: '' })
   const [modalWhOut, setModalWhOut] = useState(false)
   const [novoWhOut, setNovoWhOut] = useState<any>({ nome: '', url: '', eventos: [] as string[] })
 
@@ -134,14 +134,16 @@ export default function IntegradorPage() {
         entidade_alvo: novoWhIn.entidade_alvo,
         funil_id: novoWhIn.funil_id || null,
         etapa_inicial: novoWhIn.etapa_inicial || null,
-        responsavel_id: novoWhIn.responsavel_id || null,
+        responsavel_id: novoWhIn.responsavel_modo === 'fixo' ? (novoWhIn.responsavel_id || null) : null,
+        responsavel_modo: novoWhIn.responsavel_modo,
+        responsaveis_ids: novoWhIn.responsavel_modo === 'sequencial' ? novoWhIn.responsaveis_ids : [],
         mapa_campos: mapa,
       }),
     })
     const j = await r.json()
     if (!j.ok) { alert(j.erro || 'erro'); return }
     setModalWhIn(false)
-    setNovoWhIn({ nome: '', entidade_alvo: 'negocio', funil_id: '', etapa_inicial: '', responsavel_id: '', mapa_campos: '' })
+    setNovoWhIn({ nome: '', entidade_alvo: 'negocio', funil_id: '', etapa_inicial: '', responsavel_id: '', responsavel_modo: 'fixo', responsaveis_ids: [], mapa_campos: '' })
     await selecionar(conexaoSel)
   }
 
@@ -499,10 +501,48 @@ export default function IntegradorPage() {
                 )}
               </>
             )}
-            <select className="border rounded px-2 py-1 w-full" value={novoWhIn.responsavel_id} onChange={e => setNovoWhIn({ ...novoWhIn, responsavel_id: e.target.value })}>
-              <option value="">Responsável padrão (sem)</option>
-              {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
-            </select>
+            <div className="border rounded p-2 space-y-2">
+              <div className="flex gap-3 text-xs">
+                <label className="flex items-center gap-1">
+                  <input type="radio" name="resp_modo" checked={novoWhIn.responsavel_modo === 'fixo'} onChange={() => setNovoWhIn({ ...novoWhIn, responsavel_modo: 'fixo' })} />
+                  Responsável fixo
+                </label>
+                <label className="flex items-center gap-1">
+                  <input type="radio" name="resp_modo" checked={novoWhIn.responsavel_modo === 'sequencial'} onChange={() => setNovoWhIn({ ...novoWhIn, responsavel_modo: 'sequencial' })} />
+                  Sequencial (round-robin)
+                </label>
+              </div>
+              {novoWhIn.responsavel_modo === 'fixo' ? (
+                <select className="border rounded px-2 py-1 w-full" value={novoWhIn.responsavel_id} onChange={e => setNovoWhIn({ ...novoWhIn, responsavel_id: e.target.value })}>
+                  <option value="">Responsável padrão (sem)</option>
+                  {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                </select>
+              ) : (
+                <div>
+                  <div className="text-xs text-gray-600 mb-1">Selecione 2+ responsáveis. A cada lead recebido o próximo da fila vira responsável.</div>
+                  <div className="max-h-40 overflow-auto border rounded p-1 grid grid-cols-2 gap-1 text-xs">
+                    {usuarios.map(u => (
+                      <label key={u.id} className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={novoWhIn.responsaveis_ids.includes(u.id)}
+                          onChange={e => setNovoWhIn({
+                            ...novoWhIn,
+                            responsaveis_ids: e.target.checked
+                              ? [...novoWhIn.responsaveis_ids, u.id]
+                              : novoWhIn.responsaveis_ids.filter((x: string) => x !== u.id),
+                          })}
+                        />
+                        {u.nome}
+                      </label>
+                    ))}
+                  </div>
+                  {novoWhIn.responsaveis_ids.length > 0 && (
+                    <div className="text-[10px] text-gray-500 mt-1">Ordem: {novoWhIn.responsaveis_ids.map((id: string) => usuarios.find(u => u.id === id)?.nome || id).join(' → ')}</div>
+                  )}
+                </div>
+              )}
+            </div>
             <div>
               <label className="text-xs text-gray-600">Mapa de campos (JSON, opcional). Exemplo:</label>
               <pre className="text-[10px] bg-gray-50 p-1 rounded">{`{"nome":"answers.0.text","email":"answers.1.email","produto":"=Auto"}`}</pre>
