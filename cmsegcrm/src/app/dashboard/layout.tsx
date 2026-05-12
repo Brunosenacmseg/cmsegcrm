@@ -539,7 +539,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     { label:'Funis de venda', href:'/dashboard/funis/configurar' },
                     { label:'Configurar campos', href:'/dashboard/configuracoes/campos' },
                     { label:'Convites, usuários e equipes', href:'/dashboard/usuarios' },
-                    { label:'Todas as configurações', href:'/dashboard/configuracoes' },
+                    { label:'Todas as configurações', href:'/dashboard/configuracoes/hub' },
                   ].map(opt => (
                     <Link key={opt.href} href={opt.href} prefetch={false}
                       onClick={()=>setShowGear(false)}
