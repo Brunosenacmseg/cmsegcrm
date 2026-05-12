@@ -95,7 +95,35 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) { console.error('[rd/poll] fetch deal_stages falhou:', e) }
 
-    await processarLote(deals, CONCURRENCY, async (d) => {
+    // Politica: o cron sincroniza APENAS novos deals do funil META + MULTICANAL.
+    // Demais funis e updates de existentes sao ignorados (webhook ainda funciona
+    // sem essa restricao para casos manuais).
+    const { data: metaFunil } = await sa.from('funis').select('rd_id').eq('nome', 'META + MULTICANAL').maybeSingle()
+    const META_RD_ID = metaFunil?.rd_id ? String(metaFunil.rd_id) : null
+    let dealsFiltrados = deals
+    let pulados_outros_funis = 0, pulados_existentes = 0
+    if (META_RD_ID) {
+      dealsFiltrados = deals.filter(d => {
+        const sid = String(d?.deal_stage?._id || d?.deal_stage?.id || '')
+        const pid = sid ? pipelinePorStage[sid] : null
+        const ok = pid === META_RD_ID
+        if (!ok) pulados_outros_funis++
+        return ok
+      })
+      const ids = dealsFiltrados.map(d => String(d?._id || d?.id)).filter(Boolean)
+      if (ids.length) {
+        const { data: ja } = await sa.from('negocios').select('rd_id').in('rd_id', ids)
+        const setJa = new Set((ja || []).map((r: any) => String(r.rd_id)))
+        const antes = dealsFiltrados.length
+        dealsFiltrados = dealsFiltrados.filter(d => !setJa.has(String(d?._id || d?.id)))
+        pulados_existentes = antes - dealsFiltrados.length
+      }
+    } else {
+      console.warn('[rd/poll] funil META + MULTICANAL nao encontrado (rd_id), nada sera processado')
+      dealsFiltrados = []
+    }
+
+    await processarLote(dealsFiltrados, CONCURRENCY, async (d) => {
       if (Date.now() - tStart > HARD_LIMIT_MS) return
       try {
         const ev = d?.win === true ? 'deal_won' : d?.win === false ? 'deal_lost' : 'deal_updated'
@@ -159,6 +187,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       janela: { de: startDate, ate: endDate },
       lidos: deals.length,
+      filtrados_meta_novos: dealsFiltrados.length,
+      pulados_outros_funis,
+      pulados_existentes,
       processados: totalProcessados,
       criados: totalCriados,
       atualizados: totalAtualizados,
