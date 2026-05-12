@@ -22,6 +22,42 @@ export default function ChatIA() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const [aberto, setAberto] = useState(false)
+  // Posicao do balao (drag-and-drop, persistida em localStorage)
+  const [pos, setPos] = useState<{x:number, y:number} | null>(null)
+  const dragRef = useRef<{ startX:number; startY:number; baseX:number; baseY:number; moved:boolean } | null>(null)
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem('cm_chat_pos')
+      if (s) {
+        const p = JSON.parse(s)
+        if (typeof p?.x === 'number' && typeof p?.y === 'number') setPos(p)
+      }
+    } catch {}
+  }, [])
+  function onPointerDownDrag(e: React.PointerEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: rect.left, baseY: rect.top, moved: false }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function onPointerMoveDrag(e: React.PointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current; if (!d) return
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    if (!d.moved && Math.hypot(dx, dy) < 4) return
+    d.moved = true
+    const size = 56
+    const nx = Math.max(4, Math.min(window.innerWidth - size - 4, d.baseX + dx))
+    const ny = Math.max(4, Math.min(window.innerHeight - size - 4, d.baseY + dy))
+    setPos({ x: nx, y: ny })
+  }
+  function onPointerUpDrag(_e: React.PointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current
+    if (d?.moved && pos) {
+      try { localStorage.setItem('cm_chat_pos', JSON.stringify(pos)) } catch {}
+    }
+    // pequena dica: aguarda 1 tick antes de limpar p/ o onClick conseguir saber se mexeu
+    setTimeout(() => { dragRef.current = null }, 0)
+  }
   const [userId, setUserId] = useState<string>('')
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [input, setInput] = useState('')
@@ -109,25 +145,34 @@ export default function ChatIA() {
 
   return (
     <>
-      {/* Botão flutuante */}
+      {/* Botão flutuante (arrastavel) */}
       <button
-        onClick={() => setAberto(!aberto)}
+        onClick={() => { if (dragRef.current?.moved) return; setAberto(!aberto) }}
+        onPointerDown={onPointerDownDrag}
+        onPointerMove={onPointerMoveDrag}
+        onPointerUp={onPointerUpDrag}
         style={{
-          position: 'fixed', bottom: 28, right: 28, zIndex: 999,
+          position: 'fixed',
+          ...(pos
+            ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
+            : { bottom: 28, right: 28 }),
+          zIndex: 999,
           width: 56, height: 56, borderRadius: '50%',
           background: aberto ? 'rgba(10,22,40,0.95)' : 'linear-gradient(135deg, var(--gold), #e8a020)',
           border: aberto ? '2px solid var(--gold)' : 'none',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: dragRef.current?.moved ? 'grabbing' : 'grab',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 24, boxShadow: '0 4px 20px rgba(201,168,76,0.4)',
-          transition: 'all 0.3s ease',
+          transition: dragRef.current ? 'none' : 'background 0.3s ease, color 0.3s ease, border 0.3s ease',
           color: aberto ? 'var(--gold)' : '#000',
-          animation: !aberto && mensagens.length === 0 ? 'cm-ia-pulse 2.4s ease-in-out infinite' : 'none',
+          animation: !aberto && !pos && mensagens.length === 0 ? 'cm-ia-pulse 2.4s ease-in-out infinite' : 'none',
+          touchAction: 'none',
         }}
-        title={aberto ? 'Fechar assistente' : 'Abrir assistente IA — pergunte sobre seus dados, metas ou seguros'}
+        title={aberto ? 'Fechar assistente — arraste para mover' : 'Abrir assistente IA — arraste para mover'}
       >
         {aberto ? '✕' : '🤖'}
       </button>
-      {!aberto && mensagens.length === 0 && (
+      {!aberto && mensagens.length === 0 && !pos && (
         <div
           onClick={() => setAberto(true)}
           style={{
@@ -148,11 +193,25 @@ export default function ChatIA() {
         @keyframes cm-ia-tip-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
 
-      {/* Painel do chat */}
-      {aberto && (
+      {/* Painel do chat — segue a posicao do balao */}
+      {aberto && (() => {
+        const W = 380, H = 560
+        const margin = 12
+        let style: React.CSSProperties = { position:'fixed', zIndex:998, width:W, height:H, maxHeight:`calc(100vh - ${margin*2}px)` }
+        if (pos) {
+          // posiciona o painel proximo ao balao, encaixado dentro da viewport
+          let left = pos.x + 56 + margin
+          if (left + W > window.innerWidth - margin) left = Math.max(margin, pos.x - W - margin)
+          let top = pos.y - H + 56
+          if (top < margin) top = margin
+          if (top + H > window.innerHeight - margin) top = window.innerHeight - H - margin
+          style = { ...style, left, top }
+        } else {
+          style = { ...style, bottom: 96, right: 28 }
+        }
+        return (
         <div style={{
-          position: 'fixed', bottom: 96, right: 28, zIndex: 998,
-          width: 380, height: 560, maxHeight: 'calc(100vh - 120px)',
+          ...style,
           background: '#0a1628', border: '1px solid var(--border)',
           borderRadius: 20, display: 'flex', flexDirection: 'column',
           boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
@@ -238,7 +297,8 @@ export default function ChatIA() {
             </button>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       <style>{`
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px) } to { opacity: 1; transform: translateY(0) } }
