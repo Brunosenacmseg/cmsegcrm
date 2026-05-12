@@ -45,6 +45,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/rh',           icon:'🧑‍💼', label:'RH', section:'Empresa' },
   { href:'/dashboard/melhorias',    icon:'💡', label:'Melhorias CRM', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', adminOnly:true },
+  { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
   { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', adminOnly:true },
@@ -516,11 +517,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {showGear && (
                 <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 8px)',right:0,minWidth:240,background:'#fff',border:'1px solid var(--border-soft)',borderRadius:10,boxShadow:'var(--shadow-lg)',padding:6,zIndex:100,color:'var(--text)'}}>
                   {[
-                    { label:'Funis de venda', href:'/dashboard/funis/configurar' },
-                    { label:'Configurar campos', href:'/dashboard/configuracoes/campos' },
-                    { label:'Convites, usuários e equipes', href:'/dashboard/usuarios' },
-                    { label:'Todas as configurações', href:'/dashboard/configuracoes/hub' },
-                  ].map(opt => (
+                    { label:'Funis de venda', href:'/dashboard/funis/configurar', admin: true },
+                    { label:'Configurar campos', href:'/dashboard/configuracoes/campos', admin: true },
+                    { label:'Convites, usuários e equipes', href:'/dashboard/usuarios', admin: true },
+                    { label:'💰 Importar Cobrança', href:'/dashboard/importar/cobranca', gestao: true },
+                    { label:'Todas as configurações', href:'/dashboard/configuracoes/hub', admin: true },
+                  ].filter(opt => {
+                    if (opt.admin && (isAdmin)) return true
+                    if (opt.gestao && (isAdmin || ehGestao)) return true
+                    return false
+                  }).map(opt => (
                     <Link key={opt.href} href={opt.href} prefetch={false}
                       onClick={()=>setShowGear(false)}
                       style={{display:'block',padding:'8px 12px',borderRadius:6,fontSize:13,color:'var(--text)',textDecoration:'none'}}
