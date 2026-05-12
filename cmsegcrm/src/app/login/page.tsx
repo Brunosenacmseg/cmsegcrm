@@ -48,7 +48,7 @@ export default function LoginPage() {
           user_nome: nome,
           sucesso: true,
         })
-        window.location.replace('/dashboard')
+        window.location.replace('/dashboard/mural')
         return
       }
       setErro('Verifique seu e-mail para confirmar o cadastro.')
@@ -72,7 +72,7 @@ export default function LoginPage() {
       user_email: data.user?.email ?? email,
       sucesso: true,
     })
-    window.location.replace('/dashboard')
+    window.location.replace('/dashboard/mural')
   }
 
   return (
