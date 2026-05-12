@@ -399,12 +399,12 @@ export default function ContasPagarPage() {
                       nome: cat ? `${cat.codigo} ${cat.nome}` : f.nome,
                     }))
                   }}
-                  style={{...inp,background:'#0e2040'}}>
-                  <option value="" style={{background:'#0e2040'}}>— selecionar —</option>
+                  style={{...inp,background:'#ffffff'}}>
+                  <option value="" style={{background:'#ffffff',color:'var(--text)'}}>— selecionar —</option>
                   {categorias.map(c => (
-                    <option key={c.id} value={c.id} style={{background:'#0e2040'}}>{c.codigo} {c.nome}</option>
+                    <option key={c.id} value={c.id} style={{background:'#ffffff',color:'var(--text)'}}>{c.codigo} {c.nome}</option>
                   ))}
-                  <option value="__nova__" style={{background:'#0e2040'}}>+ Criar nova categoria…</option>
+                  <option value="__nova__" style={{background:'#ffffff',color:'var(--blue)'}}>+ Criar nova categoria…</option>
                 </select>
               ) : (
                 <div style={{display:'grid',gridTemplateColumns:'120px 1fr auto auto',gap:8,alignItems:'center'}}>
