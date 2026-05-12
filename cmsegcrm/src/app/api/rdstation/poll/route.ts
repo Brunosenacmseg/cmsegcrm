@@ -96,15 +96,18 @@ export async function POST(req: NextRequest) {
     // Atualiza last_sync_at apenas se o run nao deu erro fatal
     await sa.from('rd_crm_config').update({ last_sync_at: novoSync.toISOString(), updated_at: novoSync.toISOString() }).eq('id', 1)
 
-    // Log resumido
+    // Log resumido (schema: id, recurso, status, qtd_lidos, qtd_criados, qtd_atualizados, qtd_erros, erros, iniciado_em, concluido_em)
     try {
       await sa.from('rdstation_syncs').insert({
         recurso: 'poll',
         status: totalErros > 0 ? 'parcial' : 'ok',
         qtd_lidos: totalProcessados,
-        qtd_aplicados: totalCriados + totalAtualizados,
+        qtd_criados: totalCriados,
+        qtd_atualizados: totalAtualizados,
         qtd_erros: totalErros,
-        detalhe: JSON.stringify({ startDate, page, criados: totalCriados, atualizados: totalAtualizados, erros }),
+        erros: erros.length ? erros : null,
+        iniciado_em: desde.toISOString(),
+        concluido_em: novoSync.toISOString(),
       } as any)
     } catch {}
 
@@ -125,7 +128,9 @@ export async function POST(req: NextRequest) {
         status: 'erro',
         qtd_lidos: totalProcessados,
         qtd_erros: totalErros + 1,
-        detalhe: String(e?.message || e),
+        erros: [String(e?.message || e)],
+        iniciado_em: desde.toISOString(),
+        concluido_em: new Date().toISOString(),
       } as any)
     } catch {}
     return NextResponse.json({ error: String(e?.message || e), processados: totalProcessados }, { status: 500 })
