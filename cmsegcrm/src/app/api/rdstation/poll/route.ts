@@ -111,19 +111,18 @@ export async function POST(req: NextRequest) {
       .update({ last_sync_at: novoLastSync.toISOString(), updated_at: novoSync.toISOString() })
       .eq('id', 1)
 
-    try {
-      await sa.from('rdstation_syncs').insert({
-        recurso: 'poll',
-        status: totalErros > 0 ? 'parcial' : 'ok',
-        qtd_lidos: deals.length,
-        qtd_criados: totalCriados,
-        qtd_atualizados: totalAtualizados,
-        qtd_erros: totalErros,
-        erros: erros.length ? erros : null,
-        iniciado_em: desde.toISOString(),
-        concluido_em: new Date().toISOString(),
-      } as any)
-    } catch {}
+    const { error: logErr } = await sa.from('rdstation_syncs').insert({
+      recurso: 'poll',
+      status: totalErros > 0 ? 'parcial' : 'ok',
+      qtd_lidos: deals.length,
+      qtd_criados: totalCriados,
+      qtd_atualizados: totalAtualizados,
+      qtd_erros: totalErros,
+      erros: erros.length ? erros : null,
+      iniciado_em: desde.toISOString(),
+      concluido_em: new Date().toISOString(),
+    } as any)
+    if (logErr) console.error('[rd/poll] insert rdstation_syncs falhou:', JSON.stringify(logErr))
 
     return NextResponse.json({
       ok: true,
@@ -139,17 +138,16 @@ export async function POST(req: NextRequest) {
       amostra_erros: erros.slice(0, 10),
     })
   } catch (e: any) {
-    try {
-      await sa.from('rdstation_syncs').insert({
-        recurso: 'poll',
-        status: 'erro',
-        qtd_lidos: 0,
-        qtd_erros: 1,
-        erros: [String(e?.message || e)],
-        iniciado_em: desde.toISOString(),
-        concluido_em: new Date().toISOString(),
-      } as any)
-    } catch {}
+    const { error: logErr } = await sa.from('rdstation_syncs').insert({
+      recurso: 'poll',
+      status: 'erro',
+      qtd_lidos: 0,
+      qtd_erros: 1,
+      erros: [String(e?.message || e)],
+      iniciado_em: desde.toISOString(),
+      concluido_em: new Date().toISOString(),
+    } as any)
+    if (logErr) console.error('[rd/poll] insert rdstation_syncs (erro) falhou:', JSON.stringify(logErr))
     return NextResponse.json({ error: String(e?.message || e) }, { status: 500 })
   }
 }
