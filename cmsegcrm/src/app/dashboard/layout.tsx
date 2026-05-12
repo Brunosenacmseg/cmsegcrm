@@ -28,6 +28,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/metas',        icon:'🎯', label:'Metas' },
   { href:'/dashboard/renovacoes',   icon:'🔄', label:'Renovações' },
   { href:'/dashboard/relatorios',   icon:'📊', label:'Relatórios' },
+  { href:'/dashboard/vendas-vendedor', icon:'🏆', label:'Ranking de vendas' },
   { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique', equipePosVenda:true },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
   { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE', adminOnly:true },
