@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 const STATUS_COR: Record<string,string> = {
   pendente: 'var(--text-muted)',
@@ -16,6 +16,7 @@ const STATUS_COR: Record<string,string> = {
 export default function AutentiquePage() {
   const supabase = createClient()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -35,6 +36,22 @@ export default function AutentiquePage() {
   const [respostaSync, setRespostaSync] = useState<string | null>(null)
 
   useEffect(() => { init() }, [])
+
+  // Pre-preenche o form quando vem com ?negocio_id=...&titulo=...
+  useEffect(() => {
+    if (!searchParams) return
+    const negId = searchParams.get('negocio_id')
+    const tit   = searchParams.get('titulo')
+    const novo  = searchParams.get('novo')
+    if (negId || tit) {
+      setForm(f => ({
+        ...f,
+        negocio_id: negId || f.negocio_id,
+        nome: tit ? `Assinatura — ${tit}` : f.nome,
+      }))
+    }
+    if (novo === '1' || negId || tit) setModal(true)
+  }, [searchParams])
   useEffect(() => { if (profile) carregar() }, [profile, filtro])
 
   async function init() {
@@ -152,8 +169,24 @@ export default function AutentiquePage() {
                       {d.arquivo_nome && <div style={{fontSize:11,color:'var(--text-muted)'}}>{d.arquivo_nome}</div>}
                     </td>
                     <td style={{padding:'10px 4px',fontSize:12}}>
-                      {d.negocios?.titulo && <div>📋 {d.negocios.titulo}</div>}
-                      {d.clientes?.nome  && <div style={{color:'var(--teal)'}}>👤 {d.clientes.nome}</div>}
+                      {d.negocios?.titulo && (
+                        <a href={`/dashboard/negocios/${d.negocio_id}`}
+                          style={{display:'block',color:'var(--blue)',textDecoration:'none',cursor:'pointer'}}
+                          title="Abrir negociação"
+                          onMouseEnter={e=>(e.currentTarget.style.textDecoration='underline')}
+                          onMouseLeave={e=>(e.currentTarget.style.textDecoration='none')}>
+                          📋 {d.negocios.titulo}
+                        </a>
+                      )}
+                      {d.clientes?.nome && (
+                        <a href={`/dashboard/clientes/${d.cliente_id}`}
+                          style={{display:'block',color:'var(--teal)',textDecoration:'none',cursor:'pointer'}}
+                          title="Abrir cliente"
+                          onMouseEnter={e=>(e.currentTarget.style.textDecoration='underline')}
+                          onMouseLeave={e=>(e.currentTarget.style.textDecoration='none')}>
+                          👤 {d.clientes.nome}
+                        </a>
+                      )}
                       {!d.negocios && !d.clientes && <span style={{color:'var(--text-muted)'}}>—</span>}
                     </td>
                     <td style={{padding:'10px 4px'}}>
