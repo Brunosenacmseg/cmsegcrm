@@ -76,7 +76,6 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
       child('/dashboard/propostas', 'Propostas'),
       child('/dashboard/renovacoes', 'Renovações'),
     ])},
-    { label: 'Empresas', href: '/dashboard/clientes?tipo=empresa' },
     { label: 'Clientes', children: compact([
       child('/dashboard/clientes', 'Clientes'),
       child('/dashboard/apolices', 'Apólices'),
@@ -98,6 +97,7 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
       child('/dashboard/comissoes', 'Comissões'),
       child('/dashboard/contas-pagar', 'Contas a Pagar'),
     ])},
+    { label: 'RH', href: '/dashboard/rh' },
     { label: 'Marketing', children: compact([
       child('/dashboard/campanhas', 'Campanhas Meta'),
       child('/dashboard/integracoes/meta', 'Conectar Meta'),
@@ -113,7 +113,6 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
       child('/dashboard/automacoes', 'Automações'),
       child('/dashboard/manuais', 'Manuais'),
       child('/dashboard/gestao-equipe', 'Gestão de Equipe'),
-      child('/dashboard/rh', 'RH'),
       child('/dashboard/melhorias', 'Melhorias CRM'),
       child('/dashboard/importar', 'Importar Dados'),
       child('/dashboard/logs', 'Log do Sistema'),
