@@ -332,13 +332,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,background:'radial-gradient(ellipse 60% 50% at 80% 10%, rgba(201,168,76,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 10% 80%, rgba(28,181,160,0.06) 0%, transparent 60%)'}}/>
 
-      <aside className={`cm-sidebar ${mobileNavOpen ? 'open' : ''}`} style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
-        <div style={{padding:'26px 22px 20px',borderBottom:'1px solid var(--border)'}}>
-          <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM Seguros</div>
-          <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:1,textTransform:'uppercase',marginTop:2,lineHeight:1.4,fontWeight:700}}>Transformando vidas através do seguro</div>
+      <aside className={`cm-sidebar ${mobileNavOpen ? 'open' : ''}`} style={{width:'var(--sidebar-w)',background:'var(--sb-bg)',borderRight:'1px solid var(--sb-border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10,color:'var(--sb-text)'}}>
+        <div style={{padding:'20px 18px 16px',borderBottom:'1px solid var(--sb-border)',display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,var(--gold) 0%,var(--gold-light) 100%)',display:'flex',alignItems:'center',justifyContent:'center',color:'#11182a',fontFamily:'DM Serif Display,serif',fontSize:18,fontWeight:700}}>CM</div>
+          <div style={{minWidth:0}}>
+            <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,color:'#fff',lineHeight:1.1}}>CM Seguros</div>
+            <div style={{fontSize:9,color:'var(--sb-text-dim)',letterSpacing:1.2,textTransform:'uppercase',marginTop:3,fontWeight:600}}>CRM · Painel</div>
+          </div>
         </div>
 
-        <nav style={{flex:1,padding:'14px 0',overflowY:'auto'}}>
+        <nav style={{flex:1,padding:'10px 0',overflowY:'auto'}}>
           {navVisible.map((item) => {
             const showSection = item.section && item.section !== lastSection
             if (item.section) lastSection = item.section
@@ -367,11 +370,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                 )}
                 {!recolhida && (
-                  <Link href={item.href} prefetch={false}
-                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'var(--gold-soft)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?600:400,transition:'all 0.18s',textDecoration:'none'}}
-                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text)' }}
-                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-muted)' }}>
-                    <span style={{fontSize:15,width:20,textAlign:'center'}}>{item.icon}</span>
+                  <Link href={item.href} prefetch={false} className={'cm-nav-item' + (active?' active':'')}>
+                    <span className="cm-nav-ico">{item.icon}</span>
                     {item.label}
                     {(() => {
                       // Para o item "tarefas", o número vermelho mostra só ATRASADAS.
@@ -412,31 +412,39 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Rodapé com avatar clicável */}
-        <div style={{padding:'16px 22px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10}}>
+        <div style={{padding:'12px 14px',borderTop:'1px solid var(--sb-border)',display:'flex',alignItems:'center',gap:10,background:'var(--sb-bg-2)'}}>
           <div onClick={()=>router.push('/dashboard/perfil')} title="Meu perfil"
             style={{cursor:'pointer',border:'2px solid var(--gold)',borderRadius:'50%',flexShrink:0}}>
             <Avatar nome={profile?.nome||user?.email} avatarUrl={profile?.avatar_url} role={profile?.role} size={34} />
           </div>
           <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>router.push('/dashboard/perfil')}>
-            <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{profile?.nome||user?.email}</div>
-            <div style={{fontSize:11,color:'var(--text-muted)'}}>{profile?.role||'Corretor'}</div>
+            <div style={{fontSize:13,fontWeight:500,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{profile?.nome||user?.email}</div>
+            <div style={{fontSize:11,color:'var(--sb-text-dim)'}}>{profile?.role||'Corretor'}</div>
           </div>
-          <span onClick={logout} style={{fontSize:16,cursor:'pointer',color:'var(--text-muted)'}} title="Sair">🚪</span>
+          <span onClick={logout} style={{fontSize:16,cursor:'pointer',color:'var(--sb-text-dim)'}} title="Sair">🚪</span>
         </div>
       </aside>
 
       <main className="cm-main" style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
-        {/* Header com sino */}
-        <div style={{height:48,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'#ffffff',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
+        {/* Header com busca, sino e usuário (estilo RD Station) */}
+        <div style={{height:56,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',padding:'0 20px',background:'#ffffff',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:14}}>
+          <label className="cm-topbar-search" style={{flex:'0 1 420px'}} onClick={(e)=>{
+            // Dispara Command Palette ao clicar
+            const ev = new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true})
+            window.dispatchEvent(ev)
+          }}>
+            <span style={{fontSize:14,color:'var(--text-faint)'}}>🔍</span>
+            <input readOnly placeholder="Buscar clientes, apólices, tarefas… (⌘K)" />
+          </label>
+
           <div style={{flex:1}}/>
 
           <div style={{position:'relative'}}>
             <button onClick={e=>{e.stopPropagation();setShowNotif(!showNotif)}}
-              style={{background:'#ffffff',border:'1px solid var(--border-strong)',borderRadius:10,padding:'7px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:8,color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:13}}>
-              <span style={{fontSize:16}}>🔔</span>
-              <span style={{fontSize:12,color:'var(--text-muted)'}}>Notificações</span>
+              className="cm-icon-btn" title="Notificações">
+              <span>🔔</span>
               {totalNaoLidas > 0 && (
-                <span style={{background:'var(--red)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 7px',minWidth:18,textAlign:'center'}}>
+                <span style={{position:'absolute',top:-4,right:-4,background:'var(--red)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 5px',minWidth:18,textAlign:'center',border:'2px solid #fff'}}>
                   {totalNaoLidas > 99 ? '99+' : totalNaoLidas}
                 </span>
               )}
@@ -474,11 +482,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
           </div>
 
-          <div style={{flex:1,display:'flex',justifyContent:'flex-end',alignItems:'center',gap:8}}>
-            <span style={{fontSize:12,color:'var(--text-muted)',cursor:'pointer'}} onClick={()=>router.push('/dashboard/perfil')}>
-              {profile?.nome?.split(' ')[0] || user?.email}
-            </span>
+          <div onClick={()=>router.push('/dashboard/perfil')} style={{display:'flex',alignItems:'center',gap:10,padding:'4px 10px 4px 4px',border:'1px solid var(--border-soft)',borderRadius:999,cursor:'pointer',background:'#fff'}}>
             <Avatar nome={profile?.nome||user?.email} avatarUrl={profile?.avatar_url} role={profile?.role} size={28} />
+            <span style={{fontSize:13,fontWeight:500,color:'var(--text)'}}>{profile?.nome?.split(' ')[0] || user?.email}</span>
           </div>
         </div>
 
