@@ -15,9 +15,11 @@ function admin(): any {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-// Formata datetime no formato ISO 8601 esperado pela API do RD CRM
-function fmt(dt: Date): string {
-  return dt.toISOString()
+// API v1 do RD CRM espera 'YYYY-MM-DD' (apenas data) para start_date/end_date.
+// toISOString() (com .000Z) era rejeitado. Mantemos o overlap de 24h via lógica em desde.
+function fmtData(dt: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`
 }
 
 export async function GET(req: NextRequest) {
@@ -39,8 +41,11 @@ export async function POST(req: NextRequest) {
   const desde = cfg.last_sync_at ? new Date(cfg.last_sync_at) : new Date(Date.now() - 24*60*60*1000)
   // Pequeno overlap (60s) pra não perder deals atualizados muito perto do final da janela
   desde.setSeconds(desde.getSeconds() - 60)
-  const startDate = fmt(desde)
+  const startDate = fmtData(desde)
   const novoSync = new Date()
+  // end_date precisa ser hoje (ou amanha pra cobrir TZ). API v1 exige.
+  const amanha = new Date(novoSync.getTime() + 24*60*60*1000)
+  const endDate = fmtData(amanha)
 
   let totalProcessados = 0
   let totalCriados = 0
@@ -57,6 +62,7 @@ export async function POST(req: NextRequest) {
       url.searchParams.set('token', token)
       url.searchParams.set('updated_at_period', 'true')
       url.searchParams.set('start_date', startDate)
+      url.searchParams.set('end_date', endDate)
       url.searchParams.set('limit', String(PAGE_LIMIT))
       url.searchParams.set('page', String(page))
       const r = await fetch(url.toString(), { headers: { 'accept': 'application/json' } })
@@ -105,7 +111,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       desde: startDate,
-      ate: fmt(novoSync),
+      ate: fmtData(novoSync),
       processados: totalProcessados,
       criados: totalCriados,
       atualizados: totalAtualizados,
