@@ -77,18 +77,21 @@ export async function POST(req: NextRequest) {
     const deals: any[] = Array.isArray(j) ? j : (j?.deals || j?.data || [])
 
     // /deals lista nao envia deal_pipeline_id no payload. Pre-carrega
-    // /deal_stages pra mapear stageId -> pipelineId antes de aplicarDeal.
+    // /deal_stages (PAGINADO — RD tem 90+ stages) pra mapear stageId -> pipelineId.
     const pipelinePorStage: Record<string, string> = {}
     try {
-      const rs = await fetch(`https://crm.rdstation.com/api/v1/deal_stages?token=${encodeURIComponent(token)}`, { headers: { 'accept': 'application/json' } })
-      if (rs.ok) {
+      for (let page = 1; page <= 10; page++) {
+        const rs = await fetch(`https://crm.rdstation.com/api/v1/deal_stages?token=${encodeURIComponent(token)}&limit=200&page=${page}`, { headers: { 'accept': 'application/json' } })
+        if (!rs.ok) break
         const js: any = await rs.json()
         const stages: any[] = Array.isArray(js) ? js : (js?.deal_stages || js?.data || [])
+        if (!stages.length) break
         for (const s of stages) {
           const sid = String(s?._id || s?.id || '')
           const pid = s?.deal_pipeline_id || s?.deal_pipeline?._id || s?.deal_pipeline?.id
           if (sid && pid) pipelinePorStage[sid] = String(pid)
         }
+        if (stages.length < 200) break
       }
     } catch (e) { console.error('[rd/poll] fetch deal_stages falhou:', e) }
 
