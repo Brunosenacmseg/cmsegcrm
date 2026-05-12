@@ -126,7 +126,7 @@ function FunisPage() {
   const [modalNovo, setModalNovo] = useState(false)
   const [funilModal, setFunilModal] = useState<any>(null)
   const [salvando, setSalvando]   = useState(false)
-  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'' })
+  const [formNovo, setFormNovo]   = useState({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'', contato_nome:'', contato_email:'', contato_cpf_cnpj:'' })
   const [clienteBusca, setClienteBusca] = useState('')
   const [clientesRes, setClientesRes]   = useState<any[]>([])
   const [clienteSel, setClienteSel]     = useState<any>(null)
@@ -866,11 +866,44 @@ function FunisPage() {
     setter(data||[])
   }
 
+  async function resolverClienteDoContato(): Promise<string | null> {
+    if (clienteSel?.id) return clienteSel.id
+    const nome     = formNovo.contato_nome?.trim()    || ''
+    const email    = formNovo.contato_email?.trim()   || ''
+    const cpf      = formNovo.contato_cpf_cnpj?.trim()|| ''
+    const telefone = formNovo.telefone?.trim()        || ''
+    if (!nome && !email && !cpf && !telefone) return null
+
+    // Procura cliente existente por CPF/CNPJ, depois email, depois telefone
+    if (cpf) {
+      const { data } = await supabase.from('clientes').select('id').eq('cpf_cnpj', cpf).limit(1)
+      if (data && data[0]) return data[0].id
+    }
+    if (email) {
+      const { data } = await supabase.from('clientes').select('id').ilike('email', email).limit(1)
+      if (data && data[0]) return data[0].id
+    }
+    if (telefone) {
+      const { data } = await supabase.from('clientes').select('id').eq('telefone', telefone).limit(1)
+      if (data && data[0]) return data[0].id
+    }
+
+    const { data: novo } = await supabase.from('clientes').insert({
+      nome:     nome || 'Sem nome',
+      cpf_cnpj: cpf      || null,
+      email:    email    || null,
+      telefone: telefone || null,
+      tipo:     'PF',
+    }).select('id').single()
+    return novo?.id || null
+  }
+
   async function salvarNegocio() {
     if (!formNovo.titulo) return
     setSalvando(true)
     const funil = funilModal
     const etapa = formNovo.etapa || funil?.etapas?.[0] || ''
+    const clienteId = await resolverClienteDoContato()
     await supabase.from('negocios').insert({
       titulo:          formNovo.titulo,
       produto:         formNovo.produto || null,
@@ -878,13 +911,14 @@ function FunisPage() {
       premio:          formNovo.premio ? parseFloat(formNovo.premio) : null,
       obs:             formNovo.obs || null,
       telefone_negocio: formNovo.telefone?.trim() || null,
+      email_negocio:   formNovo.contato_email?.trim() || null,
       etapa,
       funil_id:        funil.id,
-      cliente_id:      clienteSel?.id || null,
+      cliente_id:      clienteId,
       vendedor_id:     formNovo.vendedor_id || profile?.id,
     })
     setModalNovo(false)
-    setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'' })
+    setFormNovo({ titulo:'', produto:'', seguradora:'', premio:'', etapa:'', obs:'', vendedor_id:'', telefone:'', contato_nome:'', contato_email:'', contato_cpf_cnpj:'' })
     setClienteSel(null); setClienteBusca('')
     setSalvando(false)
     await carregarNegocios()
@@ -1508,7 +1542,7 @@ function FunisPage() {
             </button>
           </>
         )}
-        <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||'',telefone:''})}}>
+        <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||'',telefone:'',contato_nome:'',contato_email:'',contato_cpf_cnpj:''})}}>
           + Novo Card
         </button>
       </div>
@@ -1658,7 +1692,7 @@ function FunisPage() {
                     : 'Comece criando seu primeiro negócio neste funil. É rápido!'}
                 </div>
                 {!filtroBusca && (
-                  <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||'',telefone:''})}}>
+                  <button className="btn-primary" onClick={()=>{setFunilModal(funiAtual);setModalNovo(true);setFormNovo({titulo:'',produto:'',seguradora:'',premio:'',etapa:funiAtual?.etapas?.[0]||'',obs:'',vendedor_id:profile?.id||'',telefone:'',contato_nome:'',contato_email:'',contato_cpf_cnpj:''})}}>
                     + Criar primeiro negócio
                   </button>
                 )}
@@ -2056,8 +2090,25 @@ function FunisPage() {
                 <input value={formNovo.premio} onChange={e=>setFormNovo(f=>({...f,premio:e.target.value}))} placeholder="0,00" style={inp}/></div>
             </div>
 
-            <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Telefone</label>
-              <input value={formNovo.telefone} onChange={e=>setFormNovo(f=>({...f,telefone:e.target.value}))} placeholder="(00) 00000-0000" style={inp}/></div>
+            {!clienteSel && (
+              <div style={{marginBottom:12,padding:'12px',background:'rgba(28,181,160,0.04)',border:'1px dashed rgba(28,181,160,0.3)',borderRadius:8}}>
+                <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8,fontWeight:600,letterSpacing:'0.5px',textTransform:'uppercase'}}>Contato {clienteSel ? '' : '(será criado/vinculado como cliente)'}</div>
+                <div style={{marginBottom:8}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Nome</label>
+                  <input value={formNovo.contato_nome} onChange={e=>setFormNovo(f=>({...f,contato_nome:e.target.value}))} placeholder="Nome do contato" style={inp}/></div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                  <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Telefone</label>
+                    <input value={formNovo.telefone} onChange={e=>setFormNovo(f=>({...f,telefone:e.target.value}))} placeholder="(00) 00000-0000" style={inp}/></div>
+                  <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>CPF/CNPJ</label>
+                    <input value={formNovo.contato_cpf_cnpj} onChange={e=>setFormNovo(f=>({...f,contato_cpf_cnpj:e.target.value}))} placeholder="000.000.000-00" style={inp}/></div>
+                </div>
+                <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Email</label>
+                  <input type="email" value={formNovo.contato_email} onChange={e=>setFormNovo(f=>({...f,contato_email:e.target.value}))} placeholder="email@email.com" style={inp}/></div>
+              </div>
+            )}
+            {clienteSel && (
+              <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Telefone</label>
+                <input value={formNovo.telefone} onChange={e=>setFormNovo(f=>({...f,telefone:e.target.value}))} placeholder="(00) 00000-0000" style={inp}/></div>
+            )}
 
             <div style={{marginBottom:12}}><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Seguradora</label>
               <select value={formNovo.seguradora} onChange={e=>setFormNovo(f=>({...f,seguradora:e.target.value}))} style={{...inp,background:'#ffffff'}}>
