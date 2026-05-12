@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
 
     const { error: logErr } = await sa.from('rdstation_syncs').insert({
       recurso: 'poll',
-      status: totalErros > 0 ? 'parcial' : 'ok',
+      status: totalErros > 0 ? 'parcial' : 'concluido',
       qtd_lidos: deals.length,
       qtd_criados: totalCriados,
       qtd_atualizados: totalAtualizados,
