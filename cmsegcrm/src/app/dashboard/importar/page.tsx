@@ -233,8 +233,6 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
 const ENTIDADES_INFO: { key: Entidade; emoji: string; label: string; descricao: string }[] = [
   { key:'clientes',  emoji:'👥', label:'Clientes',     descricao:'Pessoas físicas/jurídicas (PF/PJ)' },
   { key:'negocios',  emoji:'💼', label:'Negociações',  descricao:'Cards nos funis de venda' },
-  { key:'apolices',  emoji:'📋', label:'Apólices',     descricao:'Apólices emitidas' },
-  { key:'propostas', emoji:'📄', label:'Propostas',    descricao:'Propostas em andamento' },
   { key:'tarefas',   emoji:'✅', label:'Tarefas',      descricao:'Tarefas e lembretes' },
 ]
 
@@ -622,52 +620,6 @@ export default function ImportarPage() {
 
           {step === 'upload' && (
             <>
-              {/* Sincronizar responsaveis (so atualiza vendedor_id de negocios existentes) */}
-              <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--gold)'}}>
-                <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>🔄 Sincronizar responsáveis (sem reimportar)</div>
-                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>
-                  Sobe a planilha do RD e atualiza o <b>vendedor</b> das negociações JÁ existentes (casa por título + CPF/CNPJ; resolve nomes via tabela de aliases).
-                </div>
-                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-                  <input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{setSyncFile(e.target.files?.[0]||null);setSyncResultado(null)}}
-                    style={{flex:1,minWidth:220,fontSize:12}} />
-                  <button className="btn-secondary" disabled={!syncFile||syncProcessando}
-                    onClick={()=>sincronizarResponsaveis(true)}>
-                    {syncProcessando?'Aguarde...':'Pré-visualizar'}
-                  </button>
-                  <button className="btn-primary" disabled={!syncFile||syncProcessando}
-                    onClick={()=>{ if (confirm('Confirma aplicar a atualização de vendedores?')) sincronizarResponsaveis(false) }}>
-                    Aplicar
-                  </button>
-                </div>
-                {syncResultado && (
-                  <div style={{marginTop:14,padding:12,background:'rgba(255,255,255,0.04)',borderRadius:8,fontSize:12,fontFamily:'monospace'}}>
-                    {syncResultado.erro && <div style={{color:'var(--red)'}}>Erro: {syncResultado.erro}</div>}
-                    {syncResultado._progresso && <div>{syncResultado._progresso}</div>}
-                    {!syncResultado.erro && !syncResultado._progresso && (
-                      <>
-                        <div>📊 Total lido: {syncResultado.total}</div>
-                        <div>✅ Já correto: {syncResultado.ja_correto}</div>
-                        <div>🔄 A atualizar: {syncResultado.a_atualizar}</div>
-                        {syncResultado._dryRun === false && <div>✓ Aplicados: {syncResultado.aplicados} | Erros: {syncResultado.erros}</div>}
-                        <div style={{color:'var(--text-muted)',marginTop:6}}>
-                          Sem título: {syncResultado.sem_titulo} · Sem responsável: {syncResultado.sem_responsavel} · Sem match: {syncResultado.sem_match_negocio} · Múltiplos: {syncResultado.multiplos_match}
-                        </div>
-                        {syncResultado.aliases_faltando?.length > 0 && (
-                          <div style={{marginTop:10,padding:10,background:'rgba(224,82,82,0.08)',border:'1px solid rgba(224,82,82,0.3)',borderRadius:6}}>
-                            <div style={{color:'var(--red)',fontWeight:600,marginBottom:4}}>⚠ Aliases faltando ({syncResultado.aliases_faltando.length}+):</div>
-                            <div style={{fontSize:11}}>{syncResultado.aliases_faltando.join(', ')}</div>
-                            <div style={{marginTop:6,color:'var(--text-muted)',fontSize:11}}>
-                              Cadastra em /dashboard/configuracoes/aliases-rd e roda de novo.
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {/* Sincronizar planilha COMPLETA: preenche todos os campos vazios + custom_fields */}
               <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--teal)'}}>
                 <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>📋 Sincronizar planilha completa do RD CRM</div>

@@ -38,10 +38,6 @@ const SECTIONS: Section[][] = [
   ],
   // Coluna 2
   [
-    { title:'MARKETING', items:[
-      { label:'Campanhas Meta', href:'/dashboard/campanhas' },
-      { label:'Conectar Meta', href:'/dashboard/integracoes/meta' },
-    ]},
     { title:'AVANÇADO', items:[
       { label:'Importar dados', href:'/dashboard/importar' },
       { label:'Multi-vendas', href:'/dashboard/configuracoes' },
@@ -57,7 +53,6 @@ const SECTIONS: Section[][] = [
   // Coluna 3
   [
     { title:'AJUSTES DE SUA CONTA', items:[
-      { label:'Fontes e campanhas', href:'/dashboard/integracoes/meta' },
       { label:'Produtos e serviços', href:'/dashboard/configuracoes?aba=produtos' },
       { label:'Segmentos', href:'/dashboard/configuracoes' },
       { label:'Motivo de perda', href:'/dashboard/configuracoes?aba=motivos' },
@@ -67,9 +62,6 @@ const SECTIONS: Section[][] = [
     ]},
     { title:'ADMINISTRAÇÃO', items:[
       { label:'Log do sistema', href:'/dashboard/logs' },
-      { label:'Seguradoras', href:'/dashboard/seguradoras' },
-      { label:'Tokio Marine (WS)', href:'/dashboard/tokio' },
-      { label:'Cobrança · Sheets', href:'/dashboard/integracoes/sheets-cobranca' },
       { label:'Melhorias CRM', href:'/dashboard/melhorias' },
     ]},
   ],
