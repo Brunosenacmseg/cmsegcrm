@@ -101,6 +101,11 @@ export default function NegocioDetailPage() {
   const limiteEsfri = cfgEtapa?.esfriando ? Number(cfgEtapa?.dias)||3 : null
   const esfriando = limiteEsfri !== null && diasSemMov !== null && diasSemMov >= limiteEsfri
 
+  async function salvarCampo(campo: string, valor: any) {
+    await supabase.from('negocios').update({ [campo]: valor, updated_at: new Date().toISOString() }).eq('id', id)
+    setNegocio((n:any)=>({ ...n, [campo]: valor }))
+  }
+
   async function mudarEtapa(nova: string) {
     await supabase.from('negocios').update({ etapa: nova, updated_at: new Date().toISOString() }).eq('id', id)
     setNegocio((n:any)=>({...n, etapa: nova}))
@@ -180,24 +185,25 @@ export default function NegocioDetailPage() {
         {/* Painel esquerdo */}
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
           <PainelSection title="Negociação" open={openSections.negociacao} onToggle={()=>setOpenSections(s=>({...s,negociacao:!s.negociacao}))}>
-            <KV label="Nome" value={negocio.titulo} />
-            <KV label="Qualificação" value={negocio.qualificacao ? '★'.repeat(negocio.qualificacao) : '—'} />
-            <KV label="Criada em" value={negocio.created_at ? new Date(negocio.created_at).toLocaleString('pt-BR') : '—'} />
-            <KV label="Valor total" value={negocio.premio ? `R$ ${Number(negocio.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'} />
-            <KV label="Previsão de fechamento" value={negocio.previsao_fechamento || '—'} />
-            <KV label="Fonte" value={negocio.fonte_origem || negocio.fonte || '—'} />
-            <KV label="Campanha" value={negocio.campanha || '—'} />
-            <KV label="Placa" value={negocio.placa_veiculo || negocio.placa || '—'} />
-            <KV label="Modelo do veículo" value={negocio.modelo_veiculo || '—'} />
-            <KV label="CPF" value={negocio.cpf_cnpj || '—'} />
-            <KV label="CPF 2" value={negocio.cpf_2 || '—'} />
-            <KV label="CEP" value={negocio.cep_negocio || negocio.cep || '—'} />
-            <KV label="Tipo do seguro" value={negocio.tipo_seguro || '—'} />
-            <KV label="Seguradora" value={negocio.seguradora || '—'} />
-            <KV label="Comissão" value={negocio.comissao_valor ? `R$ ${Number(negocio.comissao_valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : (negocio.comissao_pct ? `${negocio.comissao_pct}%` : '—')} />
-            <KV label="Rastreador" value={negocio.rastreador || '—'} />
-            <KV label="Vigência do seguro" value={negocio.vigencia_seguro_ini ? `${negocio.vigencia_seguro_ini}${negocio.vigencia_seguro_fim?` a ${negocio.vigencia_seguro_fim}`:''}` : '—'} />
-            <KV label="E-mail" value={negocio.email_negocio || '—'} />
+            <EditableField label="Nome"                   value={negocio.titulo}              onSave={(v)=>salvarCampo('titulo', v)} />
+            <EditableField label="Qualificação"           value={negocio.qualificacao}        type="qualificacao" onSave={(v)=>salvarCampo('qualificacao', v)} />
+            <EditableField label="Criada em"              value={negocio.created_at ? new Date(negocio.created_at).toLocaleString('pt-BR') : ''} readOnly />
+            <EditableField label="Valor total"            value={negocio.premio}              type="moeda" onSave={(v)=>salvarCampo('premio', v)} />
+            <EditableField label="Previsão de fechamento" value={negocio.previsao_fechamento} type="date"  onSave={(v)=>salvarCampo('previsao_fechamento', v)} />
+            <EditableField label="Fonte"                  value={negocio.fonte_origem || negocio.fonte} onSave={(v)=>salvarCampo('fonte_origem', v)} />
+            <EditableField label="Campanha"               value={negocio.campanha}            onSave={(v)=>salvarCampo('campanha', v)} />
+            <EditableField label="Placa"                  value={negocio.placa_veiculo || negocio.placa} onSave={(v)=>salvarCampo('placa_veiculo', v)} />
+            <EditableField label="Modelo do veículo"      value={negocio.modelo_veiculo}      onSave={(v)=>salvarCampo('modelo_veiculo', v)} />
+            <EditableField label="CPF"                    value={negocio.cpf_cnpj}            onSave={(v)=>salvarCampo('cpf_cnpj', v)} />
+            <EditableField label="CPF 2"                  value={negocio.cpf_2}               onSave={(v)=>salvarCampo('cpf_2', v)} />
+            <EditableField label="CEP"                    value={negocio.cep_negocio || negocio.cep} onSave={(v)=>salvarCampo('cep_negocio', v)} />
+            <EditableField label="Tipo do seguro"         value={negocio.tipo_seguro}         onSave={(v)=>salvarCampo('tipo_seguro', v)} />
+            <EditableField label="Seguradora"             value={negocio.seguradora}          onSave={(v)=>salvarCampo('seguradora', v)} />
+            <EditableField label="Comissão (R$)"          value={negocio.comissao_valor}      type="moeda" onSave={(v)=>salvarCampo('comissao_valor', v)} />
+            <EditableField label="Rastreador"             value={negocio.rastreador}          onSave={(v)=>salvarCampo('rastreador', v)} />
+            <EditableField label="Vigência início"        value={negocio.vigencia_seguro_ini} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_ini', v)} />
+            <EditableField label="Vigência fim"           value={negocio.vigencia_seguro_fim} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_fim', v)} />
+            <EditableField label="E-mail"                 value={negocio.email_negocio}       type="email" onSave={(v)=>salvarCampo('email_negocio', v)} />
             {devMode && <KV label="ID" value={negocio.id} mono />}
           </PainelSection>
 
@@ -215,12 +221,12 @@ export default function NegocioDetailPage() {
             </PainelSection>
           )}
 
-          <PainelSection title="Empresa" open={openSections.empresa} onToggle={()=>setOpenSections(s=>({...s,empresa:!s.empresa}))}>
-            <KV label="Nome" value={negocio.empresa || cliente?.empresa || '—'} />
-            {(negocio.empresa || cliente?.empresa) && (
-              <Link href={`/dashboard/clientes?q=${encodeURIComponent(negocio.empresa||cliente?.empresa)}`}
+          <PainelSection title="Cliente" open={openSections.empresa} onToggle={()=>setOpenSections(s=>({...s,empresa:!s.empresa}))}>
+            <KV label="Nome" value={cliente?.nome || negocio.empresa || '—'} />
+            {cliente?.id && (
+              <Link href={`/dashboard/clientes/${cliente.id}`}
                 style={{display:'inline-block',marginTop:6,fontSize:12,color:'var(--blue)',textDecoration:'none'}}>
-                Abrir página da Empresa →
+                Abrir página do Cliente →
               </Link>
             )}
           </PainelSection>
@@ -434,6 +440,104 @@ function KV({ label, value, mono }: { label:string; value:any; mono?:boolean }) 
     <div style={{display:'grid',gridTemplateColumns:'110px 1fr',gap:8,padding:'5px 0',fontSize:12,alignItems:'baseline'}}>
       <span style={{color:'var(--text-muted)',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>{label}</span>
       <span style={{color:'var(--text)',fontFamily:mono?'monospace':'inherit',overflowWrap:'anywhere'}}>{value || '—'}</span>
+    </div>
+  )
+}
+
+type EditableType = 'text' | 'email' | 'date' | 'moeda' | 'qualificacao'
+function EditableField({ label, value, onSave, type='text', readOnly }: {
+  label: string; value: any; onSave?: (v:any)=>void|Promise<void>; type?: EditableType; readOnly?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [hover, setHover]     = useState(false)
+  const [draft, setDraft]     = useState<any>(value ?? '')
+  const [copied, setCopied]   = useState(false)
+  const [saving, setSaving]   = useState(false)
+  useEffect(()=>{ setDraft(value ?? '') }, [value])
+
+  function startEdit(e?: React.MouseEvent) {
+    if (readOnly) return
+    e?.stopPropagation()
+    setEditing(true)
+  }
+  async function commit() {
+    if (readOnly || !onSave) { setEditing(false); return }
+    setSaving(true)
+    let v: any = draft
+    if (type === 'moeda') v = draft === '' ? null : Number(String(draft).replace(/\./g,'').replace(',','.'))
+    if (type === 'qualificacao') v = Number(draft) || 0
+    try { await onSave(v) } catch (e:any) { alert('Erro ao salvar: ' + (e?.message || e)) }
+    setSaving(false)
+    setEditing(false)
+  }
+  function copy(e: React.MouseEvent) {
+    e.stopPropagation()
+    const txt = String(value ?? '').trim()
+    if (!txt) return
+    try {
+      navigator.clipboard.writeText(txt)
+      setCopied(true); setTimeout(()=>setCopied(false), 1200)
+    } catch {}
+  }
+
+  // Renderização do valor formatado
+  let display: React.ReactNode = '—'
+  if (value !== null && value !== undefined && value !== '') {
+    if (type === 'moeda')        display = `R$ ${Number(value).toLocaleString('pt-BR',{minimumFractionDigits:2})}`
+    else if (type === 'qualificacao') display = value ? '★'.repeat(Number(value)) + '☆'.repeat(Math.max(0,5-Number(value))) : '—'
+    else                          display = String(value)
+  }
+
+  const rowStyle: React.CSSProperties = {
+    display:'grid', gridTemplateColumns:'110px 1fr auto', gap:8, padding:'5px 6px',
+    fontSize:12, alignItems:'center', borderRadius:6,
+    background: hover && !editing && !readOnly ? 'var(--bg-subtle)' : 'transparent',
+    cursor: editing || readOnly ? 'default' : 'pointer',
+  }
+  const labelStyle: React.CSSProperties = { color:'var(--text-muted)', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }
+  const inputStyle: React.CSSProperties = { width:'100%', padding:'4px 8px', border:'1px solid var(--border-strong)', borderRadius:6, fontSize:12, outline:'none', boxSizing:'border-box' }
+
+  return (
+    <div style={rowStyle}
+      onClick={startEdit}
+      onMouseEnter={()=>setHover(true)}
+      onMouseLeave={()=>setHover(false)}>
+      <span style={labelStyle}>{label}</span>
+      {editing ? (
+        type === 'qualificacao' ? (
+          <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:2}}>
+            {[1,2,3,4,5].map(n => (
+              <button key={n} type="button" onClick={()=>setDraft(n===Number(draft)?0:n)}
+                style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:16,color:n<=Number(draft)?'var(--gold)':'var(--text-faint)'}}>★</button>
+            ))}
+            <button onClick={commit} disabled={saving}
+              style={{marginLeft:8,fontSize:11,padding:'2px 8px',borderRadius:6,border:'1px solid var(--blue)',background:'var(--blue)',color:'#fff',cursor:'pointer'}}>OK</button>
+          </div>
+        ) : (
+          <input autoFocus value={draft}
+            type={type==='date'?'date':type==='email'?'email':type==='moeda'?'text':'text'}
+            onClick={e=>e.stopPropagation()}
+            onChange={e=>setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e=>{ if (e.key==='Enter') { (e.target as HTMLInputElement).blur() } if (e.key==='Escape') { setDraft(value??''); setEditing(false) } }}
+            disabled={saving}
+            style={inputStyle} />
+        )
+      ) : (
+        <span style={{color:'var(--text)',overflowWrap:'anywhere'}}>{display}</span>
+      )}
+      <div style={{display:'flex',gap:2,visibility: hover && !editing ? 'visible' : 'hidden'}} onClick={e=>e.stopPropagation()}>
+        {!readOnly && (
+          <button onClick={startEdit} title="Editar"
+            style={{background:'transparent',border:'none',padding:'2px 5px',cursor:'pointer',color:'var(--text-muted)',fontSize:12}}>✏️</button>
+        )}
+        {value !== null && value !== undefined && value !== '' && (
+          <button onClick={copy} title={copied?'Copiado!':'Copiar valor'}
+            style={{background:'transparent',border:'none',padding:'2px 5px',cursor:'pointer',color:copied?'var(--teal)':'var(--text-muted)',fontSize:12}}>
+            {copied?'✓':'📋'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
