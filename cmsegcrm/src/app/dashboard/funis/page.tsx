@@ -218,16 +218,13 @@ function FunisPage() {
     return () => { if (rafId) cancelAnimationFrame(rafId); k.removeEventListener('scroll', onK); t.removeEventListener('scroll', onT); ro.disconnect() }
   }, [funilAtivo, negocios.length])
 
-  // Abre o card automaticamente quando navegado via ?card=<negocio_id>
+  // Compatibilidade com URLs legadas ?card=<negocio_id> — redireciona
+  // para a pagina dedicada /dashboard/negocios/[id] (layout estilo RD).
   useEffect(() => {
     const cardId = searchParams?.get('card')
-    if (!cardId || !negocios.length) return
-    const neg = negocios.find(n => n.id === cardId)
-    if (!neg) return
-    if (neg.funil_id) setFunilAtivo(neg.funil_id)
-    setCardAtivo(neg)
-    setModalCard(true)
-  }, [searchParams, negocios])
+    if (!cardId) return
+    router.replace(`/dashboard/negocios/${cardId}`)
+  }, [searchParams])
   useEffect(() => {
     supabase.from('motivos_perda').select('*').eq('ativo', true).order('ordem').order('nome').then(({ data }: any) => setMotivosPerda(data || []))
     supabase.from('origens').select('*').eq('ativo', true).order('nome').then(({ data }: any) => setOrigens(data || []))
@@ -1734,18 +1731,23 @@ function FunisPage() {
                     <div key={neg.id}
                       onClick={(e)=>{
                         if (modoSelecao) { toggleSel(neg.id); return }
-                        // Ctrl/Cmd+clique = abrir em nova guia (URL com ?card=ID)
+                        // Ctrl/Cmd+clique = abrir em nova guia
                         if (e.ctrlKey || e.metaKey) {
-                          window.open(`/dashboard/funis?card=${neg.id}`, '_blank')
+                          window.open(`/dashboard/negocios/${neg.id}`, '_blank')
                           return
                         }
-                        setCardAtivo(neg); setModalCard(true)
+                        // Shift+clique = abre o modal de edicao rapida (legado)
+                        if (e.shiftKey) {
+                          setCardAtivo(neg); setModalCard(true)
+                          return
+                        }
+                        router.push(`/dashboard/negocios/${neg.id}`)
                       }}
                       onAuxClick={(e)=>{
                         // Botão do meio do mouse abre nova guia
                         if (e.button === 1) {
                           e.preventDefault()
-                          window.open(`/dashboard/funis?card=${neg.id}`, '_blank')
+                          window.open(`/dashboard/negocios/${neg.id}`, '_blank')
                         }
                       }}
                       onContextMenu={(e)=>{
@@ -1976,9 +1978,9 @@ function FunisPage() {
                 const podeTrocar = profile?.role === 'admin' || profile?.role === 'lider'
                 return (
                   <div key={neg.id} style={{display:'grid',gridTemplateColumns:'2fr 1.4fr 1fr 1fr 1.2fr 1.4fr 60px',gap:0,padding:'10px 14px',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,alignItems:'center'}}>
-                    <div onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
+                    <div onClick={()=>router.push(`/dashboard/negocios/${neg.id}`)}
                       style={{cursor:'pointer',color:'var(--gold)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8}}
-                      title="Abrir card">
+                      title="Abrir negociação">
                       {neg.titulo}
                     </div>
                     <div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8}}>
@@ -2003,8 +2005,8 @@ function FunisPage() {
                       )}
                     </div>
                     <div style={{textAlign:'right'}}>
-                      <button onClick={()=>{setCardAtivo(neg);setModalCard(true)}}
-                        title="Abrir card"
+                      <button onClick={()=>router.push(`/dashboard/negocios/${neg.id}`)}
+                        title="Abrir negociação"
                         style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'4px 8px',color:'var(--text-muted)',cursor:'pointer',fontSize:11}}>↗</button>
                     </div>
                   </div>
