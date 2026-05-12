@@ -1784,9 +1784,9 @@ function FunisPage() {
                         }
                       }}
                       onContextMenu={(e)=>{
-                        // Permite "Abrir link em nova guia" pelo botão direito.
-                        // Aqui só atualizamos o href via data-attribute para o
-                        // browser entender o "link" — efetivo via anchor abaixo.
+                        // Botão direito do mouse abre a negociação em nova guia
+                        e.preventDefault()
+                        window.open(`/dashboard/negocios/${neg.id}`, '_blank')
                       }}
                       draggable={!modoSelecao}
                       onDragStart={e=>{e.dataTransfer.setData('text/plain', neg.id);e.dataTransfer.effectAllowed='move';setArrastando(neg.id)}}
@@ -2011,11 +2011,16 @@ function FunisPage() {
                 const podeTrocar = profile?.role === 'admin' || profile?.role === 'lider'
                 return (
                   <div key={neg.id} style={{display:'grid',gridTemplateColumns:'2fr 1.4fr 1fr 1fr 1.2fr 1.4fr 60px',gap:0,padding:'10px 14px',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,alignItems:'center'}}>
-                    <div onClick={()=>router.push(`/dashboard/negocios/${neg.id}`)}
-                      style={{cursor:'pointer',color:'var(--gold)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8}}
-                      title="Abrir negociação">
+                    <a href={`/dashboard/negocios/${neg.id}`}
+                      onClick={(e)=>{
+                        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return /* deixa o browser abrir nova guia */
+                        e.preventDefault()
+                        router.push(`/dashboard/negocios/${neg.id}`)
+                      }}
+                      style={{display:'block',cursor:'pointer',color:'var(--gold)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8,textDecoration:'none'}}
+                      title="Abrir negociação · botão direito: nova guia">
                       {neg.titulo}
-                    </div>
+                    </a>
                     <div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',paddingRight:8}}>
                       {neg.clientes?.nome || <span style={{color:'var(--text-muted)'}}>—</span>}
                     </div>
