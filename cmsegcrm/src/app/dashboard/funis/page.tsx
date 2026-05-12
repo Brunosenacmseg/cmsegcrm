@@ -46,6 +46,37 @@ function FunisPage() {
   const [filtrosOpen, setFiltrosOpen] = useState(false)
   const [visibilidadeOpen, setVisibilidadeOpen] = useState(false)
   const [visibilidadeBusca, setVisibilidadeBusca] = useState('')
+  const [novaTarefaParaNegocio, setNovaTarefaParaNegocio] = useState<any|null>(null)
+  const [novaTarefaForm, setNovaTarefaForm] = useState({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
+  const [salvandoNovaTarefa, setSalvandoNovaTarefa] = useState(false)
+
+  async function salvarNovaTarefa() {
+    if (!novaTarefaParaNegocio) return
+    if (!novaTarefaForm.assunto.trim()) { alert('Informe o assunto da tarefa'); return }
+    if (!novaTarefaForm.data) { alert('Informe a data do agendamento'); return }
+    setSalvandoNovaTarefa(true)
+    try {
+      const prazo = `${novaTarefaForm.data}T${novaTarefaForm.hora || '09:00'}:00`
+      const responsavel_id = novaTarefaForm.responsavel_id || (await supabase.auth.getUser()).data.user?.id
+      const { error } = await supabase.from('tarefas').insert({
+        titulo: novaTarefaForm.assunto,
+        descricao: novaTarefaForm.descricao || null,
+        tipo: novaTarefaForm.tipo,
+        responsavel_id,
+        negocio_id: novaTarefaParaNegocio.id,
+        prazo,
+        status: novaTarefaForm.concluida ? 'concluida' : 'pendente',
+      })
+      if (error) throw error
+      setNovaTarefaParaNegocio(null)
+      setNovaTarefaForm({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
+      carregarNegocios()
+    } catch (e:any) {
+      alert('Erro ao criar tarefa: ' + (e?.message || e))
+    } finally {
+      setSalvandoNovaTarefa(false)
+    }
+  }
   // Filtro por data (criação ou fechamento) com período opcional
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
@@ -1737,6 +1768,24 @@ function FunisPage() {
                         </a>
                       )}
 
+                      {/* Badges de status estilo RD (acima do título) */}
+                      {!isGanho && !isPerdido && (() => {
+                        const diasSemMov = neg.updated_at ? Math.floor((Date.now() - new Date(neg.updated_at).getTime())/86400000) : null
+                        const esfriando = diasSemMov !== null && diasSemMov >= 3
+                        return (
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+                            <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(74,128,240,0.14)',color:'#1d4ed8',display:'inline-flex',alignItems:'center',gap:4}}>
+                              <span style={{width:7,height:7,borderRadius:'50%',background:'#1d4ed8'}}/>Em andamento
+                            </span>
+                            {esfriando && (
+                              <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(217,119,6,0.16)',color:'#a16207',display:'inline-flex',alignItems:'center',gap:4}}>
+                                <span style={{width:7,height:7,borderRadius:'50%',background:'#d97706'}}/>Esfriando há {diasSemMov} dia{diasSemMov!==1?'s':''}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
+
                       <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3,paddingRight:isGanho||isPerdido?60:0,textDecoration:isPerdido?'line-through':'none',opacity:isPerdido?0.75:1}}>{neg.titulo}</div>
 
                       {/* Estrelas no card */}
@@ -1830,6 +1879,16 @@ function FunisPage() {
                           <span title="Data de fechamento" style={{color:isGanho?'var(--teal)':isPerdido?'var(--red)':'var(--text-muted)'}}>🏁 {new Date(neg.data_fechamento).toLocaleDateString('pt-BR')}</span>
                         )}
                       </div>
+
+                      {!isGanho && !isPerdido && (
+                        <button
+                          onClick={e=>{ e.stopPropagation(); setNovaTarefaParaNegocio?.(neg); }}
+                          onMouseDown={e=>e.stopPropagation()}
+                          draggable={false}
+                          style={{marginTop:8,width:'100%',padding:'6px 0',borderRadius:6,border:'1px dashed var(--border-strong)',background:'transparent',color:'var(--blue)',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                          + Criar Tarefa
+                        </button>
+                      )}
                     </div>
                     )
                   })}
@@ -2857,6 +2916,94 @@ function FunisPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Drawer "Criar Tarefa" — Fase 6 (RD Station style) */}
+      {novaTarefaParaNegocio && (
+        <>
+          <div onClick={()=>setNovaTarefaParaNegocio(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(420px,100vw)',background:'#fff',zIndex:1001,boxShadow:'-8px 0 32px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Criar Tarefa</div>
+              <button onClick={()=>setNovaTarefaParaNegocio(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{flex:1,overflow:'auto',padding:'18px 22px'}}>
+              {(() => {
+                const labelStyle: React.CSSProperties = { fontSize:12,fontWeight:600,color:'var(--text)',display:'block',marginBottom:6,marginTop:14 }
+                const inputStyle: React.CSSProperties = { width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,fontFamily:'inherit',outline:'none',color:'var(--text)',background:'#fff',boxSizing:'border-box' }
+                return (
+                  <>
+                    <label style={{...labelStyle,marginTop:0}}>Empresa da negociação</label>
+                    <input readOnly value={novaTarefaParaNegocio.clientes?.nome || novaTarefaParaNegocio.titulo || ''} style={{...inputStyle,background:'var(--bg-subtle)'}} />
+
+                    <label style={labelStyle}>Negociação *</label>
+                    <input readOnly value={novaTarefaParaNegocio.titulo || ''} style={{...inputStyle,background:'var(--bg-subtle)'}} />
+
+                    <label style={labelStyle}>Assunto da tarefa *</label>
+                    <input autoFocus value={novaTarefaForm.assunto}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,assunto:e.target.value}))}
+                      placeholder="Assunto da tarefa" style={inputStyle} />
+
+                    <label style={labelStyle}>Descrição da tarefa</label>
+                    <textarea value={novaTarefaForm.descricao}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,descricao:e.target.value}))}
+                      rows={3} placeholder="Descrição da tarefa"
+                      style={{...inputStyle,resize:'vertical',fontFamily:'inherit'}} />
+
+                    <label style={labelStyle}>Responsável *</label>
+                    <select value={novaTarefaForm.responsavel_id}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,responsavel_id:e.target.value}))}
+                      style={inputStyle}>
+                      <option value="">— Eu mesmo —</option>
+                      {usuarios.map(u=> <option key={u.id} value={u.id}>{u.nome}</option>)}
+                    </select>
+
+                    <label style={labelStyle}>Tipo de tarefa *</label>
+                    <select value={novaTarefaForm.tipo}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,tipo:e.target.value}))}
+                      style={inputStyle}>
+                      <option value="tarefa">Tarefa</option>
+                      <option value="ligacao">Ligação</option>
+                      <option value="reuniao">Reunião</option>
+                      <option value="visita">Visita</option>
+                      <option value="email">E-mail</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 120px',gap:10}}>
+                      <div>
+                        <label style={labelStyle}>Data do agendamento *</label>
+                        <input type="date" value={novaTarefaForm.data}
+                          onChange={e=>setNovaTarefaForm(f=>({...f,data:e.target.value}))}
+                          style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Horário *</label>
+                        <input type="time" value={novaTarefaForm.hora}
+                          onChange={e=>setNovaTarefaForm(f=>({...f,hora:e.target.value}))}
+                          style={inputStyle} />
+                      </div>
+                    </div>
+
+                    <label style={{display:'flex',alignItems:'center',gap:8,marginTop:16,fontSize:13,color:'var(--text)',cursor:'pointer'}}>
+                      <input type="checkbox" checked={novaTarefaForm.concluida}
+                        onChange={e=>setNovaTarefaForm(f=>({...f,concluida:e.target.checked}))} />
+                      Marcar como concluída ao criar
+                    </label>
+                  </>
+                )
+              })()}
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>setNovaTarefaParaNegocio(null)}
+                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={salvarNovaTarefa} disabled={salvandoNovaTarefa}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:salvandoNovaTarefa?0.6:1}}>
+                {salvandoNovaTarefa?'Salvando...':'Salvar'}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
