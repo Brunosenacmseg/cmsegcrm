@@ -1753,16 +1753,16 @@ function FunisPage() {
                         </span>
                       )}
 
-                      {/* Atalho para abrir em nova guia (anchor real → botão direito do mouse funciona). */}
+                      {/* Atalho para abrir em página dedicada (estilo RD) */}
                       {!modoSelecao && (
                         <a
-                          href={`/dashboard/funis?card=${neg.id}`}
+                          href={`/dashboard/negocios/${neg.id}`}
                           target="_blank"
                           rel="noreferrer"
-                          onClick={e => { e.stopPropagation(); /* o target=_blank já abre nova guia */ }}
+                          onClick={e => { e.stopPropagation() }}
                           onMouseDown={e => e.stopPropagation()}
                           draggable={false}
-                          title="Abrir em nova guia"
+                          title="Abrir página completa"
                           style={{position:'absolute',top:6,right:8,fontSize:12,padding:'1px 5px',borderRadius:4,background:'rgba(255,255,255,0.6)',border:'1px solid var(--border)',color:'var(--text-muted)',textDecoration:'none',lineHeight:1,fontWeight:600}}>
                           ↗
                         </a>
