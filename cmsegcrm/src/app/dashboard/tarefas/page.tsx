@@ -20,6 +20,11 @@ export default function TarefasPage() {
   const [loading, setLoading]       = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [filtroStatus, setFiltroStatus] = useState('pendente')
+  const [modoVisao, setModoVisao] = useState<'cards'|'tabela'>(() => {
+    if (typeof window === 'undefined') return 'cards'
+    return (localStorage.getItem('cm_tarefas_view') as any) || 'cards'
+  })
+  useEffect(()=>{ try { localStorage.setItem('cm_tarefas_view', modoVisao) } catch{} }, [modoVisao])
   const [filtroResponsavel, setFiltroResponsavel] = useState('meus')
   const [filtroEquipe, setFiltroEquipe]   = useState('todos')
   const [filtroUsuario, setFiltroUsuario] = useState('todos')
@@ -290,14 +295,25 @@ export default function TarefasPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
-        <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>✅ Tarefas</div>
-        <button className="btn-primary" onClick={()=>{setEditandoTarefa(null);setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}>
-          + Nova Tarefa
-        </button>
-      </div>
-
-      <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}>
+      <div style={{flex:1,overflow:'auto',padding:'22px 28px'}}>
+        {/* Header estilo RD */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+          <h1 style={{fontFamily:'DM Serif Display,serif',fontSize:24,color:'var(--text)'}}>Tarefas</h1>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <div style={{display:'flex',background:'var(--bg-subtle)',borderRadius:8,padding:2}}>
+              {([['cards','Cards'],['tabela','Tabela']] as const).map(([v,l])=>(
+                <button key={v} onClick={()=>setModoVisao(v)}
+                  style={{padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,background:modoVisao===v?'#fff':'transparent',color:modoVisao===v?'var(--text)':'var(--text-muted)'}}>{l}</button>
+              ))}
+            </div>
+            <button title="Vista calendario"
+              style={{width:36,height:36,borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',cursor:'pointer',fontSize:16}}>📅</button>
+            <button onClick={()=>{setEditandoTarefa(null);setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}
+              style={{background:'var(--blue)',color:'#fff',border:'none',padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+              Criar tarefa
+            </button>
+          </div>
+        </div>
         {atrasadasMinhas.length > 0 && (
           <div style={{marginBottom:10,padding:'12px 16px',background:'rgba(224,82,82,0.18)',border:'1px solid rgba(224,82,82,0.45)',borderRadius:10,fontSize:13,color:'var(--red)',fontWeight:600}}>
             🔴 Você tem {atrasadasMinhas.length} tarefa{atrasadasMinhas.length>1?'s':''} ATRASADA{atrasadasMinhas.length>1?'S':''}!
@@ -309,21 +325,21 @@ export default function TarefasPage() {
           </div>
         )}
 
-        {/* Filtros */}
-        <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-          {['pendente','em_andamento','concluida','todos'].map(s=>(
-            <button key={s} onClick={()=>setFiltroStatus(s)}
-              style={{padding:'6px 14px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:filtroStatus===s?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroStatus===s?'var(--gold)':'var(--text-muted)',borderColor:filtroStatus===s?'var(--gold)':'var(--border)'}}>
-              {s==='todos'?'Todas':STATUS_LABELS[s]}
-            </button>
-          ))}
-          <div style={{width:1,background:'var(--border)',margin:'0 4px'}}/>
-          {[{k:'meus',l:'Minhas'},{k:'atribuidas',l:'Atribuí'},{k:'todos',l:'Todas'}].map(({k,l})=>(
-            <button key={k} onClick={()=>setFiltroResponsavel(k)}
-              style={{padding:'6px 14px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:filtroResponsavel===k?'rgba(28,181,160,0.12)':'rgba(255,255,255,0.04)',color:filtroResponsavel===k?'var(--teal)':'var(--text-muted)',borderColor:filtroResponsavel===k?'var(--teal)':'var(--border)'}}>
-              {l}
-            </button>
-          ))}
+        {/* Filtros estilo RD (chips dropdown) */}
+        <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+          <select value={filtroResponsavel} onChange={e=>setFiltroResponsavel(e.target.value)}
+            style={{padding:'7px 14px',borderRadius:8,fontSize:13,cursor:'pointer',border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',outline:'none',minWidth:160}}>
+            <option value="meus">👤 Minhas tarefas</option>
+            <option value="atribuidas">👤 Atribuídas por mim</option>
+            <option value="todos">👤 Todas as tarefas</option>
+          </select>
+          <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)}
+            style={{padding:'7px 14px',borderRadius:8,fontSize:13,cursor:'pointer',border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',outline:'none'}}>
+            <option value="pendente">⏱ Pendentes</option>
+            <option value="em_andamento">▶ Em andamento</option>
+            <option value="concluida">✓ Concluídas</option>
+            <option value="todos">📋 Todas</option>
+          </select>
           {profile?.role === 'admin' && (
             <>
               <div style={{width:1,background:'var(--border)',margin:'0 4px'}}/>
@@ -347,6 +363,53 @@ export default function TarefasPage() {
           <div className="card" style={{textAlign:'center',padding:40,color:'var(--text-muted)'}}>
             <div style={{fontSize:40,marginBottom:12}}>✅</div>
             <div>Nenhuma tarefa encontrada</div>
+          </div>
+        ) : modoVisao === 'tabela' ? (
+          <div style={{background:'#fff',border:'1px solid var(--border-soft)',borderRadius:12,overflow:'hidden'}}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{background:'var(--bg-subtle)'}}>
+                  {['','TAREFAS','STATUS','DATA E HORA','RESPONSÁVEIS','NEGOCIAÇÃO','VALOR'].map((h,i)=>(
+                    <th key={i} style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:'var(--text-muted)',textAlign:'left',padding:'10px 14px',borderBottom:'1px solid var(--border-soft)'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tarefasFiltradas.map(t => {
+                  const vence = t.prazo ? new Date(t.prazo) : null
+                  const atrasada = !!vence && (vence.getTime() - Date.now()) < -MARGEM_MS && t.status !== 'concluida' && t.status !== 'cancelada'
+                  const responsavel = t.responsavel
+                  return (
+                    <tr key={t.id} style={{borderBottom:'1px solid var(--border-soft)'}}>
+                      <td style={{padding:'10px 14px',width:30}}><input type="checkbox"/></td>
+                      <td style={{padding:'10px 14px'}}>
+                        <span style={{fontSize:13,color:'var(--blue)',fontWeight:500,cursor:'pointer'}} onClick={()=>{iniciarEdicaoTarefa(t);setModalAberto(true)}}>✓ {t.titulo}</span>
+                      </td>
+                      <td style={{padding:'10px 14px'}}>
+                        {atrasada ? (
+                          <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,background:'#fee2e2',color:'var(--red)',textTransform:'uppercase',letterSpacing:0.5}}>ATRASADA</span>
+                        ) : (
+                          <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,background:`${STATUS_CORES[t.status]}20`,color:STATUS_CORES[t.status],textTransform:'uppercase',letterSpacing:0.5}}>{STATUS_LABELS[t.status]||t.status}</span>
+                        )}
+                      </td>
+                      <td style={{padding:'10px 14px',fontSize:12,color:atrasada?'var(--red)':'var(--text)',whiteSpace:'nowrap'}}>{vence ? `${vence.toLocaleDateString('pt-BR')} às ${vence.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}` : '—'}</td>
+                      <td style={{padding:'10px 14px'}}>
+                        {responsavel ? <Avatar nome={responsavel.nome} avatarUrl={responsavel.avatar_url} role={responsavel.role} size={24}/> : '—'}
+                      </td>
+                      <td style={{padding:'10px 14px',fontSize:12}}>
+                        {t.negocios?.titulo ? (
+                          <span style={{color:'var(--blue)',cursor:'pointer'}} onClick={()=>router.push(`/dashboard/negocios/${t.negocios.id}`)}>{t.negocios.titulo}</span>
+                        ) : (t.clientes?.nome || '—')}
+                      </td>
+                      <td style={{padding:'10px 14px',fontSize:12,color:'var(--text-muted)',whiteSpace:'nowrap'}}>
+                        {t.negocios?.premio ? `R$ ${Number(t.negocios.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : 'R$ 0,00'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div style={{padding:'10px 14px',fontSize:12,color:'var(--text-muted)'}}>Exibindo {tarefasFiltradas.length} tarefa{tarefasFiltradas.length!==1?'s':''}</div>
           </div>
         ) : (
           <div style={{display:'flex',flexDirection:'column',gap:10}}>

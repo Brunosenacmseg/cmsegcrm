@@ -4,15 +4,35 @@ import { createBrowserClient } from '@supabase/ssr'
 // NEXT_PUBLIC_SUPABASE_* ainda não estão disponíveis. Devolve um Proxy
 // que silencia chamadas — em runtime no navegador, as vars já estarão
 // resolvidas e o caminho normal é usado.
-function clientStub(): any {
+// Stub que silencia chamadas. Em modo DEMO (sem envs) permite renderizar
+// o layout para inspeção visual com dados vazios.
+function clientStub(demo = false): any {
+  const demoUser = { id: 'demo', email: 'demo@cmseguros.local' }
+  const demoSession = { user: demoUser, access_token: 'demo' }
   const noop = async () => ({ data: null, error: null })
   const handler: ProxyHandler<any> = {
-    get(_t, _p) {
+    get(_t, prop) {
+      if (demo && prop === 'auth') {
+        return {
+          getSession: async () => ({ data: { session: demoSession }, error: null }),
+          signOut: async () => ({ error: null }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe(){} } } }),
+        }
+      }
+      if (demo && prop === 'from') {
+        const q: any = {
+          select: () => q, insert: () => q, update: () => q, delete: () => q,
+          eq: () => q, in: () => q, gte: () => q, lte: () => q, lt: () => q, gt: () => q,
+          not: () => q, is: () => q, order: () => q, limit: () => q,
+          single: async () => ({ data: null, error: null }),
+          maybeSingle: async () => ({ data: null, error: null }),
+          then: (resolve: any) => resolve({ data: [], error: null, count: 0 }),
+        }
+        return () => q
+      }
       return new Proxy(noop, handler)
     },
-    apply() {
-      return new Proxy(noop, handler)
-    },
+    apply() { return new Proxy(noop, handler) },
   }
   return new Proxy(noop, handler)
 }
@@ -22,7 +42,11 @@ export function createClient() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) {
     if (typeof window === 'undefined') return clientStub()
-    throw new Error('Variáveis NEXT_PUBLIC_SUPABASE_* não configuradas no projeto Vercel.')
+    // Modo DEMO no navegador: permite ver o layout sem Supabase configurado.
+    if (typeof console !== 'undefined') {
+      console.warn('[CM CRM] Rodando em modo DEMO — NEXT_PUBLIC_SUPABASE_* ausentes. Layout renderizado com dados vazios.')
+    }
+    return clientStub(true)
   }
   return createBrowserClient(
     url,

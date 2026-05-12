@@ -51,6 +51,77 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/configuracoes',icon:'⚙️', label:'Configurações', section:'Config', adminOnly:true },
 ]
 
+type MenuGroup = { label: string; href?: string; badge?: string; children?: Array<{ href: string; label: string; icon?: string; badge?: string }> }
+
+function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolean, ehLider: boolean): MenuGroup[] {
+  const all = NAV.filter(item => {
+    if (item.adminOnly && !isAdmin) return false
+    if (item.equipePosVenda && !isAdmin && !ehPosVenda) return false
+    if (item.equipeGestao && !isAdmin && !ehGestao) return false
+    if (item.liderOnly && !isAdmin && !ehLider) return false
+    return true
+  })
+  const has = (href: string) => all.find(i => i.href === href)
+  const child = (href: string, label?: string, badge?: string) => {
+    const it = has(href); if (!it) return null
+    return { href: it.href, label: label || it.label, icon: it.icon, badge }
+  }
+  const compact = <T,>(arr: (T|null)[]): T[] => arr.filter(Boolean) as T[]
+
+  const groups: MenuGroup[] = [
+    { label: 'Início', href: '/dashboard' },
+    { label: 'Negociações', children: compact([
+      child('/dashboard/funis', 'Funis'),
+      child('/dashboard/cotacoes', 'Cotações'),
+      child('/dashboard/propostas', 'Propostas'),
+      child('/dashboard/renovacoes', 'Renovações'),
+    ])},
+    { label: 'Empresas', href: '/dashboard/clientes?tipo=empresa' },
+    { label: 'Clientes', children: compact([
+      child('/dashboard/clientes', 'Clientes'),
+      child('/dashboard/apolices', 'Apólices'),
+    ])},
+    { label: 'Tarefas', href: '/dashboard/tarefas', badge: 'tarefas' },
+    { label: 'Mensagens', children: compact([
+      child('/dashboard/telefone', 'Telefone'),
+      child('/dashboard/whatsapp', 'WhatsApp'),
+      child('/dashboard/mensagens', 'Mensagens', 'mensagens'),
+      child('/dashboard/email', 'Email'),
+      child('/dashboard/mural', 'Mural'),
+    ])},
+    { label: 'Análises', children: compact([
+      child('/dashboard/relatorios', 'Relatórios'),
+      child('/dashboard/metas', 'Metas'),
+    ])},
+    { label: 'Financeiro', children: compact([
+      child('/dashboard/financeiro', 'Financeiro / DRE'),
+      child('/dashboard/comissoes', 'Comissões'),
+      child('/dashboard/contas-pagar', 'Contas a Pagar'),
+    ])},
+    { label: 'Marketing', children: compact([
+      child('/dashboard/campanhas', 'Campanhas Meta'),
+      child('/dashboard/integracoes/meta', 'Conectar Meta'),
+    ])},
+    { label: 'Mais', children: compact([
+      child('/dashboard/autentique', 'Autentique'),
+      child('/dashboard/seguradoras', 'Seguradoras'),
+      child('/dashboard/tokio', 'Tokio Marine'),
+      child('/dashboard/rdstation', 'RD Station CRM'),
+      child('/dashboard/integracoes/integrador', 'Integrador'),
+      child('/dashboard/integracoes/sheets-cobranca', 'Cobrança · Sheets'),
+      child('/dashboard/agentes-ia', 'Agentes de IA'),
+      child('/dashboard/automacoes', 'Automações'),
+      child('/dashboard/manuais', 'Manuais'),
+      child('/dashboard/gestao-equipe', 'Gestão de Equipe'),
+      child('/dashboard/rh', 'RH'),
+      child('/dashboard/melhorias', 'Melhorias CRM'),
+      child('/dashboard/importar', 'Importar Dados'),
+      child('/dashboard/logs', 'Log do Sistema'),
+    ])},
+  ]
+  return groups.filter(g => g.href || (g.children && g.children.length > 0))
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
@@ -64,6 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notificacoes, setNotificacoes]   = useState<any[]>([])
   const [totalNaoLidas, setTotalNaoLidas] = useState(0)
   const [showNotif, setShowNotif]         = useState(false)
+  const [showGear, setShowGear]           = useState(false)
   const [profile, setProfile]             = useState<any>(null)
   const [temAcessoFin, setTemAcessoFin]   = useState(false)
   const [ehPosVenda, setEhPosVenda]       = useState(false)
@@ -295,193 +367,208 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return true
   })
 
+  const menuGroups = buildMenuGroups(isAdmin, ehPosVenda, ehGestao, ehLider)
+  const tarefasAtrasadas = badges['tarefas'] || 0
+  const tarefasPendentes = (badges as any)['tarefas_pendentes'] || 0
+
+  function badgeFor(badgeKey?: string): { count: number; danger: boolean } | null {
+    if (!badgeKey) return null
+    if (badgeKey === 'tarefas') {
+      if (tarefasAtrasadas > 0) return { count: tarefasAtrasadas, danger: true }
+      if (tarefasPendentes > 0) return { count: tarefasPendentes, danger: false }
+      return null
+    }
+    const c = badges[badgeKey] || 0
+    return c > 0 ? { count: c, danger: true } : null
+  }
+
   return (
     <ToastProvider><ConfirmProvider>
     <CommandPalette />
     <style>{`
-      /* Mobile: sidebar vira drawer */
-      @media (max-width: 900px) {
-        .cm-sidebar { transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 8px 0 32px rgba(0,0,0,0.4); }
-        .cm-sidebar.open { transform: translateX(0); }
-        .cm-main { margin-left: 0 !important; padding-left: 12px !important; padding-right: 12px !important; }
-        .cm-mobile-toggle { display: inline-flex !important; }
-        .cm-mobile-overlay { display: block !important; }
+      .cm-topnav-item { position: relative; }
+      .cm-topnav-item > a, .cm-topnav-item > button {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 18px 12px; font-size: 14px; color: var(--sb-text);
+        text-decoration: none; background: transparent; border: none; cursor: pointer;
+        font-family: inherit; transition: color 0.15s; position: relative;
       }
-      .cm-mobile-toggle { display: none; }
-      .cm-mobile-overlay { display: none; }
+      .cm-topnav-item:hover > a, .cm-topnav-item:hover > button { color: #fff; }
+      .cm-topnav-item.active > a, .cm-topnav-item.active > button {
+        color: var(--gold-light); font-weight: 600;
+      }
+      .cm-topnav-item.active > a::after, .cm-topnav-item.active > button::after {
+        content:''; position:absolute; left:8px; right:8px; bottom:0; height:3px;
+        background: var(--gold-bright); border-radius: 2px 2px 0 0;
+      }
+      .cm-topnav-dropdown {
+        position: absolute; top: 100%; left: 0; min-width: 220px;
+        background: #fff; border: 1px solid var(--border-soft); border-radius: 10px;
+        box-shadow: var(--shadow-lg); padding: 6px; z-index: 50;
+        display: none;
+      }
+      .cm-topnav-item:hover .cm-topnav-dropdown { display: block; }
+      .cm-topnav-dropdown a {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 12px; border-radius: 6px;
+        color: var(--text); text-decoration: none; font-size: 13px;
+      }
+      .cm-topnav-dropdown a:hover { background: var(--bg-subtle); }
+      .cm-topnav-dropdown a.active { background: var(--gold-soft); color: var(--gold); font-weight: 600; }
+      @media (max-width: 1100px) {
+        .cm-topnav-item > a, .cm-topnav-item > button { padding: 18px 8px; font-size: 13px; }
+      }
+      @media (max-width: 900px) {
+        .cm-topnav-scroller { overflow-x: auto; }
+        .cm-topnav-brand-sub { display: none; }
+      }
     `}</style>
-    {/* Botão hamburger flutuante (visível só mobile) */}
-    <button
-      onClick={() => setMobileNavOpen(o => !o)}
-      className="cm-mobile-toggle"
-      aria-label="Abrir menu"
-      style={{
-        position:'fixed', top:14, left:14, zIndex:40,
-        width:42, height:42, borderRadius:10, border:'1px solid var(--border)',
-        background:'var(--bg-soft)', color:'var(--gold)', fontSize:20, cursor:'pointer',
-        alignItems:'center', justifyContent:'center', boxShadow:'0 2px 10px rgba(0,0,0,0.3)',
-      }}
-    >☰</button>
-    {mobileNavOpen && (
-      <div
-        className="cm-mobile-overlay"
-        onClick={() => setMobileNavOpen(false)}
-        style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9}}
-      />
-    )}
-    <div style={{display:'flex', minHeight:'100vh', overflow:'hidden'}}>
+    <div style={{display:'flex', flexDirection:'column', minHeight:'100vh'}}>
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,background:'radial-gradient(ellipse 60% 50% at 80% 10%, rgba(201,168,76,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 10% 80%, rgba(28,181,160,0.06) 0%, transparent 60%)'}}/>
 
-      <aside className={`cm-sidebar ${mobileNavOpen ? 'open' : ''}`} style={{width:'var(--sidebar-w)',background:'var(--bg-soft)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',position:'fixed',top:0,left:0,bottom:0,zIndex:10}}>
-        <div style={{padding:'26px 22px 20px',borderBottom:'1px solid var(--border)'}}>
-          <div style={{fontFamily:'DM Serif Display,serif',fontSize:20,color:'var(--gold)'}}>CM Seguros</div>
-          <div style={{fontSize:10,color:'var(--text-muted)',letterSpacing:1,textTransform:'uppercase',marginTop:2,lineHeight:1.4,fontWeight:700}}>Transformando vidas através do seguro</div>
-        </div>
+      {/* TOP NAVIGATION — estilo RD Station CRM */}
+      <header style={{position:'sticky',top:0,zIndex:30,background:'var(--sb-bg)',borderBottom:'1px solid var(--sb-border)',color:'var(--sb-text)'}}>
+        <div className="cm-topnav-scroller" style={{display:'flex',alignItems:'center',height:56,padding:'0 18px',gap:6}} onClick={()=>{setShowNotif(false);setShowGear(false)}}>
+          {/* Brand */}
+          <Link href="/dashboard" prefetch={false} style={{display:'flex',alignItems:'center',gap:10,textDecoration:'none',color:'#fff',marginRight:18,flexShrink:0}}>
+            {/* Logo: usa /logo-cm.svg ou /logo-cm.png se presente em public/, senão fallback dourado "CM" */}
+            <img src="/logo-cm.svg" alt="CM SEGUROS" width={36} height={36}
+              onError={(e)=>{ const t = e.currentTarget; if (!t.dataset.fallback) { t.dataset.fallback='1'; t.src='/logo-cm.png' } else { t.style.display='none'; (t.nextElementSibling as HTMLElement|null)!.style.display='flex' } }}
+              style={{display:'block',borderRadius:8}} />
+            <div style={{display:'none',width:36,height:36,borderRadius:8,background:'linear-gradient(135deg,var(--gold) 0%,var(--gold-light) 100%)',alignItems:'center',justifyContent:'center',color:'#11182a',fontFamily:'DM Serif Display,serif',fontSize:15,fontWeight:700}}>CM</div>
+            <div style={{minWidth:0,lineHeight:1.1}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,color:'#fff',letterSpacing:0.5}}>CM SEGUROS</div>
+            </div>
+          </Link>
 
-        <nav style={{flex:1,padding:'14px 0',overflowY:'auto'}}>
-          {navVisible.map((item) => {
-            const showSection = item.section && item.section !== lastSection
-            if (item.section) lastSection = item.section
-            const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
-            const badgeCount = item.badge ? badges[item.badge]||0 : 0
-            // Seção atual (item dentro de uma seção): se a seção estiver
-            // recolhida, só mostra o cabeçalho clicável e oculta os filhos.
-            const secaoAtual = (() => {
-              // Encontra a seção mais recente declarada em itens anteriores
-              let s: string | undefined = undefined
-              for (const it of navVisible) {
-                if (it === item) break
-                if (it.section) s = it.section
-              }
-              return item.section || s
-            })()
-            const recolhida = secaoAtual ? !!secoesRecolhidas[secaoAtual] : false
-            return (
-              <div key={item.href}>
-                {showSection && (
-                  <div className={'nav-section' + (recolhida?' nav-section-collapsed':'')}
-                       onClick={() => toggleSecao(item.section!)}
-                       title={recolhida?'Expandir':'Recolher'}>
-                    <span>{item.section}</span>
-                    <span className="nav-section-arrow">▾</span>
+          {/* Menu groups */}
+          <nav style={{display:'flex',alignItems:'center',flex:1,minWidth:0}}>
+            {menuGroups.map(group => {
+              const isActive = group.href
+                ? (pathname === group.href || (group.href !== '/dashboard' && pathname.startsWith(group.href)))
+                : (group.children || []).some(c => pathname === c.href || (c.href !== '/dashboard' && pathname.startsWith(c.href)))
+              const b = badgeFor(group.badge)
+              if (group.href && !group.children) {
+                return (
+                  <div key={group.label} className={'cm-topnav-item' + (isActive?' active':'')}>
+                    <Link href={group.href} prefetch={false}>
+                      {group.label}
+                      {b && (
+                        <span style={{background:b.danger?'var(--danger)':'var(--gold)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>{b.count}</span>
+                      )}
+                    </Link>
                   </div>
-                )}
-                {!recolhida && (
-                  <Link href={item.href} prefetch={false}
-                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 22px',cursor:'pointer',fontSize:13,color:active?'var(--gold)':'var(--text-muted)',background:active?'var(--gold-soft)':'transparent',borderLeft:active?'3px solid var(--gold)':'3px solid transparent',fontWeight:active?600:400,transition:'all 0.18s',textDecoration:'none'}}
-                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text)' }}
-                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-muted)' }}>
-                    <span style={{fontSize:15,width:20,textAlign:'center'}}>{item.icon}</span>
-                    {item.label}
-                    {(() => {
-                      // Para o item "tarefas", o número vermelho mostra só ATRASADAS.
-                      // Se não houver atrasadas mas houver pendentes, mostra um
-                      // indicador amarelo discreto. Outras badges seguem o padrão.
-                      if (item.badge === 'tarefas') {
-                        const atrasadas = badges['tarefas'] || 0
-                        const pendentes = (badges as any)['tarefas_pendentes'] || 0
-                        if (atrasadas > 0) {
-                          return (
-                            <span title={`${atrasadas} atrasada${atrasadas>1?'s':''} · ${pendentes} pendente${pendentes!==1?'s':''} no total`}
-                              style={{marginLeft:'auto',background:'var(--danger)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
-                              🔴 {atrasadas}
-                            </span>
-                          )
-                        }
-                        if (pendentes > 0) {
-                          return (
-                            <span title={`${pendentes} tarefa${pendentes>1?'s':''} pendente${pendentes>1?'s':''}`}
-                              style={{marginLeft:'auto',background:'rgba(201,168,76,0.18)',color:'var(--gold)',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
-                              {pendentes}
-                            </span>
-                          )
-                        }
-                        return null
-                      }
-                      return badgeCount > 0 ? (
-                        <span style={{marginLeft:'auto',background:'var(--danger)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>
-                          {badgeCount}
-                        </span>
-                      ) : null
-                    })()}
-                  </Link>
-                )}
-              </div>
-            )
-          })}
-        </nav>
-
-        {/* Rodapé com avatar clicável */}
-        <div style={{padding:'16px 22px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:10}}>
-          <div onClick={()=>router.push('/dashboard/perfil')} title="Meu perfil"
-            style={{cursor:'pointer',border:'2px solid var(--gold)',borderRadius:'50%',flexShrink:0}}>
-            <Avatar nome={profile?.nome||user?.email} avatarUrl={profile?.avatar_url} role={profile?.role} size={34} />
-          </div>
-          <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>router.push('/dashboard/perfil')}>
-            <div style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{profile?.nome||user?.email}</div>
-            <div style={{fontSize:11,color:'var(--text-muted)'}}>{profile?.role||'Corretor'}</div>
-          </div>
-          <span onClick={logout} style={{fontSize:16,cursor:'pointer',color:'var(--text-muted)'}} title="Sair">🚪</span>
-        </div>
-      </aside>
-
-      <main className="cm-main" style={{marginLeft:'var(--sidebar-w)',flex:1,minWidth:0,maxWidth:'calc(100vw - var(--sidebar-w))',display:'flex',flexDirection:'column',position:'relative',zIndex:1,overflow:'hidden'}} onClick={()=>setShowNotif(false)}>
-        {/* Header com sino */}
-        <div style={{height:48,borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'center',padding:'0 24px',background:'#ffffff',position:'sticky',top:0,zIndex:20,flexShrink:0,gap:16}}>
-          <div style={{flex:1}}/>
-
-          <div style={{position:'relative'}}>
-            <button onClick={e=>{e.stopPropagation();setShowNotif(!showNotif)}}
-              style={{background:'#ffffff',border:'1px solid var(--border-strong)',borderRadius:10,padding:'7px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:8,color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:13}}>
-              <span style={{fontSize:16}}>🔔</span>
-              <span style={{fontSize:12,color:'var(--text-muted)'}}>Notificações</span>
-              {totalNaoLidas > 0 && (
-                <span style={{background:'var(--red)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 7px',minWidth:18,textAlign:'center'}}>
-                  {totalNaoLidas > 99 ? '99+' : totalNaoLidas}
-                </span>
-              )}
-            </button>
-
-            {showNotif && (
-              <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 10px)',left:'50%',transform:'translateX(-50%)',width:380,background:'#ffffff',border:'1px solid var(--border-soft)',borderRadius:16,zIndex:100,boxShadow:'var(--shadow-lg)',overflow:'hidden'}}>
-                <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                  <div style={{fontSize:14,fontWeight:600}}>🔔 Notificações</div>
-                  {totalNaoLidas > 0 && (
-                    <button onClick={marcarTodasLidas} style={{fontSize:12,background:'none',border:'none',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
-                      Marcar todas lidas
-                    </button>
-                  )}
+                )
+              }
+              return (
+                <div key={group.label} className={'cm-topnav-item' + (isActive?' active':'')}>
+                  <button>
+                    {group.label}
+                    <span style={{fontSize:10,opacity:0.7}}>▾</span>
+                  </button>
+                  <div className="cm-topnav-dropdown">
+                    {(group.children || []).map(c => {
+                      const ca = pathname === c.href || (c.href !== '/dashboard' && pathname.startsWith(c.href))
+                      const cb = badgeFor(c.badge)
+                      return (
+                        <Link key={c.href} href={c.href} prefetch={false} className={ca?'active':''}>
+                          {c.icon && <span style={{width:18,textAlign:'center'}}>{c.icon}</span>}
+                          <span style={{flex:1}}>{c.label}</span>
+                          {cb && <span style={{background:cb.danger?'var(--danger)':'var(--gold)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px'}}>{cb.count}</span>}
+                        </Link>
+                      )
+                    })}
+                  </div>
                 </div>
-                <div style={{maxHeight:420,overflow:'auto'}}>
-                  {notificacoes.length === 0 ? (
-                    <div style={{padding:28,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>Nenhuma notificação</div>
-                  ) : notificacoes.map(n=>(
-                    <div key={n.id} onClick={()=>clicarNotificacao(n)}
-                      style={{padding:'12px 18px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.04)',background:n.lida?'transparent':'rgba(201,168,76,0.05)',display:'flex',gap:12,alignItems:'flex-start',transition:'background 0.15s'}}
-                      onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.04)')}
-                      onMouseLeave={e=>(e.currentTarget.style.background=n.lida?'transparent':'rgba(201,168,76,0.05)')}>
-                      <span style={{fontSize:20,flexShrink:0}}>{tipoIcone[n.tipo]||'🔔'}</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:n.lida?400:600,marginBottom:2}}>{n.titulo}</div>
-                        {n.descricao && <div style={{fontSize:12,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.descricao}</div>}
-                        <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3}}>{tempoAtras(n.criado_em)}</div>
+              )
+            })}
+          </nav>
+
+          {/* Ações à direita */}
+          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+            <button title="Buscar (⌘K)" onClick={()=>{ try { window.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,ctrlKey:true,bubbles:true})) } catch{} }}
+              style={{background:'transparent',border:'none',color:'var(--sb-text)',cursor:'pointer',padding:8,borderRadius:8,fontSize:15}}>🔍</button>
+
+            <div style={{position:'relative'}}>
+              <button onClick={e=>{e.stopPropagation();setShowNotif(!showNotif)}}
+                style={{background:'transparent',border:'none',color:'var(--sb-text)',cursor:'pointer',padding:8,borderRadius:8,fontSize:15,position:'relative'}} title="Notificações">
+                🔔
+                {totalNaoLidas > 0 && (
+                  <span style={{position:'absolute',top:2,right:2,background:'var(--red)',color:'#fff',fontSize:9,fontWeight:700,borderRadius:10,padding:'1px 4px',minWidth:16,textAlign:'center',border:'2px solid var(--sb-bg)'}}>
+                    {totalNaoLidas > 99 ? '99+' : totalNaoLidas}
+                  </span>
+                )}
+              </button>
+
+              {showNotif && (
+                <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 8px)',right:0,width:380,background:'#ffffff',border:'1px solid var(--border-soft)',borderRadius:12,zIndex:100,boxShadow:'var(--shadow-lg)',overflow:'hidden',color:'var(--text)'}}>
+                  <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div style={{fontSize:14,fontWeight:600}}>🔔 Notificações</div>
+                    {totalNaoLidas > 0 && (
+                      <button onClick={marcarTodasLidas} style={{fontSize:12,background:'none',border:'none',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                        Marcar todas lidas
+                      </button>
+                    )}
+                  </div>
+                  <div style={{maxHeight:420,overflow:'auto'}}>
+                    {notificacoes.length === 0 ? (
+                      <div style={{padding:28,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>Nenhuma notificação</div>
+                    ) : notificacoes.map(n=>(
+                      <div key={n.id} onClick={()=>clicarNotificacao(n)}
+                        style={{padding:'12px 18px',cursor:'pointer',borderBottom:'1px solid var(--border-soft)',background:n.lida?'transparent':'rgba(201,168,76,0.06)',display:'flex',gap:12,alignItems:'flex-start',transition:'background 0.15s'}}>
+                        <span style={{fontSize:20,flexShrink:0}}>{tipoIcone[n.tipo]||'🔔'}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:n.lida?400:600,marginBottom:2}}>{n.titulo}</div>
+                          {n.descricao && <div style={{fontSize:12,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.descricao}</div>}
+                          <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3}}>{tempoAtras(n.criado_em)}</div>
+                        </div>
+                        {!n.lida && <div style={{width:8,height:8,borderRadius:'50%',background:'var(--gold)',flexShrink:0,marginTop:4}}/>}
                       </div>
-                      {!n.lida && <div style={{width:8,height:8,borderRadius:'50%',background:'var(--gold)',flexShrink:0,marginTop:4}}/>}
-                    </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{position:'relative'}}>
+              <button onClick={e=>{e.stopPropagation();setShowGear(g=>!g);setShowNotif(false)}} title="Configurações"
+                style={{background:'transparent',border:'none',color:'var(--sb-text)',cursor:'pointer',padding:8,borderRadius:8,fontSize:15}}>⚙️</button>
+              {showGear && (
+                <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 8px)',right:0,minWidth:240,background:'#fff',border:'1px solid var(--border-soft)',borderRadius:10,boxShadow:'var(--shadow-lg)',padding:6,zIndex:100,color:'var(--text)'}}>
+                  {[
+                    { label:'Funis de venda', href:'/dashboard/funis/configurar' },
+                    { label:'Configurar campos', href:'/dashboard/configuracoes/campos' },
+                    { label:'Convites, usuários e equipes', href:'/dashboard/usuarios' },
+                    { label:'Todas as configurações', href:'/dashboard/configuracoes/hub' },
+                  ].map(opt => (
+                    <Link key={opt.href} href={opt.href} prefetch={false}
+                      onClick={()=>setShowGear(false)}
+                      style={{display:'block',padding:'8px 12px',borderRadius:6,fontSize:13,color:'var(--text)',textDecoration:'none'}}
+                      onMouseEnter={e=>(e.currentTarget.style.background='var(--bg-subtle)')}
+                      onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                      {opt.label}
+                    </Link>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div style={{flex:1,display:'flex',justifyContent:'flex-end',alignItems:'center',gap:8}}>
-            <span style={{fontSize:12,color:'var(--text-muted)',cursor:'pointer'}} onClick={()=>router.push('/dashboard/perfil')}>
-              {profile?.nome?.split(' ')[0] || user?.email}
-            </span>
-            <Avatar nome={profile?.nome||user?.email} avatarUrl={profile?.avatar_url} role={profile?.role} size={28} />
+            <div onClick={()=>router.push('/dashboard/perfil')} title="Meu perfil"
+              style={{display:'flex',alignItems:'center',gap:10,marginLeft:6,cursor:'pointer'}}>
+              <Avatar nome={profile?.nome||user?.email} avatarUrl={profile?.avatar_url} role={profile?.role} size={32} />
+              <div style={{lineHeight:1.15}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{profile?.nome?.split(' ').slice(0,2).join(' ') || user?.email}</div>
+                <div style={{fontSize:10,color:'var(--sb-text-dim)',textTransform:'uppercase',letterSpacing:0.8}}>{profile?.role || 'Corretor'}</div>
+              </div>
+            </div>
+            <button onClick={logout} title="Sair"
+              style={{background:'transparent',border:'none',color:'var(--sb-text-dim)',cursor:'pointer',padding:8,borderRadius:8,fontSize:14}}>🚪</button>
           </div>
         </div>
+      </header>
 
+
+      <main className="cm-main" style={{flex:1,minWidth:0,maxWidth:'100vw',display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>{setShowNotif(false);setShowGear(false)}}>
         {children}
       </main>
 

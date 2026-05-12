@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="CM Seguros">
+  <rect width="100" height="100" rx="14" fill="#11203a"/>
+  <g fill="#d4b66a">
+    <path d="M50 14 C 30 14, 22 22, 22 22 L 22 56 C 22 76, 50 88, 50 88 C 50 88, 78 76, 78 56 L 78 22 C 78 22, 70 14, 50 14 Z M 50 20 C 66 20, 72 26, 72 26 L 72 56 C 72 70, 50 80, 50 80 C 50 80, 28 70, 28 56 L 28 26 C 28 26, 34 20, 50 20 Z"/>
+    <path d="M37 30 L 37 46 L 43 46 L 43 38 L 51 38 L 51 32 L 43 32 L 43 30 Z"/>
+    <path d="M40 50 L 60 50 L 50 64 Z"/>
+    <path d="M48 60 L 52 60 L 52 78 L 48 78 Z"/>
+  </g>
+</svg>

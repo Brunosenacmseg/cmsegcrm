@@ -42,7 +42,41 @@ function FunisPage() {
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('em_andamento')
   const [modoVisao, setModoVisao] = useState<'kanban'|'lista'>('kanban')
-  const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'>('recentes')
+  const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'|'prox_tarefa'|'previsao_fech'|'contato_recente'|'contato_antigo'|'mais_qual'|'menos_qual'|'maior_valor'|'menor_valor'|'interacao_recente'|'interacao_antiga'>('az')
+  const [filtrosOpen, setFiltrosOpen] = useState(false)
+  const [visibilidadeOpen, setVisibilidadeOpen] = useState(false)
+  const [visibilidadeBusca, setVisibilidadeBusca] = useState('')
+  const [novaTarefaParaNegocio, setNovaTarefaParaNegocio] = useState<any|null>(null)
+  const [novaTarefaForm, setNovaTarefaForm] = useState({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
+  const [salvandoNovaTarefa, setSalvandoNovaTarefa] = useState(false)
+
+  async function salvarNovaTarefa() {
+    if (!novaTarefaParaNegocio) return
+    if (!novaTarefaForm.assunto.trim()) { alert('Informe o assunto da tarefa'); return }
+    if (!novaTarefaForm.data) { alert('Informe a data do agendamento'); return }
+    setSalvandoNovaTarefa(true)
+    try {
+      const prazo = `${novaTarefaForm.data}T${novaTarefaForm.hora || '09:00'}:00`
+      const responsavel_id = novaTarefaForm.responsavel_id || (await supabase.auth.getUser()).data.user?.id
+      const { error } = await supabase.from('tarefas').insert({
+        titulo: novaTarefaForm.assunto,
+        descricao: novaTarefaForm.descricao || null,
+        tipo: novaTarefaForm.tipo,
+        responsavel_id,
+        negocio_id: novaTarefaParaNegocio.id,
+        prazo,
+        status: novaTarefaForm.concluida ? 'concluida' : 'pendente',
+      })
+      if (error) throw error
+      setNovaTarefaParaNegocio(null)
+      setNovaTarefaForm({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
+      carregarNegocios()
+    } catch (e:any) {
+      alert('Erro ao criar tarefa: ' + (e?.message || e))
+    } finally {
+      setSalvandoNovaTarefa(false)
+    }
+  }
   // Filtro por data (criação ou fechamento) com período opcional
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
@@ -1069,10 +1103,31 @@ function FunisPage() {
     passaFiltroData(n) &&
     passaFiltroBusca(n)
   ).slice().sort((a,b) => {
-    if (ordenacao === 'recentes')   return String(b.created_at||'').localeCompare(String(a.created_at||''))
-    if (ordenacao === 'antigos')    return String(a.created_at||'').localeCompare(String(b.created_at||''))
-    if (ordenacao === 'az')         return String(a.titulo||'').localeCompare(String(b.titulo||''), 'pt-BR', { sensitivity:'base' })
-    /* za */                         return String(b.titulo||'').localeCompare(String(a.titulo||''), 'pt-BR', { sensitivity:'base' })
+    const tit = (x:any)=>String(x.titulo||'')
+    const cri = (x:any)=>String(x.created_at||'')
+    const upd = (x:any)=>String(x.updated_at||x.created_at||'')
+    const val = (x:any)=>Number(x.valor_total||x.valor||0)
+    const qua = (x:any)=>Number(x.qualificacao||0)
+    const prox = (x:any)=>String(x.proxima_tarefa_em||'9999')
+    const prev = (x:any)=>String(x.previsao_fechamento||'9999')
+    const cont = (x:any)=>String(x.data_ultimo_contato||x.created_at||'')
+    switch (ordenacao) {
+      case 'recentes':           return cri(b).localeCompare(cri(a))
+      case 'antigos':            return cri(a).localeCompare(cri(b))
+      case 'az':                 return tit(a).localeCompare(tit(b),'pt-BR',{sensitivity:'base'})
+      case 'za':                 return tit(b).localeCompare(tit(a),'pt-BR',{sensitivity:'base'})
+      case 'prox_tarefa':        return prox(a).localeCompare(prox(b))
+      case 'previsao_fech':      return prev(a).localeCompare(prev(b))
+      case 'contato_recente':    return cont(b).localeCompare(cont(a))
+      case 'contato_antigo':     return cont(a).localeCompare(cont(b))
+      case 'mais_qual':          return qua(b) - qua(a)
+      case 'menos_qual':         return qua(a) - qua(b)
+      case 'maior_valor':        return val(b) - val(a)
+      case 'menor_valor':        return val(a) - val(b)
+      case 'interacao_recente':  return upd(b).localeCompare(upd(a))
+      case 'interacao_antiga':   return upd(a).localeCompare(upd(b))
+      default:                   return 0
+    }
   })
 
   async function normalizarFunis() {
@@ -1340,10 +1395,20 @@ function FunisPage() {
         <select value={ordenacao} onChange={e=>setOrdenacao(e.target.value as any)}
           title="Ordenar por"
           style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
-          <option value="recentes">🆕 Mais recentes</option>
-          <option value="antigos">📜 Mais antigos</option>
-          <option value="az">🔤 A-Z</option>
-          <option value="za">🔡 Z-A</option>
+          <option value="az">Alfabética A-Z</option>
+          <option value="za">Alfabética Z-A</option>
+          <option value="recentes">Criadas por último</option>
+          <option value="antigos">Criadas primeiro</option>
+          <option value="prox_tarefa">Data da próxima tarefa</option>
+          <option value="previsao_fech">Previsão de fechamento</option>
+          <option value="contato_recente">Contato mais recente</option>
+          <option value="contato_antigo">Contato mais antigo</option>
+          <option value="mais_qual">Mais qualificadas</option>
+          <option value="menos_qual">Menos qualificadas</option>
+          <option value="maior_valor">Maior valor total</option>
+          <option value="menor_valor">Menor valor total</option>
+          <option value="interacao_recente">Interação mais recente</option>
+          <option value="interacao_antiga">Interação mais antiga</option>
         </select>
 
         {/* Filtro por status */}
@@ -1364,48 +1429,72 @@ function FunisPage() {
           ))}
         </div>
 
-        {/* Filtro por usuário */}
+        {/* Visibilidade (responsavel + equipe combinados) — estilo RD */}
         {profile && profile.role !== 'corretor' && (
-          <select value={filtroUsuario} onChange={e=>{setFiltroUsuario(e.target.value); if (e.target.value) setFiltroEquipe('')}}
-            title="Filtrar por usuário"
-            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroUsuario?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
-            <option value="">👥 {profile.role==='admin'?'Todos':'Toda equipe'}</option>
-            {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
-          </select>
+          <div style={{position:'relative'}}>
+            <button onClick={()=>setVisibilidadeOpen(o=>!o)}
+              style={{padding:'7px 12px',borderRadius:8,fontSize:12,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',gap:6,minWidth:200}}>
+              <span>👤</span>
+              <span style={{flex:1,textAlign:'left'}}>
+                {filtroUsuario ? (usuarios.find(u=>u.id===filtroUsuario)?.nome || 'Usuário') :
+                 filtroEquipe  ? `Equipe: ${equipes.find(e=>e.id===filtroEquipe)?.nome || ''}` :
+                 'Todas as negociações'}
+              </span>
+              <span style={{fontSize:10,opacity:0.6}}>▾</span>
+            </button>
+            {visibilidadeOpen && (
+              <>
+                <div onClick={()=>setVisibilidadeOpen(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
+                <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,minWidth:300,background:'#fff',border:'1px solid var(--border-soft)',borderRadius:10,boxShadow:'var(--shadow-lg)',zIndex:50,padding:10}}>
+                  <input value={visibilidadeBusca} onChange={e=>setVisibilidadeBusca(e.target.value)}
+                    placeholder="Pesquisar..." autoFocus
+                    style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:13,outline:'none',marginBottom:8,boxSizing:'border-box'}}/>
+                  <div style={{maxHeight:320,overflow:'auto'}}>
+                    <button onClick={()=>{setFiltroUsuario('');setFiltroEquipe('');setVisibilidadeOpen(false)}}
+                      style={{width:'100%',textAlign:'left',padding:'8px 10px',border:'none',background:!filtroUsuario&&!filtroEquipe?'var(--gold-soft)':'transparent',color:!filtroUsuario&&!filtroEquipe?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600,borderRadius:6}}>
+                      Todas as negociações
+                    </button>
+                    {profile?.id && (
+                      <button onClick={()=>{setFiltroUsuario(profile.id);setFiltroEquipe('');setVisibilidadeOpen(false)}}
+                        style={{width:'100%',textAlign:'left',padding:'8px 10px',border:'none',background:filtroUsuario===profile.id?'var(--gold-soft)':'transparent',color:filtroUsuario===profile.id?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600,borderRadius:6}}>
+                        Minhas negociações
+                      </button>
+                    )}
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',padding:'10px 10px 6px'}}>Responsáveis</div>
+                    {usuarios.filter(u => !visibilidadeBusca || (u.nome||'').toLowerCase().includes(visibilidadeBusca.toLowerCase())).map(u => (
+                      <button key={u.id} onClick={()=>{setFiltroUsuario(u.id);setFiltroEquipe('');setVisibilidadeOpen(false)}}
+                        style={{width:'100%',textAlign:'left',padding:'6px 10px',border:'none',background:filtroUsuario===u.id?'var(--gold-soft)':'transparent',color:filtroUsuario===u.id?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,borderRadius:6}}>
+                        {u.nome}
+                      </button>
+                    ))}
+                    {equipes.length > 0 && (
+                      <>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',padding:'10px 10px 6px'}}>Equipes</div>
+                        {equipes.filter(eq => !visibilidadeBusca || (eq.nome||'').toLowerCase().includes(visibilidadeBusca.toLowerCase())).map(eq => (
+                          <button key={eq.id} onClick={()=>{setFiltroEquipe(eq.id);setFiltroUsuario('');setVisibilidadeOpen(false)}}
+                            style={{width:'100%',textAlign:'left',padding:'6px 10px',border:'none',background:filtroEquipe===eq.id?'var(--gold-soft)':'transparent',color:filtroEquipe===eq.id?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,borderRadius:6}}>
+                            {eq.nome}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
-        {/* Filtro por equipe */}
-        {profile && profile.role !== 'corretor' && equipes.length > 0 && (
-          <select value={filtroEquipe} onChange={e=>{setFiltroEquipe(e.target.value); if (e.target.value) setFiltroUsuario('')}}
-            title="Filtrar por equipe"
-            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroEquipe?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
-            <option value="">🏢 Todas equipes</option>
-            {equipes.map(e=><option key={e.id} value={e.id}>{e.nome}</option>)}
-          </select>
-        )}
-
-        {/* Filtro por data — campo + período */}
-        <div style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:'2px 4px'}}>
-          <select value={filtroData.campo} onChange={e=>setFiltroData(f=>({...f,campo:e.target.value as any}))}
-            style={{border:'none',background:'transparent',color:filtroData.campo==='sem'?'var(--text-muted)':'var(--gold)',fontSize:11,fontWeight:600,padding:'4px 6px',cursor:'pointer',outline:'none'}}>
-            <option value="sem">📅 Sem filtro de data</option>
-            <option value="criacao">🆕 Por criação</option>
-            <option value="fechamento">🏁 Por fechamento</option>
-          </select>
-          {filtroData.campo !== 'sem' && (
-            <>
-              <input type="date" value={filtroData.de} onChange={e=>setFiltroData(f=>({...f,de:e.target.value}))}
-                title="De" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
-              <span style={{fontSize:10,color:'var(--text-muted)'}}>até</span>
-              <input type="date" value={filtroData.ate} onChange={e=>setFiltroData(f=>({...f,ate:e.target.value}))}
-                title="Até" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
-              {(filtroData.de || filtroData.ate) && (
-                <button onClick={()=>setFiltroData({campo:'sem',de:'',ate:''})}
-                  title="Limpar filtro" style={{border:'none',background:'transparent',color:'var(--red)',cursor:'pointer',fontSize:14,padding:'0 4px'}}>×</button>
-              )}
-            </>
-          )}
-        </div>
+        {/* Botão Filtros (drawer) */}
+        {(() => {
+          const filtrosAtivos = (filtroData.campo!=='sem'?1:0)
+          return (
+            <button onClick={()=>setFiltrosOpen(true)}
+              style={{padding:'7px 12px',borderRadius:8,fontSize:12,fontWeight:600,border:'1px solid var(--border-soft)',background:filtrosAtivos>0?'var(--blue-soft)':'#fff',color:filtrosAtivos>0?'var(--blue-dark)':'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+              <span>⚙</span> Filtros ({filtrosAtivos})
+            </button>
+          )
+        })()}
 
         {(profile?.role === 'admin' || profile?.role === 'lider') && (
           <button onClick={() => { if (modoSelecao) sairModoSelecao(); else setModoSelecao(true) }}
@@ -1688,20 +1777,40 @@ function FunisPage() {
                         </span>
                       )}
 
-                      {/* Atalho para abrir em nova guia (anchor real → botão direito do mouse funciona). */}
+                      {/* Atalho para abrir em página dedicada (estilo RD) */}
                       {!modoSelecao && (
                         <a
-                          href={`/dashboard/funis?card=${neg.id}`}
+                          href={`/dashboard/negocios/${neg.id}`}
                           target="_blank"
                           rel="noreferrer"
-                          onClick={e => { e.stopPropagation(); /* o target=_blank já abre nova guia */ }}
+                          onClick={e => { e.stopPropagation() }}
                           onMouseDown={e => e.stopPropagation()}
                           draggable={false}
-                          title="Abrir em nova guia"
+                          title="Abrir página completa"
                           style={{position:'absolute',top:6,right:8,fontSize:12,padding:'1px 5px',borderRadius:4,background:'rgba(255,255,255,0.6)',border:'1px solid var(--border)',color:'var(--text-muted)',textDecoration:'none',lineHeight:1,fontWeight:600}}>
                           ↗
                         </a>
                       )}
+
+                      {/* Badges de status estilo RD (acima do título) */}
+                      {!isGanho && !isPerdido && (() => {
+                        const diasSemMov = neg.updated_at ? Math.floor((Date.now() - new Date(neg.updated_at).getTime())/86400000) : null
+                        const cfg = (funiAtual?.meta_etapas as any)?.[neg.etapa]
+                        const limite = (cfg?.esfriando ? Number(cfg?.dias)||3 : null)
+                        const esfriando = limite !== null && diasSemMov !== null && diasSemMov >= limite
+                        return (
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+                            <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(74,128,240,0.14)',color:'#1d4ed8',display:'inline-flex',alignItems:'center',gap:4}}>
+                              <span style={{width:7,height:7,borderRadius:'50%',background:'#1d4ed8'}}/>Em andamento
+                            </span>
+                            {esfriando && (
+                              <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(217,119,6,0.16)',color:'#a16207',display:'inline-flex',alignItems:'center',gap:4}}>
+                                <span style={{width:7,height:7,borderRadius:'50%',background:'#d97706'}}/>Esfriando há {diasSemMov} dia{diasSemMov!==1?'s':''}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       <div style={{fontSize:13,fontWeight:500,marginBottom:6,lineHeight:1.3,paddingRight:isGanho||isPerdido?60:0,textDecoration:isPerdido?'line-through':'none',opacity:isPerdido?0.75:1}}>{neg.titulo}</div>
 
@@ -1796,6 +1905,16 @@ function FunisPage() {
                           <span title="Data de fechamento" style={{color:isGanho?'var(--teal)':isPerdido?'var(--red)':'var(--text-muted)'}}>🏁 {new Date(neg.data_fechamento).toLocaleDateString('pt-BR')}</span>
                         )}
                       </div>
+
+                      {!isGanho && !isPerdido && (
+                        <button
+                          onClick={e=>{ e.stopPropagation(); setNovaTarefaParaNegocio?.(neg); }}
+                          onMouseDown={e=>e.stopPropagation()}
+                          draggable={false}
+                          style={{marginTop:8,width:'100%',padding:'6px 0',borderRadius:6,border:'1px dashed var(--border-strong)',background:'transparent',color:'var(--blue)',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                          + Criar Tarefa
+                        </button>
+                      )}
                     </div>
                     )
                   })}
@@ -2823,6 +2942,145 @@ function FunisPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Drawer "Filtros" — Fase 7 (RD Station style) */}
+      {filtrosOpen && (
+        <>
+          <div onClick={()=>setFiltrosOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(380px,100vw)',background:'#fff',zIndex:1001,boxShadow:'-8px 0 32px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Filtros <span style={{color:'var(--text-muted)',fontSize:12,fontWeight:400}}>({filtroData.campo!=='sem'?1:0})</span></div>
+              <button onClick={()=>setFiltrosOpen(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{flex:1,overflow:'auto',padding:'18px 22px'}}>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text)',marginBottom:6}}>Status da negociação</div>
+              <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value as any)}
+                style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff',color:'var(--text)',marginBottom:14}}>
+                <option value="todos">Todas</option>
+                <option value="em_andamento">Em andamento</option>
+                <option value="ganho">Ganho</option>
+                <option value="perdido">Perdido</option>
+              </select>
+
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text)',marginBottom:6}}>Filtrar por data</div>
+              <select value={filtroData.campo} onChange={e=>setFiltroData(f=>({...f,campo:e.target.value as any}))}
+                style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff',color:'var(--text)',marginBottom:8}}>
+                <option value="sem">Sem filtro</option>
+                <option value="criacao">Data de criação</option>
+                <option value="fechamento">Data de fechamento</option>
+              </select>
+              {filtroData.campo !== 'sem' && (
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>De</div>
+                    <input type="date" value={filtroData.de} onChange={e=>setFiltroData(f=>({...f,de:e.target.value}))}
+                      style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>Até</div>
+                    <input type="date" value={filtroData.ate} onChange={e=>setFiltroData(f=>({...f,ate:e.target.value}))}
+                      style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'space-between'}}>
+              <button onClick={()=>{setFiltroData({campo:'sem',de:'',ate:''});setFiltroStatus('em_andamento')}}
+                style={{padding:'9px 14px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Limpar filtros</button>
+              <button onClick={()=>setFiltrosOpen(false)}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600}}>Aplicar filtros</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Drawer "Criar Tarefa" — Fase 6 (RD Station style) */}
+      {novaTarefaParaNegocio && (
+        <>
+          <div onClick={()=>setNovaTarefaParaNegocio(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(420px,100vw)',background:'#fff',zIndex:1001,boxShadow:'-8px 0 32px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Criar Tarefa</div>
+              <button onClick={()=>setNovaTarefaParaNegocio(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{flex:1,overflow:'auto',padding:'18px 22px'}}>
+              {(() => {
+                const labelStyle: React.CSSProperties = { fontSize:12,fontWeight:600,color:'var(--text)',display:'block',marginBottom:6,marginTop:14 }
+                const inputStyle: React.CSSProperties = { width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,fontFamily:'inherit',outline:'none',color:'var(--text)',background:'#fff',boxSizing:'border-box' }
+                return (
+                  <>
+                    <label style={{...labelStyle,marginTop:0}}>Empresa da negociação</label>
+                    <input readOnly value={novaTarefaParaNegocio.clientes?.nome || novaTarefaParaNegocio.titulo || ''} style={{...inputStyle,background:'var(--bg-subtle)'}} />
+
+                    <label style={labelStyle}>Negociação *</label>
+                    <input readOnly value={novaTarefaParaNegocio.titulo || ''} style={{...inputStyle,background:'var(--bg-subtle)'}} />
+
+                    <label style={labelStyle}>Assunto da tarefa *</label>
+                    <input autoFocus value={novaTarefaForm.assunto}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,assunto:e.target.value}))}
+                      placeholder="Assunto da tarefa" style={inputStyle} />
+
+                    <label style={labelStyle}>Descrição da tarefa</label>
+                    <textarea value={novaTarefaForm.descricao}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,descricao:e.target.value}))}
+                      rows={3} placeholder="Descrição da tarefa"
+                      style={{...inputStyle,resize:'vertical',fontFamily:'inherit'}} />
+
+                    <label style={labelStyle}>Responsável *</label>
+                    <select value={novaTarefaForm.responsavel_id}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,responsavel_id:e.target.value}))}
+                      style={inputStyle}>
+                      <option value="">— Eu mesmo —</option>
+                      {usuarios.map(u=> <option key={u.id} value={u.id}>{u.nome}</option>)}
+                    </select>
+
+                    <label style={labelStyle}>Tipo de tarefa *</label>
+                    <select value={novaTarefaForm.tipo}
+                      onChange={e=>setNovaTarefaForm(f=>({...f,tipo:e.target.value}))}
+                      style={inputStyle}>
+                      <option value="tarefa">Tarefa</option>
+                      <option value="ligacao">Ligação</option>
+                      <option value="reuniao">Reunião</option>
+                      <option value="visita">Visita</option>
+                      <option value="email">E-mail</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 120px',gap:10}}>
+                      <div>
+                        <label style={labelStyle}>Data do agendamento *</label>
+                        <input type="date" value={novaTarefaForm.data}
+                          onChange={e=>setNovaTarefaForm(f=>({...f,data:e.target.value}))}
+                          style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Horário *</label>
+                        <input type="time" value={novaTarefaForm.hora}
+                          onChange={e=>setNovaTarefaForm(f=>({...f,hora:e.target.value}))}
+                          style={inputStyle} />
+                      </div>
+                    </div>
+
+                    <label style={{display:'flex',alignItems:'center',gap:8,marginTop:16,fontSize:13,color:'var(--text)',cursor:'pointer'}}>
+                      <input type="checkbox" checked={novaTarefaForm.concluida}
+                        onChange={e=>setNovaTarefaForm(f=>({...f,concluida:e.target.checked}))} />
+                      Marcar como concluída ao criar
+                    </label>
+                  </>
+                )
+              })()}
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>setNovaTarefaParaNegocio(null)}
+                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={salvarNovaTarefa} disabled={salvandoNovaTarefa}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:salvandoNovaTarefa?0.6:1}}>
+                {salvandoNovaTarefa?'Salvando...':'Salvar'}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

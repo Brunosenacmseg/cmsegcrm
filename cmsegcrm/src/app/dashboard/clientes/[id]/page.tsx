@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import UploadAnexo, { Anexo } from '@/components/UploadAnexo'
+import ContatoAcoes from '@/components/ContatoAcoes'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 
@@ -143,13 +144,18 @@ export default function FichaClientePage() {
 
       {/* Header da ficha */}
       <div style={{padding:'20px 28px 0', borderBottom:'1px solid var(--border)', background:'var(--bg-subtle)', flexShrink:0}}>
-        <div style={{fontSize:12,color:'var(--text-muted)',display:'flex',gap:16,flexWrap:'wrap',marginBottom:16}}>
+        <div style={{fontSize:12,color:'var(--text-muted)',display:'flex',gap:16,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
           {cliente.telefone && <span>📱 {cliente.telefone}</span>}
           {cliente.email    && <span>✉️ {cliente.email}</span>}
           {cliente.cidade   && <span>📍 {cliente.cidade}</span>}
           {cliente.cpf_cnpj && <span>CPF/CNPJ: {cliente.cpf_cnpj}</span>}
           <span style={{color:'var(--text-muted)'}}>{cliente.tipo}</span>
         </div>
+        {(cliente.telefone || cliente.email) && (
+          <div style={{marginBottom:14}}>
+            <ContatoAcoes telefone={cliente.telefone} email={cliente.email} clienteId={cliente.id} size="sm" />
+          </div>
+        )}
         {/* KPIs da ficha */}
         <div style={{display:'flex',gap:24,marginBottom:16}}>
           {[
@@ -360,19 +366,31 @@ export default function FichaClientePage() {
 
         {/* DADOS */}
         {abaAtiva === 'dados' && (
-          <div className="card">
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-              {[['Nome',cliente.nome],['Tipo',cliente.tipo],['CPF/CNPJ',cliente.cpf_cnpj],
-                ['E-mail',cliente.email],['Telefone',cliente.telefone],['CEP',cliente.cep],
-                ['Cidade',cliente.cidade],['Estado',cliente.estado],['Fonte',cliente.fonte]
-              ].map(([l,v]) => (
-                <div key={l}>
-                  <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
-                  <div style={{fontSize:13}}>{v||'—'}</div>
-                </div>
-              ))}
+          <>
+            <div className="card" style={{marginBottom:16}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+                {[['Nome',cliente.nome],['Tipo',cliente.tipo],['CPF/CNPJ',cliente.cpf_cnpj],
+                  ['E-mail',cliente.email],['Telefone',cliente.telefone],['CEP',cliente.cep],
+                  ['Cidade',cliente.cidade],['Estado',cliente.estado],['Fonte',cliente.fonte]
+                ].map(([l,v]) => (
+                  <div key={l}>
+                    <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
+                    <div style={{fontSize:13}}>{v||'—'}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+            <div className="card">
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>Privacidade de Dados</div>
+                <a href="https://help.cmseguros.com.br/privacidade" target="_blank" rel="noreferrer"
+                  style={{fontSize:12,color:'var(--blue)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:4}}>ℹ Saiba mais</a>
+              </div>
+              <div style={{fontSize:12,color:'var(--text-muted)'}}>
+                <strong style={{color:'var(--text)'}}>Contato e envio de comunicação:</strong> {cliente.base_legal || 'Não sei dizer / Não possui Base Legal'}
+              </div>
+            </div>
+          </>
         )}
       </div>
 
