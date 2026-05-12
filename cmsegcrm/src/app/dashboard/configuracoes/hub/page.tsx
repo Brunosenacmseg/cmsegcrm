@@ -38,12 +38,16 @@ const SECTIONS: Section[][] = [
   ],
   // Coluna 2
   [
+    { title:'MARKETING', items:[
+      { label:'Campanhas Meta', href:'/dashboard/campanhas' },
+      { label:'Conectar Meta', href:'/dashboard/integracoes/meta' },
+    ]},
     { title:'AVANÇADO', items:[
       { label:'Importar dados', href:'/dashboard/importar' },
       { label:'Multi-vendas', href:'/dashboard/configuracoes' },
       { label:'Metas', href:'/dashboard/metas' },
       { label:'Modelos de proposta', href:'/dashboard/configuracoes' },
-      { label:'Assinatura Eletrônica (Autentique)', href:'/dashboard/autentique' },
+      { label:'Manuais & Processos', href:'/dashboard/manuais' },
       { label:'Preferências', href:'/dashboard/configuracoes' },
       { label:'Integrações', href:'/dashboard/integracoes/integrador' },
       { label:'Privacidade de dados', href:'/dashboard/configuracoes' },

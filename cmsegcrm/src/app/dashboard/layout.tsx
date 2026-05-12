@@ -98,27 +98,17 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
       child('/dashboard/contas-pagar', 'Contas a Pagar'),
     ])},
     { label: 'RH', href: '/dashboard/rh' },
-    { label: 'Marketing', children: compact([
-      child('/dashboard/campanhas', 'Campanhas Meta'),
-      child('/dashboard/integracoes/meta', 'Conectar Meta'),
-    ])},
-    { label: 'Mais', children: compact([
-      child('/dashboard/autentique', 'Autentique'),
-      child('/dashboard/seguradoras', 'Seguradoras'),
-      child('/dashboard/tokio', 'Tokio Marine'),
-      child('/dashboard/rdstation', 'RD Station CRM'),
-      child('/dashboard/integracoes/integrador', 'Integrador'),
-      child('/dashboard/integracoes/sheets-cobranca', 'Cobrança · Sheets'),
-      child('/dashboard/agentes-ia', 'Agentes de IA'),
-      child('/dashboard/automacoes', 'Automações'),
-      child('/dashboard/manuais', 'Manuais'),
-      child('/dashboard/gestao-equipe', 'Gestão de Equipe'),
-      child('/dashboard/melhorias', 'Melhorias CRM'),
-      child('/dashboard/importar', 'Importar Dados'),
-      child('/dashboard/logs', 'Log do Sistema'),
-    ])},
+    { label: 'Gestão de Equipe', href: '/dashboard/gestao-equipe' },
+    { label: 'Autentique', href: '/dashboard/autentique' },
   ]
-  return groups.filter(g => g.href || (g.children && g.children.length > 0))
+  return groups.filter(g => {
+    if (g.children) return g.children.length > 0
+    if (g.href) {
+      const base = g.href.split('?')[0]
+      return !!all.find(i => i.href === base)
+    }
+    return false
+  })
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
