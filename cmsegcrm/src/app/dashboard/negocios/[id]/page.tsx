@@ -199,7 +199,7 @@ export default function NegocioDetailPage() {
             <EditableField label="CEP"                    value={negocio.cep_negocio || negocio.cep} onSave={(v)=>salvarCampo('cep_negocio', v)} />
             <EditableField label="Tipo do seguro"         value={negocio.tipo_seguro}         onSave={(v)=>salvarCampo('tipo_seguro', v)} />
             <EditableField label="Seguradora"             value={negocio.seguradora}          onSave={(v)=>salvarCampo('seguradora', v)} />
-            <EditableField label="Comissão (R$)"          value={negocio.comissao_valor}      type="moeda" onSave={(v)=>salvarCampo('comissao_valor', v)} />
+            <EditableField label="Comissão (%)"           value={negocio.comissao_pct}        type="percentual" onSave={(v)=>salvarCampo('comissao_pct', v)} />
             <EditableField label="Rastreador"             value={negocio.rastreador}          onSave={(v)=>salvarCampo('rastreador', v)} />
             <EditableField label="Vigência início"        value={negocio.vigencia_seguro_ini} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_ini', v)} />
             <EditableField label="Vigência fim"           value={negocio.vigencia_seguro_fim} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_fim', v)} />
@@ -444,7 +444,7 @@ function KV({ label, value, mono }: { label:string; value:any; mono?:boolean }) 
   )
 }
 
-type EditableType = 'text' | 'email' | 'date' | 'moeda' | 'qualificacao'
+type EditableType = 'text' | 'email' | 'date' | 'moeda' | 'percentual' | 'qualificacao'
 function EditableField({ label, value, onSave, type='text', readOnly }: {
   label: string; value: any; onSave?: (v:any)=>void|Promise<void>; type?: EditableType; readOnly?: boolean
 }) {
@@ -464,7 +464,7 @@ function EditableField({ label, value, onSave, type='text', readOnly }: {
     if (readOnly || !onSave) { setEditing(false); return }
     setSaving(true)
     let v: any = draft
-    if (type === 'moeda') v = draft === '' ? null : Number(String(draft).replace(/\./g,'').replace(',','.'))
+    if (type === 'moeda' || type === 'percentual') v = draft === '' ? null : Number(String(draft).replace(/\./g,'').replace(',','.'))
     if (type === 'qualificacao') v = Number(draft) || 0
     try { await onSave(v) } catch (e:any) { alert('Erro ao salvar: ' + (e?.message || e)) }
     setSaving(false)
@@ -484,6 +484,7 @@ function EditableField({ label, value, onSave, type='text', readOnly }: {
   let display: React.ReactNode = '—'
   if (value !== null && value !== undefined && value !== '') {
     if (type === 'moeda')        display = `R$ ${Number(value).toLocaleString('pt-BR',{minimumFractionDigits:2})}`
+    else if (type === 'percentual') display = `${Number(value).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}%`
     else if (type === 'qualificacao') display = value ? '★'.repeat(Number(value)) + '☆'.repeat(Math.max(0,5-Number(value))) : '—'
     else                          display = String(value)
   }
@@ -515,7 +516,7 @@ function EditableField({ label, value, onSave, type='text', readOnly }: {
           </div>
         ) : (
           <input autoFocus value={draft}
-            type={type==='date'?'date':type==='email'?'email':type==='moeda'?'text':'text'}
+            type={type==='date'?'date':type==='email'?'email':'text'}
             onClick={e=>e.stopPropagation()}
             onChange={e=>setDraft(e.target.value)}
             onBlur={commit}
