@@ -69,32 +69,23 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
   const compact = <T,>(arr: (T|null)[]): T[] => arr.filter(Boolean) as T[]
 
   const groups: MenuGroup[] = [
-    { label: 'Início', href: '/dashboard' },
-    { label: 'Negociações', children: compact([
-      child('/dashboard/funis', 'Funis'),
-      child('/dashboard/cotacoes', 'Cotações'),
-      child('/dashboard/propostas', 'Propostas'),
-      child('/dashboard/renovacoes', 'Renovações'),
-    ])},
-    { label: 'Clientes', children: compact([
-      child('/dashboard/clientes', 'Clientes'),
-      child('/dashboard/apolices', 'Apólices'),
-    ])},
+    { label: 'Início', href: '/dashboard/mural' },
+    { label: 'Negociações', href: '/dashboard/funis' },
+    { label: 'Clientes', href: '/dashboard/clientes' },
     { label: 'Tarefas', href: '/dashboard/tarefas', badge: 'tarefas' },
     { label: 'Mensagens', children: compact([
       child('/dashboard/telefone', 'Telefone'),
       child('/dashboard/whatsapp', 'WhatsApp'),
       child('/dashboard/mensagens', 'Mensagens', 'mensagens'),
       child('/dashboard/email', 'Email'),
-      child('/dashboard/mural', 'Mural'),
     ])},
     { label: 'Análises', children: compact([
       child('/dashboard/relatorios', 'Relatórios'),
       child('/dashboard/metas', 'Metas'),
+      child('/dashboard/vendas-vendedor', 'Ranking de vendas'),
     ])},
     { label: 'Financeiro', children: compact([
       child('/dashboard/financeiro', 'Financeiro / DRE'),
-      child('/dashboard/comissoes', 'Comissões'),
       child('/dashboard/contas-pagar', 'Contas a Pagar'),
     ])},
     { label: 'RH', href: '/dashboard/rh' },
