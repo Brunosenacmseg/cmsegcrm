@@ -290,14 +290,19 @@ export default function TarefasPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
-        <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>✅ Tarefas</div>
-        <button className="btn-primary" onClick={()=>{setEditandoTarefa(null);setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}>
-          + Nova Tarefa
-        </button>
-      </div>
-
-      <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}>
+      <div style={{flex:1,overflow:'auto',padding:'22px 28px'}}>
+        {/* Header estilo RD */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+          <h1 style={{fontFamily:'DM Serif Display,serif',fontSize:24,color:'var(--text)'}}>Tarefas</h1>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button title="Vista calendario"
+              style={{width:36,height:36,borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',cursor:'pointer',fontSize:16}}>📅</button>
+            <button onClick={()=>{setEditandoTarefa(null);setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}
+              style={{background:'var(--blue)',color:'#fff',border:'none',padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+              Criar tarefa
+            </button>
+          </div>
+        </div>
         {atrasadasMinhas.length > 0 && (
           <div style={{marginBottom:10,padding:'12px 16px',background:'rgba(224,82,82,0.18)',border:'1px solid rgba(224,82,82,0.45)',borderRadius:10,fontSize:13,color:'var(--red)',fontWeight:600}}>
             🔴 Você tem {atrasadasMinhas.length} tarefa{atrasadasMinhas.length>1?'s':''} ATRASADA{atrasadasMinhas.length>1?'S':''}!
@@ -309,21 +314,21 @@ export default function TarefasPage() {
           </div>
         )}
 
-        {/* Filtros */}
-        <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-          {['pendente','em_andamento','concluida','todos'].map(s=>(
-            <button key={s} onClick={()=>setFiltroStatus(s)}
-              style={{padding:'6px 14px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:filtroStatus===s?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroStatus===s?'var(--gold)':'var(--text-muted)',borderColor:filtroStatus===s?'var(--gold)':'var(--border)'}}>
-              {s==='todos'?'Todas':STATUS_LABELS[s]}
-            </button>
-          ))}
-          <div style={{width:1,background:'var(--border)',margin:'0 4px'}}/>
-          {[{k:'meus',l:'Minhas'},{k:'atribuidas',l:'Atribuí'},{k:'todos',l:'Todas'}].map(({k,l})=>(
-            <button key={k} onClick={()=>setFiltroResponsavel(k)}
-              style={{padding:'6px 14px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:filtroResponsavel===k?'rgba(28,181,160,0.12)':'rgba(255,255,255,0.04)',color:filtroResponsavel===k?'var(--teal)':'var(--text-muted)',borderColor:filtroResponsavel===k?'var(--teal)':'var(--border)'}}>
-              {l}
-            </button>
-          ))}
+        {/* Filtros estilo RD (chips dropdown) */}
+        <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+          <select value={filtroResponsavel} onChange={e=>setFiltroResponsavel(e.target.value)}
+            style={{padding:'7px 14px',borderRadius:8,fontSize:13,cursor:'pointer',border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',outline:'none',minWidth:160}}>
+            <option value="meus">👤 Minhas tarefas</option>
+            <option value="atribuidas">👤 Atribuídas por mim</option>
+            <option value="todos">👤 Todas as tarefas</option>
+          </select>
+          <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)}
+            style={{padding:'7px 14px',borderRadius:8,fontSize:13,cursor:'pointer',border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',outline:'none'}}>
+            <option value="pendente">⏱ Pendentes</option>
+            <option value="em_andamento">▶ Em andamento</option>
+            <option value="concluida">✓ Concluídas</option>
+            <option value="todos">📋 Todas</option>
+          </select>
           {profile?.role === 'admin' && (
             <>
               <div style={{width:1,background:'var(--border)',margin:'0 4px'}}/>
