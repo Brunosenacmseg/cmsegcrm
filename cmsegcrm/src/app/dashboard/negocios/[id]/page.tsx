@@ -239,6 +239,10 @@ export default function NegocioDetailPage() {
           <div style={{fontSize:18,fontWeight:600,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{negocio.titulo}</div>
         </div>
         <div style={{display:'flex',gap:8}}>
+          <Link href={`/dashboard/autentique?novo=1&negocio_id=${id}&titulo=${encodeURIComponent(negocio.titulo || '')}`}
+            style={{background:'var(--gold-soft)',color:'var(--gold)',border:'1px solid var(--gold)',borderRadius:8,padding:'8px 14px',fontSize:13,fontWeight:600,textDecoration:'none'}}>
+            ✍ Enviar para assinatura
+          </Link>
           {!isPerdido && (
             <button onClick={async ()=>{ if(confirm('Marcar como perda?')){ await supabase.from('negocios').update({status:'perdido',data_fechamento:new Date().toISOString()}).eq('id',id); setNegocio((n:any)=>({...n,status:'perdido'})) }}}
               style={{background:'#fee2e2',color:'var(--red)',border:'1px solid #fecaca',borderRadius:8,padding:'8px 14px',cursor:'pointer',fontSize:13,fontWeight:600}}>👎 Marcar perda</button>
