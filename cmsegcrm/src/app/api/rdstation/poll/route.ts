@@ -4,14 +4,15 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/supabase/database.types'
 import { aplicarDeal } from '../webhook/route'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-function admin() {
-  return createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+// Sem o generic <Database> aqui porque rd_crm_config e uma tabela nova
+// que ainda nao esta nos types gerados (Type instantiation excessively deep)
+function admin(): any {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
 // Formata datetime para o formato esperado pela API do RD CRM v1
