@@ -76,6 +76,7 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
       child('/dashboard/propostas', 'Propostas'),
       child('/dashboard/renovacoes', 'Renovações'),
     ])},
+    { label: 'Empresas', href: '/dashboard/clientes?tipo=empresa' },
     { label: 'Clientes', children: compact([
       child('/dashboard/clientes', 'Clientes'),
       child('/dashboard/apolices', 'Apólices'),
@@ -91,8 +92,10 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
     { label: 'Análises', children: compact([
       child('/dashboard/relatorios', 'Relatórios'),
       child('/dashboard/metas', 'Metas'),
-      child('/dashboard/comissoes', 'Comissões'),
+    ])},
+    { label: 'Financeiro', children: compact([
       child('/dashboard/financeiro', 'Financeiro / DRE'),
+      child('/dashboard/comissoes', 'Comissões'),
       child('/dashboard/contas-pagar', 'Contas a Pagar'),
     ])},
     { label: 'Marketing', children: compact([
@@ -113,9 +116,7 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
       child('/dashboard/rh', 'RH'),
       child('/dashboard/melhorias', 'Melhorias CRM'),
       child('/dashboard/importar', 'Importar Dados'),
-      child('/dashboard/usuarios', 'Usuários'),
       child('/dashboard/logs', 'Log do Sistema'),
-      child('/dashboard/configuracoes', 'Configurações'),
     ])},
   ]
   return groups.filter(g => g.href || (g.children && g.children.length > 0))
@@ -134,6 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notificacoes, setNotificacoes]   = useState<any[]>([])
   const [totalNaoLidas, setTotalNaoLidas] = useState(0)
   const [showNotif, setShowNotif]         = useState(false)
+  const [showGear, setShowGear]           = useState(false)
   const [profile, setProfile]             = useState<any>(null)
   const [temAcessoFin, setTemAcessoFin]   = useState(false)
   const [ehPosVenda, setEhPosVenda]       = useState(false)
@@ -426,13 +428,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* TOP NAVIGATION — estilo RD Station CRM */}
       <header style={{position:'sticky',top:0,zIndex:30,background:'var(--sb-bg)',borderBottom:'1px solid var(--sb-border)',color:'var(--sb-text)'}}>
-        <div className="cm-topnav-scroller" style={{display:'flex',alignItems:'center',height:56,padding:'0 18px',gap:6}} onClick={()=>setShowNotif(false)}>
+        <div className="cm-topnav-scroller" style={{display:'flex',alignItems:'center',height:56,padding:'0 18px',gap:6}} onClick={()=>{setShowNotif(false);setShowGear(false)}}>
           {/* Brand */}
           <Link href="/dashboard" prefetch={false} style={{display:'flex',alignItems:'center',gap:10,textDecoration:'none',color:'#fff',marginRight:18,flexShrink:0}}>
-            <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,var(--gold) 0%,var(--gold-light) 100%)',display:'flex',alignItems:'center',justifyContent:'center',color:'#11182a',fontFamily:'DM Serif Display,serif',fontSize:15,fontWeight:700}}>CM</div>
-            <div style={{minWidth:0,lineHeight:1}}>
-              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,color:'#fff'}}>CRM</div>
-              <div className="cm-topnav-brand-sub" style={{fontSize:9,color:'var(--sb-text-dim)',letterSpacing:1,textTransform:'uppercase',marginTop:2,fontWeight:600}}>CM Seguros</div>
+            {/* Logo: usa /logo-cm.svg ou /logo-cm.png se presente em public/, senão fallback dourado "CM" */}
+            <img src="/logo-cm.svg" alt="CM SEGUROS" width={36} height={36}
+              onError={(e)=>{ const t = e.currentTarget; if (!t.dataset.fallback) { t.dataset.fallback='1'; t.src='/logo-cm.png' } else { t.style.display='none'; (t.nextElementSibling as HTMLElement|null)!.style.display='flex' } }}
+              style={{display:'block',borderRadius:8}} />
+            <div style={{display:'none',width:36,height:36,borderRadius:8,background:'linear-gradient(135deg,var(--gold) 0%,var(--gold-light) 100%)',alignItems:'center',justifyContent:'center',color:'#11182a',fontFamily:'DM Serif Display,serif',fontSize:15,fontWeight:700}}>CM</div>
+            <div style={{minWidth:0,lineHeight:1.1}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,color:'#fff',letterSpacing:0.5}}>CM SEGUROS</div>
             </div>
           </Link>
 
@@ -525,8 +530,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
             </div>
 
-            <button onClick={()=>router.push('/dashboard/configuracoes')} title="Configurações"
-              style={{background:'transparent',border:'none',color:'var(--sb-text)',cursor:'pointer',padding:8,borderRadius:8,fontSize:15}}>⚙️</button>
+            <div style={{position:'relative'}}>
+              <button onClick={e=>{e.stopPropagation();setShowGear(g=>!g);setShowNotif(false)}} title="Configurações"
+                style={{background:'transparent',border:'none',color:'var(--sb-text)',cursor:'pointer',padding:8,borderRadius:8,fontSize:15}}>⚙️</button>
+              {showGear && (
+                <div onClick={e=>e.stopPropagation()} style={{position:'absolute',top:'calc(100% + 8px)',right:0,minWidth:240,background:'#fff',border:'1px solid var(--border-soft)',borderRadius:10,boxShadow:'var(--shadow-lg)',padding:6,zIndex:100,color:'var(--text)'}}>
+                  {[
+                    { label:'Funis de venda', href:'/dashboard/funis/configurar' },
+                    { label:'Configurar campos', href:'/dashboard/configuracoes/campos' },
+                    { label:'Convites, usuários e equipes', href:'/dashboard/usuarios' },
+                    { label:'Todas as configurações', href:'/dashboard/configuracoes' },
+                  ].map(opt => (
+                    <Link key={opt.href} href={opt.href} prefetch={false}
+                      onClick={()=>setShowGear(false)}
+                      style={{display:'block',padding:'8px 12px',borderRadius:6,fontSize:13,color:'var(--text)',textDecoration:'none'}}
+                      onMouseEnter={e=>(e.currentTarget.style.background='var(--bg-subtle)')}
+                      onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                      {opt.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div onClick={()=>router.push('/dashboard/perfil')} title="Meu perfil"
               style={{display:'flex',alignItems:'center',gap:10,marginLeft:6,cursor:'pointer'}}>
@@ -543,7 +568,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
 
-      <main className="cm-main" style={{flex:1,minWidth:0,maxWidth:'100vw',display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>setShowNotif(false)}>
+      <main className="cm-main" style={{flex:1,minWidth:0,maxWidth:'100vw',display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>{setShowNotif(false);setShowGear(false)}}>
         {children}
       </main>
 
