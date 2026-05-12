@@ -97,6 +97,10 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
   ],
   negocios: [
     { campo: 'titulo',     label: 'Nome / Título',    hints: ['titulo','nome','title'], obrigatorio: true },
+    // Dados do contato/cliente (usados pra auto-criar/vincular cliente à negociação)
+    { campo: 'cliente_nome', label: 'Nome do Cliente',  hints: ['nome cliente','cliente','segurado','contato','nome do contato'] },
+    { campo: 'telefone',     label: 'Telefone do Cliente', hints: ['telefone','telefone 1','telefone1','fone','celular','whatsapp'] },
+    { campo: 'email',        label: 'E-mail do Cliente',  hints: ['email','e-mail'] },
     { campo: 'empresa',    label: 'Empresa',          hints: ['empresa','company'] },
     { campo: 'cpf_cnpj',   label: 'CPF/CNPJ Cliente', hints: ['cpf','cnpj'] },
     { campo: 'funil',      label: 'Funil de vendas',  hints: ['funil','pipeline'] },
@@ -151,8 +155,6 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
     { campo: 'cep',           label: 'CEP',           hints: ['cep'] },
     { campo: 'cidade',        label: 'Cidade',        hints: ['cidade'] },
     { campo: 'cpf_2',         label: 'CPF 2',         hints: ['cpf 2','cpf_2'] },
-    { campo: 'email',         label: 'E-mail',        hints: ['email','e-mail'] },
-    { campo: 'telefone',      label: 'Telefone 1',    hints: ['telefone 1','telefone1','telefone','fone','celular','whatsapp'] },
     { campo: 'telefone_1',    label: 'Telefone 1 (campo personalizado)', hints: ['telefone_1','telefone 1 personalizado'] },
     { campo: 'cargo',         label: 'Cargo (do contato)', hints: ['cargo'] },
     // Observações
