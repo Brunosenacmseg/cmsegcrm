@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Módulo Propostas — Apresentação</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1020; color: #e8ecf8; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif; }
+  .deck { scroll-snap-type: y mandatory; overflow-y: scroll; height: 100vh; }
+  .slide { scroll-snap-align: start; min-height: 100vh; padding: 6vh 8vw; display: flex; flex-direction: column; justify-content: center; border-bottom: 1px solid #1a2240; }
+  .slide.title { background: linear-gradient(135deg, #1c2a6b 0%, #0b1020 100%); }
+  .eyebrow { letter-spacing: .2em; font-size: 12px; color: #8aa0ff; text-transform: uppercase; margin-bottom: 14px; }
+  h1 { font-size: clamp(28px, 5vw, 56px); margin: 0 0 16px; line-height: 1.1; }
+  h2 { font-size: clamp(22px, 3.2vw, 36px); margin: 0 0 20px; color: #fff; }
+  p, li { font-size: clamp(16px, 1.6vw, 20px); line-height: 1.55; }
+  ul { padding-left: 1.2em; }
+  li { margin: .35em 0; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px; }
+  .pill { background: #182154; padding: 8px 14px; border-radius: 999px; font-size: 14px; color: #c9d2ff; }
+  .nav { position: fixed; right: 14px; bottom: 14px; background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #c9d2ff; }
+  .footer { position: fixed; left: 14px; bottom: 14px; font-size: 12px; color: #6f7bb0; }
+  @media print {
+    .deck { overflow: visible; height: auto; }
+    .slide { page-break-after: always; min-height: 100vh; border: none; }
+    .nav, .footer { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+  <section class="slide title">
+    <div class="eyebrow">CRM • Apresentação por módulo</div>
+    <h1>Módulo Propostas</h1>
+    <p>Visão geral, fluxos e boas práticas.</p>
+    <div class="meta">
+      <span class="pill">Público-alvo: Comercial</span>
+    </div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">Objetivo</div>
+    <h2>Para que serve este módulo</h2>
+    <p>Formalizar a oferta ao cliente e acompanhar o aceite até a emissão da apólice.</p>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">Telas principais</div>
+    <h2>O que você verá na tela</h2>
+    <ul><li>Listagem de propostas</li><li>Detalhe com status (rascunho, enviada, aceita, recusada)</li></ul>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">Fluxos</div>
+    <h2>Como se usa no dia a dia</h2>
+    <ul><li>Gerar proposta a partir da cotação</li><li>Enviar para assinatura via Autentique</li><li>Converter em apólice após aceite</li></ul>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">Campos importantes</div>
+    <h2>O que preencher</h2>
+    <ul><li>Cliente</li><li>Cotação base</li><li>Valores</li><li>Forma de pagamento</li><li>Validade da proposta</li></ul>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">Boas práticas</div>
+    <h2>Dicas e cuidados</h2>
+    <ul><li>Definir validade clara</li><li>Integrar com Autentique para assinatura digital</li></ul>
+  </section>
+
+  <section class="slide title">
+    <div class="eyebrow">Próximos passos</div>
+    <h1>Dúvidas?</h1>
+    <p>Vamos abrir o sistema e percorrer juntos cada tela do módulo <strong>Módulo Propostas</strong>.</p>
+  </section>
+</div>
+<div class="nav">↓ rolar / setas / Page Down</div>
+<div class="footer">cmsegcrm — Módulo Propostas</div>
+</body>
+</html>
