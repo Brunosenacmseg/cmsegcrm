@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-type Aba = 'sistema' | 'logins'
+type Aba = 'sistema' | 'logins' | 'jornadas'
 
 const PAGE_SIZE = 100
 
@@ -23,6 +23,8 @@ export default function LogsPage() {
 
   const [systemLogs, setSystemLogs] = useState<any[]>([])
   const [loginLogs, setLoginLogs] = useState<any[]>([])
+  const [jornadasLogs, setJornadasLogs] = useState<any[]>([])
+  const [jornadasFaltantes, setJornadasFaltantes] = useState<any[]>([])
 
   useEffect(() => { init() }, [])
 
@@ -50,13 +52,29 @@ export default function LogsPage() {
       if (filtroAte)  q = q.lte('criado_em', filtroAte + 'T23:59:59')
       const { data } = await q
       setSystemLogs(data || [])
-    } else {
+    } else if (aba === 'logins') {
       let q = supabase.from('login_logs').select('*').order('criado_em', { ascending: false }).limit(PAGE_SIZE)
       if (filtroUser) q = q.eq('user_id', filtroUser)
       if (filtroDe)   q = q.gte('criado_em', filtroDe)
       if (filtroAte)  q = q.lte('criado_em', filtroAte + 'T23:59:59')
       const { data } = await q
       setLoginLogs(data || [])
+    } else {
+      // Aba 'jornadas' — mostra inícios de jornada (jornadas + system_logs cruzados)
+      let q = supabase.from('jornadas').select('*, users(id,nome,email)').order('iniciada_em', { ascending: false }).limit(PAGE_SIZE)
+      if (filtroUser) q = q.eq('user_id', filtroUser)
+      if (filtroDe)   q = q.gte('iniciada_em', filtroDe)
+      if (filtroAte)  q = q.lte('iniciada_em', filtroAte + 'T23:59:59')
+      const { data: jornadas } = await q
+      setJornadasLogs(jornadas || [])
+      // Faltantes do dia: usuários que ainda não iniciaram a jornada hoje
+      const hoje = new Date(); hoje.setHours(0,0,0,0)
+      const hojeISO = hoje.toISOString()
+      const { data: jHoje } = await supabase.from('jornadas').select('user_id').gte('iniciada_em', hojeISO)
+      const userIdsHoje = new Set((jHoje || []).map((j:any) => j.user_id))
+      const { data: us } = await supabase.from('users').select('id,nome,email,role').order('nome')
+      const faltantes = (us || []).filter((u:any) => !userIdsHoje.has(u.id))
+      setJornadasFaltantes(faltantes)
     }
   }
 
@@ -103,8 +121,9 @@ export default function LogsPage() {
       {/* Abas */}
       <div style={{display:'flex', gap:8, marginBottom:16, borderBottom:'1px solid var(--border-soft)'}}>
         {([
-          { k:'sistema', l:'Atividades no sistema' },
-          { k:'logins',  l:'Logins' },
+          { k:'sistema',  l:'Atividades no sistema' },
+          { k:'logins',   l:'Logins' },
+          { k:'jornadas', l:'Início de Jornada' },
         ] as {k:Aba,l:string}[]).map(t => (
           <div key={t.k} onClick={()=>setAba(t.k)}
             style={{
@@ -135,7 +154,7 @@ export default function LogsPage() {
           placeholder="Buscar (ação, recurso, IP, cidade...)"/>
       </div>
 
-      {aba === 'sistema' ? (
+      {aba === 'sistema' && (
         <div className="card" style={{padding:0, overflow:'hidden'}}>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
@@ -174,7 +193,9 @@ export default function LogsPage() {
             Mostrando os {PAGE_SIZE} registros mais recentes.
           </div>
         </div>
-      ) : (
+      )}
+
+      {aba === 'logins' && (
         <div className="card" style={{padding:0, overflow:'hidden'}}>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
@@ -238,6 +259,105 @@ export default function LogsPage() {
             Mostrando os {PAGE_SIZE} registros mais recentes.
           </div>
         </div>
+      )}
+
+      {aba === 'jornadas' && (
+        <>
+          <div style={{display:'flex',gap:12,marginBottom:14,flexWrap:'wrap'}}>
+            <div style={{background:'var(--success-bg)',color:'var(--success)',padding:'8px 14px',borderRadius:8,fontSize:13}}>
+              ✓ Jornadas listadas: <strong>{jornadasLogs.length}</strong>
+            </div>
+            <div style={{background:'var(--warning-bg)',color:'var(--warning)',padding:'8px 14px',borderRadius:8,fontSize:13}}>
+              ⏳ Faltam iniciar hoje: <strong>{jornadasFaltantes.length}</strong>
+            </div>
+          </div>
+
+          <div className="card" style={{padding:0, overflow:'hidden', marginBottom:18}}>
+            <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border-soft)',fontSize:12,fontWeight:700,color:'var(--text)'}}>Jornadas iniciadas</div>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
+                <thead>
+                  <tr style={{background:'var(--bg-soft)', textAlign:'left'}}>
+                    <th style={th}>Início</th>
+                    <th style={th}>Usuário</th>
+                    <th style={th}>IP</th>
+                    <th style={th}>Localização (lat,lng)</th>
+                    <th style={th}>Cidade/UF</th>
+                    <th style={th}>Encerramento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jornadasLogs.length === 0 ? (
+                    <tr><td colSpan={6} style={{padding:24, textAlign:'center', color:'var(--text-muted)'}}>
+                      Nenhuma jornada encontrada no período.
+                    </td></tr>
+                  ) : jornadasLogs.map(j => (
+                    <tr key={j.id} style={{borderTop:'1px solid var(--border-soft)'}}>
+                      <td style={td}>{fmtData(j.iniciada_em)}</td>
+                      <td style={td}>
+                        <div>{j.users?.nome || '—'}</div>
+                        <div style={{fontSize:11, color:'var(--text-muted)'}}>{j.users?.email || ''}</div>
+                      </td>
+                      <td style={{...td, fontFamily:'monospace'}}>{j.ip || '—'}</td>
+                      <td style={td}>
+                        {j.lat && j.lng ? (
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${j.lat},${j.lng}`} target="_blank" rel="noreferrer"
+                            style={{color:'var(--blue)',textDecoration:'none',fontFamily:'monospace',fontSize:11}}>
+                            {Number(j.lat).toFixed(5)}, {Number(j.lng).toFixed(5)}
+                          </a>
+                        ) : <span style={{color:'var(--text-muted)'}}>não permitiu</span>}
+                      </td>
+                      <td style={td}>{[j.cidade, j.uf].filter(Boolean).join('/') || '—'}</td>
+                      <td style={td}>
+                        {j.encerrada_em ? (
+                          <>
+                            <div>{fmtData(j.encerrada_em)}</div>
+                            <div style={{fontSize:11,color:'var(--text-muted)'}}>{j.encerrada_motivo || ''}</div>
+                          </>
+                        ) : <span style={{color:'var(--teal)'}}>Aberta</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{padding:'10px 14px', borderTop:'1px solid var(--border-soft)', fontSize:11, color:'var(--text-muted)'}}>
+              Mostrando os {PAGE_SIZE} registros mais recentes do filtro selecionado.
+            </div>
+          </div>
+
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border-soft)',fontSize:12,fontWeight:700,color:'var(--text)'}}>
+              Usuários que ainda não iniciaram a jornada HOJE
+            </div>
+            {jornadasFaltantes.length === 0 ? (
+              <div style={{padding:24,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>
+                ✓ Todos os usuários cadastrados já iniciaram a jornada hoje.
+              </div>
+            ) : (
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'var(--bg-soft)', textAlign:'left'}}>
+                      <th style={th}>Usuário</th>
+                      <th style={th}>E-mail</th>
+                      <th style={th}>Função</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jornadasFaltantes.map(u => (
+                      <tr key={u.id} style={{borderTop:'1px solid var(--border-soft)'}}>
+                        <td style={td}>{u.nome || '—'}</td>
+                        <td style={td}>{u.email || '—'}</td>
+                        <td style={td}><span style={badge}>{u.role || '—'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
