@@ -35,12 +35,19 @@ export async function aplicarDeal(d: RDDeal, eventType: string) {
 
   // Resolver funil pelo pipeline
   let funil: any = null
-  const pipelineId = rdId(d.deal_pipeline) || (d.deal_stage as any)?.deal_pipeline_id
+  const pipelineId = rdId(d.deal_pipeline) || (d.deal_stage as any)?.deal_pipeline_id || (d.deal_stage as any)?.deal_pipeline?._id || (d.deal_stage as any)?.deal_pipeline?.id
   if (pipelineId) {
     const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome, tipo').eq('rd_id', pipelineId).maybeSingle()
     funil = data
   }
   if (!funil) {
+    console.warn('[rd/aplicarDeal] funil nao encontrado, usando fallback:', {
+      deal_id: id,
+      deal_name: d.name,
+      pipelineId,
+      deal_pipeline: d.deal_pipeline,
+      deal_stage: d.deal_stage,
+    })
     // Procura qualquer funil de venda como fallback
     const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome, tipo').eq('tipo', 'venda').limit(1).maybeSingle()
     funil = data
