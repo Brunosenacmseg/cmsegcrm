@@ -41,18 +41,15 @@ export async function aplicarDeal(d: RDDeal, eventType: string) {
     funil = data
   }
   if (!funil) {
-    console.warn('[rd/aplicarDeal] funil nao encontrado, usando fallback:', {
-      deal_id: id,
-      deal_name: d.name,
-      pipelineId,
-      deal_pipeline: d.deal_pipeline,
-      deal_stage: d.deal_stage,
+    // Sem pipeline mapeado: pular em vez de cair em fallback arbitrario.
+    // Importar num funil errado e pior que nao importar (movia deals pra
+    // RECICLADOS aleatoriamente — bug que causou 800+ negocios no funil errado).
+    console.warn('[rd/aplicarDeal] pulando deal sem pipeline mapeado:', {
+      deal_id: id, deal_name: d.name, pipelineId,
+      deal_pipeline: d.deal_pipeline, deal_stage: d.deal_stage,
     })
-    // Procura qualquer funil de venda como fallback
-    const { data } = await supabaseAdmin().from('funis').select('id, etapas, nome, tipo').eq('tipo', 'venda').limit(1).maybeSingle()
-    funil = data
+    return { ok: false, motivo: 'pipeline nao mapeado em funis.rd_id' }
   }
-  if (!funil) return { ok: false, motivo: 'Nenhum funil disponível' }
 
   // Resolver etapa
   let etapa = d.deal_stage?.name || (funil.etapas?.[0] || 'Novo')
