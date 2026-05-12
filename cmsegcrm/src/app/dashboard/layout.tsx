@@ -10,6 +10,7 @@ import BoasVindasLider from '@/components/BoasVindasLider'
 import CommandPalette from '@/components/CommandPalette'
 import { ToastProvider, ConfirmProvider } from '@/components/Toast'
 import { registrarLog } from '@/lib/logs'
+import JornadaGate from '@/components/JornadaGate'
 
 const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean; liderOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
@@ -549,7 +550,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 
       <main className="cm-main" style={{flex:1,minWidth:0,maxWidth:'100vw',display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>{setShowNotif(false);setShowGear(false)}}>
-        {children}
+        <JornadaGate userId={user?.id || null}>{children}</JornadaGate>
       </main>
 
       <ChatIA />
