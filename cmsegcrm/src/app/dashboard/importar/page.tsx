@@ -263,6 +263,7 @@ export default function ImportarPage() {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [profile, setProfile] = useState<any>(null)
+  const [ehGestao, setEhGestao] = useState(false)
   const [loading, setLoading] = useState(true)
   const [entidade, setEntidade] = useState<Entidade>('clientes')
   const [step, setStep] = useState<'upload'|'mapear'|'preview'|'sucesso'>('upload')
@@ -302,6 +303,15 @@ export default function ImportarPage() {
     if (prof?.role === 'admin') {
       const { data: h } = await supabase.from('importacoes_dados').select('*').order('iniciado_em', { ascending: false }).limit(15)
       setHistorico(h || [])
+    } else {
+      // checa equipe GESTÃO (libera acesso à página, mas só ao atalho de Cobrança)
+      const { data: em } = await supabase.from('equipe_membros').select('equipes!inner(nome)').eq('user_id', user.id)
+      const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
+      const ok = (em || []).some((r: any) => {
+        const n = norm(String(r.equipes?.nome || ''))
+        return n === 'gestao' || n === 'equipe gestao'
+      })
+      setEhGestao(ok)
     }
     setLoading(false)
   }
@@ -595,10 +605,32 @@ export default function ImportarPage() {
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
-  if (profile?.role !== 'admin') return (
+  if (profile?.role !== 'admin' && !ehGestao) return (
     <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10,color:'var(--text-muted)'}}>
       <div style={{fontSize:40}}>🔒</div>
-      <div>Apenas administradores podem importar dados.</div>
+      <div>Apenas administradores ou equipe GESTÃO podem importar dados.</div>
+    </div>
+  )
+
+  // Equipe GESTÃO (não admin): só pode ver o atalho de Cobrança
+  if (profile?.role !== 'admin' && ehGestao) return (
+    <div style={{flex:1,overflow:'auto',padding:'28px 32px',maxWidth:980,margin:'0 auto'}}>
+      <h1 style={{fontFamily:'DM Serif Display,serif',fontSize:24,color:'var(--text)',marginBottom:14}}>Importar Dados</h1>
+      <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--gold)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}>
+          <div style={{flex:1,minWidth:240}}>
+            <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>💰 Importar Cobrança</div>
+            <div style={{fontSize:12,color:'var(--text-muted)'}}>
+              Sobe uma planilha XLSX (colunas <code>NOME CLIENTE · APOLICE · VENCIMENTO · SEGURADORA</code>)
+              e cria cards no funil COBRANÇA, atribuídos à equipe COBRANÇA.
+            </div>
+          </div>
+          <a href="/dashboard/importar/cobranca" className="btn-primary"
+            style={{textDecoration:'none',padding:'10px 18px',borderRadius:8,fontSize:13,fontWeight:600}}>
+            Abrir importação de Cobrança →
+          </a>
+        </div>
+      </div>
     </div>
   )
 
