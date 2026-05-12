@@ -229,7 +229,7 @@ async function importarNegocios(linhas: any[]) {
     if (cpf && clientePorCpf[cpf]) continue           // já existe → reusa
     if (cpf && cpfsPlanejados.has(cpf)) continue      // já planejado nesse lote
 
-    const nome = s(r.cliente) || s(r.nome) || s(r.empresa) || s(r.titulo)
+    const nome = s(r.cliente_nome) || s(r.cliente) || s(r.nome) || s(r.empresa) || s(r.titulo)
     const email = s(r.email || r['e-mail'])?.toLowerCase() || null
     if (!nome && !cpf && !email) continue             // nada que identifique
 
