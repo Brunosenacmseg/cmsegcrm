@@ -67,7 +67,7 @@ export default function NegocioDetailPage() {
         supabase.from('tarefas').select('*').eq('negocio_id', id).order('prazo', { ascending: true }),
         supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false}),
         supabase.from('negocio_produtos').select('*').eq('negocio_id', id).order('criado_em',{ascending:true}),
-        supabase.from('produtos').select('id,nome,valor_padrao').eq('ativo',true).order('nome'),
+        supabase.from('produtos').select('id,nome,preco_base').eq('ativo',true).order('nome'),
       ])
       const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
       setUsuariosAll(usr || [])
@@ -128,7 +128,7 @@ export default function NegocioDetailPage() {
       produto_id: formProduto.produto_id,
       nome_snapshot: p?.nome || null,
       quantidade: Number(formProduto.quantidade) || 1,
-      valor_unit: formProduto.valor_unit ? num(formProduto.valor_unit) : (p?.valor_padrao || 0),
+      valor_unit: formProduto.valor_unit ? num(formProduto.valor_unit) : (p?.preco_base || 0),
       desconto: formProduto.addDesconto ? num(formProduto.desconto) : 0,
       recorrencia: formProduto.recorrencia || 'unica',
       observacao: formProduto.obs || null,
@@ -800,7 +800,7 @@ export default function NegocioDetailPage() {
                 <label style={labelStyle}>Produto ou serviço</label>
                 <select value={formProduto.produto_id} onChange={e=>{
                   const p = produtosAll.find(x => x.id === e.target.value)
-                  setFormProduto(f=>({...f, produto_id:e.target.value, valor_unit: p?.valor_padrao ? String(p.valor_padrao).replace('.',',') : f.valor_unit}))
+                  setFormProduto(f=>({...f, produto_id:e.target.value, valor_unit: p?.preco_base ? String(p.preco_base).replace('.',',') : f.valor_unit}))
                 }} style={inputStyle}>
                   <option value="">Selecione</option>
                   {produtosAll.map(p=> <option key={p.id} value={p.id}>{p.nome}</option>)}
