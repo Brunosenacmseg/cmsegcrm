@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     try {
       const { data: funisRd } = await sa.from('funis').select('rd_id').not('rd_id', 'is', null)
       const pipelineIds = (funisRd || []).map((f: any) => String(f.rd_id)).filter(Boolean)
-      await Promise.all(pipelineIds.map(async (pid) => {
+      await Promise.all(pipelineIds.map(async (pid: string) => {
         try {
           const rs = await fetch(`https://crm.rdstation.com/api/v1/deal_stages?token=${encodeURIComponent(token)}&deal_pipeline_id=${pid}&limit=200`, { headers: { 'accept': 'application/json' } })
           if (!rs.ok) return
