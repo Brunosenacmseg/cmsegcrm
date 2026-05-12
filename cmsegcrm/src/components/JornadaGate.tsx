@@ -105,19 +105,12 @@ export default function JornadaGate({ children, userId }: { children: React.Reac
       <>
         <div style={{padding:'32px 24px',maxWidth:720,margin:'24px auto 0',background:'#fff',border:'1px solid var(--border-soft)',borderRadius:14,boxShadow:'var(--shadow-md)',textAlign:'center'}}>
           <div style={{fontSize:42,marginBottom:10}}>⏱️</div>
-          <h2 style={{fontFamily:'DM Serif Display,serif',fontSize:22,color:'var(--text)',marginBottom:6}}>Bom dia! Vamos começar?</h2>
-          <p style={{fontSize:13,color:'var(--text-muted)',marginBottom:18,maxWidth:480,margin:'0 auto 18px'}}>
-            Para liberar o acesso aos demais módulos do sistema, registre o início da sua jornada.
-            Vamos coletar data, hora, seu IP e sua localização aproximada (com sua permissão do navegador).
-          </p>
+          <h2 style={{fontFamily:'DM Serif Display,serif',fontSize:22,color:'var(--text)',marginBottom:18}}>Bom dia! Vamos começar?</h2>
           <button onClick={iniciar} disabled={iniciando}
             style={{background:'var(--teal)',color:'#fff',border:'none',padding:'12px 28px',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer',opacity:iniciando?0.6:1}}>
             {iniciando ? 'Registrando…' : '▶ Iniciar trabalho'}
           </button>
           {erro && <div style={{marginTop:10,color:'var(--red)',fontSize:12}}>{erro}</div>}
-          <div style={{marginTop:14,fontSize:11,color:'var(--text-faint)'}}>
-            Você só conseguirá navegar para outros módulos após esse registro. Logoff automático às 00:00.
-          </div>
         </div>
         <div style={{opacity:0.35,pointerEvents:'none',marginTop:24}}>
           {children}

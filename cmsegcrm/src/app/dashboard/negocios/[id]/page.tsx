@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import ContatoAcoes from '@/components/ContatoAcoes'
+import UploadAnexo, { Anexo } from '@/components/UploadAnexo'
 
 type Tab = 'historico' | 'email' | 'tarefas' | 'questionarios' | 'produtos' | 'arquivos' | 'propostas'
 
@@ -30,6 +31,7 @@ export default function NegocioDetailPage() {
   const [modalTarefa, setModalTarefa] = useState(false)
   const [formTarefa, setFormTarefa] = useState({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
   const [salvandoTarefa, setSalvandoTarefa] = useState(false)
+  const [anexos, setAnexos] = useState<Anexo[]>([])
   const [editarCliente, setEditarCliente] = useState(false)
   const [buscaCliente, setBuscaCliente]   = useState('')
   const [clientesRes, setClientesRes]     = useState<any[]>([])
@@ -76,6 +78,8 @@ export default function NegocioDetailPage() {
       setNotas(nt || [])
       setProdutos(pr || [])
       setProdutosAll(pAll || [])
+      const { data: anx } = await supabase.from('anexos').select('*').eq('negocio_id', id).eq('categoria','negocio').order('created_at',{ascending:false})
+      setAnexos((anx || []) as any)
       const { data: ev } = await supabase.from('logs').select('*').or(`recurso.ilike.%${id}%,pathname.ilike.%${id}%`).order('criado_em', { ascending: false }).limit(50)
       setEventos(ev || [])
       setLoading(false)
@@ -692,7 +696,17 @@ export default function NegocioDetailPage() {
                   )}
                 </div>
               )}
-              {tab==='arquivos' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Arquivos anexados serão exibidos aqui.</div>}
+              {tab==='arquivos' && (
+                <div>
+                  <UploadAnexo
+                    categoria="negocio"
+                    negocioId={id}
+                    label="Anexar arquivo (PDF, imagens, planilhas...)"
+                    anexosExistentes={anexos}
+                    onUpload={(a)=> setAnexos(prev => [a, ...prev])}
+                  />
+                </div>
+              )}
               {tab==='propostas' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Propostas vinculadas serão exibidas aqui.</div>}
             </div>
           </div>

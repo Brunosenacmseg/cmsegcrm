@@ -45,7 +45,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/gestao-equipe',icon:'🧭', label:'Gestão de Equipe', section:'Empresa', liderOnly:true },
   { href:'/dashboard/rh',           icon:'🧑‍💼', label:'RH', section:'Empresa' },
   { href:'/dashboard/melhorias',    icon:'💡', label:'Melhorias CRM', section:'Empresa' },
-  { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', adminOnly:true },
+  { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', equipeGestao:true },
   { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
@@ -521,7 +521,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     { label:'Funis de venda', href:'/dashboard/funis/configurar', admin: true },
                     { label:'Configurar campos', href:'/dashboard/configuracoes/campos', admin: true },
                     { label:'Convites, usuários e equipes', href:'/dashboard/usuarios', admin: true },
-                    { label:'💰 Importar Cobrança', href:'/dashboard/importar/cobranca', gestao: true },
+                    { label:'📥 Importar dados', href:'/dashboard/importar', gestao: true },
                     { label:'Todas as configurações', href:'/dashboard/configuracoes/hub', admin: true },
                   ].filter(opt => {
                     if (opt.admin && (isAdmin)) return true
