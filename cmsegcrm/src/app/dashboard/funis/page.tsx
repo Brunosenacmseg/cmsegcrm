@@ -1771,7 +1771,9 @@ function FunisPage() {
                       {/* Badges de status estilo RD (acima do título) */}
                       {!isGanho && !isPerdido && (() => {
                         const diasSemMov = neg.updated_at ? Math.floor((Date.now() - new Date(neg.updated_at).getTime())/86400000) : null
-                        const esfriando = diasSemMov !== null && diasSemMov >= 3
+                        const cfg = (funiAtual?.meta_etapas as any)?.[neg.etapa]
+                        const limite = (cfg?.esfriando ? Number(cfg?.dias)||3 : null)
+                        const esfriando = limite !== null && diasSemMov !== null && diasSemMov >= limite
                         return (
                           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
                             <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(74,128,240,0.14)',color:'#1d4ed8',display:'inline-flex',alignItems:'center',gap:4}}>

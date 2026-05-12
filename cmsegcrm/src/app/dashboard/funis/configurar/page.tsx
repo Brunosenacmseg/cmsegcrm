@@ -12,6 +12,7 @@ type Funil = {
   etapas: string[]
   ordem: number | null
   descricao?: string | null
+  meta_etapas?: Record<string, { esfriando?: boolean; dias?: number }>
 }
 
 const EMOJIS_SUGERIDOS = ['🆕','🔄','💰','🛡️','📞','🚗','🏠','💼','📊','🎯','⭐','🔥','📈','🧾','🩺','🧰','✈️','🏥','🧮','🪪','💳']
@@ -27,7 +28,19 @@ export default function ConfigurarFunisPage() {
   const [equipes, setEquipes] = useState<{id:string; nome:string}[]>([])
   const [funilEquipes, setFunilEquipes] = useState<Record<string,string[]>>({}) // funil_id → equipe_ids[]
   const [editandoId, setEditandoId] = useState<string|'novo'|null>(null)
-  const [form, setForm] = useState<Funil>({ id:'', nome:'', tipo:'', emoji:'🆕', cor:'#c9a84c', etapas:[], ordem:0, descricao:'' })
+  const [form, setForm] = useState<Funil>({ id:'', nome:'', tipo:'', emoji:'🆕', cor:'#c9a84c', etapas:[], ordem:0, descricao:'', meta_etapas:{} })
+  const [devMode, setDevMode] = useState(false)
+  useEffect(()=>{ try { setDevMode(localStorage.getItem('cm_dev_mode')==='1') } catch{} }, [])
+
+  function setMetaEtapa(nome: string, patch: Partial<{ esfriando: boolean; dias: number }>) {
+    setForm(f => ({
+      ...f,
+      meta_etapas: {
+        ...(f.meta_etapas || {}),
+        [nome]: { ...(f.meta_etapas?.[nome] || {}), ...patch },
+      },
+    }))
+  }
   const [equipeIds, setEquipeIds] = useState<string[]>([]) // equipes selecionadas no editor
   const [novaEtapa, setNovaEtapa] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -114,6 +127,7 @@ export default function ConfigurarFunisPage() {
       etapas:    form.etapas,
       ordem:     form.ordem ?? 0,
       descricao: form.descricao || null,
+      meta_etapas: form.meta_etapas || {},
     }
     let funilId: string | null = null
     if (editandoId === 'novo') {
@@ -367,7 +381,10 @@ export default function ConfigurarFunisPage() {
                 <div>
                   <label style={lbl}>Etapas * <span style={{color:'var(--text-muted)',fontWeight:400}}>({form.etapas.length})</span></label>
                   <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:8}}>
-                    {form.etapas.map((et, i)=>(
+                    {form.etapas.map((et, i)=>{
+                      const meta = form.meta_etapas?.[et] || {}
+                      const esfriandoOn = !!meta.esfriando
+                      return (
                       <div key={i}
                         draggable
                         onDragStart={e=>{ setDragIdx(i); e.dataTransfer.effectAllowed='move' }}
@@ -383,15 +400,45 @@ export default function ConfigurarFunisPage() {
                           setDragIdx(null); setDragOverIdx(null)
                         }}
                         onDragEnd={()=>{ setDragIdx(null); setDragOverIdx(null) }}
-                        style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'rgba(255,255,255,0.04)',border:`1px solid ${dragOverIdx===i&&dragIdx!==i?'var(--gold)':'var(--border)'}`,borderRadius:8,opacity:dragIdx===i?0.4:1,cursor:'grab',transition:'border-color 0.12s'}}>
-                        <span title="Arraste para reordenar" style={{fontSize:14,color:'var(--text-muted)',cursor:'grab',userSelect:'none'}}>⋮⋮</span>
-                        <span style={{fontSize:11,color:'var(--text-muted)',width:22}}>{i+1}.</span>
-                        <input value={et} onChange={e=>{ const novo=[...form.etapas]; novo[i]=e.target.value; setForm(f=>({...f,etapas:novo})) }} style={{...inp,padding:'4px 8px',background:'transparent',border:'none'}} />
-                        <button onClick={()=>moverEtapa(i,-1)} disabled={i===0} style={btnIcon}>↑</button>
-                        <button onClick={()=>moverEtapa(i, 1)} disabled={i===form.etapas.length-1} style={btnIcon}>↓</button>
-                        <button onClick={()=>removerEtapa(i)} style={{...btnIcon,color:'var(--red)'}}>✕</button>
+                        style={{display:'flex',flexDirection:'column',gap:6,padding:'8px 10px',background:'rgba(255,255,255,0.04)',border:`1px solid ${dragOverIdx===i&&dragIdx!==i?'var(--gold)':'var(--border)'}`,borderRadius:8,opacity:dragIdx===i?0.4:1,transition:'border-color 0.12s'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <span title="Arraste para reordenar" style={{fontSize:14,color:'var(--text-muted)',cursor:'grab',userSelect:'none'}}>⋮⋮</span>
+                          <span style={{fontSize:11,color:'var(--text-muted)',width:22}}>{i+1}.</span>
+                          <input value={et} onChange={e=>{
+                            const novo=[...form.etapas]; const old = novo[i]; novo[i]=e.target.value
+                            // Renomeia chave em meta_etapas
+                            const m = { ...(form.meta_etapas||{}) }
+                            if (old && m[old]) { m[e.target.value] = m[old]; delete m[old] }
+                            setForm(f=>({...f,etapas:novo,meta_etapas:m}))
+                          }} style={{...inp,padding:'4px 8px',background:'transparent',border:'none'}} />
+                          <button onClick={()=>moverEtapa(i,-1)} disabled={i===0} style={btnIcon}>↑</button>
+                          <button onClick={()=>moverEtapa(i, 1)} disabled={i===form.etapas.length-1} style={btnIcon}>↓</button>
+                          <button onClick={()=>removerEtapa(i)} style={{...btnIcon,color:'var(--red)'}}>✕</button>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:10,paddingLeft:32,fontSize:11,color:'var(--text-muted)',flexWrap:'wrap'}}>
+                          <label style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+                            <span>Destacar negociações esfriando</span>
+                            <button type="button" onClick={()=>setMetaEtapa(et,{esfriando:!esfriandoOn,dias:meta.dias??3})}
+                              style={{width:34,height:18,borderRadius:999,border:'none',cursor:'pointer',background:esfriandoOn?'var(--teal)':'var(--border-strong)',position:'relative',transition:'background 0.2s'}}>
+                              <span style={{position:'absolute',top:2,left:esfriandoOn?18:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}}/>
+                            </button>
+                          </label>
+                          {esfriandoOn && (
+                            <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                              após
+                              <input type="number" min={1} max={365} value={meta.dias ?? 3}
+                                onChange={e=>setMetaEtapa(et,{dias:Math.max(1,Number(e.target.value)||1)})}
+                                style={{width:60,padding:'2px 6px',border:'1px solid var(--border-soft)',borderRadius:6,background:'#fff',color:'var(--text)',fontSize:11,outline:'none'}}/>
+                              dias sem interação
+                            </span>
+                          )}
+                          {devMode && (
+                            <code style={{fontSize:10,color:'var(--text-faint)',marginLeft:'auto'}}>etapa: {et}</code>
+                          )}
+                        </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                   <div style={{display:'flex',gap:6}}>
                     <input value={novaEtapa} onChange={e=>setNovaEtapa(e.target.value)} onKeyDown={e=>e.key==='Enter'&&adicionarEtapa()} placeholder="Nome da nova etapa..." style={inp} />
