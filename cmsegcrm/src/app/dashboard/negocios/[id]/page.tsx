@@ -17,10 +17,16 @@ export default function NegocioDetailPage() {
   const [funil, setFunil]       = useState<any>(null)
   const [cliente, setCliente]   = useState<any>(null)
   const [responsavel, setResp]  = useState<any>(null)
+  const [me, setMe]             = useState<any>(null)
   const [tarefas, setTarefas]   = useState<any[]>([])
   const [eventos, setEventos]   = useState<any[]>([])
+  const [notas, setNotas]       = useState<any[]>([])
   const [tab, setTab]           = useState<Tab>('historico')
   const [devMode, setDevMode]   = useState(false)
+  const [filtroEventoOrigem, setFiltroEventoOrigem] = useState<'todos'|'crm'|'rd'>('todos')
+  const [filtroEventoTipo,   setFiltroEventoTipo]   = useState<'todos'|'anotacao'|'etapa'|'tarefa'|'log'>('todos')
+  const [novaAnotacao, setNovaAnotacao] = useState('')
+  const [criandoNota, setCriandoNota] = useState(false)
   const [openSections, setOpenSections] = useState<Record<string,boolean>>({
     negociacao:true, contatos:true, info:false, empresa:true, responsavel:true,
   })
@@ -34,22 +40,55 @@ export default function NegocioDetailPage() {
       const { data: neg } = await supabase.from('negocios').select('*').eq('id', id).single()
       if (!neg) { setLoading(false); return }
       setNegocio(neg)
-      const [{ data: fn }, { data: cl }, { data: rp }, { data: tr }] = await Promise.all([
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase.from('users').select('id,nome,avatar_url,role').eq('id', user.id).single()
+        setMe(profile)
+      }
+      const [{ data: fn }, { data: cl }, { data: rp }, { data: tr }, { data: nt }] = await Promise.all([
         neg.funil_id ? supabase.from('funis').select('*').eq('id', neg.funil_id).single() : Promise.resolve({ data: null } as any),
         neg.cliente_id ? supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj,empresa,cargo').eq('id', neg.cliente_id).single() : Promise.resolve({ data: null } as any),
         neg.vendedor_id ? supabase.from('users').select('id,nome,email,avatar_url,role').eq('id', neg.vendedor_id).single() : Promise.resolve({ data: null } as any),
         supabase.from('tarefas').select('*').eq('negocio_id', id).order('prazo', { ascending: true }),
+        supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false}),
       ])
       setFunil(fn)
       setCliente(cl)
       setResp(rp)
       setTarefas(tr || [])
-      // Histórico: pega logs do sistema relacionados a este negócio
+      setNotas(nt || [])
       const { data: ev } = await supabase.from('logs').select('*').or(`recurso.ilike.%${id}%,pathname.ilike.%${id}%`).order('criado_em', { ascending: false }).limit(50)
       setEventos(ev || [])
       setLoading(false)
     })()
   }, [id])
+
+  async function recarregarNotas() {
+    const { data } = await supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false})
+    setNotas(data || [])
+  }
+
+  async function criarAnotacao() {
+    if (!novaAnotacao.trim() || !me?.id) return
+    setCriandoNota(true)
+    await supabase.from('negocio_notas').insert({
+      negocio_id: id, user_id: me.id, conteudo: novaAnotacao.trim(), pinned: false,
+    })
+    setNovaAnotacao('')
+    setCriandoNota(false)
+    recarregarNotas()
+  }
+
+  async function togglePin(nota: any) {
+    await supabase.from('negocio_notas').update({ pinned: !nota.pinned }).eq('id', nota.id)
+    recarregarNotas()
+  }
+
+  async function excluirNota(notaId: string) {
+    if (!confirm('Excluir esta anotação?')) return
+    await supabase.from('negocio_notas').delete().eq('id', notaId)
+    recarregarNotas()
+  }
 
   const etapas: string[] = funil?.etapas || []
   const etapaAtualIdx = useMemo(() => etapas.findIndex(e => e === negocio?.etapa), [etapas, negocio?.etapa])
@@ -111,16 +150,25 @@ export default function NegocioDetailPage() {
         {funil && <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:5,background:'var(--bg-subtle)',color:'var(--text-muted)'}}>{funil.nome}</span>}
       </div>
 
-      {/* Stepper de etapas */}
+      {/* Stepper de etapas (chevron arrows) */}
       {etapas.length > 0 && (
-        <div style={{display:'flex',gap:2,marginBottom:18,overflowX:'auto',background:'var(--bg-subtle)',padding:4,borderRadius:8}}>
+        <div style={{display:'flex',marginBottom:18,overflowX:'auto',gap:0}}>
           {etapas.map((et, i) => {
-            const ativo = et === negocio.etapa
+            const ativo   = et === negocio.etapa
             const passada = etapaAtualIdx !== -1 && i < etapaAtualIdx
+            const futura  = etapaAtualIdx !== -1 && i > etapaAtualIdx
+            const isFirst = i === 0
+            const isLast  = i === etapas.length - 1
+            const bg = ativo ? '#1cb5a0' : passada ? 'rgba(28,181,160,0.18)' : '#eef2f6'
+            const fg = ativo ? '#fff'    : passada ? '#0f766e'                : 'var(--text-muted)'
+            const cfg = (funil?.meta_etapas as any)?.[et]
+            const limite = cfg?.esfriando ? Number(cfg?.dias)||3 : null
+            const dias = ativo && diasSemMov !== null ? diasSemMov : null
             return (
               <button key={et} onClick={()=>mudarEtapa(et)}
-                style={{flex:'1 0 auto',minWidth:120,padding:'9px 12px',borderRadius:6,border:'none',background:ativo?'var(--teal)':'transparent',color:ativo?'#fff':(passada?'var(--teal)':'var(--text-muted)'),fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',cursor:'pointer',whiteSpace:'nowrap'}}>
-                {et}
+                style={{position:'relative',flex:'1 0 auto',minWidth:130,padding:'10px 16px 10px '+(isFirst?'16px':'26px'),border:'none',background:bg,color:fg,fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',cursor:'pointer',whiteSpace:'nowrap',clipPath:isLast?'none':'polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%)',marginLeft:isFirst?0:-12,textAlign:'left'}}>
+                <span>{et}</span>
+                {ativo && dias!==null && <div style={{fontSize:9,fontWeight:600,opacity:0.9,marginTop:2,textTransform:'none',letterSpacing:0}}>({dias} dia{dias!==1?'s':''})</div>}
               </button>
             )
           })}
@@ -234,21 +282,113 @@ export default function NegocioDetailPage() {
               ))}
             </div>
             <div style={{padding:18,minHeight:220}}>
-              {tab==='historico' && (
-                eventos.length === 0
-                  ? <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Sem histórico registrado</div>
-                  : <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                      {eventos.map((e:any)=>(
-                        <div key={e.id} style={{display:'flex',gap:10,paddingBottom:10,borderBottom:'1px solid var(--border-soft)'}}>
-                          <div style={{width:6,height:6,borderRadius:'50%',background:'var(--teal)',marginTop:7,flexShrink:0}}/>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:13,color:'var(--text)'}}>{e.acao || 'evento'} {e.recurso ? <span style={{color:'var(--text-muted)'}}>· {e.recurso}</span> : null}</div>
-                            <div style={{fontSize:11,color:'var(--text-muted)'}}>{new Date(e.criado_em).toLocaleString('pt-BR')}</div>
-                          </div>
-                        </div>
-                      ))}
+              {tab==='historico' && (() => {
+                // Monta timeline unificada: anotacoes (com pin) + tarefas + eventos (logs)
+                type Item = { kind:'nota'|'tarefa'|'log'; pinned:boolean; ts:number; raw:any }
+                const items: Item[] = []
+                notas.forEach(n => items.push({ kind:'nota', pinned: !!n.pinned, ts: new Date(n.criado_em).getTime(), raw: n }))
+                tarefas.forEach(t => items.push({ kind:'tarefa', pinned:false, ts: new Date(t.created_at||t.prazo||0).getTime(), raw: t }))
+                eventos.forEach(e => items.push({ kind:'log', pinned:false, ts: new Date(e.criado_em).getTime(), raw: e }))
+                let filt = items
+                if (filtroEventoTipo !== 'todos') {
+                  const map: any = { anotacao:'nota', tarefa:'tarefa', log:'log', etapa:'log' }
+                  filt = filt.filter(i => i.kind === map[filtroEventoTipo])
+                  if (filtroEventoTipo === 'etapa') filt = filt.filter(i => /etapa|moveu|mudou/i.test(i.raw.acao || ''))
+                }
+                filt.sort((a,b) => (Number(b.pinned)-Number(a.pinned)) || (b.ts - a.ts))
+                return (
+                  <div>
+                    {/* Criar anotação */}
+                    <div style={{marginBottom:14,padding:12,border:'1px solid var(--border-soft)',borderRadius:8,background:'var(--bg-subtle)'}}>
+                      <textarea value={novaAnotacao} onChange={e=>setNovaAnotacao(e.target.value)}
+                        placeholder="Escreva uma anotação..." rows={2}
+                        style={{width:'100%',border:'1px solid var(--border-soft)',borderRadius:6,padding:'8px 10px',fontSize:13,outline:'none',resize:'vertical',fontFamily:'inherit',background:'#fff',boxSizing:'border-box'}}/>
+                      <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                        <button onClick={criarAnotacao} disabled={criandoNota||!novaAnotacao.trim()}
+                          style={{background:'var(--blue)',color:'#fff',border:'none',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',opacity:criandoNota||!novaAnotacao.trim()?0.5:1}}>
+                          {criandoNota?'Salvando...':'+ Criar anotação'}
+                        </button>
+                      </div>
                     </div>
-              )}
+
+                    {/* Filtros Do / Exibir */}
+                    <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center'}}>
+                      <span style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:0.5,fontWeight:600}}>Do</span>
+                      <select value={filtroEventoOrigem} onChange={e=>setFiltroEventoOrigem(e.target.value as any)}
+                        style={{padding:'6px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,background:'#fff',outline:'none'}}>
+                        <option value="todos">Todas as origens</option>
+                        <option value="crm">CM CRM</option>
+                        <option value="rd">RD Station CRM</option>
+                      </select>
+                      <span style={{fontSize:11,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:0.5,fontWeight:600}}>Exibir</span>
+                      <select value={filtroEventoTipo} onChange={e=>setFiltroEventoTipo(e.target.value as any)}
+                        style={{padding:'6px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,background:'#fff',outline:'none'}}>
+                        <option value="todos">Todos os eventos</option>
+                        <option value="anotacao">Anotações</option>
+                        <option value="etapa">Mudanças de etapa</option>
+                        <option value="tarefa">Tarefas</option>
+                        <option value="log">Outros eventos</option>
+                      </select>
+                    </div>
+
+                    {filt.length === 0 && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Sem histórico registrado</div>}
+
+                    <div style={{display:'flex',flexDirection:'column',gap:0,position:'relative'}}>
+                      {filt.map((item, idx) => {
+                        if (item.kind === 'nota') {
+                          const n = item.raw
+                          return (
+                            <div key={'n'+n.id} style={{display:'flex',gap:10,paddingBottom:14,marginBottom:4,position:'relative',background:n.pinned?'rgba(201,168,76,0.06)':'transparent',borderRadius:n.pinned?8:0,padding:n.pinned?'10px 12px':'0 0 14px 0',border:n.pinned?'1px solid rgba(201,168,76,0.30)':'none'}}>
+                              <div style={{width:8,height:8,borderRadius:'50%',background:n.pinned?'var(--gold)':'var(--blue)',marginTop:7,flexShrink:0}}/>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:13,color:'var(--text)',marginBottom:3,whiteSpace:'pre-wrap'}}>
+                                  {n.pinned && <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gold-soft)',color:'var(--gold)',textTransform:'uppercase',letterSpacing:0.5,marginRight:6}}>📌 Fixada</span>}
+                                  {n.conteudo}
+                                </div>
+                                <div style={{fontSize:11,color:'var(--text-muted)'}}>
+                                  {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                                </div>
+                              </div>
+                              <div style={{display:'flex',gap:4,alignSelf:'flex-start'}}>
+                                <button onClick={()=>togglePin(n)} title={n.pinned?'Desfixar':'Fixar no topo'}
+                                  style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:n.pinned?'var(--gold)':'var(--text-muted)'}}>
+                                  {n.pinned?'📌':'📍'}
+                                </button>
+                                {me?.id === n.user_id && (
+                                  <button onClick={()=>excluirNota(n.id)} title="Excluir"
+                                    style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:'var(--text-muted)'}}>🗑</button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        }
+                        if (item.kind === 'tarefa') {
+                          const t = item.raw
+                          return (
+                            <div key={'t'+t.id} style={{display:'flex',gap:10,paddingBottom:10,borderBottom:'1px solid var(--border-soft)',marginBottom:10}}>
+                              <div style={{width:8,height:8,borderRadius:'50%',background:t.status==='concluida'?'var(--teal)':'var(--gold)',marginTop:7,flexShrink:0}}/>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:13,color:'var(--text)'}}>{t.status==='concluida'?'✅':'📋'} {t.titulo}</div>
+                                <div style={{fontSize:11,color:'var(--text-muted)'}}>Tarefa · {t.prazo ? new Date(t.prazo).toLocaleString('pt-BR') : 'sem prazo'}</div>
+                              </div>
+                            </div>
+                          )
+                        }
+                        const e = item.raw
+                        return (
+                          <div key={'e'+e.id} style={{display:'flex',gap:10,paddingBottom:10,borderBottom:'1px solid var(--border-soft)',marginBottom:10}}>
+                            <div style={{width:8,height:8,borderRadius:'50%',background:'var(--teal)',marginTop:7,flexShrink:0}}/>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:13,color:'var(--text)'}}>{e.acao || 'evento'} {e.recurso ? <span style={{color:'var(--text-muted)'}}>· {e.recurso}</span> : null}</div>
+                              <div style={{fontSize:11,color:'var(--text-muted)'}}>{new Date(e.criado_em).toLocaleString('pt-BR')}</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
               {tab==='tarefas' && (
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {tarefas.length === 0 && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Sem tarefas</div>}
