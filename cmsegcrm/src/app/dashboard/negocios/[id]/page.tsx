@@ -31,6 +31,12 @@ export default function NegocioDetailPage() {
   const [modalTarefa, setModalTarefa] = useState(false)
   const [formTarefa, setFormTarefa] = useState({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
   const [salvandoTarefa, setSalvandoTarefa] = useState(false)
+  const [modalPerda, setModalPerda] = useState(false)
+  const [motivosPerda, setMotivosPerda] = useState<any[]>([])
+  const [motivoSelecionado, setMotivoSelecionado] = useState('')
+  const [motivoCustom, setMotivoCustom] = useState('')
+  const [anotacaoPerda, setAnotacaoPerda] = useState('')
+  const [salvandoPerda, setSalvandoPerda] = useState(false)
   const [anexos, setAnexos] = useState<Anexo[]>([])
   const [editarCliente, setEditarCliente] = useState(false)
   const [buscaCliente, setBuscaCliente]   = useState('')
@@ -80,6 +86,8 @@ export default function NegocioDetailPage() {
       setProdutosAll(pAll || [])
       const { data: anx } = await supabase.from('anexos').select('*').eq('negocio_id', id).eq('categoria','negocio').order('created_at',{ascending:false})
       setAnexos((anx || []) as any)
+      const { data: mp } = await supabase.from('motivos_perda').select('id,nome').eq('ativo', true).order('ordem',{nullsFirst:false}).order('nome')
+      setMotivosPerda(mp || [])
       const { data: ev } = await supabase.from('logs').select('*').or(`recurso.ilike.%${id}%,pathname.ilike.%${id}%`).order('criado_em', { ascending: false }).limit(50)
       setEventos(ev || [])
       setLoading(false)
@@ -218,6 +226,34 @@ export default function NegocioDetailPage() {
     setNegocio((n:any)=>({ ...n, [campo]: valor }))
   }
 
+  async function confirmarPerda() {
+    if (!motivoSelecionado) { alert('Selecione um motivo de perda'); return }
+    let motivoId: string | null = motivoSelecionado === '__novo__' ? null : motivoSelecionado
+    let motivoTexto: string | null = motivoSelecionado === '__novo__' ? motivoCustom.trim() : null
+    if (motivoSelecionado === '__novo__') {
+      if (!motivoTexto) { alert('Informe o motivo'); return }
+      const { data: novo, error } = await supabase.from('motivos_perda').insert({ nome: motivoTexto, ativo: true }).select('id,nome').single()
+      if (error) { alert('Erro ao criar motivo: ' + error.message); return }
+      motivoId = novo?.id || null
+      setMotivosPerda(prev => [...prev, novo].sort((a:any,b:any)=>String(a.nome).localeCompare(String(b.nome))))
+    } else {
+      motivoTexto = motivosPerda.find(m => m.id === motivoSelecionado)?.nome || null
+    }
+    setSalvandoPerda(true)
+    const { error } = await supabase.from('negocios').update({
+      status: 'perdido',
+      motivo_perda_id: motivoId,
+      motivo_perda: motivoTexto,
+      anotacao_motivo_perda: anotacaoPerda || null,
+      data_fechamento: new Date().toISOString(),
+    }).eq('id', id)
+    setSalvandoPerda(false)
+    if (error) { alert('Erro: ' + error.message); return }
+    setNegocio((n:any)=>({...n, status:'perdido', motivo_perda_id: motivoId, motivo_perda: motivoTexto, anotacao_motivo_perda: anotacaoPerda || null}))
+    setModalPerda(false)
+    setMotivoSelecionado(''); setMotivoCustom(''); setAnotacaoPerda('')
+  }
+
   async function mudarEtapa(nova: string) {
     await supabase.from('negocios').update({ etapa: nova, updated_at: new Date().toISOString() }).eq('id', id)
     setNegocio((n:any)=>({...n, etapa: nova}))
@@ -248,7 +284,7 @@ export default function NegocioDetailPage() {
             ✍ Enviar para assinatura
           </Link>
           {!isPerdido && (
-            <button onClick={async ()=>{ if(confirm('Marcar como perda?')){ await supabase.from('negocios').update({status:'perdido',data_fechamento:new Date().toISOString()}).eq('id',id); setNegocio((n:any)=>({...n,status:'perdido'})) }}}
+            <button onClick={()=>setModalPerda(true)}
               style={{background:'#fee2e2',color:'var(--red)',border:'1px solid #fecaca',borderRadius:8,padding:'8px 14px',cursor:'pointer',fontSize:13,fontWeight:600}}>👎 Marcar perda</button>
           )}
           {!isGanho && (
@@ -783,6 +819,50 @@ export default function NegocioDetailPage() {
         </>
         )
       })()}
+
+      {modalPerda && (
+        <>
+          <div onClick={()=>setModalPerda(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(440px,94vw)',background:'#fff',zIndex:1001,borderRadius:12,boxShadow:'var(--shadow-lg)'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>👎 Marcar negociação como perdida</div>
+              <button onClick={()=>setModalPerda(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{padding:'18px 22px',display:'flex',flexDirection:'column',gap:12}}>
+              <div>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:6,color:'var(--text)'}}>Motivo da perda *</label>
+                <select autoFocus value={motivoSelecionado} onChange={e=>setMotivoSelecionado(e.target.value)}
+                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff'}}>
+                  <option value="">— selecione um motivo —</option>
+                  {motivosPerda.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  <option value="__novo__">＋ Cadastrar novo motivo…</option>
+                </select>
+              </div>
+              {motivoSelecionado === '__novo__' && (
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:6,color:'var(--text)'}}>Nome do novo motivo *</label>
+                  <input value={motivoCustom} onChange={e=>setMotivoCustom(e.target.value)} placeholder="Ex: Cliente postergou compra"
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box'}}/>
+                </div>
+              )}
+              <div>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:6,color:'var(--text)'}}>Anotação (opcional)</label>
+                <textarea value={anotacaoPerda} onChange={e=>setAnotacaoPerda(e.target.value)} rows={3}
+                  placeholder="Detalhes da perda, próximos passos, etc."
+                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',resize:'vertical',fontFamily:'inherit'}}/>
+              </div>
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>setModalPerda(false)} disabled={salvandoPerda}
+                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={confirmarPerda} disabled={salvandoPerda || !motivoSelecionado || (motivoSelecionado==='__novo__' && !motivoCustom.trim())}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--red)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:(salvandoPerda || !motivoSelecionado || (motivoSelecionado==='__novo__' && !motivoCustom.trim()))?0.5:1}}>
+                {salvandoPerda?'Salvando...':'Confirmar perda'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {modalProduto && (() => {
         const labelStyle: React.CSSProperties = { display:'block', fontSize:12, fontWeight:600, marginBottom:6, color:'var(--text)' }
