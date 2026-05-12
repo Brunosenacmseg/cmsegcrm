@@ -20,6 +20,11 @@ export default function TarefasPage() {
   const [loading, setLoading]       = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [filtroStatus, setFiltroStatus] = useState('pendente')
+  const [modoVisao, setModoVisao] = useState<'cards'|'tabela'>(() => {
+    if (typeof window === 'undefined') return 'cards'
+    return (localStorage.getItem('cm_tarefas_view') as any) || 'cards'
+  })
+  useEffect(()=>{ try { localStorage.setItem('cm_tarefas_view', modoVisao) } catch{} }, [modoVisao])
   const [filtroResponsavel, setFiltroResponsavel] = useState('meus')
   const [filtroEquipe, setFiltroEquipe]   = useState('todos')
   const [filtroUsuario, setFiltroUsuario] = useState('todos')
@@ -295,6 +300,12 @@ export default function TarefasPage() {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
           <h1 style={{fontFamily:'DM Serif Display,serif',fontSize:24,color:'var(--text)'}}>Tarefas</h1>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <div style={{display:'flex',background:'var(--bg-subtle)',borderRadius:8,padding:2}}>
+              {([['cards','Cards'],['tabela','Tabela']] as const).map(([v,l])=>(
+                <button key={v} onClick={()=>setModoVisao(v)}
+                  style={{padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,background:modoVisao===v?'#fff':'transparent',color:modoVisao===v?'var(--text)':'var(--text-muted)'}}>{l}</button>
+              ))}
+            </div>
             <button title="Vista calendario"
               style={{width:36,height:36,borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',cursor:'pointer',fontSize:16}}>📅</button>
             <button onClick={()=>{setEditandoTarefa(null);setModalAberto(true);setForm({titulo:'',descricao:'',tipo:'tarefa',status:'pendente',prazo:'',responsaveis_ids:profile?.id?[profile.id]:[]})}}
@@ -352,6 +363,53 @@ export default function TarefasPage() {
           <div className="card" style={{textAlign:'center',padding:40,color:'var(--text-muted)'}}>
             <div style={{fontSize:40,marginBottom:12}}>✅</div>
             <div>Nenhuma tarefa encontrada</div>
+          </div>
+        ) : modoVisao === 'tabela' ? (
+          <div style={{background:'#fff',border:'1px solid var(--border-soft)',borderRadius:12,overflow:'hidden'}}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{background:'var(--bg-subtle)'}}>
+                  {['','TAREFAS','STATUS','DATA E HORA','RESPONSÁVEIS','NEGOCIAÇÃO','VALOR'].map((h,i)=>(
+                    <th key={i} style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:'var(--text-muted)',textAlign:'left',padding:'10px 14px',borderBottom:'1px solid var(--border-soft)'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tarefasFiltradas.map(t => {
+                  const vence = t.prazo ? new Date(t.prazo) : null
+                  const atrasada = !!vence && (vence.getTime() - Date.now()) < -MARGEM_MS && t.status !== 'concluida' && t.status !== 'cancelada'
+                  const responsavel = t.responsavel
+                  return (
+                    <tr key={t.id} style={{borderBottom:'1px solid var(--border-soft)'}}>
+                      <td style={{padding:'10px 14px',width:30}}><input type="checkbox"/></td>
+                      <td style={{padding:'10px 14px'}}>
+                        <span style={{fontSize:13,color:'var(--blue)',fontWeight:500,cursor:'pointer'}} onClick={()=>{iniciarEdicaoTarefa(t);setModalAberto(true)}}>✓ {t.titulo}</span>
+                      </td>
+                      <td style={{padding:'10px 14px'}}>
+                        {atrasada ? (
+                          <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,background:'#fee2e2',color:'var(--red)',textTransform:'uppercase',letterSpacing:0.5}}>ATRASADA</span>
+                        ) : (
+                          <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,background:`${STATUS_CORES[t.status]}20`,color:STATUS_CORES[t.status],textTransform:'uppercase',letterSpacing:0.5}}>{STATUS_LABELS[t.status]||t.status}</span>
+                        )}
+                      </td>
+                      <td style={{padding:'10px 14px',fontSize:12,color:atrasada?'var(--red)':'var(--text)',whiteSpace:'nowrap'}}>{vence ? `${vence.toLocaleDateString('pt-BR')} às ${vence.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}` : '—'}</td>
+                      <td style={{padding:'10px 14px'}}>
+                        {responsavel ? <Avatar nome={responsavel.nome} avatarUrl={responsavel.avatar_url} role={responsavel.role} size={24}/> : '—'}
+                      </td>
+                      <td style={{padding:'10px 14px',fontSize:12}}>
+                        {t.negocios?.titulo ? (
+                          <span style={{color:'var(--blue)',cursor:'pointer'}} onClick={()=>router.push(`/dashboard/negocios/${t.negocios.id}`)}>{t.negocios.titulo}</span>
+                        ) : (t.clientes?.nome || '—')}
+                      </td>
+                      <td style={{padding:'10px 14px',fontSize:12,color:'var(--text-muted)',whiteSpace:'nowrap'}}>
+                        {t.negocios?.premio ? `R$ ${Number(t.negocios.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : 'R$ 0,00'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div style={{padding:'10px 14px',fontSize:12,color:'var(--text-muted)'}}>Exibindo {tarefasFiltradas.length} tarefa{tarefasFiltradas.length!==1?'s':''}</div>
           </div>
         ) : (
           <div style={{display:'flex',flexDirection:'column',gap:10}}>
