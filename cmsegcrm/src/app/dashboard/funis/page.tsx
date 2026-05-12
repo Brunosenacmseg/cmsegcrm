@@ -21,6 +21,11 @@ function FunisPage() {
   const [profile, setProfile]     = useState<any>(null)
   const [funis, setFunis]         = useState<any[]>([])
   const [negocios, setNegocios]   = useState<any[]>([])
+  // Soma de (quantidade × valor_unit − desconto) dos itens em `negocio_produtos`,
+  // indexada pelo negocio_id. É a mesma regra usada na página do negócio para
+  // exibir o "Valor total" — sem isso o funil só soma `premio` e ignora cards
+  // cujo valor foi montado via produtos.
+  const [valorProdutosPorNegocio, setValorProdutosPorNegocio] = useState<Record<string, number>>({})
   const [contagemPorFunil, setContagemPorFunil] = useState<Record<string, number>>({})
   const [usuarios, setUsuarios]   = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
@@ -475,6 +480,12 @@ function FunisPage() {
     setTagsCard(prev => prev.filter(t => t.id !== tagId))
   }
 
+  function recalcularValorProdutosDoCard(itens: any[]) {
+    if (!cardAtivo) return
+    const total = itens.reduce((s, p) => s + (Number(p.quantidade || 1) * Number(p.valor_unit || 0) - Number(p.desconto || 0)), 0)
+    setValorProdutosPorNegocio(prev => ({ ...prev, [cardAtivo.id]: total }))
+  }
+
   async function adicionarProduto() {
     if (!cardAtivo) return
     const prod = produtosAll.find(p => p.id === novoProdNeg.produto_id)
@@ -485,13 +496,19 @@ function FunisPage() {
       negocio_id: cardAtivo.id, produto_id: prod.id, nome_snapshot: prod.nome,
       quantidade: qtd, valor_unit: valor,
     }).select('*').single()
-    if (data) setProdutosCard(prev => [...prev, data])
+    if (data) {
+      const novos = [...produtosCard, data]
+      setProdutosCard(novos)
+      recalcularValorProdutosDoCard(novos)
+    }
     setNovoProdNeg({ produto_id: '', quantidade: '1', valor_unit: '' })
   }
 
   async function removerProduto(id: string) {
     await supabase.from('negocio_produtos').delete().eq('id', id)
-    setProdutosCard(prev => prev.filter(p => p.id !== id))
+    const novos = produtosCard.filter(p => p.id !== id)
+    setProdutosCard(novos)
+    recalcularValorProdutosDoCard(novos)
   }
 
   async function adicionarNota() {
@@ -827,8 +844,9 @@ function FunisPage() {
   // Carrega negocios do funil ativo de forma progressiva: cada lote já
   // popula o kanban (não precisa esperar o fim para ver os primeiros cards).
   async function carregarNegocios() {
-    if (!funilAtivo) { setNegocios([]); return }
+    if (!funilAtivo) { setNegocios([]); setValorProdutosPorNegocio({}); return }
     setNegocios([])
+    setValorProdutosPorNegocio({})
     const PRIMEIRA = 200
     const PAGE = 1000
     let offset = 0
@@ -859,6 +877,23 @@ function FunisPage() {
         .range(offset, offset + tamanho - 1)
       if (error || !data || data.length === 0) break
       setNegocios(prev => [...prev, ...data])
+      // Soma os itens de negocio_produtos do lote em paralelo — não bloqueia o
+      // render dos cards; quando chegar, atualiza as somas das colunas.
+      const ids = data.map((n: any) => n.id)
+      if (ids.length) {
+        supabase.from('negocio_produtos')
+          .select('negocio_id, quantidade, valor_unit, desconto')
+          .in('negocio_id', ids)
+          .then(({ data: prods }) => {
+            if (!prods || prods.length === 0) return
+            const somas: Record<string, number> = {}
+            for (const p of prods as any[]) {
+              const v = (Number(p.quantidade || 1) * Number(p.valor_unit || 0)) - Number(p.desconto || 0)
+              somas[p.negocio_id] = (somas[p.negocio_id] || 0) + v
+            }
+            setValorProdutosPorNegocio(prev => ({ ...prev, ...somas }))
+          })
+      }
       if (data.length < tamanho) break
       offset += tamanho
       if (offset >= 50_000) break
@@ -1124,6 +1159,13 @@ function FunisPage() {
     return true
   }
 
+  // Mesma regra do "Valor total" da página do negócio: se há produtos em
+  // negocio_produtos com soma > 0, usa essa soma; senão cai no `premio`.
+  function valorDoNegocio(n: any): number {
+    const prod = Number(valorProdutosPorNegocio[n?.id] || 0)
+    return prod > 0 ? prod : Number(n?.premio || 0)
+  }
+
   const buscaNorm = filtroBusca.trim().toLowerCase()
   function passaFiltroBusca(n: any): boolean {
     if (!buscaNorm) return true
@@ -1142,7 +1184,7 @@ function FunisPage() {
     const tit = (x:any)=>String(x.titulo||'')
     const cri = (x:any)=>String(x.created_at||'')
     const upd = (x:any)=>String(x.updated_at||x.created_at||'')
-    const val = (x:any)=>Number(x.valor_total||x.valor||0)
+    const val = (x:any)=>valorDoNegocio(x)
     const qua = (x:any)=>Number(x.qualificacao||0)
     const prox = (x:any)=>String(x.proxima_tarefa_em||'9999')
     const prev = (x:any)=>String(x.previsao_fechamento||'9999')
@@ -1659,10 +1701,10 @@ function FunisPage() {
         )
         const totalEmAndamento = negociosFunilSemStatus
           .filter(n => n.status !== 'ganho' && n.status !== 'perdido')
-          .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
+          .reduce((acc, n) => acc + valorDoNegocio(n), 0)
         const totalGanho = negociosFunilSemStatus
           .filter(n => n.status === 'ganho')
-          .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
+          .reduce((acc, n) => acc + valorDoNegocio(n), 0)
         const qtdAndamento = negociosFunilSemStatus.filter(n => n.status !== 'ganho' && n.status !== 'perdido').length
         const qtdGanho     = negociosFunilSemStatus.filter(n => n.status === 'ganho').length
         return (
@@ -1721,7 +1763,7 @@ function FunisPage() {
                   ? cards.filter(n => (n.status || 'em_andamento') !== 'perdido')
                   : cards
                 const valorEtapa = cardsParaSoma
-                  .reduce((acc, n) => acc + (Number(n.premio) || 0), 0)
+                  .reduce((acc, n) => acc + valorDoNegocio(n), 0)
                 const tituloSoma =
                   filtroStatus === 'ganho'        ? 'Soma do prêmio das negociações ganhas nesta etapa'
                   : filtroStatus === 'perdido'    ? 'Soma do prêmio das negociações perdidas nesta etapa'
@@ -1895,10 +1937,15 @@ function FunisPage() {
                         <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4}}>CPF: {neg.cpf_cnpj}</div>
                       )}
 
+                      {(() => {
+                        const valorCard = valorDoNegocio(neg)
+                        return (
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
-                        {!ocultarValor && neg.premio ? <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span> : <span/>}
+                        {!ocultarValor && valorCard ? <span style={{fontSize:12,fontWeight:600,color:'var(--teal)'}}>R$ {valorCard.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span> : <span/>}
                         {neg.produto && <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 6px',borderRadius:8}}>{neg.produto}</span>}
                       </div>
+                        )
+                      })()}
 
                       {(() => {
                         const t = tarefasPorNegocio[neg.id]
@@ -2025,9 +2072,15 @@ function FunisPage() {
                       {neg.clientes?.nome || <span style={{color:'var(--text-muted)'}}>—</span>}
                     </div>
                     <div style={{color:'var(--text-muted)'}}>{neg.etapa}</div>
-                    <div style={{color:!isFunilEmissao(funilAtivo) && neg.premio?'var(--teal)':'var(--text-muted)',fontWeight:!isFunilEmissao(funilAtivo) && neg.premio?600:400}}>
-                      {!isFunilEmissao(funilAtivo) && neg.premio ? `R$ ${Number(neg.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
+                    {(() => {
+                      const valorLinha = valorDoNegocio(neg)
+                      const mostra = !isFunilEmissao(funilAtivo) && valorLinha > 0
+                      return (
+                    <div style={{color:mostra?'var(--teal)':'var(--text-muted)',fontWeight:mostra?600:400}}>
+                      {mostra ? `R$ ${valorLinha.toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'}
                     </div>
+                      )
+                    })()}
                     <div style={{color:'var(--text-muted)',fontSize:11}}>
                       {neg.created_at ? new Date(neg.created_at).toLocaleDateString('pt-BR') : '—'}
                     </div>
