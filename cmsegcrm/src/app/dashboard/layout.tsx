@@ -93,6 +93,7 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
     { label: 'RH', href: '/dashboard/rh' },
     { label: 'Gestão de Equipe', href: '/dashboard/gestao-equipe' },
     { label: 'Autentique', href: '/dashboard/autentique' },
+    { label: 'Melhorias CRM', href: '/dashboard/melhorias' },
   ]
   return groups.filter(g => {
     if (g.children) return g.children.length > 0

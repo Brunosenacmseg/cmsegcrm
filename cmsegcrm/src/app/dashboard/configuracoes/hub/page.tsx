@@ -62,7 +62,6 @@ const SECTIONS: Section[][] = [
     ]},
     { title:'ADMINISTRAÇÃO', items:[
       { label:'Log do sistema', href:'/dashboard/logs' },
-      { label:'Melhorias CRM', href:'/dashboard/melhorias' },
     ]},
   ],
 ]
