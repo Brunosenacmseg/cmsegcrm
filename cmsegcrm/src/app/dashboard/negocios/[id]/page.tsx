@@ -330,21 +330,11 @@ export default function NegocioDetailPage() {
             {devMode && <KV label="ID" value={negocio.id} mono />}
           </PainelSection>
 
-          {cliente && (
-            <PainelSection title="Contatos" open={openSections.contatos} onToggle={()=>setOpenSections(s=>({...s,contatos:!s.contatos}))}>
-              <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginBottom:4}}>{cliente.nome}</div>
-              {cliente.cargo && <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>{cliente.cargo}</div>}
-              {(cliente.telefone || cliente.email) && (
-                <div style={{marginTop:6}}>
-                  <ContatoAcoes telefone={cliente.telefone} email={cliente.email} clienteId={cliente.id} size="sm" />
-                </div>
-              )}
-              {cliente.telefone && <KV label="Telefone" value={cliente.telefone} />}
-              {cliente.email && <KV label="E-mail" value={cliente.email} />}
-            </PainelSection>
-          )}
-
-          <PainelSection title="Cliente" open={openSections.empresa} onToggle={()=>setOpenSections(s=>({...s,empresa:!s.empresa}))}>
+          <PainelSection title="Cliente" open={openSections.empresa} onToggle={()=>setOpenSections(s=>({...s,empresa:!s.empresa}))}
+            action={!editarCliente ? (
+              <button onClick={(e)=>{ e.stopPropagation(); setEditarCliente(true) }} title="Alterar cliente"
+                style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:14,padding:'2px 6px'}}>✏️</button>
+            ) : null}>
             {editarCliente ? (
               <div>
                 <input autoFocus value={buscaCliente} onChange={e=>buscarClientes(e.target.value)}
@@ -371,25 +361,40 @@ export default function NegocioDetailPage() {
                 </div>
               </div>
             ) : (
-              <div onClick={()=>setEditarCliente(true)} style={{cursor:'pointer',padding:'4px 0'}} title="Clique para alterar">
+              <div style={{padding:'4px 0'}}>
                 {cliente ? (
-                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
                     <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{cliente.nome}</div>
-                    {cliente.telefone && <div style={{fontSize:12,color:'var(--text-muted)'}}>📞 {cliente.telefone}</div>}
-                    {cliente.email && <div style={{fontSize:12,color:'var(--text-muted)'}}>✉️ {cliente.email}</div>}
-                    <Link href={`/dashboard/clientes/${cliente.id}`} onClick={e=>e.stopPropagation()}
-                      style={{marginTop:6,fontSize:12,color:'var(--blue)',textDecoration:'none'}}>
+                    {cliente.telefone && (
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:12,color:'var(--text-muted)'}}>📞 {cliente.telefone}</span>
+                      </div>
+                    )}
+                    {cliente.email && (
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:12,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>✉️ {cliente.email}</span>
+                      </div>
+                    )}
+                    {(cliente.telefone || cliente.email) && (
+                      <ContatoAcoes telefone={cliente.telefone} email={cliente.email} clienteId={cliente.id} size="sm" />
+                    )}
+                    <Link href={`/dashboard/clientes/${cliente.id}`}
+                      style={{marginTop:4,fontSize:12,color:'var(--blue)',textDecoration:'none'}}>
                       Abrir página do Cliente →
                     </Link>
                   </div>
                 ) : (
-                  <div style={{fontSize:12,color:'var(--blue)',fontWeight:600}}>+ Vincular cliente</div>
+                  <div onClick={()=>setEditarCliente(true)} style={{fontSize:12,color:'var(--blue)',fontWeight:600,cursor:'pointer'}}>+ Vincular cliente</div>
                 )}
               </div>
             )}
           </PainelSection>
 
-          <PainelSection title="Responsável" open={openSections.responsavel} onToggle={()=>setOpenSections(s=>({...s,responsavel:!s.responsavel}))}>
+          <PainelSection title="Responsável" open={openSections.responsavel} onToggle={()=>setOpenSections(s=>({...s,responsavel:!s.responsavel}))}
+            action={!editarResp ? (
+              <button onClick={(e)=>{ e.stopPropagation(); setEditarResp(true) }} title="Alterar responsável"
+                style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:14,padding:'2px 6px'}}>✏️</button>
+            ) : null}>
             {editarResp ? (
               <div>
                 <select autoFocus value={negocio.vendedor_id || ''} onChange={e=>mudarResponsavel(e.target.value || null)}
@@ -401,14 +406,14 @@ export default function NegocioDetailPage() {
                   style={{marginTop:8,fontSize:11,padding:'4px 8px',border:'1px solid var(--border-soft)',borderRadius:6,background:'#fff',cursor:'pointer'}}>Cancelar</button>
               </div>
             ) : (
-              <div onClick={()=>setEditarResp(true)} style={{cursor:'pointer',padding:'4px 0'}} title="Clique para alterar">
+              <div style={{padding:'4px 0'}}>
                 {responsavel ? (
                   <div>
                     <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{responsavel.nome}</div>
                     <div style={{fontSize:11,color:'var(--text-muted)'}}>{responsavel.email}</div>
                   </div>
                 ) : (
-                  <div style={{fontSize:12,color:'var(--blue)',fontWeight:600}}>+ Atribuir responsável</div>
+                  <div onClick={()=>setEditarResp(true)} style={{fontSize:12,color:'var(--blue)',fontWeight:600,cursor:'pointer'}}>+ Atribuir responsável</div>
                 )}
               </div>
             )}
@@ -849,15 +854,19 @@ export default function NegocioDetailPage() {
   )
 }
 
-function PainelSection({ title, open, onToggle, children }: { title:string; open:boolean; onToggle:()=>void; children:React.ReactNode }) {
+function PainelSection({ title, open, onToggle, children, action }: { title:string; open:boolean; onToggle:()=>void; children:React.ReactNode; action?: React.ReactNode }) {
   return (
     <div style={{background:'#fff',border:'1px solid var(--border-soft)',borderRadius:12,overflow:'hidden'}}>
-      <button onClick={onToggle}
-        style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',background:'transparent',border:'none',cursor:'pointer',fontSize:13,fontWeight:700,color:'var(--text)'}}>
-        {title}
-        <span style={{fontSize:11,color:'var(--text-muted)',transform:open?'rotate(180deg)':'none',transition:'transform 0.18s'}}>▾</span>
-      </button>
-      {open && <div style={{padding:'4px 16px 14px'}}>{children}</div>}
+      <div style={{display:'flex',alignItems:'center',padding:'10px 12px 10px 16px',gap:8}}>
+        <button onClick={onToggle}
+          style={{flex:1,textAlign:'left',background:'transparent',border:'none',cursor:'pointer',fontSize:13,fontWeight:700,color:'var(--text)',padding:0}}>
+          {title}
+        </button>
+        {action}
+        <button onClick={onToggle}
+          style={{background:'transparent',border:'none',cursor:'pointer',fontSize:11,color:'var(--text-muted)',padding:'2px 4px',transform:open?'rotate(180deg)':'none',transition:'transform 0.18s'}}>▾</button>
+      </div>
+      {open && <div style={{padding:'0 16px 14px'}}>{children}</div>}
     </div>
   )
 }
