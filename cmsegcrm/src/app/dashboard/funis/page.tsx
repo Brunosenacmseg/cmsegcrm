@@ -42,7 +42,10 @@ function FunisPage() {
   // Filtro por status do negócio (ganho/perdido/em_andamento/todos)
   const [filtroStatus, setFiltroStatus] = useState<'todos'|'em_andamento'|'ganho'|'perdido'>('em_andamento')
   const [modoVisao, setModoVisao] = useState<'kanban'|'lista'>('kanban')
-  const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'>('recentes')
+  const [ordenacao, setOrdenacao] = useState<'recentes'|'antigos'|'az'|'za'|'prox_tarefa'|'previsao_fech'|'contato_recente'|'contato_antigo'|'mais_qual'|'menos_qual'|'maior_valor'|'menor_valor'|'interacao_recente'|'interacao_antiga'>('az')
+  const [filtrosOpen, setFiltrosOpen] = useState(false)
+  const [visibilidadeOpen, setVisibilidadeOpen] = useState(false)
+  const [visibilidadeBusca, setVisibilidadeBusca] = useState('')
   // Filtro por data (criação ou fechamento) com período opcional
   const [filtroData, setFiltroData] = useState<{ campo: 'sem'|'criacao'|'fechamento'; de: string; ate: string }>({ campo: 'sem', de: '', ate: '' })
   const [filtroUsuario, setFiltroUsuario] = useState<string>('')
@@ -1069,10 +1072,31 @@ function FunisPage() {
     passaFiltroData(n) &&
     passaFiltroBusca(n)
   ).slice().sort((a,b) => {
-    if (ordenacao === 'recentes')   return String(b.created_at||'').localeCompare(String(a.created_at||''))
-    if (ordenacao === 'antigos')    return String(a.created_at||'').localeCompare(String(b.created_at||''))
-    if (ordenacao === 'az')         return String(a.titulo||'').localeCompare(String(b.titulo||''), 'pt-BR', { sensitivity:'base' })
-    /* za */                         return String(b.titulo||'').localeCompare(String(a.titulo||''), 'pt-BR', { sensitivity:'base' })
+    const tit = (x:any)=>String(x.titulo||'')
+    const cri = (x:any)=>String(x.created_at||'')
+    const upd = (x:any)=>String(x.updated_at||x.created_at||'')
+    const val = (x:any)=>Number(x.valor_total||x.valor||0)
+    const qua = (x:any)=>Number(x.qualificacao||0)
+    const prox = (x:any)=>String(x.proxima_tarefa_em||'9999')
+    const prev = (x:any)=>String(x.previsao_fechamento||'9999')
+    const cont = (x:any)=>String(x.data_ultimo_contato||x.created_at||'')
+    switch (ordenacao) {
+      case 'recentes':           return cri(b).localeCompare(cri(a))
+      case 'antigos':            return cri(a).localeCompare(cri(b))
+      case 'az':                 return tit(a).localeCompare(tit(b),'pt-BR',{sensitivity:'base'})
+      case 'za':                 return tit(b).localeCompare(tit(a),'pt-BR',{sensitivity:'base'})
+      case 'prox_tarefa':        return prox(a).localeCompare(prox(b))
+      case 'previsao_fech':      return prev(a).localeCompare(prev(b))
+      case 'contato_recente':    return cont(b).localeCompare(cont(a))
+      case 'contato_antigo':     return cont(a).localeCompare(cont(b))
+      case 'mais_qual':          return qua(b) - qua(a)
+      case 'menos_qual':         return qua(a) - qua(b)
+      case 'maior_valor':        return val(b) - val(a)
+      case 'menor_valor':        return val(a) - val(b)
+      case 'interacao_recente':  return upd(b).localeCompare(upd(a))
+      case 'interacao_antiga':   return upd(a).localeCompare(upd(b))
+      default:                   return 0
+    }
   })
 
   async function normalizarFunis() {
@@ -1340,10 +1364,20 @@ function FunisPage() {
         <select value={ordenacao} onChange={e=>setOrdenacao(e.target.value as any)}
           title="Ordenar por"
           style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
-          <option value="recentes">🆕 Mais recentes</option>
-          <option value="antigos">📜 Mais antigos</option>
-          <option value="az">🔤 A-Z</option>
-          <option value="za">🔡 Z-A</option>
+          <option value="az">Alfabética A-Z</option>
+          <option value="za">Alfabética Z-A</option>
+          <option value="recentes">Criadas por último</option>
+          <option value="antigos">Criadas primeiro</option>
+          <option value="prox_tarefa">Data da próxima tarefa</option>
+          <option value="previsao_fech">Previsão de fechamento</option>
+          <option value="contato_recente">Contato mais recente</option>
+          <option value="contato_antigo">Contato mais antigo</option>
+          <option value="mais_qual">Mais qualificadas</option>
+          <option value="menos_qual">Menos qualificadas</option>
+          <option value="maior_valor">Maior valor total</option>
+          <option value="menor_valor">Menor valor total</option>
+          <option value="interacao_recente">Interação mais recente</option>
+          <option value="interacao_antiga">Interação mais antiga</option>
         </select>
 
         {/* Filtro por status */}
