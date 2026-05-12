@@ -164,7 +164,7 @@ function FunisPage() {
   const [salvandoTarefa, setSalvandoTarefa]     = useState(false)
 
   useEffect(() => { init() }, [])
-  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, visibleIds, equipeMembros, userInPosvenda, funis])
+  useEffect(() => { if (funilAtivo) carregarNegocios() }, [funilAtivo, filtroUsuario, filtroEquipe, filtroStatus, visibleIds, equipeMembros, userInPosvenda, funis])
   useEffect(() => { if (funis.length) carregarContagens(funis) }, [filtroUsuario, filtroEquipe, equipeMembros, userInPosvenda, funis])
 
   // Listener global de dragend/drop — resolve o relato de "kanban trava o
@@ -849,6 +849,11 @@ function FunisPage() {
       }
       else if (bypassVisibleIds(funilAtivo)) { /* pós-venda em EMISSÃO E IMPLANTAÇÃO: vê tudo */ }
       else if (visibleIds) q = q.in('vendedor_id', visibleIds)
+      // Filtro de status no servidor — gigante diferença em funis com milhares de cards.
+      // 'em_andamento' aceita tambem status NULL (legado).
+      if (filtroStatus === 'em_andamento') q = q.or('status.is.null,status.eq.em_andamento')
+      else if (filtroStatus === 'ganho')   q = q.eq('status', 'ganho')
+      else if (filtroStatus === 'perdido') q = q.eq('status', 'perdido')
       const { data, error } = await q
         .order('created_at', { ascending: false })
         .range(offset, offset + tamanho - 1)
