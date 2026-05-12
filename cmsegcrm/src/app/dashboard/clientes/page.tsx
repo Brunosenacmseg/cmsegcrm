@@ -274,39 +274,30 @@ export default function ClientesPage() {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
-        <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>👥 Clientes</div>
-        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar por nome, CPF, email, telefone..."
-          style={{...inp, width:280, borderRadius:20}} />
-        {profile && profile.role !== 'corretor' && (
-          <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
-            style={{...sel, width:200, borderRadius:20}} title="Filtrar por usuário">
-            <option value="">👥 {profile.role==='admin'?'Todos os usuários':'Toda a equipe'}</option>
-            {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
-          </select>
-        )}
-        <button onClick={()=>exportarXLSX(clientes, [
-          { campo:'nome',     titulo:'Nome' },
-          { campo:'tipo',     titulo:'Tipo' },
-          { campo:'cpf_cnpj', titulo:'CPF/CNPJ' },
-          { campo:'email',    titulo:'Email' },
-          { campo:'telefone', titulo:'Telefone' },
-          { campo:'cep',      titulo:'CEP' },
-          { campo:'cidade',   titulo:'Cidade' },
-          { campo:'estado',   titulo:'UF' },
-          { campo:'fonte',    titulo:'Fonte' },
-          { campo:'created_at', titulo:'Cadastrado em', fmt:fmt.dataHora },
-        ], 'clientes')}
-          style={{padding:'7px 12px',borderRadius:8,fontSize:12,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',cursor:'pointer',whiteSpace:'nowrap'}}
-          title="Exportar lista atual em Excel">
-          📥 Exportar ({totalClientes})
-        </button>
-        <button className="btn-primary" onClick={()=>{setEditando(null);setForm({...clienteVazio});setAbaModal('dados');setModal(true)}}>
-          + Novo Cliente
-        </button>
-      </div>
-
-      <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}>
+      <div style={{flex:1,overflow:'auto',padding:'22px 28px'}}>
+        {/* Header estilo RD */}
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>
+          <h1 style={{fontFamily:'DM Serif Display,serif',fontSize:24,color:'var(--text)',marginRight:'auto'}}>Contatos</h1>
+          <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar por nome, CPF, email, telefone..."
+            style={{padding:'9px 14px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',fontSize:13,outline:'none',width:300}} />
+          {profile && profile.role !== 'corretor' && (
+            <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
+              style={{padding:'9px 14px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',fontSize:13,outline:'none'}}>
+              <option value="">👥 {profile.role==='admin'?'Todos os usuários':'Toda a equipe'}</option>
+              {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          )}
+          <button title="Vista calendario"
+            style={{width:36,height:36,borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',cursor:'pointer',fontSize:16}}>📅</button>
+          <button onClick={()=>router.push('/dashboard/importar')}
+            style={{background:'#dbeafe',color:'var(--blue)',border:'1px solid #bfdbfe',padding:'9px 16px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+            Importar
+          </button>
+          <button onClick={()=>{setEditando(null);setForm({...clienteVazio});setAbaModal('dados');setModal(true)}}
+            style={{background:'var(--blue)',color:'#fff',border:'none',padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+            Criar contato
+          </button>
+        </div>
         {loading ? (
           <div style={{textAlign:'center',padding:40,color:'var(--text-muted)'}}>Carregando...</div>
         ) : clientes.length === 0 ? (

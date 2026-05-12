@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import UploadAnexo, { Anexo } from '@/components/UploadAnexo'
+import ContatoAcoes from '@/components/ContatoAcoes'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 
@@ -143,13 +144,18 @@ export default function FichaClientePage() {
 
       {/* Header da ficha */}
       <div style={{padding:'20px 28px 0', borderBottom:'1px solid var(--border)', background:'var(--bg-subtle)', flexShrink:0}}>
-        <div style={{fontSize:12,color:'var(--text-muted)',display:'flex',gap:16,flexWrap:'wrap',marginBottom:16}}>
+        <div style={{fontSize:12,color:'var(--text-muted)',display:'flex',gap:16,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
           {cliente.telefone && <span>📱 {cliente.telefone}</span>}
           {cliente.email    && <span>✉️ {cliente.email}</span>}
           {cliente.cidade   && <span>📍 {cliente.cidade}</span>}
           {cliente.cpf_cnpj && <span>CPF/CNPJ: {cliente.cpf_cnpj}</span>}
           <span style={{color:'var(--text-muted)'}}>{cliente.tipo}</span>
         </div>
+        {(cliente.telefone || cliente.email) && (
+          <div style={{marginBottom:14}}>
+            <ContatoAcoes telefone={cliente.telefone} email={cliente.email} clienteId={cliente.id} size="sm" />
+          </div>
+        )}
         {/* KPIs da ficha */}
         <div style={{display:'flex',gap:24,marginBottom:16}}>
           {[
