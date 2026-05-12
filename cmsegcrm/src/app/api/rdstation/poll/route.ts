@@ -77,23 +77,26 @@ export async function POST(req: NextRequest) {
     const deals: any[] = Array.isArray(j) ? j : (j?.deals || j?.data || [])
 
     // /deals lista nao envia deal_pipeline_id no payload. Pre-carrega
-    // /deal_stages (PAGINADO — RD tem 90+ stages) pra mapear stageId -> pipelineId.
+    // /deal_stages POR pipeline (a API filtra por 1 pipeline; sem filtro
+    // retorna apenas o primeiro). Iteramos sobre os funis com rd_id.
     const pipelinePorStage: Record<string, string> = {}
     try {
-      for (let page = 1; page <= 10; page++) {
-        const rs = await fetch(`https://crm.rdstation.com/api/v1/deal_stages?token=${encodeURIComponent(token)}&limit=200&page=${page}`, { headers: { 'accept': 'application/json' } })
-        if (!rs.ok) break
-        const js: any = await rs.json()
-        const stages: any[] = Array.isArray(js) ? js : (js?.deal_stages || js?.data || [])
-        if (!stages.length) break
-        for (const s of stages) {
-          const sid = String(s?._id || s?.id || '')
-          const pid = s?.deal_pipeline_id || s?.deal_pipeline?._id || s?.deal_pipeline?.id
-          if (sid && pid) pipelinePorStage[sid] = String(pid)
-        }
-        if (stages.length < 200) break
-      }
-    } catch (e) { console.error('[rd/poll] fetch deal_stages falhou:', e) }
+      const { data: funisRd } = await sa.from('funis').select('rd_id').not('rd_id', 'is', null)
+      const pipelineIds = (funisRd || []).map((f: any) => String(f.rd_id)).filter(Boolean)
+      await Promise.all(pipelineIds.map(async (pid: string) => {
+        try {
+          const rs = await fetch(`https://crm.rdstation.com/api/v1/deal_stages?token=${encodeURIComponent(token)}&deal_pipeline_id=${pid}&limit=200`, { headers: { 'accept': 'application/json' } })
+          if (!rs.ok) return
+          const js: any = await rs.json()
+          const stages: any[] = Array.isArray(js) ? js : (js?.deal_stages || js?.data || [])
+          for (const s of stages) {
+            const sid = String(s?._id || s?.id || '')
+            const sPid = s?.deal_pipeline_id || s?.deal_pipeline?._id || s?.deal_pipeline?.id || pid
+            if (sid) pipelinePorStage[sid] = String(sPid)
+          }
+        } catch (e) { console.error('[rd/poll] stages falhou pipeline=', pid, e) }
+      }))
+    } catch (e) { console.error('[rd/poll] fetch funis/stages falhou:', e) }
 
     // Politica: o cron sincroniza APENAS novos deals do funil META + MULTICANAL.
     // ?backfill=1 desativa essa restricao para reprocessar deals existentes
