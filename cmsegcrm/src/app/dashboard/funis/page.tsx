@@ -1429,48 +1429,72 @@ function FunisPage() {
           ))}
         </div>
 
-        {/* Filtro por usuário */}
+        {/* Visibilidade (responsavel + equipe combinados) — estilo RD */}
         {profile && profile.role !== 'corretor' && (
-          <select value={filtroUsuario} onChange={e=>{setFiltroUsuario(e.target.value); if (e.target.value) setFiltroEquipe('')}}
-            title="Filtrar por usuário"
-            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroUsuario?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
-            <option value="">👥 {profile.role==='admin'?'Todos':'Toda equipe'}</option>
-            {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
-          </select>
+          <div style={{position:'relative'}}>
+            <button onClick={()=>setVisibilidadeOpen(o=>!o)}
+              style={{padding:'7px 12px',borderRadius:8,fontSize:12,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',gap:6,minWidth:200}}>
+              <span>👤</span>
+              <span style={{flex:1,textAlign:'left'}}>
+                {filtroUsuario ? (usuarios.find(u=>u.id===filtroUsuario)?.nome || 'Usuário') :
+                 filtroEquipe  ? `Equipe: ${equipes.find(e=>e.id===filtroEquipe)?.nome || ''}` :
+                 'Todas as negociações'}
+              </span>
+              <span style={{fontSize:10,opacity:0.6}}>▾</span>
+            </button>
+            {visibilidadeOpen && (
+              <>
+                <div onClick={()=>setVisibilidadeOpen(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
+                <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,minWidth:300,background:'#fff',border:'1px solid var(--border-soft)',borderRadius:10,boxShadow:'var(--shadow-lg)',zIndex:50,padding:10}}>
+                  <input value={visibilidadeBusca} onChange={e=>setVisibilidadeBusca(e.target.value)}
+                    placeholder="Pesquisar..." autoFocus
+                    style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:13,outline:'none',marginBottom:8,boxSizing:'border-box'}}/>
+                  <div style={{maxHeight:320,overflow:'auto'}}>
+                    <button onClick={()=>{setFiltroUsuario('');setFiltroEquipe('');setVisibilidadeOpen(false)}}
+                      style={{width:'100%',textAlign:'left',padding:'8px 10px',border:'none',background:!filtroUsuario&&!filtroEquipe?'var(--gold-soft)':'transparent',color:!filtroUsuario&&!filtroEquipe?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600,borderRadius:6}}>
+                      Todas as negociações
+                    </button>
+                    {profile?.id && (
+                      <button onClick={()=>{setFiltroUsuario(profile.id);setFiltroEquipe('');setVisibilidadeOpen(false)}}
+                        style={{width:'100%',textAlign:'left',padding:'8px 10px',border:'none',background:filtroUsuario===profile.id?'var(--gold-soft)':'transparent',color:filtroUsuario===profile.id?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600,borderRadius:6}}>
+                        Minhas negociações
+                      </button>
+                    )}
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',padding:'10px 10px 6px'}}>Responsáveis</div>
+                    {usuarios.filter(u => !visibilidadeBusca || (u.nome||'').toLowerCase().includes(visibilidadeBusca.toLowerCase())).map(u => (
+                      <button key={u.id} onClick={()=>{setFiltroUsuario(u.id);setFiltroEquipe('');setVisibilidadeOpen(false)}}
+                        style={{width:'100%',textAlign:'left',padding:'6px 10px',border:'none',background:filtroUsuario===u.id?'var(--gold-soft)':'transparent',color:filtroUsuario===u.id?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,borderRadius:6}}>
+                        {u.nome}
+                      </button>
+                    ))}
+                    {equipes.length > 0 && (
+                      <>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--text-muted)',padding:'10px 10px 6px'}}>Equipes</div>
+                        {equipes.filter(eq => !visibilidadeBusca || (eq.nome||'').toLowerCase().includes(visibilidadeBusca.toLowerCase())).map(eq => (
+                          <button key={eq.id} onClick={()=>{setFiltroEquipe(eq.id);setFiltroUsuario('');setVisibilidadeOpen(false)}}
+                            style={{width:'100%',textAlign:'left',padding:'6px 10px',border:'none',background:filtroEquipe===eq.id?'var(--gold-soft)':'transparent',color:filtroEquipe===eq.id?'var(--gold)':'var(--text)',cursor:'pointer',fontSize:13,borderRadius:6}}>
+                            {eq.nome}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
-        {/* Filtro por equipe */}
-        {profile && profile.role !== 'corretor' && equipes.length > 0 && (
-          <select value={filtroEquipe} onChange={e=>{setFiltroEquipe(e.target.value); if (e.target.value) setFiltroUsuario('')}}
-            title="Filtrar por equipe"
-            style={{border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:filtroEquipe?'var(--gold)':'var(--text-muted)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>
-            <option value="">🏢 Todas equipes</option>
-            {equipes.map(e=><option key={e.id} value={e.id}>{e.nome}</option>)}
-          </select>
-        )}
-
-        {/* Filtro por data — campo + período */}
-        <div style={{display:'flex',gap:6,alignItems:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:8,padding:'2px 4px'}}>
-          <select value={filtroData.campo} onChange={e=>setFiltroData(f=>({...f,campo:e.target.value as any}))}
-            style={{border:'none',background:'transparent',color:filtroData.campo==='sem'?'var(--text-muted)':'var(--gold)',fontSize:11,fontWeight:600,padding:'4px 6px',cursor:'pointer',outline:'none'}}>
-            <option value="sem">📅 Sem filtro de data</option>
-            <option value="criacao">🆕 Por criação</option>
-            <option value="fechamento">🏁 Por fechamento</option>
-          </select>
-          {filtroData.campo !== 'sem' && (
-            <>
-              <input type="date" value={filtroData.de} onChange={e=>setFiltroData(f=>({...f,de:e.target.value}))}
-                title="De" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
-              <span style={{fontSize:10,color:'var(--text-muted)'}}>até</span>
-              <input type="date" value={filtroData.ate} onChange={e=>setFiltroData(f=>({...f,ate:e.target.value}))}
-                title="Até" style={{border:'1px solid var(--border)',background:'#fff',borderRadius:5,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}} />
-              {(filtroData.de || filtroData.ate) && (
-                <button onClick={()=>setFiltroData({campo:'sem',de:'',ate:''})}
-                  title="Limpar filtro" style={{border:'none',background:'transparent',color:'var(--red)',cursor:'pointer',fontSize:14,padding:'0 4px'}}>×</button>
-              )}
-            </>
-          )}
-        </div>
+        {/* Botão Filtros (drawer) */}
+        {(() => {
+          const filtrosAtivos = (filtroData.campo!=='sem'?1:0)
+          return (
+            <button onClick={()=>setFiltrosOpen(true)}
+              style={{padding:'7px 12px',borderRadius:8,fontSize:12,fontWeight:600,border:'1px solid var(--border-soft)',background:filtrosAtivos>0?'var(--blue-soft)':'#fff',color:filtrosAtivos>0?'var(--blue-dark)':'var(--text)',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+              <span>⚙</span> Filtros ({filtrosAtivos})
+            </button>
+          )
+        })()}
 
         {(profile?.role === 'admin' || profile?.role === 'lider') && (
           <button onClick={() => { if (modoSelecao) sairModoSelecao(); else setModoSelecao(true) }}
@@ -2918,6 +2942,57 @@ function FunisPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Drawer "Filtros" — Fase 7 (RD Station style) */}
+      {filtrosOpen && (
+        <>
+          <div onClick={()=>setFiltrosOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(380px,100vw)',background:'#fff',zIndex:1001,boxShadow:'-8px 0 32px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Filtros <span style={{color:'var(--text-muted)',fontSize:12,fontWeight:400}}>({filtroData.campo!=='sem'?1:0})</span></div>
+              <button onClick={()=>setFiltrosOpen(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{flex:1,overflow:'auto',padding:'18px 22px'}}>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text)',marginBottom:6}}>Status da negociação</div>
+              <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value as any)}
+                style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff',color:'var(--text)',marginBottom:14}}>
+                <option value="todos">Todas</option>
+                <option value="em_andamento">Em andamento</option>
+                <option value="ganho">Ganho</option>
+                <option value="perdido">Perdido</option>
+              </select>
+
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text)',marginBottom:6}}>Filtrar por data</div>
+              <select value={filtroData.campo} onChange={e=>setFiltroData(f=>({...f,campo:e.target.value as any}))}
+                style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff',color:'var(--text)',marginBottom:8}}>
+                <option value="sem">Sem filtro</option>
+                <option value="criacao">Data de criação</option>
+                <option value="fechamento">Data de fechamento</option>
+              </select>
+              {filtroData.campo !== 'sem' && (
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>De</div>
+                    <input type="date" value={filtroData.de} onChange={e=>setFiltroData(f=>({...f,de:e.target.value}))}
+                      style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>Até</div>
+                    <input type="date" value={filtroData.ate} onChange={e=>setFiltroData(f=>({...f,ate:e.target.value}))}
+                      style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'space-between'}}>
+              <button onClick={()=>{setFiltroData({campo:'sem',de:'',ate:''});setFiltroStatus('em_andamento')}}
+                style={{padding:'9px 14px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Limpar filtros</button>
+              <button onClick={()=>setFiltrosOpen(false)}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600}}>Aplicar filtros</button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Drawer "Criar Tarefa" — Fase 6 (RD Station style) */}
