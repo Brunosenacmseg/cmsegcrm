@@ -217,7 +217,7 @@ export default function ConfigurarFunisPage() {
     await carregar()
   }
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
@@ -235,7 +235,7 @@ export default function ConfigurarFunisPage() {
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 20px',gap:12,background:'var(--bg-soft)',position:'sticky',top:0,zIndex:5}}>
-        <button onClick={()=>router.push('/dashboard/funis')} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>← Voltar aos funis</button>
+        <button onClick={()=>router.push('/dashboard/funis')} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:13,fontFamily:'Open Sans,sans-serif'}}>← Voltar aos funis</button>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>⚙ Configurar Funis</div>
         <button className="btn-secondary" onClick={normalizar} title="Encontra funis com nome duplicado e unifica em um só">🧹 Normalizar duplicados</button>
         <button className="btn-primary" onClick={novoFunil}>+ Novo Funil</button>
@@ -352,7 +352,7 @@ export default function ConfigurarFunisPage() {
                     <>
                       <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
                         <button onClick={()=>setEquipeIds([])}
-                          style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid '+(equipeIds.length===0?'var(--gold)':'var(--border)'),background:equipeIds.length===0?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:equipeIds.length===0?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                          style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid '+(equipeIds.length===0?'var(--gold)':'var(--border)'),background:equipeIds.length===0?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:equipeIds.length===0?'var(--gold)':'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                           🌐 Todos os usuários
                         </button>
                         <span style={{fontSize:11,color:'var(--text-muted)'}}>ou selecione equipes:</span>
@@ -362,7 +362,7 @@ export default function ConfigurarFunisPage() {
                           const sel = equipeIds.includes(eq.id)
                           return (
                             <button key={eq.id} onClick={()=>setEquipeIds(prev => sel ? prev.filter(x=>x!==eq.id) : [...prev, eq.id])}
-                              style={{padding:'5px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:'1px solid '+(sel?'var(--teal)':'var(--border)'),background:sel?'rgba(28,181,160,0.12)':'rgba(255,255,255,0.04)',color:sel?'var(--teal)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                              style={{padding:'5px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:'1px solid '+(sel?'var(--teal)':'var(--border)'),background:sel?'rgba(28,181,160,0.12)':'rgba(255,255,255,0.04)',color:sel?'var(--teal)':'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                               {sel ? '✓ ' : ''}{eq.nome}
                             </button>
                           )
@@ -464,4 +464,4 @@ export default function ConfigurarFunisPage() {
 }
 
 const lbl: React.CSSProperties = { fontSize:11, color:'var(--text-muted)', display:'block', marginBottom:4, textTransform:'uppercase', letterSpacing:'1px', fontWeight:600 }
-const btnIcon: React.CSSProperties = { width:28, height:28, borderRadius:6, border:'1px solid var(--border)', background:'rgba(255,255,255,0.04)', color:'var(--text)', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'DM Sans,sans-serif' }
+const btnIcon: React.CSSProperties = { width:28, height:28, borderRadius:6, border:'1px solid var(--border)', background:'rgba(255,255,255,0.04)', color:'var(--text)', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Open Sans,sans-serif' }

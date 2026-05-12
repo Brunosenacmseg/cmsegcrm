@@ -427,7 +427,7 @@ export default function ApolicesPage() {
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:16,background:'var(--bg-soft)',backdropFilter:'blur(8px)',position:'sticky',top:0,zIndex:5,flexShrink:0}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Apólices</div>
-        <input style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 14px',color:'var(--text)',fontSize:13,width:220,outline:'none',fontFamily:'DM Sans,sans-serif'}}
+        <input style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 14px',color:'var(--text)',fontSize:13,width:220,outline:'none',fontFamily:'Open Sans,sans-serif'}}
           placeholder="🔍  Buscar..." value={busca} onChange={e=>setBusca(e.target.value)} />
         <button onClick={()=>exportarXLSX(filtrados, [
           { campo:'numero_apolice', titulo:'Apólice' },
@@ -483,25 +483,25 @@ export default function ApolicesPage() {
 
         <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap',alignItems:'center'}}>
           <span style={{fontSize:12,color:'var(--text-muted)'}}>Ramo:</span>
-          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroRamo} onChange={e=>setFiltroRamo(e.target.value)}>
+          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer'}} value={filtroRamo} onChange={e=>setFiltroRamo(e.target.value)}>
             <option value="todos">Todos</option>
             {ramos.map(r=><option key={r}>{r}</option>)}
           </select>
           <span style={{fontSize:12,color:'var(--text-muted)'}}>Seguradora:</span>
-          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroSeg} onChange={e=>setFiltroSeg(e.target.value)}>
+          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer'}} value={filtroSeg} onChange={e=>setFiltroSeg(e.target.value)}>
             <option value="todos">Todas</option>
             {seguradoras.map(s=><option key={s}>{s}</option>)}
           </select>
           {(isAdmin||isLider)&&(<>
             <span style={{fontSize:12,color:'var(--text-muted)'}}>Vendedor:</span>
-            <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroVendedor} onChange={e=>setFiltroVendedor(e.target.value)}>
+            <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer'}} value={filtroVendedor} onChange={e=>setFiltroVendedor(e.target.value)}>
               <option value="todos">Todos</option>
               <option value="sem">Sem vendedor</option>
               {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
             </select>
           </>)}
           <span style={{fontSize:12,color:'var(--text-muted)'}}>Status:</span>
-          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer'}} value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value as any)}>
+          <select style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer'}} value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value as any)}>
             <option value="ativo">Ativo</option>
             <option value="todos">Todos</option>
             <option value="renovar">Renovar</option>
@@ -543,7 +543,7 @@ export default function ApolicesPage() {
                           defaultValue={n.vendedor_id?`user:${n.vendedor_id}`:n.vendedor_legado_id?`legado:${n.vendedor_legado_id}`:''}
                           onBlur={e=>salvarVendedor(n.id,e.target.value)}
                           onChange={e=>salvarVendedor(n.id,e.target.value)}
-                          style={{background:'rgba(255,255,255,0.08)',border:'1px solid var(--gold)',borderRadius:6,padding:'4px 8px',color:'var(--text)',fontSize:11,fontFamily:'DM Sans,sans-serif'}}>
+                          style={{background:'rgba(255,255,255,0.08)',border:'1px solid var(--gold)',borderRadius:6,padding:'4px 8px',color:'var(--text)',fontSize:11,fontFamily:'Open Sans,sans-serif'}}>
                           <option value="">Sem vendedor</option>
                           <optgroup label="Vendedores ativos">
                             {usuarios.map(u=><option key={u.id} value={`user:${u.id}`}>{u.nome}</option>)}
@@ -576,13 +576,13 @@ export default function ApolicesPage() {
                       <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:6}}>
                         <button onClick={()=>abrirDetalhes(n)}
                           title="Editar todos os campos da apólice"
-                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}>
                           📝 Detalhes
                         </button>
                         <button onClick={()=>abrirComissao(n)}
                           title={n.vendedor_id?'Lançar comissão recebida':'Atribua um vendedor antes'}
                           disabled={!n.vendedor_id}
-                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.4)',background:n.vendedor_id?'rgba(28,181,160,0.10)':'rgba(255,255,255,0.04)',color:n.vendedor_id?'var(--teal)':'var(--text-muted)',cursor:n.vendedor_id?'pointer':'not-allowed',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                          style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(28,181,160,0.4)',background:n.vendedor_id?'rgba(28,181,160,0.10)':'rgba(255,255,255,0.04)',color:n.vendedor_id?'var(--teal)':'var(--text-muted)',cursor:n.vendedor_id?'pointer':'not-allowed',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}>
                           💵 Comissão
                         </button>
                       </td>
@@ -677,7 +677,7 @@ export default function ApolicesPage() {
                     </label>
                   ) : type==='textarea' ? (
                     <textarea value={detForm[key]??''} onChange={e=>setDetForm((f:any)=>({...f,[key]:e.target.value}))}
-                      rows={2} style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                      rows={2} style={{...inputStyle,resize:'none',fontFamily:'Open Sans,sans-serif'}} />
                   ) : (
                     <input type={type} value={detForm[key]??''} onChange={e=>setDetForm((f:any)=>({...f,[key]:e.target.value}))}
                       style={inputStyle} />
@@ -791,7 +791,7 @@ export default function ApolicesPage() {
             <div style={{marginBottom:18}}>
               <label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600}}>Observações</label>
               <textarea value={comForm.obs} onChange={e=>setComForm(f=>({...f,obs:e.target.value}))} rows={2} placeholder="Ex: 1ª parcela referente à apólice 12345..."
-                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box',resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',color:'var(--text)',fontSize:13,outline:'none',boxSizing:'border-box',resize:'none',fontFamily:'Open Sans,sans-serif'}} />
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>

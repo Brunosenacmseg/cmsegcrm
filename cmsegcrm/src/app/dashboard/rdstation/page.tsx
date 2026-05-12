@@ -69,14 +69,14 @@ export default function RDStationPage() {
               <input readOnly value={url}
                 style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 14px',color:'var(--text)',fontSize:12,fontFamily:'monospace',outline:'none'}} />
               <button onClick={copiar}
-                style={{background:'rgba(28,181,160,0.15)',border:'1px solid rgba(28,181,160,0.4)',borderRadius:8,padding:'10px 18px',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontSize:12,fontWeight:600}}>
+                style={{background:'rgba(28,181,160,0.15)',border:'1px solid rgba(28,181,160,0.4)',borderRadius:8,padding:'10px 18px',color:'var(--teal)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',fontSize:12,fontWeight:600}}>
                 {copiado ? '✓ Copiado' : '📋 Copiar'}
               </button>
             </div>
 
             <div style={{display:'flex',gap:10,alignItems:'center'}}>
               <button onClick={testarWebhook} disabled={testando}
-                style={{background:'rgba(201,168,76,0.15)',border:'1px solid rgba(201,168,76,0.4)',borderRadius:8,padding:'8px 16px',color:'var(--gold)',cursor:testando?'wait':'pointer',fontFamily:'DM Sans,sans-serif',fontSize:12,fontWeight:600}}>
+                style={{background:'rgba(201,168,76,0.15)',border:'1px solid rgba(201,168,76,0.4)',borderRadius:8,padding:'8px 16px',color:'var(--gold)',cursor:testando?'wait':'pointer',fontFamily:'Open Sans,sans-serif',fontSize:12,fontWeight:600}}>
                 {testando ? '⏳ Testando...' : '🔍 Testar webhook agora'}
               </button>
               <span style={{fontSize:11,color:'var(--text-muted)'}}>

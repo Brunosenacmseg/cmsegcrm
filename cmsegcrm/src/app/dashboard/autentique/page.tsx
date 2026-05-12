@@ -100,7 +100,7 @@ export default function AutentiquePage() {
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'DM Sans,sans-serif' }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'Open Sans,sans-serif' }
   const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 }
 
   return (
@@ -119,7 +119,7 @@ export default function AutentiquePage() {
         <div style={{display:'flex',gap:8,marginBottom:18,flexWrap:'wrap'}}>
           {(['todos','pendente','enviado','assinado','recusado'] as const).map(f => (
             <button key={f} onClick={()=>setFiltro(f as any)}
-              style={{padding:'5px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid '+(filtro===f?'var(--gold)':'var(--border)'),background:filtro===f?'rgba(201,168,76,0.10)':'rgba(255,255,255,0.04)',color:filtro===f?'var(--gold)':'var(--text-muted)',textTransform:'capitalize',fontWeight:600,fontFamily:'DM Sans,sans-serif'}}>
+              style={{padding:'5px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid '+(filtro===f?'var(--gold)':'var(--border)'),background:filtro===f?'rgba(201,168,76,0.10)':'rgba(255,255,255,0.04)',color:filtro===f?'var(--gold)':'var(--text-muted)',textTransform:'capitalize',fontWeight:600,fontFamily:'Open Sans,sans-serif'}}>
               {f}
             </button>
           ))}
@@ -227,7 +227,7 @@ export default function AutentiquePage() {
                 </div>
               ))}
               <button onClick={()=>setForm(f=>({...f,signatarios:[...f.signatarios,{nome:'',email:''}]}))}
-                style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>+ Adicionar signatário</button>
+                style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>+ Adicionar signatário</button>
             </div>
 
             <div style={{marginBottom:18}}>

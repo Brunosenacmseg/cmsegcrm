@@ -13,7 +13,7 @@ type Seguradora = {
 const inp: React.CSSProperties = {
   width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)',
   borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13,
-  fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box',
+  fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box',
 }
 
 export default function SeguradorasPage() {

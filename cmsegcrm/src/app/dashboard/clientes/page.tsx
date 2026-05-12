@@ -269,7 +269,7 @@ export default function ClientesPage() {
     setModal(true)
   }
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
   const sel: React.CSSProperties = { ...inp, cursor:'pointer', appearance:'none' as const }
 
   return (
@@ -327,9 +327,9 @@ export default function ClientesPage() {
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--gold)'}}>{c['users!clientes_vendedor_id_fkey']?.nome?.split(' ')[0]||'—'}</td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                       <div style={{display:'flex',gap:6}}>
-                        <button onClick={()=>abrirEditar(c)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>✏️</button>
+                        <button onClick={()=>abrirEditar(c)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>✏️</button>
                         {profile?.role==='admin' && (
-                          <button onClick={()=>excluir(c.id)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>🗑</button>
+                          <button onClick={()=>excluir(c.id)} style={{padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',fontFamily:'Open Sans,sans-serif'}}>🗑</button>
                         )}
                       </div>
                     </td>
@@ -369,7 +369,7 @@ export default function ClientesPage() {
             <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',flexShrink:0}}>
               {([['dados','👤 Dados'],['contato','📞 Contato'],['enderecos','📍 Endereços'],['profissional','💼 Profissional'],['sistema','⚙ Sistema'],['obs','📝 Obs']] as const).map(([k,l])=>(
                 <button key={k} onClick={()=>setAbaModal(k as any)}
-                  style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',borderBottom:abaModal===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:abaModal===k?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',marginBottom:-1}}>
+                  style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',borderBottom:abaModal===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:abaModal===k?'var(--gold)':'var(--text-muted)',fontFamily:'Open Sans,sans-serif',marginBottom:-1}}>
                   {l}
                 </button>
               ))}

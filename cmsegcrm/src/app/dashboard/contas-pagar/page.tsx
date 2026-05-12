@@ -250,7 +250,7 @@ export default function ContasPagarPage() {
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'financeiro'
   const fmt = (n: number) => Number(n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'DM Sans,sans-serif' }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'Open Sans,sans-serif' }
   const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 }
 
   const totalPendente = contas.filter(c => c.status === 'pendente').reduce((s,c) => s + Number(c.valor||0), 0)
@@ -285,7 +285,7 @@ export default function ContasPagarPage() {
         <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',marginBottom:18}}>
           {([['conta','💳 Contas a Pagar'],['compra_aprovacao','🛒 Compras para Aprovação']] as [Tipo,string][]).map(([k,l])=>(
             <button key={k} onClick={()=>setAba(k)}
-              style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'DM Sans,sans-serif'}}>{l}</button>
+              style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'Open Sans,sans-serif'}}>{l}</button>
           ))}
         </div>
 
@@ -520,7 +520,7 @@ export default function ContasPagarPage() {
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn-secondary" onClick={()=>setModalPagar(null)}>Cancelar</button>
-              <button onClick={confirmarPagar} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.15)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif'}}>
+              <button onClick={confirmarPagar} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.15)',color:'var(--teal)',fontFamily:'Open Sans,sans-serif'}}>
                 💸 Confirmar pagamento
               </button>
             </div>

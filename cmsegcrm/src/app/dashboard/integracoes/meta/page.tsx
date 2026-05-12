@@ -113,7 +113,7 @@ export default function ConectarMetaPage() {
     } finally { setTestandoCAPI(false) }
   }
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
   const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
@@ -174,12 +174,12 @@ export default function ConectarMetaPage() {
                 <div style={{fontFamily:'DM Serif Display,serif',fontSize:16,flex:1}}>📋 Configuração salva</div>
                 {!secrets ? (
                   <button onClick={revelarSecrets} disabled={revelando}
-                    style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                     {revelando ? 'Carregando...' : '👁 Mostrar secrets'}
                   </button>
                 ) : (
                   <button onClick={()=>{setSecrets(null);setMostrar({})}}
-                    style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                    style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                     🙈 Ocultar
                   </button>
                 )}
@@ -270,7 +270,7 @@ export default function ConectarMetaPage() {
                 <button type="button" onClick={buscarPageToken}
                   disabled={!status?.conectado || !status?.page_id}
                   title={!status?.page_id ? 'Configure page_id antes' : 'Usa o Access Token salvo pra descobrir o Page Token via /me/accounts'}
-                  style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',fontWeight:600,opacity:(!status?.conectado||!status?.page_id)?0.5:1}}>
+                  style={{padding:'6px 12px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'Open Sans,sans-serif',fontWeight:600,opacity:(!status?.conectado||!status?.page_id)?0.5:1}}>
                   🔍 Buscar Page Token automaticamente
                 </button>
               </div>
@@ -335,7 +335,7 @@ export default function ConectarMetaPage() {
               </div>
               <div style={{display:'flex',gap:10,marginBottom:8}}>
                 <button onClick={testarCAPI} disabled={testandoCAPI||!form.dataset_id||!form.conversions_token}
-                  style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                  style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                   {testandoCAPI?'Enviando...':'🧪 Enviar evento de teste'}
                 </button>
               </div>
@@ -344,7 +344,7 @@ export default function ConectarMetaPage() {
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               {status?.conectado && (
-                <button onClick={desconectar} style={{padding:'9px 18px',borderRadius:8,fontSize:13,border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.08)',color:'var(--red)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Desconectar</button>
+                <button onClick={desconectar} style={{padding:'9px 18px',borderRadius:8,fontSize:13,border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.08)',color:'var(--red)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>Desconectar</button>
               )}
               <button onClick={salvar} disabled={salvando||!form.access_token} className="btn-primary">
                 {salvando?'Salvando...':status?.conectado?'✓ Atualizar conexão':'✓ Conectar'}

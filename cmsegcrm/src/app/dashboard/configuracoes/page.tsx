@@ -201,7 +201,7 @@ export default function ConfiguracoesPage() {
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'DM Sans,sans-serif' }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'Open Sans,sans-serif' }
   const fmtPreco = (n?: number | null) => n ? `R$ ${Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'
 
   return (
@@ -214,7 +214,7 @@ export default function ConfiguracoesPage() {
         <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',marginBottom:18}}>
           {([['motivos','✕ Motivos de Perda'],['produtos','📦 Produtos'],['campos','🧩 Campos personalizados'],['templates','📧 Templates de Email']] as [Aba,string][]).map(([k,l])=>(
             <button key={k} onClick={()=>setAba(k)}
-              style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'DM Sans,sans-serif'}}>
+              style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'Open Sans,sans-serif'}}>
               {l}
             </button>
           ))}
@@ -445,7 +445,7 @@ export default function ConfiguracoesPage() {
                       </div>
                     </div>
                     {t.assunto && <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:8}}><strong style={{color:'var(--text)'}}>Assunto:</strong> {t.assunto}</div>}
-                    <pre style={{whiteSpace:'pre-wrap',fontSize:11,padding:10,background:'rgba(0,0,0,0.3)',borderRadius:8,fontFamily:'DM Sans,sans-serif',color:'var(--text-muted)',maxHeight:120,overflow:'auto',marginBottom:10}}>{t.mensagem}</pre>
+                    <pre style={{whiteSpace:'pre-wrap',fontSize:11,padding:10,background:'rgba(0,0,0,0.3)',borderRadius:8,fontFamily:'Open Sans,sans-serif',color:'var(--text-muted)',maxHeight:120,overflow:'auto',marginBottom:10}}>{t.mensagem}</pre>
                     <div style={{display:'flex',gap:6,marginTop:'auto',flexWrap:'wrap'}}>
                       {!t.is_default && (
                         <button onClick={()=>tornarDefault(t)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',cursor:'pointer'}}>★ Tornar padrão</button>
@@ -506,7 +506,7 @@ export default function ConfiguracoesPage() {
                 Mensagem * <span style={{textTransform:'none',letterSpacing:0,fontWeight:400,color:'var(--text-muted)'}}>· variáveis: <code>{'{{cliente}}'}</code> <code>{'{{negocio}}'}</code> <code>{'{{documento}}'}</code></span>
               </label>
               <textarea value={formTemplate.mensagem} onChange={e=>setFormTemplate((f:any)=>({...f,mensagem:e.target.value}))} rows={10}
-                style={{...inp,resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5}} />
+                style={{...inp,resize:'vertical',fontFamily:'Open Sans,sans-serif',lineHeight:1.5}} />
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>

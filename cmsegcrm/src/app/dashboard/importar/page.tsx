@@ -606,7 +606,7 @@ export default function ImportarPage() {
 
   const camposObrigatorios = CAMPOS_POR_ENTIDADE[entidade].filter(c => c.obrigatorio)
   const obrigatoriosOk = camposObrigatorios.every(co => mapeamento.find(m => m.campo === co.campo)?.coluna)
-  const sel: React.CSSProperties={background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer',outline:'none',width:'100%'}
+  const sel: React.CSSProperties={background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer',outline:'none',width:'100%'}
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -722,7 +722,7 @@ export default function ImportarPage() {
                   const ativo = entidade === e.key
                   return (
                     <button key={e.key} onClick={()=>setEntidade(e.key)}
-                      style={{padding:'14px 16px',borderRadius:10,fontSize:13,cursor:'pointer',border:'1px solid '+(ativo?'var(--gold)':'var(--border)'),background:ativo?'rgba(201,168,76,0.10)':'rgba(255,255,255,0.04)',color:ativo?'var(--gold)':'var(--text)',fontFamily:'DM Sans,sans-serif',display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start',textAlign:'left'}}>
+                      style={{padding:'14px 16px',borderRadius:10,fontSize:13,cursor:'pointer',border:'1px solid '+(ativo?'var(--gold)':'var(--border)'),background:ativo?'rgba(201,168,76,0.10)':'rgba(255,255,255,0.04)',color:ativo?'var(--gold)':'var(--text)',fontFamily:'Open Sans,sans-serif',display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start',textAlign:'left'}}>
                       <span style={{fontSize:22}}>{e.emoji}</span>
                       <span style={{fontWeight:600,fontSize:13}}>{e.label}</span>
                       <span style={{fontSize:11,color:'var(--text-muted)',fontWeight:400}}>{e.descricao}</span>

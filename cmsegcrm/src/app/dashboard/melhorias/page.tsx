@@ -324,7 +324,7 @@ export default function MelhoriasPage() {
                     border:`1px solid ${ativo?'var(--gold)':'var(--border)'}`,
                     background:ativo?'var(--gold-soft)':'#fff',
                     color:ativo?'var(--gold)':'var(--text-muted)',
-                    fontFamily:'DM Sans,sans-serif',fontWeight:ativo?600:500,
+                    fontFamily:'Open Sans,sans-serif',fontWeight:ativo?600:500,
                   }}>
                   {f.label} {n > 0 && <span style={{opacity:0.7}}>· {n}</span>}
                 </button>
@@ -341,14 +341,14 @@ export default function MelhoriasPage() {
                 onChange={e=>setForm({...form,titulo:e.target.value})}
                 placeholder="Título da sugestão"
                 maxLength={200}
-                style={{width:'100%',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none',marginBottom:10,boxSizing:'border-box'}}
+                style={{width:'100%',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none',marginBottom:10,boxSizing:'border-box'}}
               />
               <textarea
                 value={form.descricao}
                 onChange={e=>setForm({...form,descricao:e.target.value})}
                 placeholder="Descreva sua sugestão de melhoria..."
                 rows={4}
-                style={{width:'100%',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'10px 12px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none',resize:'vertical',marginBottom:10,boxSizing:'border-box'}}
+                style={{width:'100%',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'10px 12px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none',resize:'vertical',marginBottom:10,boxSizing:'border-box'}}
               />
 
               {arquivos.length > 0 && (
@@ -368,13 +368,13 @@ export default function MelhoriasPage() {
 
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
                 <button onClick={()=>fileRef.current?.click()}
-                  style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'#fff',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',gap:6}}>
+                  style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'#fff',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif',display:'flex',alignItems:'center',gap:6}}>
                   📎 Anexar arquivo
                 </button>
                 <input ref={fileRef} type="file" multiple style={{display:'none'}} onChange={e=>selecionarArquivos(e.target.files)} />
                 <div style={{display:'flex',gap:8}}>
                   <button onClick={()=>{setCriando(false);setForm({titulo:'',descricao:''});setArquivos([])}}
-                    style={{padding:'7px 16px',fontSize:13,cursor:'pointer',border:'1px solid var(--border)',background:'#fff',borderRadius:8,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                    style={{padding:'7px 16px',fontSize:13,cursor:'pointer',border:'1px solid var(--border)',background:'#fff',borderRadius:8,color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                     Cancelar
                   </button>
                   <button onClick={publicar} disabled={enviando||!form.titulo.trim()} className="btn-primary" style={{padding:'7px 20px',fontSize:13}}>
@@ -443,12 +443,12 @@ export default function MelhoriasPage() {
                           </div>
                         </div>
                         <button onClick={()=>abrirAnexo(a.path, a.nome_arquivo)}
-                          style={{fontSize:11,background:'rgba(74,128,240,0.1)',border:'1px solid rgba(74,128,240,0.3)',color:'#4a80f0',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                          style={{fontSize:11,background:'rgba(74,128,240,0.1)',border:'1px solid rgba(74,128,240,0.3)',color:'#4a80f0',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                           ⬇ Baixar
                         </button>
                         {(ehMeu || isAdmin) && (
                           <button onClick={()=>deletarAnexo(a)}
-                            style={{fontSize:11,background:'rgba(220,38,38,0.08)',border:'1px solid rgba(220,38,38,0.2)',color:'var(--red)',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                            style={{fontSize:11,background:'rgba(220,38,38,0.08)',border:'1px solid rgba(220,38,38,0.2)',color:'var(--red)',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                             ✕
                           </button>
                         )}
@@ -502,7 +502,7 @@ export default function MelhoriasPage() {
                               border:`1px solid ${ativo?inf.cor:'var(--border)'}`,
                               background:ativo?inf.bg:'#fff',
                               color:ativo?inf.cor:'var(--text-muted)',
-                              fontFamily:'DM Sans,sans-serif',fontWeight:ativo?600:500,
+                              fontFamily:'Open Sans,sans-serif',fontWeight:ativo?600:500,
                             }}>
                             {inf.icone} {inf.label}
                           </button>
@@ -514,11 +514,11 @@ export default function MelhoriasPage() {
                       onChange={e=>setRespostaTemp(e.target.value)}
                       placeholder="Resposta para o solicitante (opcional)"
                       rows={3}
-                      style={{width:'100%',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none',resize:'vertical',marginBottom:8,boxSizing:'border-box'}}
+                      style={{width:'100%',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none',resize:'vertical',marginBottom:8,boxSizing:'border-box'}}
                     />
                     <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
                       <button onClick={()=>{setEditandoResposta(null);setRespostaTemp('')}}
-                        style={{padding:'6px 14px',fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'#fff',borderRadius:8,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                        style={{padding:'6px 14px',fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'#fff',borderRadius:8,color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                         Cancelar
                       </button>
                       <button onClick={()=>salvarResposta(m)} disabled={salvando} className="btn-primary" style={{padding:'6px 16px',fontSize:12}}>
@@ -532,25 +532,25 @@ export default function MelhoriasPage() {
                 <div style={{paddingLeft:48,display:'flex',gap:8,flexWrap:'wrap',borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:10,marginTop:4}}>
                   {podeResponder && !editando && m.status === 'aberta' && (
                     <button onClick={()=>iniciarResposta(m)}
-                      style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--gold)',background:'var(--gold-soft)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                      style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--gold)',background:'var(--gold-soft)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                       💬 Responder / Marcar status
                     </button>
                   )}
                   {podeResponder && !editando && m.status !== 'aberta' && (
                     <>
                       <button onClick={()=>iniciarResposta(m)}
-                        style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--text-muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                        style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--text-muted)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                         ✏️ Editar resposta
                       </button>
                       <button onClick={()=>reabrir(m)}
-                        style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--text-muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                        style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--text-muted)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                         🔄 Reabrir
                       </button>
                     </>
                   )}
                   {(ehMeu || isAdmin) && (
                     <button onClick={()=>excluir(m)}
-                      style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--red)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginLeft:'auto'}}>
+                      style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid var(--border)',background:'#fff',color:'var(--red)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',marginLeft:'auto'}}>
                       🗑 Excluir
                     </button>
                   )}
