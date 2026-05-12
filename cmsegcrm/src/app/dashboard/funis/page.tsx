@@ -884,7 +884,7 @@ function FunisPage() {
         supabase.from('negocio_produtos')
           .select('negocio_id, quantidade, valor_unit, desconto')
           .in('negocio_id', ids)
-          .then(({ data: prods }) => {
+          .then(({ data: prods }: { data: any[] | null }) => {
             if (!prods || prods.length === 0) return
             const somas: Record<string, number> = {}
             for (const p of prods as any[]) {

@@ -27,7 +27,7 @@ async function processarLote<T>(items: T[], concurrency: number, fn: (t: T) => P
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (idx < items.length) {
       const i = idx++
-      try { await fn(items[i]) } catch {/* swallow */}
+      try { await fn(items[i]) } catch (e) { console.error('[rd/poll] worker error:', e) }
     }
   }))
 }
@@ -106,6 +106,14 @@ export async function POST(req: NextRequest) {
         novoLastSync = minData
       }
     }
+    // Garantia anti-loop: se novoLastSync não avançou (todos timestamps iguais
+    // ao último sync), força progresso de 1s para evitar refazer a mesma janela.
+    if (cfg.last_sync_at) {
+      const prev = new Date(cfg.last_sync_at).getTime()
+      if (novoLastSync.getTime() <= prev) {
+        novoLastSync = new Date(prev + 1000)
+      }
+    }
 
     await sa.from('rd_crm_config')
       .update({ last_sync_at: novoLastSync.toISOString(), updated_at: novoSync.toISOString() })
@@ -113,7 +121,7 @@ export async function POST(req: NextRequest) {
 
     const { error: logErr } = await sa.from('rdstation_syncs').insert({
       recurso: 'poll',
-      status: totalErros > 0 ? 'parcial' : 'ok',
+      status: totalErros > 0 ? 'parcial' : 'concluido',
       qtd_lidos: deals.length,
       qtd_criados: totalCriados,
       qtd_atualizados: totalAtualizados,
