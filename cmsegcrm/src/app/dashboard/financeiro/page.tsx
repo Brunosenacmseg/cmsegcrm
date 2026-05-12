@@ -46,6 +46,35 @@ export default function FinanceiroPage() {
   // Modais
   const [modalDespesa, setModalDespesa] = useState(false)
   const [editandoDespesa, setEditandoDespesa] = useState<any>(null)
+  const [modalReceita, setModalReceita] = useState(false)
+  const [salvandoReceita, setSalvandoReceita] = useState(false)
+  const [formReceita, setFormReceita] = useState({
+    descricao:'', valor:'', data:new Date().toISOString().slice(0,10), competencia:'',
+    forma_recebimento:'PIX', origem:'manual', obs:'',
+  })
+  async function salvarReceita() {
+    if (!formReceita.descricao || !formReceita.valor) return
+    const valor = parseFloat(String(formReceita.valor).replace(/[R$\s.]/g,'').replace(',','.'))
+    if (!valor || !isFinite(valor)) { alert('Valor inválido'); return }
+    setSalvandoReceita(true)
+    const { data:{ user } } = await supabase.auth.getUser()
+    const competencia = formReceita.competencia || (formReceita.data ? formReceita.data.slice(0,7) : null)
+    const { error } = await supabase.from('financeiro_receitas').insert({
+      descricao: formReceita.descricao,
+      valor,
+      data: formReceita.data || new Date().toISOString().slice(0,10),
+      competencia,
+      forma_recebimento: formReceita.forma_recebimento || null,
+      origem: formReceita.origem || 'manual',
+      obs: formReceita.obs || null,
+      registrado_por: user?.id || null,
+    })
+    setSalvandoReceita(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    setModalReceita(false)
+    setFormReceita({ descricao:'', valor:'', data:new Date().toISOString().slice(0,10), competencia:'', forma_recebimento:'PIX', origem:'manual', obs:'' })
+    if (typeof (window as any).location !== 'undefined') (window as any).location.reload()
+  }
   const emptyDespesa = {
     categoria_id:'', descricao:'', valor:'',
     data_vencimento: hoje.toISOString().slice(0,10),
@@ -434,6 +463,9 @@ export default function FinanceiroPage() {
         <button onClick={bloquearCofre} className="btn-secondary" title="Bloquear cofre" style={{padding:'7px 14px',fontSize:12}}>
           🔒 Bloquear
         </button>
+        <button onClick={()=>setModalReceita(true)} style={{padding:'7px 14px',fontSize:12,borderRadius:8,border:'1px solid var(--teal)',background:'var(--teal)',color:'#fff',fontWeight:600,cursor:'pointer'}}>
+          + Incluir receita
+        </button>
         <button onClick={()=>{setEditandoDespesa(null);setFormDespesa(emptyDespesa);setModalDespesa(true)}} className="btn-primary" style={{padding:'7px 14px',fontSize:12}}>
           + Lançar despesa
         </button>
@@ -722,6 +754,73 @@ export default function FinanceiroPage() {
       </div>
 
       {/* Modal: Lançar/Editar despesa */}
+      {modalReceita && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}
+          onClick={e=>e.target===e.currentTarget&&setModalReceita(false)}>
+          <div style={{background:'#fff',borderRadius:12,padding:24,width:'min(440px,92vw)',maxHeight:'90vh',overflow:'auto'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <h2 style={{fontFamily:'DM Serif Display,serif',fontSize:18,color:'var(--text)'}}>💵 Incluir Receita</h2>
+              <button onClick={()=>setModalReceita(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5}}>Descrição *</label>
+                <input value={formReceita.descricao} onChange={e=>setFormReceita(f=>({...f,descricao:e.target.value}))} autoFocus
+                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box'}}/>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5}}>Valor (R$) *</label>
+                  <input value={formReceita.valor} onChange={e=>setFormReceita(f=>({...f,valor:e.target.value}))} placeholder="0,00"
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box'}}/>
+                </div>
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5}}>Data *</label>
+                  <input type="date" value={formReceita.data} onChange={e=>setFormReceita(f=>({...f,data:e.target.value,competencia:e.target.value.slice(0,7)}))}
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box'}}/>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5}}>Origem</label>
+                  <select value={formReceita.origem} onChange={e=>setFormReceita(f=>({...f,origem:e.target.value}))}
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff'}}>
+                    <option value="manual">Manual</option>
+                    <option value="comissao">Comissão</option>
+                    <option value="seguradora">Seguradora</option>
+                    <option value="outros">Outros</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5}}>Forma de recebimento</label>
+                  <select value={formReceita.forma_recebimento} onChange={e=>setFormReceita(f=>({...f,forma_recebimento:e.target.value}))}
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff'}}>
+                    <option value="PIX">PIX</option>
+                    <option value="Boleto">Boleto</option>
+                    <option value="TED">TED/DOC</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="Cartão">Cartão</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5}}>Observação</label>
+                <textarea value={formReceita.obs} onChange={e=>setFormReceita(f=>({...f,obs:e.target.value}))} rows={2}
+                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',resize:'vertical',fontFamily:'inherit'}}/>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:18}}>
+              <button onClick={()=>setModalReceita(false)} className="btn-secondary" style={{padding:'9px 16px',fontSize:13}}>Cancelar</button>
+              <button onClick={salvarReceita} disabled={salvandoReceita || !formReceita.descricao || !formReceita.valor}
+                style={{padding:'9px 18px',border:'none',background:'var(--teal)',color:'#fff',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',opacity:(salvandoReceita || !formReceita.descricao || !formReceita.valor)?0.5:1}}>
+                {salvandoReceita?'Salvando...':'Salvar receita'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalDespesa && (
         <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.45)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}
           onClick={e=>e.target===e.currentTarget&&setModalDespesa(false)}>
