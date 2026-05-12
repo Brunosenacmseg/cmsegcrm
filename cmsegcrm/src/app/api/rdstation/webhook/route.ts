@@ -102,19 +102,68 @@ export async function aplicarDeal(d: RDDeal, eventType: string) {
     d.amount_total ?? (d as any).amount_monthly ?? d.amount_montly ?? d.amount_unique ?? 0
   ) || 0
   const venc = d.prediction_date ? d.prediction_date.slice(0, 10) : null
+  const closedAt = (d as any).closed_at as string | undefined
+  const createdAt = (d as any).created_at as string | undefined
+
+  // Resolver vendedor_id pelo user.email do RD (com fallback no rd_responsaveis_alias)
+  let vendedorId: string | null = null
+  const rdUserEmail = (d.user?.email || '').toString().toLowerCase().trim()
+  if (rdUserEmail) {
+    const { data: u } = await supabaseAdmin().from('users').select('id').ilike('email', rdUserEmail).maybeSingle()
+    vendedorId = u?.id || null
+    if (!vendedorId) {
+      const { data: a } = await supabaseAdmin().from('rd_responsaveis_alias').select('email').ilike('email', rdUserEmail).maybeSingle()
+      if (a?.email) {
+        const { data: u2 } = await supabaseAdmin().from('users').select('id').ilike('email', a.email).maybeSingle()
+        vendedorId = u2?.id || null
+      }
+    }
+  }
+  if (!vendedorId && d.user?.name) {
+    // Fallback por nome no alias (planilhas usavam nome em vez de email)
+    const { data: a } = await supabaseAdmin().from('rd_responsaveis_alias')
+      .select('email').ilike('nome_planilha', d.user.name).limit(1).maybeSingle()
+    if (a?.email) {
+      const { data: u3 } = await supabaseAdmin().from('users').select('id').ilike('email', a.email).maybeSingle()
+      vendedorId = u3?.id || null
+    }
+  }
+
+  // Resolver motivo_perda_id em motivos_perda por nome
+  let motivoPerdaId: string | null = null
+  if (d.deal_lost_reason?.name) {
+    const { data: mp } = await supabaseAdmin().from('motivos_perda').select('id').ilike('nome', d.deal_lost_reason.name).maybeSingle()
+    motivoPerdaId = mp?.id || null
+  }
 
   const payload: any = {
     rd_id: id,
     funil_id: funil.id,
     etapa,
+    titulo: d.name || null,
     produto: d.deal_products?.[0]?.product?.name || d.deal_products?.[0]?.name || null,
     premio,
+    valor_unico: Number(d.amount_unique ?? 0) || null,
+    valor_recorrente: Number((d as any).amount_monthly ?? d.amount_montly ?? 0) || null,
     vencimento: venc,
+    previsao_fechamento: venc,
     obs: obs || null,
     cpf_cnpj: docContato,
     fonte: d.deal_source?.name || d.campaign?.name || 'RD Station CRM',
+    fonte_origem: d.deal_source?.name || null,
+    campanha: d.campaign?.name || null,
+    empresa: d.organization?.name || null,
+    email_negocio: emailContato,
+    telefone_negocio: primeiro?.phones?.[0]?.phone?.trim() || null,
+    qualificacao: typeof d.rating === 'number' ? Math.max(0, Math.min(5, d.rating)) : null,
+    status: ganhou ? 'ganho' : perdeu ? 'perdido' : 'em_andamento',
+    data_fechamento: (ganhou || perdeu) ? (closedAt || new Date().toISOString()) : null,
+    data_primeiro_contato: createdAt || null,
+    motivo_perda_id: motivoPerdaId,
+    motivo_perda: d.deal_lost_reason?.name || null,
   }
   if (clienteId) payload.cliente_id = clienteId
+  if (vendedorId) payload.vendedor_id = vendedorId
 
   // Aplica mapeamento configurável (mesma config que sync admin usa).
   // Tolera tabela vazia/erro — mantém payload default.
