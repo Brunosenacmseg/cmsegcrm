@@ -97,6 +97,7 @@ const CAMPOS_POR_ENTIDADE: Record<Entidade, { campo: string; label: string; hint
   ],
   negocios: [
     { campo: 'titulo',     label: 'Nome / Título',    hints: ['titulo','nome','title'], obrigatorio: true },
+    { campo: 'cliente_nome', label: 'Nome do Cliente',  hints: ['nome cliente','cliente','segurado','contato','nome do contato'] },
     { campo: 'empresa',    label: 'Empresa',          hints: ['empresa','company'] },
     { campo: 'cpf_cnpj',   label: 'CPF/CNPJ Cliente', hints: ['cpf','cnpj'] },
     { campo: 'funil',      label: 'Funil de vendas',  hints: ['funil','pipeline'] },
