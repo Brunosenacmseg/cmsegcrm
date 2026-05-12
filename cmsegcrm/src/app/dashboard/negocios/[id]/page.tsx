@@ -60,7 +60,7 @@ export default function NegocioDetailPage() {
       }
       const [{ data: fn }, { data: cl }, { data: rp }, { data: tr }, { data: nt }, { data: pr }, { data: pAll }] = await Promise.all([
         neg.funil_id ? supabase.from('funis').select('*').eq('id', neg.funil_id).single() : Promise.resolve({ data: null } as any),
-        neg.cliente_id ? supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj,empresa,cargo').eq('id', neg.cliente_id).single() : Promise.resolve({ data: null } as any),
+        neg.cliente_id ? supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj').eq('id', neg.cliente_id).single() : Promise.resolve({ data: null } as any),
         neg.vendedor_id ? supabase.from('users').select('id,nome,email,avatar_url,role').eq('id', neg.vendedor_id).single() : Promise.resolve({ data: null } as any),
         supabase.from('tarefas').select('*').eq('negocio_id', id).order('prazo', { ascending: true }),
         supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false}),
@@ -185,7 +185,7 @@ export default function NegocioDetailPage() {
   async function buscarClientes(q: string) {
     setBuscaCliente(q)
     if (q.length < 2) { setClientesRes([]); return }
-    const { data } = await supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj,empresa,cargo').or(`nome.ilike.%${q}%,cpf_cnpj.ilike.%${q}%,email.ilike.%${q}%`).limit(10)
+    const { data } = await supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj').or(`nome.ilike.%${q}%,cpf_cnpj.ilike.%${q}%,email.ilike.%${q}%`).limit(10)
     setClientesRes(data || [])
   }
 
