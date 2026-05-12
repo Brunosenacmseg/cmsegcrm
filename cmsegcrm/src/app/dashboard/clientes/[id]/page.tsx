@@ -366,19 +366,31 @@ export default function FichaClientePage() {
 
         {/* DADOS */}
         {abaAtiva === 'dados' && (
-          <div className="card">
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-              {[['Nome',cliente.nome],['Tipo',cliente.tipo],['CPF/CNPJ',cliente.cpf_cnpj],
-                ['E-mail',cliente.email],['Telefone',cliente.telefone],['CEP',cliente.cep],
-                ['Cidade',cliente.cidade],['Estado',cliente.estado],['Fonte',cliente.fonte]
-              ].map(([l,v]) => (
-                <div key={l}>
-                  <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
-                  <div style={{fontSize:13}}>{v||'—'}</div>
-                </div>
-              ))}
+          <>
+            <div className="card" style={{marginBottom:16}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+                {[['Nome',cliente.nome],['Tipo',cliente.tipo],['CPF/CNPJ',cliente.cpf_cnpj],
+                  ['E-mail',cliente.email],['Telefone',cliente.telefone],['CEP',cliente.cep],
+                  ['Cidade',cliente.cidade],['Estado',cliente.estado],['Fonte',cliente.fonte]
+                ].map(([l,v]) => (
+                  <div key={l}>
+                    <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:4}}>{l}</div>
+                    <div style={{fontSize:13}}>{v||'—'}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+            <div className="card">
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>Privacidade de Dados</div>
+                <a href="https://help.cmseguros.com.br/privacidade" target="_blank" rel="noreferrer"
+                  style={{fontSize:12,color:'var(--blue)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:4}}>ℹ Saiba mais</a>
+              </div>
+              <div style={{fontSize:12,color:'var(--text-muted)'}}>
+                <strong style={{color:'var(--text)'}}>Contato e envio de comunicação:</strong> {cliente.base_legal || 'Não sei dizer / Não possui Base Legal'}
+              </div>
+            </div>
+          </>
         )}
       </div>
 
