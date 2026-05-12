@@ -229,7 +229,18 @@ export async function aplicarDeal(d: RDDeal, eventType: string) {
     }
     if (!payload.cliente_id) return { ok: false, motivo: 'Não foi possível criar cliente' }
     const { data: novo, error: errIns } = await supabaseAdmin().from('negocios').insert(payload).select('id').single()
-    if (errIns) return { ok: false, motivo: `insert negocios: ${errIns.message}` }
+    if (errIns) {
+      // Race: outro worker (webhook+poll concorrentes) já criou. Atualiza em vez de falhar.
+      if ((errIns as any).code === '23505') {
+        const { data: dup } = await supabaseAdmin().from('negocios').select('id').eq('rd_id', id).maybeSingle()
+        if (dup?.id) {
+          const { error: errUp } = await supabaseAdmin().from('negocios').update(payload).eq('id', dup.id)
+          if (errUp) return { ok: false, motivo: `update apos race: ${errUp.message}` }
+          return { ok: true, action: 'updated', id: dup.id as string }
+        }
+      }
+      return { ok: false, motivo: `insert negocios: ${errIns.message}` }
+    }
     return { ok: true, action: 'created', id: novo?.id }
   }
 }
