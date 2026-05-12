@@ -15,10 +15,9 @@ function admin(): any {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-// Formata datetime para o formato esperado pela API do RD CRM v1
+// Formata datetime no formato ISO 8601 esperado pela API do RD CRM
 function fmt(dt: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
+  return dt.toISOString()
 }
 
 export async function GET(req: NextRequest) {
