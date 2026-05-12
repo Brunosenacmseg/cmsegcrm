@@ -521,8 +521,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     { label:'Funis de venda', href:'/dashboard/funis/configurar', admin: true },
                     { label:'Configurar campos', href:'/dashboard/configuracoes/campos', admin: true },
                     { label:'Convites, usuários e equipes', href:'/dashboard/usuarios', admin: true },
-                    { label:'📥 Importar dados', href:'/dashboard/importar', gestao: true },
-                    { label:'Todas as configurações', href:'/dashboard/configuracoes/hub', admin: true },
+                    { label:'Todas as configurações', href:'/dashboard/configuracoes/hub', gestao: true },
                   ].filter(opt => {
                     if (opt.admin && (isAdmin)) return true
                     if (opt.gestao && (isAdmin || ehGestao)) return true
