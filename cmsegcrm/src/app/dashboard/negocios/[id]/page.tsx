@@ -24,8 +24,16 @@ export default function NegocioDetailPage() {
   const [produtos, setProdutos] = useState<any[]>([])
   const [produtosAll, setProdutosAll] = useState<any[]>([])
   const [modalProduto, setModalProduto] = useState(false)
-  const [formProduto, setFormProduto] = useState<{produto_id:string; quantidade:string; valor_unit:string; obs:string}>({produto_id:'',quantidade:'1',valor_unit:'',obs:''})
+  const [formProduto, setFormProduto] = useState<{produto_id:string; quantidade:string; valor_unit:string; recorrencia:string; desconto:string; addDesconto:boolean; obs:string}>({produto_id:'',quantidade:'1',valor_unit:'',recorrencia:'unica',desconto:'',addDesconto:false,obs:''})
   const [salvandoProduto, setSalvandoProduto] = useState(false)
+  const [usuariosAll, setUsuariosAll] = useState<any[]>([])
+  const [modalTarefa, setModalTarefa] = useState(false)
+  const [formTarefa, setFormTarefa] = useState({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
+  const [salvandoTarefa, setSalvandoTarefa] = useState(false)
+  const [editarCliente, setEditarCliente] = useState(false)
+  const [buscaCliente, setBuscaCliente]   = useState('')
+  const [clientesRes, setClientesRes]     = useState<any[]>([])
+  const [editarResp, setEditarResp]       = useState(false)
   const [tab, setTab]           = useState<Tab>('historico')
   const [devMode, setDevMode]   = useState(false)
   const [filtroEventoOrigem, setFiltroEventoOrigem] = useState<'todos'|'crm'|'rd'>('todos')
@@ -59,6 +67,8 @@ export default function NegocioDetailPage() {
         supabase.from('negocio_produtos').select('*').eq('negocio_id', id).order('criado_em',{ascending:true}),
         supabase.from('produtos').select('id,nome,valor_padrao').eq('ativo',true).order('nome'),
       ])
+      const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
+      setUsuariosAll(usr || [])
       setFunil(fn)
       setCliente(cl)
       setResp(rp)
@@ -108,18 +118,20 @@ export default function NegocioDetailPage() {
     if (!formProduto.produto_id) { alert('Selecione um produto'); return }
     const p = produtosAll.find(x => x.id === formProduto.produto_id)
     setSalvandoProduto(true)
+    const num = (s:string) => s ? Number(String(s).replace(/\./g,'').replace(',','.')) : 0
     await supabase.from('negocio_produtos').insert({
       negocio_id: id,
       produto_id: formProduto.produto_id,
       nome_snapshot: p?.nome || null,
       quantidade: Number(formProduto.quantidade) || 1,
-      valor_unit: formProduto.valor_unit ? Number(String(formProduto.valor_unit).replace(/\./g,'').replace(',','.')) : (p?.valor_padrao || 0),
-      desconto: 0,
+      valor_unit: formProduto.valor_unit ? num(formProduto.valor_unit) : (p?.valor_padrao || 0),
+      desconto: formProduto.addDesconto ? num(formProduto.desconto) : 0,
+      recorrencia: formProduto.recorrencia || 'unica',
       observacao: formProduto.obs || null,
     })
     setSalvandoProduto(false)
     setModalProduto(false)
-    setFormProduto({produto_id:'',quantidade:'1',valor_unit:'',obs:''})
+    setFormProduto({produto_id:'',quantidade:'1',valor_unit:'',recorrencia:'unica',desconto:'',addDesconto:false,obs:''})
     recarregarProdutos()
   }
 
@@ -127,6 +139,36 @@ export default function NegocioDetailPage() {
     if (!confirm('Remover este produto?')) return
     await supabase.from('negocio_produtos').delete().eq('id', npId)
     recarregarProdutos()
+  }
+
+  async function recarregarTarefas() {
+    const { data } = await supabase.from('tarefas').select('*').eq('negocio_id', id).order('prazo', { ascending: true })
+    setTarefas(data || [])
+  }
+
+  async function salvarNovaTarefa() {
+    if (!formTarefa.assunto.trim()) { alert('Informe o assunto da tarefa'); return }
+    if (!formTarefa.data) { alert('Informe a data do agendamento'); return }
+    setSalvandoTarefa(true)
+    const prazo = `${formTarefa.data}T${formTarefa.hora || '09:00'}:00`
+    const responsavel_id = formTarefa.responsavel_id || me?.id
+    const { error } = await supabase.from('tarefas').insert({
+      titulo: formTarefa.assunto,
+      descricao: formTarefa.descricao || null,
+      tipo: formTarefa.tipo,
+      responsavel_id,
+      negocio_id: id,
+      cliente_id: cliente?.id || null,
+      criado_por: me?.id,
+      atribuido_por: responsavel_id !== me?.id ? me?.id : null,
+      prazo,
+      status: formTarefa.concluida ? 'concluida' : 'pendente',
+    })
+    setSalvandoTarefa(false)
+    if (error) { alert('Erro ao criar tarefa: ' + error.message); return }
+    setModalTarefa(false)
+    setFormTarefa({ assunto:'', descricao:'', tipo:'tarefa', responsavel_id:'', data:'', hora:'09:00', concluida:false })
+    recarregarTarefas()
   }
 
   const etapas: string[] = funil?.etapas || []
@@ -139,6 +181,33 @@ export default function NegocioDetailPage() {
   const cfgEtapa = (funil?.meta_etapas as any)?.[negocio?.etapa]
   const limiteEsfri = cfgEtapa?.esfriando ? Number(cfgEtapa?.dias)||3 : null
   const esfriando = limiteEsfri !== null && diasSemMov !== null && diasSemMov >= limiteEsfri
+
+  async function buscarClientes(q: string) {
+    setBuscaCliente(q)
+    if (q.length < 2) { setClientesRes([]); return }
+    const { data } = await supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj,empresa,cargo').or(`nome.ilike.%${q}%,cpf_cnpj.ilike.%${q}%,email.ilike.%${q}%`).limit(10)
+    setClientesRes(data || [])
+  }
+
+  async function vincularCliente(c: any | null) {
+    await supabase.from('negocios').update({ cliente_id: c?.id || null, updated_at: new Date().toISOString() }).eq('id', id)
+    setNegocio((n:any)=>({ ...n, cliente_id: c?.id || null }))
+    setCliente(c)
+    setEditarCliente(false)
+    setBuscaCliente(''); setClientesRes([])
+  }
+
+  async function mudarResponsavel(userId: string | null) {
+    await supabase.from('negocios').update({ vendedor_id: userId, updated_at: new Date().toISOString() }).eq('id', id)
+    setNegocio((n:any)=>({ ...n, vendedor_id: userId }))
+    if (userId) {
+      const u = usuariosAll.find(x => x.id === userId)
+      if (u) setResp({ id: u.id, nome: u.nome, email: u.email, avatar_url: u.avatar_url, role: u.role })
+    } else {
+      setResp(null)
+    }
+    setEditarResp(false)
+  }
 
   async function mudarEtapa(nova: string) {
     await supabase.from('negocios').update({ etapa: nova, updated_at: new Date().toISOString() }).eq('id', id)
@@ -222,7 +291,21 @@ export default function NegocioDetailPage() {
             <KV label="Nome" value={negocio.titulo} />
             <KV label="Qualificação" value={negocio.qualificacao ? '★'.repeat(negocio.qualificacao) : '—'} />
             <KV label="Criada em" value={negocio.created_at ? new Date(negocio.created_at).toLocaleString('pt-BR') : '—'} />
-            <KV label="Valor total" value={negocio.premio ? `R$ ${Number(negocio.premio).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—'} />
+            {(() => {
+              const totalProdutos = produtos.reduce((s,p)=>s + Number(p.valor_unit||0)*Number(p.quantidade||1) - Number(p.desconto||0), 0)
+              const valor = totalProdutos > 0 ? totalProdutos : Number(negocio.premio || 0)
+              return (
+                <div onClick={()=>{ setTab('produtos'); setModalProduto(true) }} title="Adicionar produto/serviço para calcular o valor"
+                  style={{display:'grid',gridTemplateColumns:'110px 1fr',gap:8,padding:'5px 6px',fontSize:12,alignItems:'center',cursor:'pointer',borderRadius:6}}
+                  onMouseEnter={e=>(e.currentTarget.style.background='var(--bg-subtle)')}
+                  onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                  <span style={{color:'var(--text-muted)',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>Valor total</span>
+                  <span style={{color:valor?'var(--teal)':'var(--blue)',fontWeight:valor?600:400}}>
+                    {valor ? `R$ ${valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '+ Adicionar produto ou serviço'}
+                  </span>
+                </div>
+              )
+            })()}
             <KV label="Previsão de fechamento" value={negocio.previsao_fechamento || '—'} />
             <KV label="Fonte" value={negocio.fonte_origem || negocio.fonte || '—'} />
             <KV label="Campanha" value={negocio.campanha || '—'} />
@@ -254,20 +337,73 @@ export default function NegocioDetailPage() {
             </PainelSection>
           )}
 
-          <PainelSection title="Empresa" open={openSections.empresa} onToggle={()=>setOpenSections(s=>({...s,empresa:!s.empresa}))}>
-            <KV label="Nome" value={negocio.empresa || cliente?.empresa || '—'} />
-            {(negocio.empresa || cliente?.empresa) && (
-              <Link href={`/dashboard/clientes?q=${encodeURIComponent(negocio.empresa||cliente?.empresa)}`}
-                style={{display:'inline-block',marginTop:6,fontSize:12,color:'var(--blue)',textDecoration:'none'}}>
-                Abrir página da Empresa →
-              </Link>
+          <PainelSection title="Cliente" open={openSections.empresa} onToggle={()=>setOpenSections(s=>({...s,empresa:!s.empresa}))}>
+            {editarCliente ? (
+              <div>
+                <input autoFocus value={buscaCliente} onChange={e=>buscarClientes(e.target.value)}
+                  placeholder="Buscar cliente por nome, CPF/CNPJ ou e-mail..."
+                  style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,outline:'none',boxSizing:'border-box'}}/>
+                {clientesRes.length > 0 && (
+                  <div style={{marginTop:6,maxHeight:200,overflow:'auto',border:'1px solid var(--border-soft)',borderRadius:6}}>
+                    {clientesRes.map(c => (
+                      <button key={c.id} onClick={()=>vincularCliente(c)}
+                        style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',border:'none',background:'transparent',cursor:'pointer',fontSize:12,borderBottom:'1px solid var(--border-soft)'}}>
+                        <div style={{fontWeight:600,color:'var(--text)'}}>{c.nome}</div>
+                        {c.cpf_cnpj && <div style={{color:'var(--text-muted)',fontSize:11}}>{c.cpf_cnpj}</div>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{display:'flex',gap:6,marginTop:8}}>
+                  <button onClick={()=>{ setEditarCliente(false); setBuscaCliente(''); setClientesRes([]) }}
+                    style={{fontSize:11,padding:'4px 8px',border:'1px solid var(--border-soft)',borderRadius:6,background:'#fff',cursor:'pointer'}}>Cancelar</button>
+                  {cliente && (
+                    <button onClick={()=>vincularCliente(null)}
+                      style={{fontSize:11,padding:'4px 8px',border:'1px solid var(--border-soft)',borderRadius:6,background:'#fff',color:'var(--red)',cursor:'pointer'}}>Desvincular</button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div onClick={()=>setEditarCliente(true)} style={{cursor:'pointer',padding:'4px 0'}} title="Clique para alterar">
+                {cliente ? (
+                  <>
+                    <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{cliente.nome}</div>
+                    {cliente.cpf_cnpj && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{cliente.cpf_cnpj}</div>}
+                    <Link href={`/dashboard/clientes/${cliente.id}`} onClick={e=>e.stopPropagation()}
+                      style={{display:'inline-block',marginTop:6,fontSize:12,color:'var(--blue)',textDecoration:'none'}}>
+                      Abrir página do Cliente →
+                    </Link>
+                  </>
+                ) : (
+                  <div style={{fontSize:12,color:'var(--blue)',fontWeight:600}}>+ Vincular cliente</div>
+                )}
+              </div>
             )}
           </PainelSection>
 
           <PainelSection title="Responsável" open={openSections.responsavel} onToggle={()=>setOpenSections(s=>({...s,responsavel:!s.responsavel}))}>
-            {responsavel ? (
-              <div style={{fontSize:13,color:'var(--text)'}}>{responsavel.nome}<div style={{fontSize:11,color:'var(--text-muted)'}}>{responsavel.email}</div></div>
-            ) : <div style={{fontSize:12,color:'var(--text-muted)'}}>Sem responsável</div>}
+            {editarResp ? (
+              <div>
+                <select autoFocus value={negocio.vendedor_id || ''} onChange={e=>mudarResponsavel(e.target.value || null)}
+                  style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,outline:'none',background:'#fff'}}>
+                  <option value="">— sem responsável —</option>
+                  {usuariosAll.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                </select>
+                <button onClick={()=>setEditarResp(false)}
+                  style={{marginTop:8,fontSize:11,padding:'4px 8px',border:'1px solid var(--border-soft)',borderRadius:6,background:'#fff',cursor:'pointer'}}>Cancelar</button>
+              </div>
+            ) : (
+              <div onClick={()=>setEditarResp(true)} style={{cursor:'pointer',padding:'4px 0'}} title="Clique para alterar">
+                {responsavel ? (
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{responsavel.nome}</div>
+                    <div style={{fontSize:11,color:'var(--text-muted)'}}>{responsavel.email}</div>
+                  </div>
+                ) : (
+                  <div style={{fontSize:12,color:'var(--blue)',fontWeight:600}}>+ Atribuir responsável</div>
+                )}
+              </div>
+            )}
           </PainelSection>
         </div>
 
@@ -277,8 +413,8 @@ export default function NegocioDetailPage() {
           <div style={{background:'#fff',border:'1px solid var(--border-soft)',borderRadius:12,padding:18}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
               <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>Próximas tarefas</div>
-              <Link href={`/dashboard/funis?card=${id}&tarefa=nova`}
-                style={{background:'var(--blue)',color:'#fff',padding:'7px 13px',borderRadius:8,fontSize:12,fontWeight:600,textDecoration:'none'}}>+ Criar tarefa</Link>
+              <button onClick={()=>setModalTarefa(true)}
+                style={{background:'var(--blue)',color:'#fff',padding:'7px 13px',borderRadius:8,fontSize:12,fontWeight:600,border:'none',cursor:'pointer'}}>+ Criar tarefa</button>
             </div>
             {proximasTarefas.length === 0 ? (
               <div style={{padding:'18px 12px',textAlign:'center',color:'var(--text-muted)',fontSize:13}}>
@@ -429,20 +565,67 @@ export default function NegocioDetailPage() {
                 )
               })()}
               {tab==='tarefas' && (
-                <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                  {tarefas.length === 0 && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Sem tarefas</div>}
-                  {tarefas.map(t=>(
-                    <div key={t.id} style={{display:'flex',gap:10,padding:10,border:'1px solid var(--border-soft)',borderRadius:8}}>
-                      <span style={{fontSize:14}}>{t.status==='concluida'?'✅':'📋'}</span>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:500}}>{t.titulo}</div>
-                        {t.prazo && <div style={{fontSize:11,color:'var(--text-muted)'}}>{new Date(t.prazo).toLocaleString('pt-BR')}</div>}
-                      </div>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:12,color:'var(--text-muted)'}}>Em</span>
+                      <select disabled value="pendentes"
+                        style={{padding:'6px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,background:'#fff',outline:'none'}}>
+                        <option value="pendentes">Tarefas pendentes</option>
+                        <option value="todas">Todas as tarefas</option>
+                        <option value="concluidas">Tarefas concluídas</option>
+                      </select>
                     </div>
-                  ))}
+                    <button onClick={()=>setModalTarefa(true)}
+                      style={{background:'var(--blue-soft)',color:'var(--blue-dark)',border:'1px solid #bfdbfe',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                      + Criar tarefa
+                    </button>
+                  </div>
+                  {tarefas.length === 0 ? (
+                    <div style={{display:'flex',alignItems:'center',gap:18,padding:'28px 24px',border:'1px solid var(--border-soft)',borderRadius:12,background:'var(--bg)'}}>
+                      <div style={{fontSize:48}}>📋</div>
+                      <div style={{color:'var(--blue-dark)',fontSize:14}}>Crie tarefas e faça sua própria gestão sem precisar sair do CRM</div>
+                    </div>
+                  ) : (
+                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                      {tarefas.map(t=>(
+                        <div key={t.id} style={{display:'flex',gap:10,padding:'12px 14px',border:'1px solid var(--border-soft)',borderRadius:10,background:'#fff'}}>
+                          <span style={{fontSize:14}}>{t.status==='concluida'?'✅':'📋'}</span>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{t.titulo}</div>
+                            {t.descricao && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{t.descricao}</div>}
+                            {t.prazo && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>📅 {new Date(t.prazo).toLocaleString('pt-BR')}</div>}
+                          </div>
+                          <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,background:t.status==='concluida'?'rgba(28,181,160,0.15)':'rgba(217,119,6,0.15)',color:t.status==='concluida'?'var(--teal)':'#a16207',textTransform:'uppercase',letterSpacing:0.5,alignSelf:'flex-start'}}>
+                            {t.status === 'concluida' ? 'Concluída' : t.status === 'em_andamento' ? 'Em andamento' : 'Pendente'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-              {tab==='email' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>E-mails relacionados serão exibidos aqui em breve.</div>}
+              {tab==='email' && (
+                <div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:12,color:'var(--text-muted)'}}>Exibir</span>
+                      <select disabled value="tudo"
+                        style={{padding:'6px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,background:'#fff',outline:'none'}}>
+                        <option value="tudo">Tudo</option>
+                      </select>
+                    </div>
+                    <button onClick={()=>{ const email = cliente?.email || negocio.email_negocio; if (email) router.push(`/dashboard/email?para=${encodeURIComponent(email)}`); else alert('Cadastre um e-mail no contato/negociação para enviar.') }}
+                      style={{background:'var(--blue-soft)',color:'var(--blue-dark)',border:'1px solid #bfdbfe',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                      + Criar e-mail
+                    </button>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:18,padding:'28px 24px',border:'1px solid var(--border-soft)',borderRadius:12,background:'var(--bg)'}}>
+                    <div style={{fontSize:48}}>📧</div>
+                    <div style={{color:'var(--blue-dark)',fontSize:14}}>Não há e-mails com este filtro, tente outra opção</div>
+                  </div>
+                </div>
+              )}
               {tab==='questionarios' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Sem questionários cadastrados.</div>}
               {tab==='produtos' && (
                 <div>
@@ -499,55 +682,161 @@ export default function NegocioDetailPage() {
         </div>
       </div>
 
-      {modalProduto && (
+      {modalTarefa && (() => {
+        const labelStyle: React.CSSProperties = { display:'block', fontSize:12, fontWeight:600, marginBottom:6, color:'var(--text)' }
+        const inputStyle: React.CSSProperties = { width:'100%', padding:'10px 12px', border:'1px solid var(--border-soft)', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box', background:'#fff', fontFamily:'inherit' }
+        return (
         <>
-          <div onClick={()=>setModalProduto(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
-          <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(440px,92vw)',background:'#fff',zIndex:1001,borderRadius:12,boxShadow:'var(--shadow-lg)'}}>
+          <div onClick={()=>setModalTarefa(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(420px,100vw)',background:'#fff',zIndex:1001,boxShadow:'-8px 0 32px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column'}}>
             <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Adicionar produto ou serviço</div>
-              <button onClick={()=>setModalProduto(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Criar Tarefa</div>
+              <button onClick={()=>setModalTarefa(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
             </div>
-            <div style={{padding:'18px 22px',display:'flex',flexDirection:'column',gap:12}}>
-              <div>
-                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Produto *</label>
-                <select value={formProduto.produto_id} onChange={e=>{
-                  const p = produtosAll.find(x => x.id === e.target.value)
-                  setFormProduto(f=>({...f, produto_id:e.target.value, valor_unit: p?.valor_padrao ? String(p.valor_padrao).replace('.',',') : f.valor_unit}))
-                }}
-                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff'}}>
-                  <option value="">— selecione —</option>
-                  {produtosAll.map(p=> <option key={p.id} value={p.id}>{p.nome}</option>)}
-                </select>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div style={{flex:1,overflow:'auto',padding:'18px 22px'}}>
+              <label style={{...labelStyle,marginTop:0}}>Empresa / Cliente</label>
+              <input readOnly value={cliente?.nome || negocio.empresa || '—'} style={{...inputStyle,background:'var(--bg-subtle)'}} />
+
+              <label style={{...labelStyle,marginTop:14}}>Negociação *</label>
+              <input readOnly value={negocio.titulo || ''} style={{...inputStyle,background:'var(--bg-subtle)'}} />
+
+              <label style={{...labelStyle,marginTop:14}}>Assunto da tarefa *</label>
+              <input autoFocus value={formTarefa.assunto} onChange={e=>setFormTarefa(f=>({...f,assunto:e.target.value}))}
+                placeholder="Assunto da tarefa" style={inputStyle} />
+
+              <label style={{...labelStyle,marginTop:14}}>Descrição</label>
+              <textarea rows={3} value={formTarefa.descricao} onChange={e=>setFormTarefa(f=>({...f,descricao:e.target.value}))}
+                style={{...inputStyle,resize:'vertical'}} />
+
+              <label style={{...labelStyle,marginTop:14}}>Responsável *</label>
+              <select value={formTarefa.responsavel_id} onChange={e=>setFormTarefa(f=>({...f,responsavel_id:e.target.value}))} style={inputStyle}>
+                <option value="">— Eu mesmo —</option>
+                {usuariosAll.map(u=> <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+
+              <label style={{...labelStyle,marginTop:14}}>Tipo de tarefa *</label>
+              <select value={formTarefa.tipo} onChange={e=>setFormTarefa(f=>({...f,tipo:e.target.value}))} style={inputStyle}>
+                <option value="tarefa">Tarefa</option>
+                <option value="ligacao">Ligação</option>
+                <option value="reuniao">Reunião</option>
+                <option value="visita">Visita</option>
+                <option value="email">E-mail</option>
+                <option value="whatsapp">WhatsApp</option>
+              </select>
+
+              <div style={{display:'grid',gridTemplateColumns:'1fr 120px',gap:10,marginTop:14}}>
                 <div>
-                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Quantidade *</label>
-                  <input type="number" min={1} value={formProduto.quantidade} onChange={e=>setFormProduto(f=>({...f,quantidade:e.target.value}))}
-                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                  <label style={labelStyle}>Data *</label>
+                  <input type="date" value={formTarefa.data} onChange={e=>setFormTarefa(f=>({...f,data:e.target.value}))} style={inputStyle}/>
                 </div>
                 <div>
-                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Valor unit. (R$)</label>
-                  <input value={formProduto.valor_unit} onChange={e=>setFormProduto(f=>({...f,valor_unit:e.target.value}))} placeholder="0,00"
-                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                  <label style={labelStyle}>Horário *</label>
+                  <input type="time" value={formTarefa.hora} onChange={e=>setFormTarefa(f=>({...f,hora:e.target.value}))} style={inputStyle}/>
                 </div>
               </div>
-              <div>
-                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Observação</label>
-                <textarea value={formProduto.obs} onChange={e=>setFormProduto(f=>({...f,obs:e.target.value}))} rows={2}
-                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',fontFamily:'inherit',resize:'vertical'}}/>
-              </div>
+
+              <label style={{display:'flex',alignItems:'center',gap:8,marginTop:16,fontSize:13,color:'var(--text)',cursor:'pointer'}}>
+                <input type="checkbox" checked={formTarefa.concluida} onChange={e=>setFormTarefa(f=>({...f,concluida:e.target.checked}))}/>
+                Marcar como concluída ao criar
+              </label>
             </div>
             <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'flex-end'}}>
-              <button onClick={()=>setModalProduto(false)}
-                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
-              <button onClick={salvarProduto} disabled={salvandoProduto||!formProduto.produto_id}
-                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:(salvandoProduto||!formProduto.produto_id)?0.5:1}}>
-                {salvandoProduto?'Salvando...':'Adicionar'}
+              <button onClick={()=>setModalTarefa(false)}
+                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--blue)',background:'#fff',color:'var(--blue)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={salvarNovaTarefa} disabled={salvandoTarefa}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--text)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:salvandoTarefa?0.5:1}}>
+                {salvandoTarefa?'Salvando...':'Salvar'}
               </button>
             </div>
           </div>
         </>
-      )}
+        )
+      })()}
+
+      {modalProduto && (() => {
+        const labelStyle: React.CSSProperties = { display:'block', fontSize:12, fontWeight:600, marginBottom:6, color:'var(--text)' }
+        const inputStyle: React.CSSProperties = { width:'100%', padding:'10px 12px', border:'1px solid var(--border-soft)', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box', background:'#fff' }
+        return (
+        <>
+          <div onClick={()=>setModalProduto(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(420px,100vw)',background:'#fff',zIndex:1001,boxShadow:'-8px 0 32px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Adicionar produto ou serviço</div>
+              <button onClick={()=>setModalProduto(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{flex:1,overflow:'auto',padding:'18px 22px'}}>
+              <div style={{marginBottom:14}}>
+                <label style={labelStyle}>Produto ou serviço</label>
+                <select value={formProduto.produto_id} onChange={e=>{
+                  const p = produtosAll.find(x => x.id === e.target.value)
+                  setFormProduto(f=>({...f, produto_id:e.target.value, valor_unit: p?.valor_padrao ? String(p.valor_padrao).replace('.',',') : f.valor_unit}))
+                }} style={inputStyle}>
+                  <option value="">Selecione</option>
+                  {produtosAll.map(p=> <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+                <Link href="/dashboard/configuracoes?aba=produtos" target="_blank"
+                  style={{display:'inline-block',marginTop:8,fontSize:13,color:'var(--blue)',textDecoration:'none',fontWeight:600}}>
+                  + Criar novo produto ou serviço
+                </Link>
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={labelStyle}>Quantidade</label>
+                <input type="number" min={1} value={formProduto.quantidade} onChange={e=>setFormProduto(f=>({...f,quantidade:e.target.value}))}
+                  style={inputStyle}/>
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={labelStyle}>Valor</label>
+                <input value={formProduto.valor_unit} onChange={e=>setFormProduto(f=>({...f,valor_unit:e.target.value}))} placeholder="0"
+                  style={inputStyle}/>
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={labelStyle}>Recorrência</label>
+                <select value={formProduto.recorrencia} onChange={e=>setFormProduto(f=>({...f,recorrencia:e.target.value}))}
+                  style={inputStyle}>
+                  <option value="unica">Única</option>
+                  <option value="mensal">Mensal</option>
+                  <option value="trimestral">Trimestral</option>
+                  <option value="semestral">Semestral</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
+
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderTop:'1px solid var(--border-soft)'}}>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Acrescentar desconto</div>
+                <button type="button" onClick={()=>setFormProduto(f=>({...f,addDesconto:!f.addDesconto}))}
+                  style={{width:38,height:22,borderRadius:999,border:'none',cursor:'pointer',background:formProduto.addDesconto?'#22d3ee':'var(--border-strong)',position:'relative'}}>
+                  <span style={{position:'absolute',top:3,left:formProduto.addDesconto?19:3,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}}/>
+                </button>
+              </div>
+              {formProduto.addDesconto && (
+                <div style={{marginBottom:14}}>
+                  <label style={labelStyle}>Desconto (R$)</label>
+                  <input value={formProduto.desconto} onChange={e=>setFormProduto(f=>({...f,desconto:e.target.value}))} placeholder="0,00"
+                    style={inputStyle}/>
+                </div>
+              )}
+
+              <div style={{marginTop:14}}>
+                <label style={labelStyle}>Observação</label>
+                <textarea value={formProduto.obs} onChange={e=>setFormProduto(f=>({...f,obs:e.target.value}))} rows={2}
+                  style={{...inputStyle, fontFamily:'inherit', resize:'vertical'}}/>
+              </div>
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>setModalProduto(false)}
+                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--blue)',background:'#fff',color:'var(--blue)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={salvarProduto} disabled={salvandoProduto||!formProduto.produto_id}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--text)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:(salvandoProduto||!formProduto.produto_id)?0.5:1}}>
+                {salvandoProduto?'Salvando...':'Salvar'}
+              </button>
+            </div>
+          </div>
+        </>
+        )
+      })()}
     </div>
   )
 }

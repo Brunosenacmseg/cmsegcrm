@@ -1305,11 +1305,6 @@ function FunisPage() {
               <span style={{fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
                 {funiAtual?.nome || 'Selecione um funil'}
               </span>
-              {funiAtual && (
-                <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10,marginLeft:6}}>
-                  {contagemPorFunil[funiAtual.id] ?? 0}
-                </span>
-              )}
             </span>
             <span style={{fontSize:11,color:'var(--text-muted)',transition:'transform 0.18s',transform:seletorAberto?'rotate(180deg)':'none'}}>▾</span>
           </button>
@@ -1334,7 +1329,6 @@ function FunisPage() {
                       onMouseLeave={e=>{if(!ativo)(e.currentTarget as HTMLDivElement).style.background='transparent'}}>
                       <span style={{fontSize:16,width:22,textAlign:'center'}}>{f.emoji||'📁'}</span>
                       <span style={{flex:1,fontSize:13,fontWeight:ativo?500:400}}>{f.nome}</span>
-                      <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10}}>{cardCount}</span>
                     </div>
                   )
                 })}
