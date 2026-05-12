@@ -76,10 +76,30 @@ export async function POST(req: NextRequest) {
     const j: any = await r.json()
     const deals: any[] = Array.isArray(j) ? j : (j?.deals || j?.data || [])
 
+    // /deals lista nao envia deal_pipeline_id no payload. Pre-carrega
+    // /deal_stages pra mapear stageId -> pipelineId antes de aplicarDeal.
+    const pipelinePorStage: Record<string, string> = {}
+    try {
+      const rs = await fetch(`https://crm.rdstation.com/api/v1/deal_stages?token=${encodeURIComponent(token)}`, { headers: { 'accept': 'application/json' } })
+      if (rs.ok) {
+        const js: any = await rs.json()
+        const stages: any[] = Array.isArray(js) ? js : (js?.deal_stages || js?.data || [])
+        for (const s of stages) {
+          const sid = String(s?._id || s?.id || '')
+          const pid = s?.deal_pipeline_id || s?.deal_pipeline?._id || s?.deal_pipeline?.id
+          if (sid && pid) pipelinePorStage[sid] = String(pid)
+        }
+      }
+    } catch (e) { console.error('[rd/poll] fetch deal_stages falhou:', e) }
+
     await processarLote(deals, CONCURRENCY, async (d) => {
       if (Date.now() - tStart > HARD_LIMIT_MS) return
       try {
         const ev = d?.win === true ? 'deal_won' : d?.win === false ? 'deal_lost' : 'deal_updated'
+        // Enriquece deal com pipeline_id derivado do stage (lista omite essa info)
+        const stageId = String(d?.deal_stage?._id || d?.deal_stage?.id || '')
+        const pid = stageId ? pipelinePorStage[stageId] : null
+        if (pid && !d.deal_pipeline) d.deal_pipeline = { _id: pid }
         const res = await aplicarDeal(d, ev)
         totalProcessados++
         if ((res as any)?.action === 'created') totalCriados++
