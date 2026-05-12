@@ -11,7 +11,7 @@ const HIGHLIGHTS: Array<{ title: string; cta: string; href: string; bg: string }
   { title:'Convide as pessoas da sua equipe para usar o CRM',
     cta:'Convidar usuários', href:'/dashboard/usuarios', bg:'#cfe8ff' },
   { title:'Crie campos personalizados de acordo com seu processo de vendas',
-    cta:'Criar campos personalizados', href:'/dashboard/configuracoes?aba=campos', bg:'#e6d6ff' },
+    cta:'Criar campos personalizados', href:'/dashboard/configuracoes/campos', bg:'#e6d6ff' },
   { title:'Configure as etapas do Playbook de Vendas para sua equipe',
     cta:'Configurar etapas do funil', href:'/dashboard/funis/configurar', bg:'#ffe8b3' },
 ]
@@ -24,7 +24,7 @@ const SECTIONS: Section[][] = [
     ]},
     { title:'CONFIGURE SEU PROCESSO DE VENDA', items:[
       { label:'Funis de vendas', href:'/dashboard/funis/configurar' },
-      { label:'Configurar campos', href:'/dashboard/configuracoes?aba=campos' },
+      { label:'Configurar campos', href:'/dashboard/configuracoes/campos' },
       { label:'Qualificação', href:'/dashboard/configuracoes' },
       { label:'Questionários', href:'/dashboard/configuracoes' },
     ]},

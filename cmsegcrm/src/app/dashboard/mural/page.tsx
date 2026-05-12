@@ -296,7 +296,7 @@ export default function MuralPage() {
                   title={HUMOR_LABELS[h]}>
                   <span>{h}</span>
                   {humorAgrupado[h]?.length > 0 && (
-                    <span style={{fontSize:11,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>{humorAgrupado[h].length}</span>
+                    <span style={{fontSize:11,color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>{humorAgrupado[h].length}</span>
                   )}
                 </button>
               ))}
@@ -331,7 +331,7 @@ export default function MuralPage() {
                   onChange={e=>handleTextChange(e.target.value,'post')}
                   placeholder={`O que está acontecendo, ${profile?.nome?.split(' ')[0]}? Use @ para marcar colegas`}
                   rows={3}
-                  style={{width:'100%',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none',resize:'none',boxSizing:'border-box'}}
+                  style={{width:'100%',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none',resize:'none',boxSizing:'border-box'}}
                 />
                 {/* Preview da foto */}
                 {fotoPreview && (
@@ -345,7 +345,7 @@ export default function MuralPage() {
                 )}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
                   <button onClick={()=>fotoInputRef.current?.click()}
-                    style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',gap:6}}>
+                    style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif',display:'flex',alignItems:'center',gap:6}}>
                     📷 Foto
                   </button>
                   <input ref={fotoInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>e.target.files?.[0]&&selecionarFoto(e.target.files[0])} />
@@ -404,7 +404,7 @@ export default function MuralPage() {
                 <div style={{display:'flex',alignItems:'center',gap:8,paddingBottom:12,borderBottom:'1px solid rgba(255,255,255,0.06)',marginBottom:12}}>
                   <div style={{position:'relative'}}>
                     <button onClick={e=>{e.stopPropagation();setReacaoAberta(reacaoAberta===post.id?null:post.id)}}
-                      style={{padding:'5px 12px',borderRadius:20,fontSize:13,cursor:'pointer',border:`1px solid ${minhaReacao?'rgba(201,168,76,0.4)':'var(--border)'}`,background:minhaReacao?'rgba(201,168,76,0.1)':'rgba(255,255,255,0.04)',color:minhaReacao?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',gap:6}}>
+                      style={{padding:'5px 12px',borderRadius:20,fontSize:13,cursor:'pointer',border:`1px solid ${minhaReacao?'rgba(201,168,76,0.4)':'var(--border)'}`,background:minhaReacao?'rgba(201,168,76,0.1)':'rgba(255,255,255,0.04)',color:minhaReacao?'var(--gold)':'var(--text-muted)',fontFamily:'Open Sans,sans-serif',display:'flex',alignItems:'center',gap:6}}>
                       {minhaReacao ? minhaReacao.tipo : '👍'}
                       {totalReacoes > 0 && <span style={{fontSize:12}}>{totalReacoes}</span>}
                     </button>
@@ -425,13 +425,13 @@ export default function MuralPage() {
                     <span key={tipo} style={{fontSize:12,color:'var(--text-muted)'}}>{tipo} {count as number}</span>
                   ))}
                   <div style={{flex:1}}/>
-                  <button onClick={()=>setExpandidos(e=>({...e,[post.id]:true}))} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>
+                  <button onClick={()=>setExpandidos(e=>({...e,[post.id]:true}))} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:12,fontFamily:'Open Sans,sans-serif'}}>
                     💬 {coms.length} comentário{coms.length!==1?'s':''}
                   </button>
                 </div>
 
                 {coms.length > 2 && !mostrarTodos && (
-                  <button onClick={()=>setExpandidos(e=>({...e,[post.id]:true}))} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif',marginBottom:8,display:'block'}}>
+                  <button onClick={()=>setExpandidos(e=>({...e,[post.id]:true}))} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:12,fontFamily:'Open Sans,sans-serif',marginBottom:8,display:'block'}}>
                     Ver todos os {coms.length} comentários
                   </button>
                 )}
@@ -457,7 +457,7 @@ export default function MuralPage() {
                     onChange={e=>handleTextChange(e.target.value,post.id)}
                     onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();comentar(post.id)}}}
                     placeholder="Comentar... @ para marcar"
-                    style={{flex:1,background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:20,padding:'7px 14px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',outline:'none'}}
+                    style={{flex:1,background:'rgba(255,255,255,0.04)',border:'1px solid var(--border)',borderRadius:20,padding:'7px 14px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',outline:'none'}}
                   />
                   <button onClick={()=>comentar(post.id)} disabled={enviandoCom===post.id||!comentarios[post.id]?.trim()}
                     style={{width:34,height:34,borderRadius:'50%',background:comentarios[post.id]?.trim()?'var(--gold)':'rgba(255,255,255,0.1)',border:'none',cursor:'pointer',fontSize:14,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>

@@ -1288,7 +1288,7 @@ function FunisPage() {
     limparSelecao()
   }
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
@@ -1299,17 +1299,12 @@ function FunisPage() {
         {/* Dropdown de funis (filtrado por equipe via RLS — funis já chegam só os permitidos) */}
         <div style={{position:'relative',minWidth:280}}>
           <button onClick={()=>setSeletorAberto(s=>!s)}
-            style={{width:'100%',padding:'9px 14px',borderRadius:10,fontSize:13,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',gap:10,justifyContent:'space-between'}}>
+            style={{width:'100%',padding:'9px 14px',borderRadius:10,fontSize:13,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontFamily:'Open Sans,sans-serif',display:'flex',alignItems:'center',gap:10,justifyContent:'space-between'}}>
             <span style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
               <span style={{fontSize:16}}>{funiAtual?.emoji || '🏗'}</span>
               <span style={{fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
                 {funiAtual?.nome || 'Selecione um funil'}
               </span>
-              {funiAtual && (
-                <span style={{fontSize:11,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10,marginLeft:6}}>
-                  {contagemPorFunil[funiAtual.id] ?? 0}
-                </span>
-              )}
             </span>
             <span style={{fontSize:11,color:'var(--text-muted)',transition:'transform 0.18s',transform:seletorAberto?'rotate(180deg)':'none'}}>▾</span>
           </button>
@@ -1334,7 +1329,6 @@ function FunisPage() {
                       onMouseLeave={e=>{if(!ativo)(e.currentTarget as HTMLDivElement).style.background='transparent'}}>
                       <span style={{fontSize:16,width:22,textAlign:'center'}}>{f.emoji||'📁'}</span>
                       <span style={{flex:1,fontSize:13,fontWeight:ativo?500:400}}>{f.nome}</span>
-                      <span style={{fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.06)',padding:'1px 7px',borderRadius:10}}>{cardCount}</span>
                     </div>
                   )
                 })}
@@ -1347,11 +1341,11 @@ function FunisPage() {
         {funiAtual && profile?.role === 'admin' && (
           <>
             <button onClick={()=>renomearFunil(funiAtual)} title="Renomear funil"
-              style={{padding:'9px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif'}}>
+              style={{padding:'9px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',fontFamily:'Open Sans,sans-serif'}}>
               ✎ Renomear
             </button>
             <button onClick={()=>excluirFunil(funiAtual)} title="Excluir funil"
-              style={{padding:'9px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+              style={{padding:'9px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',fontFamily:'Open Sans,sans-serif'}}>
               🗑 Excluir
             </button>
           </>
@@ -1366,7 +1360,7 @@ function FunisPage() {
             onChange={e=>setFiltroBusca(e.target.value)}
             placeholder="Buscar negociação por nome, cliente ou CPF/CNPJ"
             title="Buscar negociação por nome, cliente ou CPF/CNPJ"
-            style={{width:'100%',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',borderRadius:8,padding:'7px 28px 7px 30px',fontSize:12,outline:'none',fontFamily:'DM Sans,sans-serif'}}
+            style={{width:'100%',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',borderRadius:8,padding:'7px 28px 7px 30px',fontSize:12,outline:'none',fontFamily:'Open Sans,sans-serif'}}
           />
           {filtroBusca && (
             <button onClick={()=>setFiltroBusca('')}
@@ -1384,7 +1378,7 @@ function FunisPage() {
               style={{padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,
                 background: modoVisao===v ? 'rgba(201,168,76,0.18)' : 'transparent',
                 color: modoVisao===v ? 'var(--gold)' : 'var(--text-muted)',
-                fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>{l}</button>
+                fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}>{l}</button>
           ))}
         </div>
 
@@ -1420,7 +1414,7 @@ function FunisPage() {
               style={{padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',borderRadius:6,
                 background: filtroStatus===v ? `color-mix(in srgb, ${cor} 18%, transparent)` : 'transparent',
                 color: filtroStatus===v ? cor : 'var(--text-muted)',
-                fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}>
+                fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}>
               {l}
             </button>
           ))}
@@ -1495,7 +1489,7 @@ function FunisPage() {
 
         {(profile?.role === 'admin' || profile?.role === 'lider') && (
           <button onClick={() => { if (modoSelecao) sairModoSelecao(); else setModoSelecao(true) }}
-            style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background: modoSelecao?'rgba(74,128,240,0.15)':'rgba(255,255,255,0.04)',color: modoSelecao?'#4a80f0':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+            style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background: modoSelecao?'rgba(74,128,240,0.15)':'rgba(255,255,255,0.04)',color: modoSelecao?'#4a80f0':'var(--text-muted)',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}
             title="Modo seleção em massa">
             {modoSelecao ? '✕ Sair da seleção' : '☑ Selecionar em massa'}
           </button>
@@ -1503,12 +1497,12 @@ function FunisPage() {
         {profile?.role === 'admin' && (
           <>
             <button onClick={normalizarFunis}
-              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}
               title="Encontra negociações duplicadas (mesmo cliente, mesmo funil, mesmo título) e unifica em uma só (admin)">
               🧹 Normalizar negociações
             </button>
             <button onClick={()=>router.push('/dashboard/funis/configurar')}
-              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap'}}
+              style={{padding:'6px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap'}}
               title="Criar, renomear e organizar funis (admin)">
               ⚙ Configurar funis
             </button>
@@ -1847,7 +1841,7 @@ function FunisPage() {
                       ) : (
                         <>
                           <button onClick={e=>{e.stopPropagation();setNegocioVincular(neg);setVincularTab('buscar');setVincularBusca('');setVincularRes([]);setNovoClienteForm({nome:'',cpf_cnpj:neg.cpf_cnpj||'',telefone:neg.telefone_negocio||'',email:''}); setModalVincular(true)}}
-                            style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px dashed rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:4,display:'block'}}>
+                            style={{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px dashed rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',marginBottom:4,display:'block'}}>
                             + Vincular cliente
                           </button>
                           {neg.telefone_negocio && (
@@ -2109,7 +2103,7 @@ function FunisPage() {
             <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',marginBottom:16}}>
               {[['buscar','🔍 Buscar existente'],['criar','➕ Criar novo']].map(([k,l])=>(
                 <button key={k} onClick={()=>setVincularTab(k as any)}
-                  style={{padding:'8px 16px',fontSize:12,cursor:'pointer',border:'none',borderBottom:vincularTab===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:vincularTab===k?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',marginBottom:-1}}>
+                  style={{padding:'8px 16px',fontSize:12,cursor:'pointer',border:'none',borderBottom:vincularTab===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:vincularTab===k?'var(--gold)':'var(--text-muted)',fontFamily:'Open Sans,sans-serif',marginBottom:-1}}>
                   {l}
                 </button>
               ))}
@@ -2253,7 +2247,7 @@ function FunisPage() {
                     <div style={{fontSize:13,fontWeight:500}}>{cardAtivo.clientes.nome}</div>
                     <div style={{fontSize:11,color:'var(--text-muted)'}}>{cardAtivo.clientes.cpf_cnpj} {cardAtivo.clientes.telefone&&`· ${cardAtivo.clientes.telefone}`}</div>
                   </div>
-                  <button onClick={()=>router.push(`/dashboard/clientes/${cardAtivo.cliente_id}`)} style={{fontSize:12,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                  <button onClick={()=>router.push(`/dashboard/clientes/${cardAtivo.cliente_id}`)} style={{fontSize:12,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'transparent',color:'var(--teal)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                     Ver perfil →
                   </button>
                 </div>
@@ -2263,7 +2257,7 @@ function FunisPage() {
                     {cardAtivo.cpf_cnpj ? `CPF: ${cardAtivo.cpf_cnpj}` : 'Sem cliente vinculado'}
                   </div>
                   <button onClick={()=>{setModalCard(false);setNegocioVincular(cardAtivo);setVincularTab('buscar');setVincularBusca('');setVincularRes([]);setNovoClienteForm({nome:'',cpf_cnpj:cardAtivo.cpf_cnpj||'',telefone:'',email:''});setModalVincular(true)}}
-                    style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                    style={{fontSize:12,padding:'5px 12px',borderRadius:6,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                     + Vincular cliente
                   </button>
                 </div>
@@ -2405,7 +2399,7 @@ function FunisPage() {
                 <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                   {(funiAtual.etapas||[]).filter((e:string)=>e!==cardAtivo.etapa).map((e:string)=>(
                     <button key={e} onClick={()=>{moverEtapa(cardAtivo.id,e);setModalCard(false)}}
-                      style={{padding:'5px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                      style={{padding:'5px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                       → {e}
                     </button>
                   ))}
@@ -2603,7 +2597,7 @@ function FunisPage() {
                   onChange={e=>setNovaTarefa(f => ({...f, prazo:e.target.value}))}
                   style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 10px',color:'var(--text)',fontSize:12,outline:'none'}} />
                 <button onClick={criarTarefaDoCard} disabled={salvandoTarefa || !novaTarefa.titulo.trim()}
-                  style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap',opacity:(salvandoTarefa || !novaTarefa.titulo.trim())?0.6:1}}>
+                  style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,border:'1px solid rgba(201,168,76,0.4)',background:'rgba(201,168,76,0.10)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap',opacity:(salvandoTarefa || !novaTarefa.titulo.trim())?0.6:1}}>
                   {salvandoTarefa ? '...' : '+ Criar tarefa'}
                 </button>
               </div>
@@ -2668,11 +2662,11 @@ function FunisPage() {
                 <div style={{fontSize:10,fontWeight:600,letterSpacing:'1.2px',textTransform:'uppercase',color:'var(--text-muted)'}}>📎 Anexos ({anexosCard.length})</div>
                 <div style={{display:'flex',gap:6}}>
                   <button onClick={()=>fileInputRef.current?.click()} disabled={uploadando}
-                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                     {uploadando ? '⏳ Enviando...' : '+ Anexar arquivo'}
                   </button>
                   <button onClick={abrirModalAssinatura}
-                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                    style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                     ✍ Assinatura eletrônica
                   </button>
                 </div>
@@ -2729,7 +2723,7 @@ function FunisPage() {
                       {editing ? (
                         <div style={{display:'flex',gap:6,marginBottom:4}}>
                           <textarea value={editandoNota!.conteudo} onChange={e=>setEditandoNota(p=>p?{...p,conteudo:e.target.value}:p)}
-                            rows={2} style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 8px',color:'var(--text)',fontSize:12,outline:'none',resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                            rows={2} style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:6,padding:'5px 8px',color:'var(--text)',fontSize:12,outline:'none',resize:'none',fontFamily:'Open Sans,sans-serif'}} />
                           <div style={{display:'flex',flexDirection:'column',gap:4}}>
                             <button onClick={salvarEdicaoNota} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(28,181,160,0.4)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer'}}>✓</button>
                             <button onClick={()=>setEditandoNota(null)} style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>✕</button>
@@ -2771,17 +2765,17 @@ function FunisPage() {
               <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                 <button onClick={()=>marcarStatus(cardAtivo.id,'ganho')}
                   disabled={cardAtivo.status==='ganho'}
-                  style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='ganho'?'default':'pointer',border:'1px solid rgba(28,181,160,0.4)',background:cardAtivo.status==='ganho'?'rgba(28,181,160,0.25)':'rgba(28,181,160,0.1)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='ganho'?0.7:1}}>
+                  style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='ganho'?'default':'pointer',border:'1px solid rgba(28,181,160,0.4)',background:cardAtivo.status==='ganho'?'rgba(28,181,160,0.25)':'rgba(28,181,160,0.1)',color:'var(--teal)',fontFamily:'Open Sans,sans-serif',opacity:cardAtivo.status==='ganho'?0.7:1}}>
                   ✓ Marcar Ganho
                 </button>
                 <button onClick={()=>{setModalPerdido(cardAtivo);setMotivoSelecionado('');setMotivoCustom('')}}
                   disabled={cardAtivo.status==='perdido'}
-                  style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='perdido'?'default':'pointer',border:'1px solid rgba(224,82,82,0.4)',background:cardAtivo.status==='perdido'?'rgba(224,82,82,0.25)':'rgba(224,82,82,0.1)',color:'var(--red)',fontFamily:'DM Sans,sans-serif',opacity:cardAtivo.status==='perdido'?0.7:1}}>
+                  style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='perdido'?'default':'pointer',border:'1px solid rgba(224,82,82,0.4)',background:cardAtivo.status==='perdido'?'rgba(224,82,82,0.25)':'rgba(224,82,82,0.1)',color:'var(--red)',fontFamily:'Open Sans,sans-serif',opacity:cardAtivo.status==='perdido'?0.7:1}}>
                   ✕ Marcar Perdido
                 </button>
                 {cardAtivo.status && cardAtivo.status !== 'em_andamento' && (
                   <button onClick={()=>marcarStatus(cardAtivo.id,'em_andamento')}
-                    style={{padding:'8px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                    style={{padding:'8px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                     ↺ Reabrir
                   </button>
                 )}
@@ -2792,7 +2786,7 @@ function FunisPage() {
             </div>
 
             <div style={{display:'flex',justifyContent:'space-between'}}>
-              <button onClick={()=>excluirNegocio(cardAtivo.id)} style={{fontSize:12,padding:'6px 14px',borderRadius:8,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+              <button onClick={()=>excluirNegocio(cardAtivo.id)} style={{fontSize:12,padding:'6px 14px',borderRadius:8,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                 🗑 Excluir
               </button>
               <button className="btn-secondary" onClick={()=>setModalCard(false)}>Fechar</button>
@@ -2849,7 +2843,7 @@ function FunisPage() {
                 const motivoTexto = motivoObj?.nome || motivoCustom || null
                 marcarStatus(modalPerdido.id, 'perdido', motivoTexto || undefined, motivoObj?.id || null)
                 setModalPerdido(null); setMotivoSelecionado(''); setMotivoCustom('')
-              }} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.15)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+              }} style={{padding:'9px 18px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid rgba(224,82,82,0.4)',background:'rgba(224,82,82,0.15)',color:'var(--red)',fontFamily:'Open Sans,sans-serif'}}>
                 ✕ Confirmar perda
               </button>
             </div>
@@ -2917,7 +2911,7 @@ function FunisPage() {
                 </div>
               ))}
               <button onClick={()=>setFormAssinatura(f=>({...f,signatarios:[...f.signatarios,{nome:'',email:''}]}))}
-                style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>+ Adicionar signatário</button>
+                style={{padding:'5px 12px',borderRadius:6,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>+ Adicionar signatário</button>
             </div>
 
             {formAssinatura.assunto && (
@@ -2933,7 +2927,7 @@ function FunisPage() {
                 Mensagem <span style={{textTransform:'none',letterSpacing:0,fontWeight:400}}>· variáveis: <code>{'{{cliente}}'}</code> <code>{'{{negocio}}'}</code> <code>{'{{documento}}'}</code></span>
               </label>
               <textarea value={formAssinatura.mensagem} onChange={e=>setFormAssinatura(f=>({...f,mensagem:e.target.value}))} rows={6}
-                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',resize:'vertical',fontFamily:'DM Sans,sans-serif',lineHeight:1.5,boxSizing:'border-box'}} />
+                style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 13px',color:'var(--text)',fontSize:13,outline:'none',resize:'vertical',fontFamily:'Open Sans,sans-serif',lineHeight:1.5,boxSizing:'border-box'}} />
             </div>
 
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>

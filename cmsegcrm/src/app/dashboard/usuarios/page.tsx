@@ -238,7 +238,7 @@ export default function UsuariosPage() {
 
   const isAdmin = profile?.role === 'admin'
   const ri = (r: string) => ROLES.find(x => x.key === r) || ROLES[2]
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 14px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none' }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 14px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none' }
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -246,7 +246,7 @@ export default function UsuariosPage() {
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>Usuários & Equipes</div>
         <div style={{display:'flex',gap:4}}>
           {(['usuarios','equipes'] as const).map(a=>(
-            <button key={a} onClick={()=>setAba(a)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:aba===a?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:aba===a?'var(--gold)':'var(--text-muted)',borderColor:aba===a?'var(--gold)':'var(--border)'}}>
+            <button key={a} onClick={()=>setAba(a)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',background:aba===a?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:aba===a?'var(--gold)':'var(--text-muted)',borderColor:aba===a?'var(--gold)':'var(--border)'}}>
               {a==='usuarios'?'👤 Usuários':'👥 Equipes'}
             </button>
           ))}
@@ -296,7 +296,7 @@ export default function UsuariosPage() {
                         <div style={{display:'flex',alignItems:'center',gap:6}}>
                           {salvando && <span style={{fontSize:11,color:'var(--text-muted)'}}>...</span>}
                           <select value={u.role||'corretor'} onChange={e=>alterarRole(u.id,e.target.value)} disabled={salvando}
-                            style={{background:'#ffffff',border:`1px solid ${r.cor}50`,borderRadius:6,padding:'4px 10px',color:r.cor,fontFamily:'DM Sans,sans-serif',fontSize:11,cursor:'pointer'}}>
+                            style={{background:'#ffffff',border:`1px solid ${r.cor}50`,borderRadius:6,padding:'4px 10px',color:r.cor,fontFamily:'Open Sans,sans-serif',fontSize:11,cursor:'pointer'}}>
                             {ROLES.map(x=><option key={x.key} value={x.key} style={{background:'#ffffff'}}>{x.label}</option>)}
                           </select>
                           {u.id !== profile?.id && (
@@ -319,18 +319,18 @@ export default function UsuariosPage() {
                           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                             <span style={{fontSize:11,color:'var(--text-muted)',flexShrink:0}}>📞 Ramal:</span>
                             <select value={ramalTemp} onChange={e=>setRamalTemp(e.target.value)}
-                              style={{flex:1,minWidth:160,background:'#ffffff',border:'1px solid var(--gold)',borderRadius:6,padding:'5px 10px',color:'var(--text)',fontFamily:'DM Sans,sans-serif',fontSize:12,outline:'none'}}>
+                              style={{flex:1,minWidth:160,background:'#ffffff',border:'1px solid var(--gold)',borderRadius:6,padding:'5px 10px',color:'var(--text)',fontFamily:'Open Sans,sans-serif',fontSize:12,outline:'none'}}>
                               <option value="">— Sem ramal —</option>
                               {EXTENSOES_GOTO.map(e=>(
                                 <option key={e.numero} value={e.numero} style={{background:'#ffffff'}}>{e.numero} — {e.nome}</option>
                               ))}
                             </select>
                             <button onClick={()=>salvarRamal(u.id)} disabled={salvandoRamal===u.id}
-                              style={{padding:'5px 14px',borderRadius:6,fontSize:12,cursor:'pointer',border:'none',background:'var(--teal)',color:'#fff',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                              style={{padding:'5px 14px',borderRadius:6,fontSize:12,cursor:'pointer',border:'none',background:'var(--teal)',color:'#fff',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                               {salvandoRamal===u.id?'...':'✓'}
                             </button>
                             <button onClick={()=>{setEditandoRamal(null);setRamalTemp('')}}
-                              style={{padding:'5px 10px',borderRadius:6,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                              style={{padding:'5px 10px',borderRadius:6,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                               ✕
                             </button>
                           </div>
@@ -341,7 +341,7 @@ export default function UsuariosPage() {
                               {u.ramal_goto ? `${u.ramal_goto} — ${extInfo?.nome||''}` : 'Não configurado'}
                             </span>
                             <button onClick={()=>{setEditandoRamal(u.id);setRamalTemp(u.ramal_goto||'')}}
-                              style={{padding:'3px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                              style={{padding:'3px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.05)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                               ✏️
                             </button>
                           </div>
@@ -429,7 +429,7 @@ export default function UsuariosPage() {
                   {!(eq.equipe_membros?.length)&&<span style={{fontSize:12,color:'var(--text-muted)'}}>Nenhum membro</span>}
                 </div>
                 {isAdmin&&(
-                  <select style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer',outline:'none'}} defaultValue=""
+                  <select style={{background:'#ffffff',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer',outline:'none'}} defaultValue=""
                     onChange={e=>{if(e.target.value){adicionarMembro(eq.id,e.target.value);(e.target as HTMLSelectElement).value=''}}}>
                     <option value="">+ Adicionar membro...</option>
                     {usuarios.filter(u=>!(eq.equipe_membros||[]).some((m:any)=>m.user_id===u.id)).map(u=><option key={u.id} value={u.id} style={{background:'#ffffff'}}>{u.nome}</option>)}

@@ -494,7 +494,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:600}}>🔔 Notificações</div>
                     {totalNaoLidas > 0 && (
-                      <button onClick={marcarTodasLidas} style={{fontSize:12,background:'none',border:'none',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                      <button onClick={marcarTodasLidas} style={{fontSize:12,background:'none',border:'none',color:'var(--teal)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                         Marcar todas lidas
                       </button>
                     )}

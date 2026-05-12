@@ -128,13 +128,13 @@ export default function CampanhasPage() {
       <div style={{height:56,borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',padding:'0 28px',gap:12,background:'var(--bg-soft)',position:'sticky',top:0,zIndex:5}}>
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>📣 Campanhas Meta</div>
         <select value={periodo} onChange={e=>setPeriodo(Number(e.target.value) as any)}
-          style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>
+          style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif'}}>
           <option value={7}>Últimos 7 dias</option>
           <option value={30}>Últimos 30 dias</option>
           <option value={90}>Últimos 90 dias</option>
         </select>
         <select value={statusFiltro} onChange={e=>setStatusFiltro(e.target.value as any)}
-          style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>
+          style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif'}}>
           <option value="ACTIVE">Ativas</option>
           <option value="PAUSED">Pausadas</option>
           <option value="todas">Todas</option>
@@ -142,7 +142,7 @@ export default function CampanhasPage() {
         {isAdmin && (
           <>
             <button onClick={()=>router.push('/dashboard/integracoes/meta')}
-              style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+              style={{padding:'7px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
               ⚙ Conectar Meta
             </button>
             <button onClick={sincronizar} disabled={sincronizando} className="btn-primary"

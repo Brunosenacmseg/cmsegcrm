@@ -131,7 +131,7 @@ export default function ManuaisPage() {
   const contsPorCat: Record<string, number> = {}
   manuais.forEach(m => { contsPorCat[m.categoria] = (contsPorCat[m.categoria] || 0) + 1 })
 
-  const inp: React.CSSProperties = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 13, fontFamily: 'DM Sans,sans-serif', outline: 'none', boxSizing: 'border-box' as const }
+  const inp: React.CSSProperties = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 13, fontFamily: 'Open Sans,sans-serif', outline: 'none', boxSizing: 'border-box' as const }
 
   if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Carregando...</div>
 
@@ -200,14 +200,14 @@ export default function ManuaisPage() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <a href={manual.arquivo_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 12, textAlign: 'center', textDecoration: 'none', border: '1px solid rgba(28,181,160,0.3)', background: 'rgba(28,181,160,0.08)', color: 'var(--teal)', fontFamily: 'DM Sans,sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <a href={manual.arquivo_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 12, textAlign: 'center', textDecoration: 'none', border: '1px solid rgba(28,181,160,0.3)', background: 'rgba(28,181,160,0.08)', color: 'var(--teal)', fontFamily: 'Open Sans,sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                         👁 Visualizar
                       </a>
-                      <a href={manual.arquivo_url} download={manual.arquivo_nome} style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 12, textAlign: 'center', textDecoration: 'none', border: '1px solid rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.08)', color: 'var(--gold)', fontFamily: 'DM Sans,sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <a href={manual.arquivo_url} download={manual.arquivo_nome} style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 12, textAlign: 'center', textDecoration: 'none', border: '1px solid rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.08)', color: 'var(--gold)', fontFamily: 'Open Sans,sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                         ⬇ Baixar
                       </a>
                       {isAdminOrLider && (
-                        <button onClick={() => excluirManual(manual)} style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer', border: '1px solid rgba(224,82,82,0.3)', background: 'rgba(224,82,82,0.08)', color: 'var(--red)', fontFamily: 'DM Sans,sans-serif' }}>🗑</button>
+                        <button onClick={() => excluirManual(manual)} style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer', border: '1px solid rgba(224,82,82,0.3)', background: 'rgba(224,82,82,0.08)', color: 'var(--red)', fontFamily: 'Open Sans,sans-serif' }}>🗑</button>
                       )}
                     </div>
                   </div>

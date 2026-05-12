@@ -359,7 +359,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputStyle: React.CSSProperties = {
   padding:'7px 10px', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)',
-  borderRadius:6, color:'var(--text)', fontSize:12, fontFamily:'DM Sans,sans-serif',
+  borderRadius:6, color:'var(--text)', fontSize:12, fontFamily:'Open Sans,sans-serif',
 }
 const th: React.CSSProperties = {
   textAlign:'left', padding:'12px 14px', fontSize:10, fontWeight:600,

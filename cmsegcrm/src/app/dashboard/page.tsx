@@ -380,7 +380,7 @@ export default function DashboardPage() {
             {(['mes_atual','mes_anterior','semana','custom'] as Periodo[]).map(p => (
               <button key={p} onClick={()=>setPeriodo(p)} style={{
                 padding:'6px 14px', borderRadius:20, fontSize:12, cursor:'pointer',
-                border:'1px solid', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                border:'1px solid', fontFamily:'Open Sans,sans-serif', fontWeight:600,
                 background: periodo===p ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)',
                 color: periodo===p ? 'var(--gold)' : 'var(--text-muted)',
                 borderColor: periodo===p ? 'var(--gold)' : 'var(--border)',

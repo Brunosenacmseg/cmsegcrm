@@ -289,7 +289,7 @@ export default function TarefasPage() {
     return diff < -MARGEM_MS && responsaveisDeTarefa(t).includes(profile?.id)
   })
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box' as const }
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
 
@@ -345,13 +345,13 @@ export default function TarefasPage() {
               <div style={{width:1,background:'var(--border)',margin:'0 4px'}}/>
               {equipes.length > 0 && (
                 <select value={filtroEquipe} onChange={e=>setFiltroEquipe(e.target.value)}
-                  style={{padding:'6px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroEquipe!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroEquipe!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif'}}>
+                  style={{padding:'6px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroEquipe!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroEquipe!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'Open Sans,sans-serif'}}>
                   <option value="todos">🏢 Todas as equipes</option>
                   {equipes.map(eq => <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
                 </select>
               )}
               <select value={filtroUsuario} onChange={e=>setFiltroUsuario(e.target.value)}
-                style={{padding:'6px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroUsuario!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroUsuario!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif'}}>
+                style={{padding:'6px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroUsuario!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroUsuario!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'Open Sans,sans-serif'}}>
                 <option value="todos">👤 Todos usuários</option>
                 {usuarios.filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id)).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
               </select>
@@ -459,27 +459,27 @@ export default function TarefasPage() {
                     <div style={{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap',justifyContent:'flex-end'}}>
                       {t.status === 'pendente' && (
                         <button onClick={()=>alterarStatus(t.id,'em_andamento')}
-                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'DM Sans,sans-serif'}}>
+                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(28,181,160,0.3)',background:'rgba(28,181,160,0.08)',color:'var(--teal)',fontFamily:'Open Sans,sans-serif'}}>
                           Iniciar
                         </button>
                       )}
                       {(t.status === 'pendente' || t.status === 'em_andamento') && (
                         <button onClick={()=>alterarStatus(t.id,'concluida')}
-                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif'}}>
+                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',fontFamily:'Open Sans,sans-serif'}}>
                           ✓ Concluir
                         </button>
                       )}
                       {(t.criado_por === profile?.id || profile?.role === 'admin' || responsaveisDeTarefa(t).includes(profile?.id)) && (
                         <button onClick={()=>iniciarEdicaoTarefa(t)}
                           title="Editar tarefa"
-                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>
+                          style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
                           ✎ Editar
                         </button>
                       )}
                       {(t.criado_por === profile?.id || profile?.role === 'admin') && (
                         <button onClick={()=>excluirTarefa(t.id)}
                           title="Excluir tarefa"
-                          style={{padding:'5px 8px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>
+                          style={{padding:'5px 8px',borderRadius:6,fontSize:11,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',fontFamily:'Open Sans,sans-serif'}}>
                           🗑
                         </button>
                       )}

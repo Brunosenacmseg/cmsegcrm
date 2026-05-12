@@ -170,7 +170,7 @@ export default function RelatoriosPage() {
         {[['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano']].map(([k,l])=>(
           <button key={k} onClick={()=>setPeriodo(k)} style={{
             padding:'7px 18px',borderRadius:20,fontSize:12,fontWeight:periodo===k?700:400,
-            cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',
+            cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',
             background:periodo===k?'var(--gold)':'rgba(255,255,255,0.04)',
             color:periodo===k?'var(--navy)':'var(--text-muted)',transition:'all 0.16s'
           }}>{l}</button>
@@ -182,14 +182,14 @@ export default function RelatoriosPage() {
             {profile.role === 'admin' && equipes.length > 0 && (
               <select value={filtroEquipe} onChange={e => { setFiltroEquipe(e.target.value); setFiltroUsuario('todos') }}
                 title="Filtrar por equipe"
-                style={{padding:'7px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroEquipe!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroEquipe!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                style={{padding:'7px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroEquipe!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroEquipe!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                 <option value="todos">🏢 Todas as equipes</option>
                 {equipes.map(eq => <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
               </select>
             )}
             <select value={filtroUsuario} onChange={e => setFiltroUsuario(e.target.value)}
               title="Filtrar por usuário"
-              style={{padding:'7px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroUsuario!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroUsuario!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+              style={{padding:'7px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:filtroUsuario!=='todos'?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:filtroUsuario!=='todos'?'var(--gold)':'var(--text-muted)',outline:'none',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
               <option value="todos">👥 {profile.role === 'admin' ? 'Todos usuários' : 'Toda a equipe'}</option>
               {usuarios
                 .filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id))

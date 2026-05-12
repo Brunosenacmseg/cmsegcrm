@@ -189,7 +189,7 @@ export default function MetasPage() {
     return { ...u, totalMeta, totalAtual, pct, qtdMetas: mu.length }
   }).filter(u => u.qtdMetas > 0).sort((a, b) => b.pct - a.pct)
 
-  const inp: React.CSSProperties = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 13, fontFamily: 'DM Sans,sans-serif', outline: 'none', boxSizing: 'border-box' as const }
+  const inp: React.CSSProperties = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 13, fontFamily: 'Open Sans,sans-serif', outline: 'none', boxSizing: 'border-box' as const }
 
   if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Carregando...</div>
 
@@ -197,7 +197,7 @@ export default function MetasPage() {
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ height: 56, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 28px', gap: 12, background: 'var(--bg-soft)', backdropFilter: 'blur(8px)', position: 'sticky', top: 0, zIndex: 5, flexShrink: 0 }}>
         <div style={{ fontFamily: 'DM Serif Display,serif', fontSize: 18, flex: 1 }}>🎯 Metas</div>
-        <button onClick={recalcularTodas} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', fontFamily: 'DM Sans,sans-serif' }}>🔄 Recalcular</button>
+        <button onClick={recalcularTodas} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', fontFamily: 'Open Sans,sans-serif' }}>🔄 Recalcular</button>
         {isAdminOrLider && <button className="btn-primary" onClick={() => { setModalAberto(true); setEditando(null); resetForm() }}>+ Nova Meta</button>}
       </div>
 
@@ -206,16 +206,16 @@ export default function MetasPage() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             {profile?.role === 'admin' && equipes.length > 0 && (
               <select value={filtroEquipe} onChange={e => setFiltroEquipe(e.target.value)}
-                style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: filtroEquipe !== 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroEquipe !== 'todos' ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'DM Sans,sans-serif', outline: 'none' }}>
+                style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: filtroEquipe !== 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroEquipe !== 'todos' ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'Open Sans,sans-serif', outline: 'none' }}>
                 <option value="todos">🏢 Todas as equipes</option>
                 {equipes.map(eq => <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
               </select>
             )}
-            <button onClick={() => setFiltroUser('todos')} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'DM Sans,sans-serif', background: filtroUser === 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === 'todos' ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === 'todos' ? 'var(--gold)' : 'var(--border)' }}>{profile?.role === 'admin' ? 'Todos' : 'Toda equipe'}</button>
+            <button onClick={() => setFiltroUser('todos')} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'Open Sans,sans-serif', background: filtroUser === 'todos' ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === 'todos' ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === 'todos' ? 'var(--gold)' : 'var(--border)' }}>{profile?.role === 'admin' ? 'Todos' : 'Toda equipe'}</button>
             {usuarios
               .filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id))
               .map(u => (
-              <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'DM Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{u.nome.split(' ')[0]}</button>
+              <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'Open Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{u.nome.split(' ')[0]}</button>
             ))}
           </div>
         )}
@@ -265,8 +265,8 @@ export default function MetasPage() {
                   <ProgressBar valor={meta.valor_atual} meta={meta.valor_meta} cor={corMeta} />
                   {isAdminOrLider && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-                      <button onClick={() => abrirEditar(meta)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', fontFamily: 'DM Sans,sans-serif' }}>✏️ Editar</button>
-                      <button onClick={() => excluirMeta(meta.id)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid rgba(224,82,82,0.3)', background: 'rgba(224,82,82,0.08)', color: 'var(--red)', fontFamily: 'DM Sans,sans-serif' }}>🗑 Excluir</button>
+                      <button onClick={() => abrirEditar(meta)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', fontFamily: 'Open Sans,sans-serif' }}>✏️ Editar</button>
+                      <button onClick={() => excluirMeta(meta.id)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid rgba(224,82,82,0.3)', background: 'rgba(224,82,82,0.08)', color: 'var(--red)', fontFamily: 'Open Sans,sans-serif' }}>🗑 Excluir</button>
                     </div>
                   )}
                 </div>

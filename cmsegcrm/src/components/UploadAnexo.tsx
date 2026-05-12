@@ -201,13 +201,13 @@ export default function UploadAnexo({
                 fontSize: 11, background: 'rgba(74,128,240,0.1)',
                 border: '1px solid rgba(74,128,240,0.3)', color: '#7aa3f8',
                 borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-                fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap',
+                fontFamily: 'Open Sans,sans-serif', whiteSpace: 'nowrap',
               }}>⬇ Baixar</button>
               <button onClick={() => deletarAnexo(a.id, a.path)} style={{
                 fontSize: 11, background: 'rgba(224,82,82,0.08)',
                 border: '1px solid rgba(224,82,82,0.2)', color: 'var(--red)',
                 borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-                fontFamily: 'DM Sans,sans-serif',
+                fontFamily: 'Open Sans,sans-serif',
               }}>✕</button>
             </div>
           ))}

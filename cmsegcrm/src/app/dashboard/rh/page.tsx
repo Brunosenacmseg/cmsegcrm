@@ -69,7 +69,7 @@ export default function RHPage() {
       <div style={{display:'flex',gap:4,padding:'12px 28px 0',borderBottom:'1px solid var(--border)',overflowX:'auto'}}>
         {TABS.map(t => (
           <button key={t.key} onClick={()=>setTab(t.key)}
-            style={{padding:'8px 14px',fontSize:12,fontWeight:600,border:'none',background:tab===t.key?'var(--gold-soft)':'transparent',color:tab===t.key?'var(--gold)':'var(--text-muted)',borderBottom:tab===t.key?'2px solid var(--gold)':'2px solid transparent',cursor:'pointer',whiteSpace:'nowrap',fontFamily:'DM Sans,sans-serif'}}>
+            style={{padding:'8px 14px',fontSize:12,fontWeight:600,border:'none',background:tab===t.key?'var(--gold-soft)':'transparent',color:tab===t.key?'var(--gold)':'var(--text-muted)',borderBottom:tab===t.key?'2px solid var(--gold)':'2px solid transparent',cursor:'pointer',whiteSpace:'nowrap',fontFamily:'Open Sans,sans-serif'}}>
             {t.icon} {t.label}
           </button>
         ))}
@@ -225,7 +225,7 @@ function FuncionariosTab({ isAdmin }: { isAdmin: boolean }) {
               ))}
               <div style={{gridColumn:'span 3'}}>
                 <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Observações</label>
-                <textarea value={edit.obs??''} onChange={e=>setEdit((s:any)=>({...s,obs:e.target.value}))} rows={3} style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+                <textarea value={edit.obs??''} onChange={e=>setEdit((s:any)=>({...s,obs:e.target.value}))} rows={3} style={{...inputStyle,resize:'none',fontFamily:'Open Sans,sans-serif'}} />
               </div>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:18}}>
@@ -535,7 +535,7 @@ function SimpleListTab({ table, columns, createFields, isAdmin }: {
                 <div key={f.k}>
                   <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>{f.label}</label>
                   {f.type === 'textarea' ?
-                    <textarea value={novo[f.k]??''} onChange={e=>setNovo((s:any)=>({...s,[f.k]:e.target.value}))} rows={3} style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} /> :
+                    <textarea value={novo[f.k]??''} onChange={e=>setNovo((s:any)=>({...s,[f.k]:e.target.value}))} rows={3} style={{...inputStyle,resize:'none',fontFamily:'Open Sans,sans-serif'}} /> :
                   f.type === 'funcionario' ?
                     <FuncionarioPicker value={novo[f.k]||null} onChange={(id)=>setNovo((s:any)=>({...s,[f.k]:id}))} /> :
                     <input type={f.type} value={novo[f.k]??''} onChange={e=>setNovo((s:any)=>({...s,[f.k]:e.target.value}))} style={inputStyle} />
@@ -708,7 +708,7 @@ function DocumentosTab({ isAdmin }: { isAdmin: boolean }) {
             <label style={{fontSize:10,color:'var(--text-muted)',display:'block',marginBottom:3,textTransform:'uppercase',fontWeight:600}}>Descrição</label>
             <textarea value={descricao} onChange={e=>setDescricao(e.target.value)} rows={2}
               placeholder="Ex.: 'Contrato CLT assinado em 12/03 — versão 2'"
-              style={{...inputStyle,resize:'none',fontFamily:'DM Sans,sans-serif'}} />
+              style={{...inputStyle,resize:'none',fontFamily:'Open Sans,sans-serif'}} />
           </div>
           {!funcId && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8}}>Escolha um funcionário acima para habilitar o upload.</div>}
         </div>

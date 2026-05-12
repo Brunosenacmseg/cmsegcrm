@@ -481,7 +481,7 @@ export default function WhatsAppPage() {
 
   const statusCor:   Record<string,string> = { connected:'var(--teal)', disconnected:'var(--red)', qrcode:'var(--gold)', connecting:'#7aa3f8' }
   const statusLabel: Record<string,string> = { connected:'Conectado ✓', disconnected:'Desconectado', qrcode:'Aguardando QR Code', connecting:'Conectando...' }
-  const inp = { width:'100%', background:'rgba(255,255,255,0.06)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', boxSizing:'border-box' as const, outline:'none' }
+  const inp = { width:'100%', background:'rgba(255,255,255,0.06)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', boxSizing:'border-box' as const, outline:'none' }
 
   const btnIcon = (title: string, onClick: ()=>void, ativo=false) => (
     <button title={title} onClick={onClick}
@@ -541,8 +541,8 @@ export default function WhatsAppPage() {
               </div>
               {instancia.numero&&<div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>📱 {instancia.numero}</div>}
               <div style={{display:'flex',gap:6}}>
-                {instancia.status!=='connected'&&<button onClick={conectarWhatsApp} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>{loadingQR?'...':'📱 Conectar'}</button>}
-                {instancia.status==='connected'&&<button onClick={desconectar} style={{flex:1,fontSize:11,background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Desconectar</button>}
+                {instancia.status!=='connected'&&<button onClick={conectarWhatsApp} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>{loadingQR?'...':'📱 Conectar'}</button>}
+                {instancia.status==='connected'&&<button onClick={desconectar} style={{flex:1,fontSize:11,background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>Desconectar</button>}
               </div>
             </div>
 
@@ -574,7 +574,7 @@ export default function WhatsAppPage() {
 
             <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
               <button onClick={()=>{setModalNovaConversa(true);setNovoNumero('');setNovaNomeBusca('');setClienteNovaConversa(null);setClientesBusca([])}}
-                style={{width:'100%',padding:'7px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+                style={{width:'100%',padding:'7px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                 ✉️ Nova Conversa
               </button>
             </div>
@@ -624,8 +624,8 @@ export default function WhatsAppPage() {
                         <input value={editNome} onChange={e=>setEditNome(e.target.value)} placeholder="Nome" style={{...inp,padding:'6px 10px',fontSize:12}} />
                         <input value={editNumero} onChange={e=>setEditNumero(e.target.value)} placeholder="Número" style={{...inp,padding:'6px 10px',fontSize:12}} />
                       </div>
-                      <button onClick={salvarEdicaoContato} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'none',background:'var(--teal)',color:'#fff',fontFamily:'DM Sans,sans-serif',fontWeight:600,flexShrink:0}}>✓</button>
-                      <button onClick={()=>setEditandoContato(false)} style={{padding:'6px 10px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',flexShrink:0}}>✕</button>
+                      <button onClick={salvarEdicaoContato} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'none',background:'var(--teal)',color:'#fff',fontFamily:'Open Sans,sans-serif',fontWeight:600,flexShrink:0}}>✓</button>
+                      <button onClick={()=>setEditandoContato(false)} style={{padding:'6px 10px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif',flexShrink:0}}>✕</button>
                     </div>
                   ) : (
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
@@ -638,19 +638,19 @@ export default function WhatsAppPage() {
                       </div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
                         <button onClick={()=>{setEditandoContato(true);setEditNome(conversa.remoto_nome||'');setEditNumero(conversa.remoto_numero||'')}}
-                          style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>✏️ Editar</button>
+                          style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>✏️ Editar</button>
                         {conversa.cliente_id ? (
                           <>
                             <button onClick={()=>router.push(`/dashboard/clientes/${conversa.cliente_id}`)}
-                              style={{fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Ver ficha →</button>
+                              style={{fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>Ver ficha →</button>
                             <button onClick={registrarNoHistorico} disabled={salvandoHistorico}
-                              style={{fontSize:11,background:'rgba(28,181,160,0.08)',border:'1px solid rgba(28,181,160,0.3)',color:'var(--teal)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                              style={{fontSize:11,background:'rgba(28,181,160,0.08)',border:'1px solid rgba(28,181,160,0.3)',color:'var(--teal)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                               {salvandoHistorico?'Salvando...':'📋 Registrar no histórico'}
                             </button>
                           </>
                         ) : (
                           <button onClick={()=>{setModalVincular(true);setBuscaVincular('');setResultVincular([])}}
-                            style={{fontSize:11,background:'rgba(28,181,160,0.08)',border:'1px solid rgba(28,181,160,0.3)',color:'var(--teal)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                            style={{fontSize:11,background:'rgba(28,181,160,0.08)',border:'1px solid rgba(28,181,160,0.3)',color:'var(--teal)',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                             👤 Vincular cliente
                           </button>
                         )}
@@ -760,8 +760,8 @@ export default function WhatsAppPage() {
                       <div style={{width:10,height:10,borderRadius:'50%',background:'var(--red)',animation:'pulse 1s infinite'}}/>
                       <span style={{fontSize:13,color:'var(--red)',fontWeight:600}}>Gravando... {tempoGravacao}s</span>
                       <div style={{flex:1}}/>
-                      <button onClick={cancelarGravacao} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',fontFamily:'DM Sans,sans-serif'}}>✕ Cancelar</button>
-                      <button onClick={pararGravacao} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'none',background:'var(--teal)',color:'#fff',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>✓ Enviar</button>
+                      <button onClick={cancelarGravacao} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.08)',color:'var(--red)',fontFamily:'Open Sans,sans-serif'}}>✕ Cancelar</button>
+                      <button onClick={pararGravacao} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'none',background:'var(--teal)',color:'#fff',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>✓ Enviar</button>
                     </div>
                   ) : (
                     <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
@@ -777,7 +777,7 @@ export default function WhatsAppPage() {
 
                       {/* Input texto */}
                       <textarea rows={1}
-                        style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:20,padding:'10px 16px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none',resize:'none',maxHeight:100,overflowY:'auto'}}
+                        style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:20,padding:'10px 16px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none',resize:'none',maxHeight:100,overflowY:'auto'}}
                         placeholder="Digite uma mensagem..."
                         value={textoEnvio}
                         onChange={e=>setTextoEnvio(e.target.value)}
