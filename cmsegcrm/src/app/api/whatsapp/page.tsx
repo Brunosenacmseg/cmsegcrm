@@ -245,16 +245,16 @@ export default function WhatsAppPage() {
               {instancia.numero && <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:8}}>📱 {instancia.numero}</div>}
               <div style={{display:'flex',gap:6}}>
                 {instancia.status !== 'connected' && (
-                  <button onClick={gerarQRCode} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                  <button onClick={gerarQRCode} disabled={loadingQR} style={{flex:1,fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                     {loadingQR ? '...' : '📱 Conectar'}
                   </button>
                 )}
                 {instancia.status === 'connected' && (
-                  <button onClick={desconectar} style={{flex:1,fontSize:11,background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                  <button onClick={desconectar} style={{flex:1,fontSize:11,background:'rgba(224,82,82,0.1)',border:'1px solid rgba(224,82,82,0.3)',color:'var(--red)',borderRadius:6,padding:'5px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                     Desconectar
                   </button>
                 )}
-                <button onClick={()=>setModalConfig(true)} style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 8px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>⚙️</button>
+                <button onClick={()=>setModalConfig(true)} style={{fontSize:11,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',color:'var(--text-muted)',borderRadius:6,padding:'5px 8px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>⚙️</button>
               </div>
             </div>
 
@@ -316,7 +316,7 @@ export default function WhatsAppPage() {
                   </div>
                   {conversa.cliente_id && (
                     <button onClick={()=>router.push(`/dashboard/clientes/${conversa.cliente_id}`)}
-                      style={{fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                      style={{fontSize:11,background:'rgba(201,168,76,0.1)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                       Ver ficha →
                     </button>
                   )}
@@ -345,7 +345,7 @@ export default function WhatsAppPage() {
                 {/* Input de envio */}
                 <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',display:'flex',gap:10,alignItems:'center'}}>
                   <input
-                    style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:24,padding:'10px 16px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none'}}
+                    style={{flex:1,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:24,padding:'10px 16px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none'}}
                     placeholder={instancia.status==='connected'?'Digite uma mensagem...':'Conecte o WhatsApp para enviar'}
                     value={textoEnvio}
                     onChange={e=>setTextoEnvio(e.target.value)}

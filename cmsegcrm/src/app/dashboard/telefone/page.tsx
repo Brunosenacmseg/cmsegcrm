@@ -209,7 +209,7 @@ export default function TelefonePage() {
     erro: '⚠ Erro',
   }
 
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 14px', color:'var(--text)', fontSize:13, fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 14px', color:'var(--text)', fontSize:13, fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box' }
 
   if (loading) return (
     <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>Carregando...</div>
@@ -237,7 +237,7 @@ export default function TelefonePage() {
         )}
         <div style={{display:'flex',gap:4}}>
           {(['discador','andamento','historico'] as const).filter(a => !(a==='andamento' && profile?.role === 'corretor')).map(a=>(
-            <button key={a} onClick={()=>setAba(a)} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:aba===a?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:aba===a?'var(--gold)':'var(--text-muted)',borderColor:aba===a?'var(--gold)':'var(--border)',position:'relative'}}>
+            <button key={a} onClick={()=>setAba(a)} style={{padding:'6px 14px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',background:aba===a?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:aba===a?'var(--gold)':'var(--text-muted)',borderColor:aba===a?'var(--gold)':'var(--border)',position:'relative'}}>
               {a==='discador'?'📱 Discador':a==='andamento'?'🔴 Em andamento':'📋 Histórico'}
               {a==='andamento'&&emAndamento.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'var(--red)',color:'#fff',fontSize:9,fontWeight:700,borderRadius:10,padding:'1px 5px'}}>{emAndamento.length}</span>}
             </button>
@@ -312,7 +312,7 @@ export default function TelefonePage() {
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:16}}>
                   {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d=>(
                     <button key={d} onClick={()=>adicionarDigito(d)}
-                      style={{padding:'14px',borderRadius:10,fontSize:16,fontWeight:600,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontFamily:'DM Sans,sans-serif',transition:'background 0.1s'}}
+                      style={{padding:'14px',borderRadius:10,fontSize:16,fontWeight:600,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontFamily:'Open Sans,sans-serif',transition:'background 0.1s'}}
                       onMouseEnter={e=>(e.currentTarget.style.background='rgba(201,168,76,0.1)')}
                       onMouseLeave={e=>(e.currentTarget.style.background='rgba(255,255,255,0.04)')}>
                       {d}
@@ -330,12 +330,12 @@ export default function TelefonePage() {
               {/* Botão ligar/encerrar */}
               {ligacaoAtiva ? (
                 <button onClick={encerrarLigacao}
-                  style={{width:'100%',padding:'14px',borderRadius:50,fontSize:16,fontWeight:700,cursor:'pointer',border:'none',background:'var(--red)',color:'#fff',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  style={{width:'100%',padding:'14px',borderRadius:50,fontSize:16,fontWeight:700,cursor:'pointer',border:'none',background:'var(--red)',color:'#fff',fontFamily:'Open Sans,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
                   📵 Encerrar
                 </button>
               ) : (
                 <button onClick={ligar} disabled={discando||!numero.trim()}
-                  style={{width:'100%',padding:'14px',borderRadius:50,fontSize:16,fontWeight:700,cursor:'pointer',border:'none',background:numero.trim()?'var(--teal)':'rgba(255,255,255,0.1)',color:'#fff',fontFamily:'DM Sans,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background 0.2s'}}>
+                  style={{width:'100%',padding:'14px',borderRadius:50,fontSize:16,fontWeight:700,cursor:'pointer',border:'none',background:numero.trim()?'var(--teal)':'rgba(255,255,255,0.1)',color:'#fff',fontFamily:'Open Sans,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background 0.2s'}}>
                   {discando?'📞 Discando...':'📞 Ligar'}
                 </button>
               )}
@@ -364,7 +364,7 @@ export default function TelefonePage() {
                   </div>
                   {l.clientes && (
                     <button onClick={e=>{e.stopPropagation();router.push(`/dashboard/clientes/${l.cliente_id}`)}}
-                      style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',flexShrink:0,fontFamily:'DM Sans,sans-serif'}}>
+                      style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',flexShrink:0,fontFamily:'Open Sans,sans-serif'}}>
                       Ver →
                     </button>
                   )}
@@ -395,7 +395,7 @@ export default function TelefonePage() {
                 <div style={{fontSize:12,color:'var(--teal)',fontWeight:600}}>{formatDuracao(Math.round((Date.now()-new Date(l.inicio).getTime())/1000))}</div>
                 {l.clientes && (
                   <button onClick={()=>router.push(`/dashboard/clientes/${l.cliente_id}`)}
-                    style={{fontSize:11,padding:'5px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                    style={{fontSize:11,padding:'5px 10px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                     Ver ficha →
                   </button>
                 )}
@@ -434,7 +434,7 @@ export default function TelefonePage() {
                       </td>
                       <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11,color:'var(--text-muted)'}}>{new Date(l.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
                       <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
-                        {l.clientes && <button onClick={()=>router.push(`/dashboard/clientes/${l.cliente_id}`)} style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Ver →</button>}
+                        {l.clientes && <button onClick={()=>router.push(`/dashboard/clientes/${l.cliente_id}`)} style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.08)',color:'var(--gold)',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>Ver →</button>}
                       </td>
                     </tr>
                   ))}

@@ -179,7 +179,7 @@ export default function ComissoesPage(){
     setImporting(false); setImportStep('sucesso'); carregar()
   }
 
-  const sel:React.CSSProperties={background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'DM Sans,sans-serif',cursor:'pointer',outline:'none',width:'100%'}
+  const sel:React.CSSProperties={background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'7px 12px',color:'var(--text)',fontSize:12,fontFamily:'Open Sans,sans-serif',cursor:'pointer',outline:'none',width:'100%'}
   const th:React.CSSProperties={fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase' as const,color:'var(--text-muted)',textAlign:'left' as const,padding:'0 0 10px',borderBottom:'1px solid var(--border)'}
   const td0:React.CSSProperties={padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}
 
@@ -189,7 +189,7 @@ export default function ComissoesPage(){
         <div style={{fontFamily:'DM Serif Display,serif',fontSize:18,flex:1}}>
           Comissões
           {profile && profile.role!=='admin' && (
-            <span style={{marginLeft:10,fontSize:11,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif',fontWeight:400}}>
+            <span style={{marginLeft:10,fontSize:11,color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif',fontWeight:400}}>
               · {profile.role==='lider'?'minha equipe':'minhas comissões'}
             </span>
           )}
@@ -206,7 +206,7 @@ export default function ComissoesPage(){
 
         <div style={{display:'flex',gap:4}}>
           {([['recebidas','💵 Recebidas'],['extrato','📊 Previstas'],['importar','📥 Importar Excel']] as [string,string][]).map(([k,l])=>(
-            <button key={k} onClick={()=>setAbaAtiva(k as any)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:abaAtiva===k?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:abaAtiva===k?'var(--gold)':'var(--text-muted)',borderColor:abaAtiva===k?'var(--gold)':'var(--border)'}}>{l}</button>
+            <button key={k} onClick={()=>setAbaAtiva(k as any)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',background:abaAtiva===k?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:abaAtiva===k?'var(--gold)':'var(--text-muted)',borderColor:abaAtiva===k?'var(--gold)':'var(--border)'}}>{l}</button>
           ))}
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function ComissoesPage(){
           <div style={{display:'flex',gap:10,marginBottom:24,alignItems:'center',flexWrap:'wrap'}}>
             <select style={{...sel,width:'auto'}} value={anoSel} onChange={e=>setAnoSel(Number(e.target.value))}>{[anoAtual-1,anoAtual,anoAtual+1].map(a=><option key={a}>{a}</option>)}</select>
             {!vistaAno&&<select style={{...sel,width:'auto'}} value={mesSel} onChange={e=>setMesSel(Number(e.target.value))}>{MESES.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>}
-            <button onClick={()=>setVistaAno(!vistaAno)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:vistaAno?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:vistaAno?'var(--gold)':'var(--text-muted)',borderColor:vistaAno?'var(--gold)':'var(--border)'}}>{vistaAno?'📅 Ver por mês':'📆 Ver ano'}</button>
+            <button onClick={()=>setVistaAno(!vistaAno)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',background:vistaAno?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:vistaAno?'var(--gold)':'var(--text-muted)',borderColor:vistaAno?'var(--gold)':'var(--border)'}}>{vistaAno?'📅 Ver por mês':'📆 Ver ano'}</button>
             <span style={{marginLeft:'auto',fontSize:12,color:'var(--text-muted)'}}>{recLista.length} lançamento{recLista.length!==1?'s':''}</span>
           </div>
 
@@ -347,7 +347,7 @@ export default function ComissoesPage(){
           <div style={{display:'flex',gap:10,marginBottom:24,alignItems:'center',flexWrap:'wrap'}}>
             <select style={{...sel,width:'auto'}} value={anoSel} onChange={e=>setAnoSel(Number(e.target.value))}>{[anoAtual-1,anoAtual,anoAtual+1].map(a=><option key={a}>{a}</option>)}</select>
             {!vistaAno&&<select style={{...sel,width:'auto'}} value={mesSel} onChange={e=>setMesSel(Number(e.target.value))}>{MESES.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>}
-            <button onClick={()=>setVistaAno(!vistaAno)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:vistaAno?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:vistaAno?'var(--gold)':'var(--text-muted)',borderColor:vistaAno?'var(--gold)':'var(--border)'}}>{vistaAno?'📅 Ver por mês':'📆 Ver ano'}</button>
+            <button onClick={()=>setVistaAno(!vistaAno)} style={{padding:'7px 16px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',background:vistaAno?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',color:vistaAno?'var(--gold)':'var(--text-muted)',borderColor:vistaAno?'var(--gold)':'var(--border)'}}>{vistaAno?'📅 Ver por mês':'📆 Ver ano'}</button>
           </div>
 
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:20,marginBottom:24}}>
@@ -436,7 +436,7 @@ export default function ComissoesPage(){
 
             <div style={{marginBottom:20}}>
               <label style={{display:'block',fontSize:11,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>Competência</label>
-              <input type="month" value={competencia} onChange={e=>setCompetencia(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 14px',color:'var(--text)',fontSize:13,fontFamily:'DM Sans,sans-serif',outline:'none'}}/>
+              <input type="month" value={competencia} onChange={e=>setCompetencia(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'1px solid var(--border)',borderRadius:8,padding:'9px 14px',color:'var(--text)',fontSize:13,fontFamily:'Open Sans,sans-serif',outline:'none'}}/>
             </div>
 
             <div onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)}

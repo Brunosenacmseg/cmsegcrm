@@ -377,7 +377,7 @@ export default function FinanceiroPage() {
     </div>
   )
   const fmt = (n: number) => Number(n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'DM Sans,sans-serif' }
+  const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'Open Sans,sans-serif' }
   const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 }
 
   // Total de despesas por categoria (pra DRE)
@@ -405,7 +405,7 @@ export default function FinanceiroPage() {
                 border:'none', borderRadius:6,
                 background: modo===m ? (m==='projecao'?'rgba(74,128,240,0.2)':'rgba(28,181,160,0.2)') : 'transparent',
                 color: modo===m ? (m==='projecao'?'#7aa3f8':'var(--teal)') : 'var(--text-muted)',
-                fontFamily:'DM Sans,sans-serif'
+                fontFamily:'Open Sans,sans-serif'
               }}>
               {m==='projecao' ? '📅 Projeção' : '✅ Real'}
             </button>
@@ -477,7 +477,7 @@ export default function FinanceiroPage() {
         <div style={{display:'flex',gap:0,borderBottom:'1px solid var(--border)',marginBottom:18}}>
           {[['dre','📊 DRE'],['despesas','💸 Despesas'],['recorrentes','🔁 Recorrentes'],['categorias','🗂 Categorias']].map(([k,l])=>(
             <button key={k} onClick={()=>setAba(k as any)}
-              style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'DM Sans,sans-serif'}}>
+              style={{padding:'10px 20px',fontSize:13,cursor:'pointer',border:'none',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontWeight:aba===k?600:400,borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',marginBottom:-1,fontFamily:'Open Sans,sans-serif'}}>
               {l}
             </button>
           ))}

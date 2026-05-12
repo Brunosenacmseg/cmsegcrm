@@ -36,7 +36,7 @@ const ROBO_PROXY        = '/api/cotacoes/calcular'
 const INP_STYLE: React.CSSProperties = {
   width:'100%', background:'rgba(255,255,255,0.06)', border:'1px solid var(--border)',
   borderRadius:8, padding:'8px 12px', color:'var(--text)', fontSize:13,
-  fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box',
+  fontFamily:'Open Sans,sans-serif', outline:'none', boxSizing:'border-box',
 }
 const SEL_STYLE: React.CSSProperties = {
   ...INP_STYLE, cursor:'pointer', background:'#ffffff',
@@ -512,7 +512,7 @@ export default function CotacoesPage() {
             <div style={{display:'flex',borderBottom:'1px solid var(--border)',flexShrink:0,overflowX:'auto'}}>
               {abas.map(([k,l])=>(
                 <button key={k} onClick={()=>setAba(k)}
-                  style={{padding:'10px 18px',fontSize:12,cursor:'pointer',border:'none',borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap',marginBottom:-1}}>
+                  style={{padding:'10px 18px',fontSize:12,cursor:'pointer',border:'none',borderBottom:aba===k?'2px solid var(--gold)':'2px solid transparent',background:'transparent',color:aba===k?'var(--gold)':'var(--text-muted)',fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap',marginBottom:-1}}>
                   {l}
                 </button>
               ))}

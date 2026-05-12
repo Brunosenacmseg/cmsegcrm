@@ -199,7 +199,7 @@ export default function ChatIA() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {SUGESTOES.map((s, i) => (
                     <button key={i} onClick={() => enviar(s)}
-                      style={{ fontSize: 11, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', border: '1px solid rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.08)', color: 'var(--gold)', fontFamily: 'DM Sans,sans-serif', textAlign: 'left', lineHeight: 1.3 }}>
+                      style={{ fontSize: 11, padding: '5px 10px', borderRadius: 14, cursor: 'pointer', border: '1px solid rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.08)', color: 'var(--gold)', fontFamily: 'Open Sans,sans-serif', textAlign: 'left', lineHeight: 1.3 }}>
                       {s}
                     </button>
                   ))}
@@ -230,7 +230,7 @@ export default function ChatIA() {
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() } }}
               placeholder="Pergunte sobre seguros ou seu CRM..."
               disabled={carregando}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', borderRadius: 20, padding: '9px 14px', color: '#f5f5f7', fontSize: 13, fontFamily: 'DM Sans,sans-serif', outline: 'none' }}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', borderRadius: 20, padding: '9px 14px', color: '#f5f5f7', fontSize: 13, fontFamily: 'Open Sans,sans-serif', outline: 'none' }}
             />
             <button onClick={() => enviar()} disabled={carregando || !input.trim()}
               style={{ width: 38, height: 38, borderRadius: '50%', background: input.trim() && !carregando ? 'linear-gradient(135deg, var(--gold), #e8a020)' : 'rgba(255,255,255,0.08)', border: 'none', cursor: input.trim() && !carregando ? 'pointer' : 'default', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: input.trim() ? '#000' : 'var(--text-muted)', transition: 'all 0.2s' }}>

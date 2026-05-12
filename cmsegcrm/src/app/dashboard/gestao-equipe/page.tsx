@@ -78,7 +78,7 @@ const inputStyle: React.CSSProperties = {
 const btn: React.CSSProperties = {
   padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)',
   background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer', fontSize: 13,
-  fontFamily: 'DM Sans,sans-serif',
+  fontFamily: 'Open Sans,sans-serif',
 }
 const btnGold: React.CSSProperties = {
   ...btn, background: 'var(--gold)', borderColor: 'var(--gold)', color: '#1a1a1a', fontWeight: 600,
@@ -221,7 +221,7 @@ export default function GestaoEquipePage() {
             background: tab === t.k ? 'var(--gold-soft)' : 'transparent',
             color: tab === t.k ? 'var(--gold)' : 'var(--text-muted)',
             borderBottom: tab === t.k ? '2px solid var(--gold)' : '2px solid transparent',
-            cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'DM Sans,sans-serif',
+            cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'Open Sans,sans-serif',
           }}>
             {t.l}
           </button>

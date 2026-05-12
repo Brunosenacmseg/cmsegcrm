@@ -777,7 +777,7 @@ export default function SeguradoraDetalhePage() {
                 background: ativa ? 'var(--gold-soft)' : 'transparent',
                 color: ativa ? 'var(--gold)' : 'var(--text-muted)',
                 borderBottom: ativa ? '2px solid var(--gold)' : '2px solid transparent',
-                fontSize:13, fontWeight:600, fontFamily:'DM Sans,sans-serif',
+                fontSize:13, fontWeight:600, fontFamily:'Open Sans,sans-serif',
                 whiteSpace:'nowrap', transition:'all 0.15s',
               }}>
                 {a.emoji} {a.label}
@@ -807,7 +807,7 @@ export default function SeguradoraDetalhePage() {
                 flex:'1 1 280px', maxWidth:380, padding:'7px 10px',
                 background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)',
                 borderRadius:8, color:'var(--text)', fontSize:12,
-                fontFamily:'DM Sans,sans-serif',
+                fontFamily:'Open Sans,sans-serif',
               }}
             />
             <button
@@ -815,7 +815,7 @@ export default function SeguradoraDetalhePage() {
               disabled={sincronizando || cont.pend === 0}
               style={{
                 padding:'8px 16px', borderRadius:8, border:'1px solid',
-                fontSize:13, fontWeight:600, fontFamily:'DM Sans,sans-serif',
+                fontSize:13, fontWeight:600, fontFamily:'Open Sans,sans-serif',
                 background: cont.pend > 0 ? 'rgba(74,128,240,0.15)' : 'rgba(255,255,255,0.04)',
                 color: cont.pend > 0 ? '#7aa3f8' : 'var(--text-muted)',
                 borderColor: cont.pend > 0 ? 'rgba(74,128,240,0.4)' : 'var(--border)',

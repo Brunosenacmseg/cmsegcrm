@@ -155,7 +155,7 @@ export default function RenovacoesPage() {
           {[['todos','Todos'],['vencidos','🔴 Vencidos'],['hoje','🟠 Hoje'],['7d','🟡 7 dias'],['30d','🟢 30 dias']].map(([k,l])=>(
             <button key={k} onClick={()=>setFiltro(k)} style={{
               padding:'6px 14px',borderRadius:20,fontSize:12,cursor:'pointer',
-              border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',
+              border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',
               background:filtro===k?'rgba(201,168,76,0.12)':'rgba(255,255,255,0.04)',
               color:filtro===k?'var(--gold)':'var(--text-muted)',
               borderColor:filtro===k?'var(--gold)':'var(--border)'
@@ -224,12 +224,12 @@ export default function RenovacoesPage() {
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                         <button onClick={()=>registrarContato(n.id,n.clientes?.id)} style={{
                           fontSize:11,background:'rgba(74,128,240,0.1)',border:'1px solid rgba(74,128,240,0.3)',
-                          color:'#7aa3f8',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                          color:'#7aa3f8',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                           📞 Contato
                         </button>
                         <button onClick={()=>marcarRenovado(n.id,n.clientes?.id)} style={{
                           fontSize:11,background:'rgba(28,181,160,0.1)',border:'1px solid rgba(28,181,160,0.3)',
-                          color:'var(--teal)',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                          color:'var(--teal)',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontFamily:'Open Sans,sans-serif'}}>
                           ✅ Renovado
                         </button>
                       </div>

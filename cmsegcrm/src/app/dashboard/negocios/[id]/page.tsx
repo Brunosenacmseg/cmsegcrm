@@ -21,6 +21,11 @@ export default function NegocioDetailPage() {
   const [tarefas, setTarefas]   = useState<any[]>([])
   const [eventos, setEventos]   = useState<any[]>([])
   const [notas, setNotas]       = useState<any[]>([])
+  const [produtos, setProdutos] = useState<any[]>([])
+  const [produtosAll, setProdutosAll] = useState<any[]>([])
+  const [modalProduto, setModalProduto] = useState(false)
+  const [formProduto, setFormProduto] = useState<{produto_id:string; quantidade:string; valor_unit:string; obs:string}>({produto_id:'',quantidade:'1',valor_unit:'',obs:''})
+  const [salvandoProduto, setSalvandoProduto] = useState(false)
   const [tab, setTab]           = useState<Tab>('historico')
   const [devMode, setDevMode]   = useState(false)
   const [filtroEventoOrigem, setFiltroEventoOrigem] = useState<'todos'|'crm'|'rd'>('todos')
@@ -45,18 +50,22 @@ export default function NegocioDetailPage() {
         const { data: profile } = await supabase.from('users').select('id,nome,avatar_url,role').eq('id', user.id).single()
         setMe(profile)
       }
-      const [{ data: fn }, { data: cl }, { data: rp }, { data: tr }, { data: nt }] = await Promise.all([
+      const [{ data: fn }, { data: cl }, { data: rp }, { data: tr }, { data: nt }, { data: pr }, { data: pAll }] = await Promise.all([
         neg.funil_id ? supabase.from('funis').select('*').eq('id', neg.funil_id).single() : Promise.resolve({ data: null } as any),
         neg.cliente_id ? supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj,empresa,cargo').eq('id', neg.cliente_id).single() : Promise.resolve({ data: null } as any),
         neg.vendedor_id ? supabase.from('users').select('id,nome,email,avatar_url,role').eq('id', neg.vendedor_id).single() : Promise.resolve({ data: null } as any),
         supabase.from('tarefas').select('*').eq('negocio_id', id).order('prazo', { ascending: true }),
         supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false}),
+        supabase.from('negocio_produtos').select('*').eq('negocio_id', id).order('criado_em',{ascending:true}),
+        supabase.from('produtos').select('id,nome,valor_padrao').eq('ativo',true).order('nome'),
       ])
       setFunil(fn)
       setCliente(cl)
       setResp(rp)
       setTarefas(tr || [])
       setNotas(nt || [])
+      setProdutos(pr || [])
+      setProdutosAll(pAll || [])
       const { data: ev } = await supabase.from('logs').select('*').or(`recurso.ilike.%${id}%,pathname.ilike.%${id}%`).order('criado_em', { ascending: false }).limit(50)
       setEventos(ev || [])
       setLoading(false)
@@ -88,6 +97,36 @@ export default function NegocioDetailPage() {
     if (!confirm('Excluir esta anotação?')) return
     await supabase.from('negocio_notas').delete().eq('id', notaId)
     recarregarNotas()
+  }
+
+  async function recarregarProdutos() {
+    const { data } = await supabase.from('negocio_produtos').select('*').eq('negocio_id', id).order('criado_em',{ascending:true})
+    setProdutos(data || [])
+  }
+
+  async function salvarProduto() {
+    if (!formProduto.produto_id) { alert('Selecione um produto'); return }
+    const p = produtosAll.find(x => x.id === formProduto.produto_id)
+    setSalvandoProduto(true)
+    await supabase.from('negocio_produtos').insert({
+      negocio_id: id,
+      produto_id: formProduto.produto_id,
+      nome_snapshot: p?.nome || null,
+      quantidade: Number(formProduto.quantidade) || 1,
+      valor_unit: formProduto.valor_unit ? Number(String(formProduto.valor_unit).replace(/\./g,'').replace(',','.')) : (p?.valor_padrao || 0),
+      desconto: 0,
+      observacao: formProduto.obs || null,
+    })
+    setSalvandoProduto(false)
+    setModalProduto(false)
+    setFormProduto({produto_id:'',quantidade:'1',valor_unit:'',obs:''})
+    recarregarProdutos()
+  }
+
+  async function removerProduto(npId: string) {
+    if (!confirm('Remover este produto?')) return
+    await supabase.from('negocio_produtos').delete().eq('id', npId)
+    recarregarProdutos()
   }
 
   const etapas: string[] = funil?.etapas || []
@@ -405,13 +444,110 @@ export default function NegocioDetailPage() {
               )}
               {tab==='email' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>E-mails relacionados serão exibidos aqui em breve.</div>}
               {tab==='questionarios' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Sem questionários cadastrados.</div>}
-              {tab==='produtos' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Produtos vinculados serão exibidos aqui.</div>}
+              {tab==='produtos' && (
+                <div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:12,color:'var(--text-muted)'}}>Exibir</span>
+                      <select disabled value="atual"
+                        style={{padding:'6px 10px',border:'1px solid var(--border-soft)',borderRadius:6,fontSize:12,background:'#fff',outline:'none'}}>
+                        <option value="atual">Proposta atual</option>
+                      </select>
+                    </div>
+                    <button onClick={()=>setModalProduto(true)}
+                      style={{background:'var(--blue-soft)',color:'var(--blue-dark)',border:'1px solid #bfdbfe',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                      + Adicionar produto ou serviço
+                    </button>
+                  </div>
+                  {produtos.length === 0 ? (
+                    <div style={{display:'flex',alignItems:'center',gap:18,padding:'28px 24px',border:'1px solid var(--border-soft)',borderRadius:12,background:'var(--bg)'}}>
+                      <div style={{fontSize:48}}>📦</div>
+                      <div style={{color:'var(--blue-dark)',fontSize:14}}>Não há nenhum produto ou serviço na proposta atual</div>
+                    </div>
+                  ) : (
+                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                      {produtos.map(p => (
+                        <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto auto 30px',gap:14,alignItems:'center',padding:'12px 14px',border:'1px solid var(--border-soft)',borderRadius:10,background:'#fff'}}>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{p.nome_snapshot || 'Produto'}</div>
+                            {p.observacao && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{p.observacao}</div>}
+                          </div>
+                          <div style={{fontSize:12,color:'var(--text-muted)'}}>Qtd: <strong style={{color:'var(--text)'}}>{p.quantidade||1}</strong></div>
+                          <div style={{fontSize:12,color:'var(--text-muted)'}}>Unit.: <strong style={{color:'var(--text)'}}>R$ {Number(p.valor_unit||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></div>
+                          <div style={{fontSize:13,color:'var(--teal)',fontWeight:600}}>R$ {(Number(p.valor_unit||0) * Number(p.quantidade||1)).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+                          <button onClick={()=>removerProduto(p.id)} title="Remover"
+                            style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:14}}>🗑</button>
+                        </div>
+                      ))}
+                      {(() => {
+                        const total = produtos.reduce((s,p)=>s + Number(p.valor_unit||0)*Number(p.quantidade||1), 0)
+                        return (
+                          <div style={{display:'flex',justifyContent:'flex-end',gap:14,padding:'10px 14px',fontSize:13}}>
+                            <span style={{color:'var(--text-muted)'}}>Total</span>
+                            <strong style={{color:'var(--teal)'}}>R$ {total.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
               {tab==='arquivos' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Arquivos anexados serão exibidos aqui.</div>}
               {tab==='propostas' && <div style={{textAlign:'center',color:'var(--text-muted)',fontSize:13,padding:24}}>Propostas vinculadas serão exibidas aqui.</div>}
             </div>
           </div>
         </div>
       </div>
+
+      {modalProduto && (
+        <>
+          <div onClick={()=>setModalProduto(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000}}/>
+          <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(440px,92vw)',background:'#fff',zIndex:1001,borderRadius:12,boxShadow:'var(--shadow-lg)'}}>
+            <div style={{padding:'18px 22px',borderBottom:'1px solid var(--border-soft)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>Adicionar produto ou serviço</div>
+              <button onClick={()=>setModalProduto(false)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{padding:'18px 22px',display:'flex',flexDirection:'column',gap:12}}>
+              <div>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Produto *</label>
+                <select value={formProduto.produto_id} onChange={e=>{
+                  const p = produtosAll.find(x => x.id === e.target.value)
+                  setFormProduto(f=>({...f, produto_id:e.target.value, valor_unit: p?.valor_padrao ? String(p.valor_padrao).replace('.',',') : f.valor_unit}))
+                }}
+                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',background:'#fff'}}>
+                  <option value="">— selecione —</option>
+                  {produtosAll.map(p=> <option key={p.id} value={p.id}>{p.nome}</option>)}
+                </select>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Quantidade *</label>
+                  <input type="number" min={1} value={formProduto.quantidade} onChange={e=>setFormProduto(f=>({...f,quantidade:e.target.value}))}
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                </div>
+                <div>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Valor unit. (R$)</label>
+                  <input value={formProduto.valor_unit} onChange={e=>setFormProduto(f=>({...f,valor_unit:e.target.value}))} placeholder="0,00"
+                    style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none'}}/>
+                </div>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:5,color:'var(--text)'}}>Observação</label>
+                <textarea value={formProduto.obs} onChange={e=>setFormProduto(f=>({...f,obs:e.target.value}))} rows={2}
+                  style={{width:'100%',padding:'9px 12px',border:'1px solid var(--border-soft)',borderRadius:8,fontSize:13,outline:'none',fontFamily:'inherit',resize:'vertical'}}/>
+              </div>
+            </div>
+            <div style={{padding:'14px 22px',borderTop:'1px solid var(--border-soft)',display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>setModalProduto(false)}
+                style={{padding:'9px 16px',borderRadius:8,border:'1px solid var(--border-soft)',background:'#fff',color:'var(--text)',cursor:'pointer',fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={salvarProduto} disabled={salvandoProduto||!formProduto.produto_id}
+                style={{padding:'9px 18px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,opacity:(salvandoProduto||!formProduto.produto_id)?0.5:1}}>
+                {salvandoProduto?'Salvando...':'Adicionar'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

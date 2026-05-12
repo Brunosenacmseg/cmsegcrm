@@ -37,7 +37,7 @@ export default function BoasVindasLider({ visivel }: { visivel: boolean }) {
       <div onClick={e => e.stopPropagation()} style={{
         background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14,
         width: 'min(560px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 32,
-        fontFamily: 'DM Sans, sans-serif', position: 'relative', boxShadow: 'var(--shadow-lg)',
+        fontFamily: 'Open Sans, sans-serif', position: 'relative', boxShadow: 'var(--shadow-lg)',
       }}>
         <button onClick={fechar} aria-label="Fechar" style={{
           position: 'absolute', top: 14, right: 14, background: 'none', border: 'none',
@@ -75,12 +75,12 @@ export default function BoasVindasLider({ visivel }: { visivel: boolean }) {
           <button onClick={fechar} style={{
             padding: '10px 18px', borderRadius: 8, border: '1px solid var(--border)',
             background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
-            fontFamily: 'DM Sans, sans-serif',
+            fontFamily: 'Open Sans, sans-serif',
           }}>Lembrar amanhã</button>
           <button onClick={irParaModulo} style={{
             padding: '10px 18px', borderRadius: 8, border: '1px solid var(--gold)',
             background: 'var(--gold)', color: 'var(--navy)', fontSize: 13, fontWeight: 600,
-            cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+            cursor: 'pointer', fontFamily: 'Open Sans, sans-serif',
           }}>Ir para Gestão de Equipe →</button>
         </div>
       </div>

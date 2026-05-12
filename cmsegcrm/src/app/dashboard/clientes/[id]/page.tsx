@@ -126,7 +126,7 @@ export default function FichaClientePage() {
   const selStyle = {
     background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)',
     borderRadius:6, padding:'4px 8px', color:'var(--text)',
-    fontFamily:'DM Sans,sans-serif', fontSize:11, cursor:'pointer', width:'100%', marginTop:8
+    fontFamily:'Open Sans,sans-serif', fontSize:11, cursor:'pointer', width:'100%', marginTop:8
   }
 
   return (
@@ -176,7 +176,7 @@ export default function FichaClientePage() {
             <button key={k} onClick={() => setAbaAtiva(k)} style={{
               padding:'10px 20px', fontSize:13, fontWeight:500, cursor:'pointer', background:'none',
               border:'none', borderBottom:`2px solid ${abaAtiva===k?'var(--gold)':'transparent'}`,
-              color:abaAtiva===k?'var(--gold)':'var(--text-muted)', fontFamily:'DM Sans,sans-serif',
+              color:abaAtiva===k?'var(--gold)':'var(--text-muted)', fontFamily:'Open Sans,sans-serif',
               transition:'all 0.15s'
             }}>{l}</button>
           ))}
@@ -193,7 +193,7 @@ export default function FichaClientePage() {
               display:'flex',alignItems:'center',gap:8,width:'100%',
               border:'1px dashed rgba(201,168,76,0.3)',borderRadius:10,padding:'12px 16px',
               cursor:'pointer',color:'var(--gold)',fontSize:13,
-              background:'rgba(201,168,76,0.03)',fontFamily:'DM Sans,sans-serif',marginBottom:16,
+              background:'rgba(201,168,76,0.03)',fontFamily:'Open Sans,sans-serif',marginBottom:16,
             }}>＋ Novo Negócio para {cliente.nome}</button>
 
             {Object.entries(negPorFunil).map(([tipo, negs]) => {
@@ -231,7 +231,7 @@ export default function FichaClientePage() {
                           <button onClick={() => adicionarNota(n.id)} style={{
                             fontSize:11,background:'rgba(28,181,160,0.1)',border:'1px solid rgba(28,181,160,0.3)',
                             color:'var(--teal)',borderRadius:6,padding:'4px 12px',cursor:'pointer',
-                            fontFamily:'DM Sans,sans-serif',whiteSpace:'nowrap',marginTop:8
+                            fontFamily:'Open Sans,sans-serif',whiteSpace:'nowrap',marginTop:8
                           }}>+ Nota</button>
                         </div>
                         {/* Anexos do negócio */}
@@ -338,7 +338,7 @@ export default function FichaClientePage() {
                   <tr key={a.id}>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,fontFamily:'monospace'}}>
                       {a.numero||'—'}
-                      {a.placa&&<div style={{fontSize:11,color:'var(--text-muted)',fontFamily:'DM Sans,sans-serif'}}>🚗 {a.placa}</div>}
+                      {a.placa&&<div style={{fontSize:11,color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>🚗 {a.placa}</div>}
                     </td>
                     <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:13}}>
                       <strong>{a.produto||a.ramo||'—'}</strong>
