@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/suhai-followup",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/rdstation/poll",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

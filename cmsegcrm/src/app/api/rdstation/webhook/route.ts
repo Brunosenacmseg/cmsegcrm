@@ -29,7 +29,7 @@ function docValido(v?: string | null): string | null {
 }
 
 // ─── Mapeamento de Deal RD → negocio CMSEGCRM ──────────────
-async function aplicarDeal(d: RDDeal, eventType: string) {
+export async function aplicarDeal(d: RDDeal, eventType: string) {
   const id = rdId(d)
   if (!id) return { ok: false, motivo: 'Deal sem id' }
 
