@@ -96,13 +96,16 @@ export async function POST(req: NextRequest) {
     } catch (e) { console.error('[rd/poll] fetch deal_stages falhou:', e) }
 
     // Politica: o cron sincroniza APENAS novos deals do funil META + MULTICANAL.
-    // Demais funis e updates de existentes sao ignorados (webhook ainda funciona
-    // sem essa restricao para casos manuais).
+    // ?backfill=1 desativa essa restricao para reprocessar deals existentes
+    // (ex: corrigir funil de deals importados em RECICLADOS por bug antigo).
+    const backfill = req.nextUrl.searchParams.get('backfill') === '1'
     const { data: metaFunil } = await sa.from('funis').select('rd_id').eq('nome', 'META + MULTICANAL').maybeSingle()
     const META_RD_ID = metaFunil?.rd_id ? String(metaFunil.rd_id) : null
     let dealsFiltrados = deals
     let pulados_outros_funis = 0, pulados_existentes = 0
-    if (META_RD_ID) {
+    if (backfill) {
+      // No backfill processa tudo (qualquer pipeline conhecido, novo ou existente)
+    } else if (META_RD_ID) {
       dealsFiltrados = deals.filter(d => {
         const sid = String(d?.deal_stage?._id || d?.deal_stage?.id || '')
         const pid = sid ? pipelinePorStage[sid] : null
