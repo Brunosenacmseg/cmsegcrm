@@ -27,9 +27,15 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ ok: false, erro: 'não autenticado' }, { status: 401 })
   let body: any
   try { body = await req.json() } catch { return NextResponse.json({ ok: false, erro: 'JSON inválido' }, { status: 400 }) }
-  const { conexao_id, nome, entidade_alvo, funil_id, etapa_inicial, responsavel_id, mapa_campos } = body || {}
+  const { conexao_id, nome, entidade_alvo, funil_id, etapa_inicial, responsavel_id, responsaveis_ids, responsavel_modo, mapa_campos } = body || {}
   if (!conexao_id || !nome || !entidade_alvo) return NextResponse.json({ ok: false, erro: 'conexao_id, nome, entidade_alvo obrigatórios' }, { status: 400 })
   if (!(await ehAdmin(user.id))) return NextResponse.json({ ok: false, erro: 'apenas admin' }, { status: 403 })
+
+  const modo = responsavel_modo === 'sequencial' ? 'sequencial' : 'fixo'
+  const listaIds = Array.isArray(responsaveis_ids) ? responsaveis_ids.filter((x: any) => typeof x === 'string' && x) : []
+  if (modo === 'sequencial' && listaIds.length === 0) {
+    return NextResponse.json({ ok: false, erro: 'modo sequencial exige pelo menos 1 responsável' }, { status: 400 })
+  }
 
   const t = generateInboundToken()
   const { data, error } = await supabaseAdmin().from('integracoes_webhooks_in').insert({
@@ -39,7 +45,9 @@ export async function POST(req: NextRequest) {
     entidade_alvo,
     funil_id: funil_id || null,
     etapa_inicial: etapa_inicial || null,
-    responsavel_id: responsavel_id || null,
+    responsavel_id: modo === 'fixo' ? (responsavel_id || null) : null,
+    responsaveis_ids: listaIds,
+    responsavel_modo: modo,
     mapa_campos: mapa_campos || {},
   }).select('*').single()
   if (error) return NextResponse.json({ ok: false, erro: error.message }, { status: 500 })

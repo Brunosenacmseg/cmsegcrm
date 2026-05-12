@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, ctx: { params: { token: string } })
   // evitando que tempo de resposta vaze info sobre tokens válidos.
   const { data: webhooks } = await sa
     .from('integracoes_webhooks_in')
-    .select('id, conexao_id, entidade_alvo, funil_id, etapa_inicial, responsavel_id, mapa_campos, ativo, token')
+    .select('id, conexao_id, entidade_alvo, funil_id, etapa_inicial, responsavel_id, responsaveis_ids, responsavel_modo, mapa_campos, ativo, token')
     .eq('ativo', true)
   let wh: any = null
   for (const w of (webhooks || []) as any[]) {
@@ -74,6 +74,14 @@ export async function POST(req: NextRequest, ctx: { params: { token: string } })
   // Se o mapa estiver vazio, assume que o payload já está no formato esperado.
   const dados = Object.keys(mapa).length ? aplicarMapa(payload, mapa) : payload
   const entidade = wh.entidade_alvo as 'negocio' | 'cliente' | 'tarefa' | 'nota'
+
+  // Resolve responsável: modo sequencial rotaciona pela lista responsaveis_ids
+  // (round-robin atômico via RPC). Modo fixo usa responsavel_id.
+  let responsavelFinal: string | null = (wh.responsavel_id as string | null) || null
+  if (wh.responsavel_modo === 'sequencial' && Array.isArray(wh.responsaveis_ids) && wh.responsaveis_ids.length > 0) {
+    const { data: prox } = await sa.rpc('integrador_next_responsavel', { p_webhook_id: wh.id })
+    if (prox) responsavelFinal = prox as unknown as string
+  }
 
   try {
     let resultado: any
@@ -116,12 +124,12 @@ export async function POST(req: NextRequest, ctx: { params: { token: string } })
         {
           funil_id: (wh.funil_id as string | null) || undefined,
           etapa: (wh.etapa_inicial as string | null) || undefined,
-          responsavel_id: (wh.responsavel_id as string | null) || undefined,
+          responsavel_id: responsavelFinal || undefined,
         }
       )
       resultado = { tipo: 'negocio', id: negocio.id }
     } else if (entidade === 'tarefa') {
-      const tarefa = await criarTarefa(dados as any, { responsavel_id: (wh.responsavel_id as string | null) || undefined })
+      const tarefa = await criarTarefa(dados as any, { responsavel_id: responsavelFinal || undefined })
       resultado = { tipo: 'tarefa', id: tarefa.id }
     } else if (entidade === 'nota') {
       const nota = await criarNota(dados as any)
