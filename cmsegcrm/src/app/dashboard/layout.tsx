@@ -50,7 +50,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
-  { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', adminOnly:true },
+  { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', equipeGestao:true },
   { href:'/dashboard/configuracoes',icon:'⚙️', label:'Configurações', section:'Config', adminOnly:true },
 ]
 

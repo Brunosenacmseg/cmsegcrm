@@ -32,7 +32,20 @@ export default function LogsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     const { data: prof } = await supabase.from('users').select('*').eq('id', user.id).single()
-    if (prof?.role !== 'admin') { router.push('/dashboard'); return }
+    let liberado = prof?.role === 'admin'
+    if (!liberado) {
+      // Membro ou líder da EQUIPE GESTÃO tambem tem acesso
+      const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+      const { data: minhas } = await supabase
+        .from('equipe_membros').select('equipes(nome)').eq('user_id', user.id)
+      const liderada = await supabase.from('equipes').select('nome').eq('lider_id', user.id)
+      const nomesEq = [
+        ...((minhas || []) as any[]).map(m => m.equipes?.nome),
+        ...((liderada.data || []) as any[]).map(e => e.nome),
+      ].filter(Boolean).map(norm)
+      liberado = nomesEq.some(n => n === 'gestao' || n === 'equipe gestao')
+    }
+    if (!liberado) { router.push('/dashboard'); return }
     setProfile(prof)
     const { data: us } = await supabase.from('users').select('id,nome,email').order('nome')
     setUsuarios(us || [])
