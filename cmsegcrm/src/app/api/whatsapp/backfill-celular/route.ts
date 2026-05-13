@@ -57,24 +57,33 @@ export async function GET(req: NextRequest) {
       // Busca msgs no Evolution (fromMe=true)
       let msgs: any[] = []
       try {
-        const url = `${evoUrl(inst).replace(/\/$/, '')}/chat/findMessages/${encodeURIComponent(inst.nome)}`
-        // Evolution ignora `fromMe` no where e o `limit` raw — passamos via
-        // `page`/`offset` se disponivel. Buscamos TODAS as msgs do remoteJid
-        // (sem filtro fromMe) e filtramos client-side. Limite alto pra puxar
-        // historico completo.
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': evoKey(inst) },
+        const baseUrl = evoUrl(inst).replace(/\/$/, '')
+        const headers = { 'Content-Type': 'application/json', 'apikey': evoKey(inst) }
+        // Evolution v2 estranhamente retorna so 1 msg quando limit/page no body.
+        // Try paginated with proper Pagination shape (Baileys-like):
+        let r = await fetch(`${baseUrl}/chat/findMessages/${encodeURIComponent(inst.nome)}`, {
+          method: 'POST', headers,
           body: JSON.stringify({
             where: { key: { remoteJid: jid } },
-            limit: limite,
             page: 1,
-            offset: 0,
+            offset: limite,
           }),
         })
         if (!r.ok) { erros.push(`${inst.nome} ${jid}: HTTP ${r.status}`); continue }
         const j: any = await r.json()
         msgs = Array.isArray(j) ? j : (j?.messages?.records || j?.records || j?.data || [])
+        // Se voltou poucas (Evo as vezes retorna 1 quando ignora paginacao),
+        // tenta com query params na URL como fallback
+        if (msgs.length <= 1) {
+          try {
+            const r2 = await fetch(`${baseUrl}/chat/findMessages/${encodeURIComponent(inst.nome)}?remoteJid=${encodeURIComponent(jid)}&limit=${limite}`, { method: 'POST', headers, body: JSON.stringify({}) })
+            if (r2.ok) {
+              const j2: any = await r2.json()
+              const m2: any[] = Array.isArray(j2) ? j2 : (j2?.messages?.records || j2?.records || j2?.data || [])
+              if (m2.length > msgs.length) msgs = m2
+            }
+          } catch {}
+        }
         totalConsultadas += msgs.length
         if (debug_first_response.hash === null) {
           debug_first_response.hash = jid
