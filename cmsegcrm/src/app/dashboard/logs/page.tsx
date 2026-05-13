@@ -91,6 +91,58 @@ export default function LogsPage() {
     return JSON.stringify(v || '').toLowerCase()
   }
 
+  function exportarCSV() {
+    let linhas: string[][] = []
+    let nomeArquivo = 'logs.csv'
+    if (aba === 'sistema') {
+      nomeArquivo = `logs-sistema-${new Date().toISOString().slice(0,10)}.csv`
+      linhas = [['Data','Usuario','Email','Acao','Recurso','Recurso ID','Caminho','Detalhe','IP']]
+      for (const l of sistemaFiltrado) {
+        linhas.push([
+          fmtData(l.criado_em),
+          l.user_nome || '', l.user_email || '',
+          l.acao || '', l.recurso || '', l.recurso_id || '',
+          l.caminho || '', JSON.stringify(l.detalhe || {}),
+          l.ip || '',
+        ])
+      }
+    } else if (aba === 'logins') {
+      nomeArquivo = `logs-logins-${new Date().toISOString().slice(0,10)}.csv`
+      linhas = [['Data','Usuario','Email','IP','Cidade','Estado','Pais','User Agent','Sucesso']]
+      for (const l of loginsFiltrados) {
+        linhas.push([
+          fmtData(l.criado_em),
+          l.user_nome || '', l.user_email || '',
+          l.ip || '', l.cidade || '', l.estado || '', l.pais || '',
+          l.user_agent || '', l.sucesso === false ? 'falhou' : 'ok',
+        ])
+      }
+    } else {
+      nomeArquivo = `logs-jornadas-${new Date().toISOString().slice(0,10)}.csv`
+      linhas = [['Iniciada em','Encerrada em','Usuario','Email','Duracao (min)']]
+      for (const l of jornadasLogs) {
+        const ini = l.iniciada_em ? new Date(l.iniciada_em) : null
+        const fim = l.encerrada_em ? new Date(l.encerrada_em) : null
+        const dur = ini && fim ? Math.round((fim.getTime() - ini.getTime())/60000) : ''
+        linhas.push([
+          ini ? fmtData(l.iniciada_em) : '',
+          fim ? fmtData(l.encerrada_em) : 'Em andamento',
+          l.users?.nome || '', l.users?.email || '',
+          String(dur),
+        ])
+      }
+    }
+    const csv = linhas.map(r => r.map(c => {
+      const s = String(c ?? '')
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g,'""') + '"' : s
+    }).join(',')).join('\r\n')
+    // BOM para Excel reconhecer UTF-8
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = nomeArquivo; a.click()
+    setTimeout(()=>URL.revokeObjectURL(url), 1000)
+  }
+
   const sistemaFiltrado = systemLogs.filter(l => {
     if (!filtroBusca.trim()) return true
     const q = filtroBusca.toLowerCase()
@@ -152,6 +204,13 @@ export default function LogsPage() {
         <input className="input" type="text" value={filtroBusca}
           onChange={e=>setFiltroBusca(e.target.value)}
           placeholder="Buscar (ação, recurso, IP, cidade...)"/>
+      </div>
+
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:12}}>
+        <button onClick={exportarCSV}
+          style={{padding:'8px 14px',borderRadius:8,border:'1px solid var(--teal)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'Open Sans,sans-serif'}}>
+          ⬇ Exportar CSV ({aba === 'sistema' ? sistemaFiltrado.length : aba === 'logins' ? loginsFiltrados.length : jornadasLogs.length})
+        </button>
       </div>
 
       {aba === 'sistema' && (
