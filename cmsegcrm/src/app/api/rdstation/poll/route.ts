@@ -77,18 +77,22 @@ export async function POST(req: NextRequest) {
     const j: any = await r.json()
     const deals: any[] = Array.isArray(j) ? j : (j?.deals || j?.data || [])
 
-    // /deals lista nao envia deal_pipeline_id no payload. Pre-carrega
-    // TODOS os /deal_stages via listarTodos (paginacao correta — mesma
-    // funcao que sync/route.ts usa).
+    // /deals lista nao envia deal_pipeline_id. Carrega via /deal_pipelines
+    // (cada pipeline traz suas stages nested em deal_stages — mesma estrategia
+    // do sync/route.ts:147). /deal_stages como endpoint isolado so retorna
+    // o primeiro pipeline.
     const pipelinePorStage: Record<string, string> = {}
     try {
-      const stages: any[] = await listarTodos('/deal_stages', token, 'deal_stages')
-      for (const s of stages) {
-        const sid = String(s?._id || s?.id || '')
-        const sPid = s?.deal_pipeline_id || s?.deal_pipeline?._id || s?.deal_pipeline?.id
-        if (sid && sPid) pipelinePorStage[sid] = String(sPid)
+      const pipelines: any[] = await listarTodos('/deal_pipelines', token, 'deal_pipelines')
+      for (const p of pipelines) {
+        const pid = String(p?._id || p?.id || '')
+        const stages = (p?.deal_stages || p?.stages || []) as any[]
+        for (const s of stages) {
+          const sid = String(s?._id || s?.id || '')
+          if (sid && pid) pipelinePorStage[sid] = pid
+        }
       }
-    } catch (e) { console.error('[rd/poll] listarTodos deal_stages falhou:', e) }
+    } catch (e) { console.error('[rd/poll] listarTodos deal_pipelines falhou:', e) }
 
     // Politica: o cron sincroniza APENAS novos deals do funil META + MULTICANAL.
     // ?backfill=1 desativa essa restricao para reprocessar deals existentes
