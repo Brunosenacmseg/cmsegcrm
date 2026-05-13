@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
   let totalProcessados = 0, totalCriados = 0, totalAtualizados = 0, totalErros = 0
   const erros: string[] = []
 
+  const backfillFlag = req.nextUrl.searchParams.get('backfill') === '1'
   try {
     const url = new URL('https://crm.rdstation.com/api/v1/deals')
     url.searchParams.set('token', token)
@@ -69,6 +70,9 @@ export async function POST(req: NextRequest) {
     url.searchParams.set('end_date', endDate)
     url.searchParams.set('limit', String(BATCH))
     url.searchParams.set('page', '1')
+    // Backfill: ordena ASC (mais antigos primeiro) pra avancar pela janela.
+    // Default DESC pega novos primeiro pra incremental.
+    if (backfillFlag) url.searchParams.set('q[s]', 'updated_at asc')
     const r = await fetch(url.toString(), { headers: { 'accept': 'application/json' } })
     if (!r.ok) {
       const txt = await r.text().catch(()=>'')
@@ -166,8 +170,10 @@ export async function POST(req: NextRequest) {
         .map(s => new Date(s))
         .filter(d => !isNaN(d.getTime()))
       if (datas.length > 0) {
-        const minData = new Date(Math.min(...datas.map(d => d.getTime())))
-        novoLastSync = minData
+        // backfill ASC: avanca para o MAIOR (ultimo da pagina, mais recente)
+        // default DESC: avanca para o MENOR (continua consumindo backlog)
+        const ts = datas.map(d => d.getTime())
+        novoLastSync = new Date(backfillFlag ? Math.max(...ts) : Math.min(...ts))
       }
     }
     // Garantia anti-loop: se novoLastSync não avançou (todos timestamps iguais
