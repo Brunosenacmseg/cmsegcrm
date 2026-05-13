@@ -298,7 +298,7 @@ export default function RelatoriosPage() {
   )
 }
 
-function fmt(n: number) { return n >= 1000 ? (n/1000).toFixed(1)+'k' : n.toLocaleString('pt-BR') }
+function fmt(n: number) { return Number(n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
 function PageShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
