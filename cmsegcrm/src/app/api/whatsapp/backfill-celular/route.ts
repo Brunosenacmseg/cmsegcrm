@@ -58,12 +58,18 @@ export async function GET(req: NextRequest) {
       let msgs: any[] = []
       try {
         const url = `${evoUrl(inst).replace(/\/$/, '')}/chat/findMessages/${encodeURIComponent(inst.nome)}`
+        // Evolution ignora `fromMe` no where e o `limit` raw — passamos via
+        // `page`/`offset` se disponivel. Buscamos TODAS as msgs do remoteJid
+        // (sem filtro fromMe) e filtramos client-side. Limite alto pra puxar
+        // historico completo.
         const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': evoKey(inst) },
           body: JSON.stringify({
-            where: { key: { remoteJid: jid, fromMe: true } },
+            where: { key: { remoteJid: jid } },
             limit: limite,
+            page: 1,
+            offset: 0,
           }),
         })
         if (!r.ok) { erros.push(`${inst.nome} ${jid}: HTTP ${r.status}`); continue }
