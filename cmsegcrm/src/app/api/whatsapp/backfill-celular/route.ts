@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
       .eq('instancia_id', inst.id)
       .order('created_at', { ascending: false })
       .limit(5000)
-    const jids = Array.from(new Set((convs || []).map((c: any) => c.remoto_jid).filter(Boolean))).slice(0, conv_limit)
+    const jids: string[] = (Array.from(new Set((convs || []).map((c: any) => String(c.remoto_jid || '')).filter(Boolean))) as string[]).slice(0, conv_limit)
 
     for (const jid of jids) {
       if (Date.now() - tStart > HARD_LIMIT) break
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
         .eq('instancia_id', inst.id).eq('remoto_jid', jid).eq('direcao', 'enviada')
         .gt('created_at', new Date(Date.now() - 30*24*60*60*1000).toISOString())
         .limit(500)
-      const conteudosSemId = new Set<string>((semId || []).map((r: any) => String(r.conteudo || '')))
+      const conteudosSemId = new Set((semId || []).map((r: any) => String(r.conteudo || '')))
 
       // Lookup cliente por numero (sufixo de 8 digitos)
       const numero = String(jid).split('@')[0].replace(/\D+/g, '')
