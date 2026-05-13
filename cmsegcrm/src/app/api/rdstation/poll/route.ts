@@ -81,11 +81,16 @@ export async function POST(req: NextRequest) {
     // (cada pipeline traz suas stages nested) com fetch direto — mesma
     // estrategia do auto-mapear/route.ts que comprovadamente funciona.
     const pipelinePorStage: Record<string, string> = {}
+    let pipelinesDebug: any = { http: null, raw_keys: [], count: 0 }
     try {
-      const rp = await fetch(`https://crm.rdstation.com/api/v1/deal_pipelines?token=${encodeURIComponent(token)}`, { headers: { 'accept': 'application/json' } })
+      const rp = await fetch(`https://crm.rdstation.com/api/v1/deal_pipelines?token=${encodeURIComponent(token)}`, { headers: { 'accept': 'application/json' }, cache: 'no-store' })
+      pipelinesDebug.http = rp.status
       if (rp.ok) {
         const jp: any = await rp.json()
+        pipelinesDebug.raw_keys = jp && typeof jp === 'object' ? Object.keys(jp) : []
         const pipelines: any[] = Array.isArray(jp) ? jp : (jp?.deal_pipelines || jp?.pipelines || jp?.data || [])
+        pipelinesDebug.count = pipelines.length
+        pipelinesDebug.amostra_pipeline_keys = pipelines[0] ? Object.keys(pipelines[0]) : []
         for (const p of pipelines) {
           const pid = String(p?._id || p?.id || '')
           const stages = (p?.deal_stages || p?.stages || []) as any[]
@@ -94,10 +99,11 @@ export async function POST(req: NextRequest) {
             if (sid && pid) pipelinePorStage[sid] = pid
           }
         }
-      } else {
-        console.error('[rd/poll] /deal_pipelines HTTP', rp.status)
       }
-    } catch (e) { console.error('[rd/poll] fetch deal_pipelines falhou:', e) }
+    } catch (e: any) {
+      pipelinesDebug.error = String(e?.message || e)
+      console.error('[rd/poll] fetch deal_pipelines falhou:', e)
+    }
 
     // Politica: o cron sincroniza APENAS novos deals do funil META + MULTICANAL.
     // ?backfill=1 desativa essa restricao para reprocessar deals existentes
@@ -192,8 +198,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      _version: 'v260-pipelines-direto',
       janela: { de: startDate, ate: endDate },
       lidos: deals.length,
+      pipelines_debug: pipelinesDebug,
       stages_carregados: Object.keys(pipelinePorStage).length,
       pipelines_unicos: Array.from(new Set(Object.values(pipelinePorStage))),
       stages_nao_resolvidos: Array.from(new Set(deals
