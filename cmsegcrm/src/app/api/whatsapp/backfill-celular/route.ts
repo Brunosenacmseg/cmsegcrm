@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
   let totalInseridas = 0, totalConversas = 0, totalConsultadas = 0
   const erros: string[] = []
   const detalhe: Array<{ instancia: string; jid: string; inseridas: number; consultadas: number }> = []
+  const debug_first_response: any = { hash: null, raw_keys: [], msg_keys: [], primeira_msg: null, fromMe_count: 0, total: 0 }
 
   for (const inst of ativas) {
     if (Date.now() - tStart > HARD_LIMIT) break
@@ -69,6 +70,16 @@ export async function GET(req: NextRequest) {
         const j: any = await r.json()
         msgs = Array.isArray(j) ? j : (j?.messages?.records || j?.records || j?.data || [])
         totalConsultadas += msgs.length
+        if (debug_first_response.hash === null) {
+          debug_first_response.hash = jid
+          debug_first_response.raw_keys = j && typeof j === 'object' && !Array.isArray(j) ? Object.keys(j) : ['<array>']
+          debug_first_response.total = msgs.length
+          if (msgs[0]) {
+            debug_first_response.msg_keys = Object.keys(msgs[0])
+            debug_first_response.primeira_msg = JSON.stringify(msgs[0]).slice(0, 800)
+          }
+          debug_first_response.fromMe_count = msgs.filter((m: any) => m?.key?.fromMe === true || m?.fromMe === true).length
+        }
       } catch (e: any) {
         erros.push(`${inst.nome} ${jid}: ${e?.message || e}`)
         continue
@@ -148,5 +159,6 @@ export async function GET(req: NextRequest) {
     erros: erros.slice(0, 30),
     duracao_ms: Date.now() - tStart,
     amostra: detalhe.slice(0, 20),
+    debug_first_response,
   })
 }
