@@ -187,6 +187,21 @@ export async function POST(req: NextRequest) {
       lidos: deals.length,
       stages_carregados: Object.keys(pipelinePorStage).length,
       pipelines_unicos: Array.from(new Set(Object.values(pipelinePorStage))),
+      stages_nao_resolvidos: Array.from(new Set(deals
+        .map(d => String(d?.deal_stage?._id || d?.deal_stage?.id || ''))
+        .filter(sid => sid && !pipelinePorStage[sid])
+      )).slice(0, 10),
+      stages_nao_resolvidos_amostra: deals
+        .filter(d => {
+          const sid = String(d?.deal_stage?._id || d?.deal_stage?.id || '')
+          return sid && !pipelinePorStage[sid]
+        })
+        .slice(0, 5)
+        .map(d => ({
+          stage_id: d?.deal_stage?._id || d?.deal_stage?.id,
+          stage_name: d?.deal_stage?.name,
+          deal_name: d?.name,
+        })),
       filtrados_meta_novos: dealsFiltrados.length,
       pulados_outros_funis,
       pulados_existentes,
