@@ -16,6 +16,9 @@ export default function NegocioDetailPage() {
   const [loading, setLoading]   = useState(true)
   const [negocio, setNegocio]   = useState<any>(null)
   const [funil, setFunil]       = useState<any>(null)
+  const [funisAll, setFunisAll] = useState<any[]>([])
+  const [trocandoFunil, setTrocandoFunil] = useState(false)
+  const [seguradorasAll, setSeguradorasAll] = useState<any[]>([])
   const [cliente, setCliente]   = useState<any>(null)
   const [responsavel, setResp]  = useState<any>(null)
   const [me, setMe]             = useState<any>(null)
@@ -78,6 +81,8 @@ export default function NegocioDetailPage() {
       const { data: usr } = await supabase.from('users').select('id,nome,email,role,avatar_url').order('nome')
       setUsuariosAll(usr || [])
       setFunil(fn)
+      supabase.from('funis').select('id, nome, etapas').order('ordem').then(({ data }: any) => setFunisAll(data || []))
+      supabase.from('seguradoras').select('id, nome').order('nome').then(({ data }: any) => setSeguradorasAll(data || []))
       setCliente(cl)
       setResp(rp)
       setTarefas(tr || [])
@@ -365,12 +370,37 @@ export default function NegocioDetailPage() {
             <EditableField label="CPF 2"                  value={negocio.cpf_2}               onSave={(v)=>salvarCampo('cpf_2', v)} />
             <EditableField label="CEP"                    value={negocio.cep_negocio || negocio.cep} onSave={(v)=>salvarCampo('cep_negocio', v)} />
             <EditableField label="Tipo do seguro"         value={negocio.tipo_seguro}         onSave={(v)=>salvarCampo('tipo_seguro', v)} />
-            <EditableField label="Seguradora"             value={negocio.seguradora}          onSave={(v)=>salvarCampo('seguradora', v)} />
-            <EditableField label="Comissão (%)"           value={negocio.comissao_pct}        type="percentual" onSave={(v)=>salvarCampo('comissao_pct', v)} />
+            <EditableField label="Seguradora"             value={negocio.seguradora}          onSave={(v)=>salvarCampo('seguradora', v)}
+              options={seguradorasAll.map(s => ({ value: s.nome, label: s.nome }))} />
+            <EditableField label="Comissão (%)"           value={negocio.comissao_pct}        type="percentual" onSave={(v)=>salvarCampo('comissao_pct', v)}
+              options={Array.from({length:31}, (_,i) => ({ value: i, label: `${i}%` }))} />
             <EditableField label="Rastreador"             value={negocio.rastreador}          onSave={(v)=>salvarCampo('rastreador', v)} />
             <EditableField label="Vigência início"        value={negocio.vigencia_seguro_ini} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_ini', v)} />
             <EditableField label="Vigência fim"           value={negocio.vigencia_seguro_fim} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_fim', v)} />
             <EditableField label="E-mail"                 value={negocio.email_negocio}       type="email" onSave={(v)=>salvarCampo('email_negocio', v)} />
+            <div style={{display:'grid',gridTemplateColumns:'110px 1fr auto',gap:8,padding:'5px 6px',fontSize:12,alignItems:'center'}}>
+              <span style={{color:'var(--text-muted)',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>Funil</span>
+              <select
+                value={negocio.funil_id || ''}
+                onChange={async (e) => {
+                  const novoFunilId = e.target.value
+                  if (!novoFunilId || novoFunilId === negocio.funil_id) return
+                  const novoFunil = funisAll.find(f => f.id === novoFunilId)
+                  const novaEtapa = novoFunil?.etapas?.[0] || negocio.etapa
+                  if (!confirm(`Mover este card para o funil "${novoFunil?.nome}" (etapa "${novaEtapa}")?`)) return
+                  setTrocandoFunil(true)
+                  const { error } = await supabase.from('negocios').update({ funil_id: novoFunilId, etapa: novaEtapa }).eq('id', id)
+                  setTrocandoFunil(false)
+                  if (error) { alert('Erro: ' + error.message); return }
+                  setNegocio((n:any) => ({ ...n, funil_id: novoFunilId, etapa: novaEtapa }))
+                  setFunil(novoFunil)
+                }}
+                disabled={trocandoFunil}
+                style={{width:'100%',padding:'4px 8px',border:'1px solid var(--border-strong)',borderRadius:6,fontSize:12,background:'#fff'}}>
+                {funisAll.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+              <span />
+            </div>
             {devMode && <KV label="ID" value={negocio.id} mono />}
           </PainelSection>
 
@@ -656,6 +686,18 @@ export default function NegocioDetailPage() {
                           <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,background:t.status==='concluida'?'rgba(28,181,160,0.15)':'rgba(217,119,6,0.15)',color:t.status==='concluida'?'var(--teal)':'#a16207',textTransform:'uppercase',letterSpacing:0.5,alignSelf:'flex-start'}}>
                             {t.status === 'concluida' ? 'Concluída' : t.status === 'em_andamento' ? 'Em andamento' : 'Pendente'}
                           </span>
+                          <div style={{display:'flex',gap:4,alignSelf:'flex-start'}}>
+                            {t.status !== 'concluida' && (
+                              <button title="Marcar como realizada" onClick={async ()=>{ const { error } = await supabase.from('tarefas').update({ status:'concluida', concluida_em: new Date().toISOString() }).eq('id', t.id); if (error) alert(error.message); else setTarefas(prev => prev.map(x => x.id===t.id ? { ...x, status:'concluida' } : x)) }}
+                                style={{padding:'4px 8px',border:'1px solid var(--teal)',background:'transparent',color:'var(--teal)',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600}}>✓ Realizada</button>
+                            )}
+                            {t.status === 'concluida' && (
+                              <button title="Reabrir" onClick={async ()=>{ const { error } = await supabase.from('tarefas').update({ status:'pendente', concluida_em: null }).eq('id', t.id); if (error) alert(error.message); else setTarefas(prev => prev.map(x => x.id===t.id ? { ...x, status:'pendente' } : x)) }}
+                                style={{padding:'4px 8px',border:'1px solid var(--border-strong)',background:'transparent',color:'var(--text-muted)',borderRadius:6,cursor:'pointer',fontSize:11}}>↺</button>
+                            )}
+                            <button title="Excluir" onClick={async ()=>{ if(!confirm('Excluir esta tarefa?')) return; const { error } = await supabase.from('tarefas').delete().eq('id', t.id); if (error) alert(error.message); else setTarefas(prev => prev.filter(x => x.id !== t.id)) }}
+                              style={{padding:'4px 8px',border:'1px solid var(--red)',background:'transparent',color:'var(--red)',borderRadius:6,cursor:'pointer',fontSize:11}}>×</button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -979,8 +1021,8 @@ function KV({ label, value, mono }: { label:string; value:any; mono?:boolean }) 
 }
 
 type EditableType = 'text' | 'email' | 'date' | 'moeda' | 'percentual' | 'qualificacao'
-function EditableField({ label, value, onSave, type='text', readOnly }: {
-  label: string; value: any; onSave?: (v:any)=>void|Promise<void>; type?: EditableType; readOnly?: boolean
+function EditableField({ label, value, onSave, type='text', readOnly, options }: {
+  label: string; value: any; onSave?: (v:any)=>void|Promise<void>; type?: EditableType; readOnly?: boolean; options?: { value: string|number; label: string }[]
 }) {
   const [editing, setEditing] = useState(false)
   const [hover, setHover]     = useState(false)
@@ -1020,6 +1062,11 @@ function EditableField({ label, value, onSave, type='text', readOnly }: {
     if (type === 'moeda')        display = `R$ ${Number(value).toLocaleString('pt-BR',{minimumFractionDigits:2})}`
     else if (type === 'percentual') display = `${Number(value).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}%`
     else if (type === 'qualificacao') display = value ? '★'.repeat(Number(value)) + '☆'.repeat(Math.max(0,5-Number(value))) : '—'
+    else if (type === 'date') {
+      const s = String(value).slice(0, 10)
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      display = m ? `${m[3]}/${m[2]}/${m[1]}` : s
+    }
     else                          display = String(value)
   }
 
@@ -1039,7 +1086,16 @@ function EditableField({ label, value, onSave, type='text', readOnly }: {
       onMouseLeave={()=>setHover(false)}>
       <span style={labelStyle}>{label}</span>
       {editing ? (
-        type === 'qualificacao' ? (
+        options ? (
+          <select autoFocus value={String(draft ?? '')}
+            onClick={e=>e.stopPropagation()}
+            onChange={async (e)=>{ const v=e.target.value; setDraft(v); if (onSave){ setSaving(true); try{ await onSave(type==='percentual'||type==='moeda'? (v===''?null:Number(v)) : v) } finally { setSaving(false); setEditing(false) } } }}
+            onBlur={()=>setEditing(false)}
+            style={{...inputStyle, background:'#fff'}}>
+            <option value="">— Selecione —</option>
+            {options.map(o => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
+          </select>
+        ) : type === 'qualificacao' ? (
           <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:2}}>
             {[1,2,3,4,5].map(n => (
               <button key={n} type="button" onClick={()=>setDraft(n===Number(draft)?0:n)}
