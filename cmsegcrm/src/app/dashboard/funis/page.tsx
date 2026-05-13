@@ -843,14 +843,19 @@ function FunisPage() {
 
   // Carrega negocios do funil ativo de forma progressiva: cada lote já
   // popula o kanban (não precisa esperar o fim para ver os primeiros cards).
+  // Token de versão garante que troca de filtro descarta runs antigos
+  // (evita misturar dados de filtros diferentes).
+  const carregarVersionRef = useRef(0)
   async function carregarNegocios() {
     if (!funilAtivo) { setNegocios([]); setValorProdutosPorNegocio({}); return }
+    const myVersion = ++carregarVersionRef.current
     setNegocios([])
     setValorProdutosPorNegocio({})
     const PRIMEIRA = 200
     const PAGE = 1000
     let offset = 0
     while (true) {
+      if (myVersion !== carregarVersionRef.current) return
       const tamanho = offset === 0 ? PRIMEIRA : PAGE
       let q = supabase.from('negocios').select(`
         id, titulo, etapa, status, qualificacao, premio, vencimento,
@@ -876,6 +881,7 @@ function FunisPage() {
         .order('created_at', { ascending: false })
         .range(offset, offset + tamanho - 1)
       if (error || !data || data.length === 0) break
+      if (myVersion !== carregarVersionRef.current) return
       setNegocios(prev => [...prev, ...data])
       // Soma os itens de negocio_produtos do lote em paralelo — não bloqueia o
       // render dos cards; quando chegar, atualiza as somas das colunas.
@@ -2148,7 +2154,10 @@ function FunisPage() {
 
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
               <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Produto</label>
-                <input value={formNovo.produto} onChange={e=>setFormNovo(f=>({...f,produto:e.target.value}))} placeholder="Ex: Auto" style={inp}/></div>
+                <select value={formNovo.produto} onChange={e=>setFormNovo(f=>({...f,produto:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                  <option value="">— Selecione —</option>
+                  {produtosAll.map(p=><option key={p.id} value={p.nome} style={{background:'#ffffff'}}>{p.nome}</option>)}
+                </select></div>
               <div><label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Prêmio (R$)</label>
                 <input value={formNovo.premio} onChange={e=>setFormNovo(f=>({...f,premio:e.target.value}))} placeholder="0,00" style={inp}/></div>
             </div>
@@ -2665,6 +2674,26 @@ function FunisPage() {
                     <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
                       <div style={{flex:1}}>{p.nome_snapshot}</div>
                       <div style={{color:'var(--text-muted)'}}>{p.quantidade}× R$ {Number(p.valor_unit).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+                      <button title="Editar produto" onClick={async ()=>{
+                        const novoProdId = prompt('ID do novo produto (deixe vazio pra manter):\n\n' + produtosAll.map(x => `${x.id} - ${x.nome}`).join('\n'), p.produto_id || '')
+                        const novoNome = prompt('Nome do produto', p.nome_snapshot)
+                        const novaQtd = prompt('Quantidade', String(p.quantidade || 1))
+                        const novoVal = prompt('Valor unitário (R$)', String(p.valor_unit || 0))
+                        if (novoNome === null || novaQtd === null || novoVal === null) return
+                        const update: any = {
+                          nome_snapshot: novoNome.trim() || p.nome_snapshot,
+                          quantidade: Number(novaQtd) || p.quantidade,
+                          valor_unit: Number(String(novoVal).replace(',', '.')) || p.valor_unit,
+                        }
+                        if (novoProdId && novoProdId.trim() !== p.produto_id) update.produto_id = novoProdId.trim()
+                        const { error } = await supabase.from('negocio_produtos').update(update).eq('id', p.id)
+                        if (error) alert('Erro: ' + error.message)
+                        else {
+                          const novos = produtosCard.map(x => x.id === p.id ? { ...x, ...update } : x)
+                          setProdutosCard(novos)
+                          recalcularValorProdutosDoCard(novos)
+                        }
+                      }} style={{background:'none',border:'none',color:'var(--blue)',cursor:'pointer',fontSize:13}}>✎</button>
                       <button onClick={()=>removerProduto(p.id)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:13}}>×</button>
                     </div>
                   ))}
