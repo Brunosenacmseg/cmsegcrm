@@ -2906,12 +2906,22 @@ function FunisPage() {
                 Status do negócio · {cardAtivo.status === 'ganho' ? '✓ Ganho' : cardAtivo.status === 'perdido' ? '✕ Perdido' : 'Em andamento'}
               </div>
               <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                <button onClick={()=>marcarStatus(cardAtivo.id,'ganho')}
+                <button onClick={()=>{
+                  const funilNome = (funis.find((f:any)=>f.id===cardAtivo.funil_id)?.nome || '').toUpperCase()
+                  const exige = ['RCO','VENDA','VENDAS','RENOVAÇÕES','RENOVACOES','META + MULTICANAL','META MULTICANAL'].some(n => funilNome.includes(n.toUpperCase()))
+                  if (exige && !cardAtivo.cliente_id) { alert('Negócio só pode ser finalizado com cliente vinculado. Vincule e finalize a negociação.'); return }
+                  marcarStatus(cardAtivo.id,'ganho')
+                }}
                   disabled={cardAtivo.status==='ganho'}
                   style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='ganho'?'default':'pointer',border:'1px solid rgba(28,181,160,0.4)',background:cardAtivo.status==='ganho'?'rgba(28,181,160,0.25)':'rgba(28,181,160,0.1)',color:'var(--teal)',fontFamily:'Open Sans,sans-serif',opacity:cardAtivo.status==='ganho'?0.7:1}}>
                   ✓ Marcar Ganho
                 </button>
-                <button onClick={()=>{setModalPerdido(cardAtivo);setMotivoSelecionado('');setMotivoCustom('')}}
+                <button onClick={()=>{
+                  const funilNome = (funis.find((f:any)=>f.id===cardAtivo.funil_id)?.nome || '').toUpperCase()
+                  const exige = ['RCO','VENDA','VENDAS','RENOVAÇÕES','RENOVACOES','META + MULTICANAL','META MULTICANAL'].some(n => funilNome.includes(n.toUpperCase()))
+                  if (exige && !cardAtivo.cliente_id) { alert('Negócio só pode ser finalizado com cliente vinculado. Vincule e finalize a negociação.'); return }
+                  setModalPerdido(cardAtivo);setMotivoSelecionado('');setMotivoCustom('')
+                }}
                   disabled={cardAtivo.status==='perdido'}
                   style={{flex:1,minWidth:120,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:cardAtivo.status==='perdido'?'default':'pointer',border:'1px solid rgba(224,82,82,0.4)',background:cardAtivo.status==='perdido'?'rgba(224,82,82,0.25)':'rgba(224,82,82,0.1)',color:'var(--red)',fontFamily:'Open Sans,sans-serif',opacity:cardAtivo.status==='perdido'?0.7:1}}>
                   ✕ Marcar Perdido
