@@ -69,6 +69,9 @@ export default function WhatsAppPage() {
   const [loadingQR, setLoadingQR]         = useState(false)
   const [enviando, setEnviando]           = useState(false)
   const msgFimRef  = useRef<HTMLDivElement>(null)
+  const msgScrollRef = useRef<HTMLDivElement>(null)
+  // true se o usuário está perto do fim da lista — auto-scroll só acontece nesse caso
+  const stickToBottomRef = useRef(true)
   const fileRef    = useRef<HTMLInputElement>(null)
   const audioRef   = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder|null>(null)
@@ -122,7 +125,13 @@ export default function WhatsAppPage() {
   useEffect(() => {
     supabase.from('ai_agentes').select('id, nome').eq('ativo', true).order('nome').then(({ data }: any) => setAgentesIA(data || []))
   }, [])
-  useEffect(() => { msgFimRef.current?.scrollIntoView({ behavior:'smooth' }) }, [mensagens])
+  // Auto-scroll só quando o usuário já está perto do fim. Se ele subiu pra ler
+  // o histórico, não força a descida no próximo refetch/poll.
+  useEffect(() => {
+    if (stickToBottomRef.current) msgFimRef.current?.scrollIntoView({ behavior:'smooth' })
+  }, [mensagens])
+  // Sempre que troca de conversa, volta pro fim por padrão.
+  useEffect(() => { stickToBottomRef.current = true; msgFimRef.current?.scrollIntoView({ behavior:'auto' }) }, [conversa?.remoto_jid])
   useEffect(() => {
     if (!instancia) return
     const interval = setInterval(() => {
@@ -702,7 +711,9 @@ export default function WhatsAppPage() {
                 })()}
 
                 {/* Mensagens */}
-                <div style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8,minHeight:0}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
+                <div ref={msgScrollRef}
+                  onScroll={(e)=>{ const el = e.currentTarget; stickToBottomRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80 }}
+                  style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8,minHeight:0}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
                   {mensagens.map(m=>(
                     <div key={m.id} style={{display:'flex',justifyContent:m.direcao==='enviada'?'flex-end':'flex-start'}}>
                       <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'#dcf8c6':'#ffffff',color:'#1a1a2e',border:`1px solid ${m.direcao==='enviada'?'#bcdc99':'#e5e7eb'}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)'}}>
