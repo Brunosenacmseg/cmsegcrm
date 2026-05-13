@@ -289,11 +289,19 @@ export default function NegocioDetailPage() {
             ✍ Enviar para assinatura
           </Link>
           {!isPerdido && (
-            <button onClick={()=>setModalPerda(true)}
+            <button onClick={()=>{
+              const exigeCli = ['RCO','VENDA','VENDAS','RENOVAÇÕES','RENOVACOES','META + MULTICANAL','META MULTICANAL'].some(n => (funil?.nome||'').toUpperCase().includes(n.toUpperCase()))
+              if (exigeCli && !negocio?.cliente_id) { alert('Negócio só pode ser finalizado com cliente vinculado. Vincule e finalize a negociação.'); return }
+              setModalPerda(true)
+            }}
               style={{background:'#fee2e2',color:'var(--red)',border:'1px solid #fecaca',borderRadius:8,padding:'8px 14px',cursor:'pointer',fontSize:13,fontWeight:600}}>👎 Marcar perda</button>
           )}
           {!isGanho && (
-            <button onClick={async ()=>{ if(confirm('Marcar como venda?')){ await supabase.from('negocios').update({status:'ganho',data_fechamento:new Date().toISOString()}).eq('id',id); setNegocio((n:any)=>({...n,status:'ganho'})) }}}
+            <button onClick={async ()=>{
+              const exigeCli = ['RCO','VENDA','VENDAS','RENOVAÇÕES','RENOVACOES','META + MULTICANAL','META MULTICANAL'].some(n => (funil?.nome||'').toUpperCase().includes(n.toUpperCase()))
+              if (exigeCli && !negocio?.cliente_id) { alert('Negócio só pode ser finalizado com cliente vinculado. Vincule e finalize a negociação.'); return }
+              if(confirm('Marcar como venda?')){ await supabase.from('negocios').update({status:'ganho',data_fechamento:new Date().toISOString()}).eq('id',id); setNegocio((n:any)=>({...n,status:'ganho'})) }
+            }}
               style={{background:'var(--teal)',color:'#fff',border:'none',borderRadius:8,padding:'8px 14px',cursor:'pointer',fontSize:13,fontWeight:600}}>👍 Marcar venda</button>
           )}
         </div>
