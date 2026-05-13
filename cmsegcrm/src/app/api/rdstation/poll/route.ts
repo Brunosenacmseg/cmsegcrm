@@ -78,21 +78,26 @@ export async function POST(req: NextRequest) {
     const deals: any[] = Array.isArray(j) ? j : (j?.deals || j?.data || [])
 
     // /deals lista nao envia deal_pipeline_id. Carrega via /deal_pipelines
-    // (cada pipeline traz suas stages nested em deal_stages — mesma estrategia
-    // do sync/route.ts:147). /deal_stages como endpoint isolado so retorna
-    // o primeiro pipeline.
+    // (cada pipeline traz suas stages nested) com fetch direto — mesma
+    // estrategia do auto-mapear/route.ts que comprovadamente funciona.
     const pipelinePorStage: Record<string, string> = {}
     try {
-      const pipelines: any[] = await listarTodos('/deal_pipelines', token, 'deal_pipelines')
-      for (const p of pipelines) {
-        const pid = String(p?._id || p?.id || '')
-        const stages = (p?.deal_stages || p?.stages || []) as any[]
-        for (const s of stages) {
-          const sid = String(s?._id || s?.id || '')
-          if (sid && pid) pipelinePorStage[sid] = pid
+      const rp = await fetch(`https://crm.rdstation.com/api/v1/deal_pipelines?token=${encodeURIComponent(token)}`, { headers: { 'accept': 'application/json' } })
+      if (rp.ok) {
+        const jp: any = await rp.json()
+        const pipelines: any[] = Array.isArray(jp) ? jp : (jp?.deal_pipelines || jp?.pipelines || jp?.data || [])
+        for (const p of pipelines) {
+          const pid = String(p?._id || p?.id || '')
+          const stages = (p?.deal_stages || p?.stages || []) as any[]
+          for (const s of stages) {
+            const sid = String(s?._id || s?.id || '')
+            if (sid && pid) pipelinePorStage[sid] = pid
+          }
         }
+      } else {
+        console.error('[rd/poll] /deal_pipelines HTTP', rp.status)
       }
-    } catch (e) { console.error('[rd/poll] listarTodos deal_pipelines falhou:', e) }
+    } catch (e) { console.error('[rd/poll] fetch deal_pipelines falhou:', e) }
 
     // Politica: o cron sincroniza APENAS novos deals do funil META + MULTICANAL.
     // ?backfill=1 desativa essa restricao para reprocessar deals existentes
