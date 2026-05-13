@@ -381,7 +381,7 @@ export default function NegocioDetailPage() {
             <EditableField label="Seguradora"             value={negocio.seguradora}          onSave={(v)=>salvarCampo('seguradora', v)}
               options={seguradorasAll.map(s => ({ value: s.nome, label: s.nome }))} />
             <EditableField label="Comissão (%)"           value={negocio.comissao_pct}        type="percentual" onSave={(v)=>salvarCampo('comissao_pct', v)}
-              options={Array.from({length:31}, (_,i) => ({ value: i, label: `${i}%` }))} />
+              options={Array.from({length:51}, (_,i) => ({ value: i, label: `${i}%` }))} />
             <EditableField label="Rastreador"             value={negocio.rastreador}          onSave={(v)=>salvarCampo('rastreador', v)} />
             <EditableField label="Vigência início"        value={negocio.vigencia_seguro_ini} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_ini', v)} />
             <EditableField label="Vigência fim"           value={negocio.vigencia_seguro_fim} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_fim', v)} />
