@@ -235,8 +235,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { event, instance, data } = body
 
-    // ── MENSAGEM RECEBIDA ─────────────────────
-    if (event === 'messages.upsert' && data?.key?.fromMe === false) {
+    // ── MENSAGEM (recebida ou enviada do celular) ─────────────────────
+    // fromMe=false → cliente mandou para nós (direcao='recebida')
+    // fromMe=true  → operador mandou pelo celular (direcao='enviada')
+    //               — replicamos no CRM pra histórico ficar completo nos dois lados.
+    if (event === 'messages.upsert' && (data?.key?.fromMe === false || data?.key?.fromMe === true)) {
+      const direcaoMsg: 'recebida' | 'enviada' = data?.key?.fromMe === true ? 'enviada' : 'recebida'
       const { jid: remotoJid, numero: remotoNumero } = extrairContato(data)
       const meta = detectarTipoEMidia(data.message)
       const conteudoTexto = data.message?.conversation
@@ -291,7 +295,31 @@ export async function POST(request: NextRequest) {
         }
         const conteudoFinal = conteudoTexto || rotuloMidia[meta.tipo] || '[mídia]'
 
-        await supabase.from('whatsapp_mensagens').insert({
+        // Dedup: para mensagens enviadas pelo celular (fromMe=true) que ECOAM
+        // mensagens que o CRM acabou de enviar (insert sem evolution_id), pula
+        // se já existe registro 'enviada' com mesmo conteúdo nos últimos 60s.
+        let pulaInsert = false
+        if (direcaoMsg === 'enviada') {
+          const { data: jaExiste } = await supabase
+            .from('whatsapp_mensagens')
+            .select('id, evolution_id')
+            .eq('instancia_id', inst.id)
+            .eq('remoto_jid', remotoJid)
+            .eq('direcao', 'enviada')
+            .eq('conteudo', conteudoFinal)
+            .gt('created_at', new Date(Date.now() - 60_000).toISOString())
+            .limit(1)
+          if (jaExiste && jaExiste.length) {
+            // Atualiza só pra carimbar evolution_id (e mídia se tiver)
+            if (!jaExiste[0].evolution_id) {
+              await supabase.from('whatsapp_mensagens')
+                .update({ evolution_id: data.key.id, midia_url: midiaPath, midia_mimetype: meta.mimetype })
+                .eq('id', jaExiste[0].id)
+            }
+            pulaInsert = true
+          }
+        }
+        if (!pulaInsert) await supabase.from('whatsapp_mensagens').insert({
           instancia_id:   inst.id,
           cliente_id:     clienteId,
           remoto_jid:     remotoJid,
@@ -299,8 +327,8 @@ export async function POST(request: NextRequest) {
           remoto_nome:    pushName,
           conteudo:       conteudoFinal,
           tipo:           meta.tipo,
-          direcao:        'recebida',
-          lida:           false,
+          direcao:        direcaoMsg,
+          lida:           direcaoMsg === 'enviada' ? true : false,
           evolution_id:   data.key.id,
           midia_url:      midiaPath,
           midia_mimetype: meta.mimetype,
@@ -309,6 +337,10 @@ export async function POST(request: NextRequest) {
           transcricao:    transcricao,
         })
 
+        // SDR e auto-resposta IA só fazem sentido para mensagens RECEBIDAS.
+        // Mensagens enviadas pelo celular (direcao='enviada') foram replicadas
+        // só pra fins de histórico — não acionam fluxos.
+        if (direcaoMsg === 'recebida') {
         // Detecção SDR: se essa conversa pertence a um fluxo SDR ativo
         // (qualquer tentativa em qualquer fluxo configurado), o cliente
         // respondeu — encerra o fluxo automático e move o card pra
@@ -394,6 +426,7 @@ export async function POST(request: NextRequest) {
             console.error('[WhatsApp] auto-resposta IA falhou:', e)
           }
         }
+        } // if (direcaoMsg === 'recebida')
       }
     }
 
