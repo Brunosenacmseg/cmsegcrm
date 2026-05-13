@@ -316,6 +316,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.location.replace('/login')
   }
 
+  // Auto-logout por inatividade: 30 min sem mover mouse / teclado / clique / toque
+  useEffect(() => {
+    if (!user) return
+    const IDLE_MS = 30 * 60 * 1000
+    let timer: any = null
+    const reset = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        try { registrarLog({ acao: 'logout_inatividade' }) } catch {}
+        supabase.auth.signOut().finally(() => {
+          alert('Sessão encerrada por 30 minutos de inatividade.')
+          window.location.replace('/login')
+        })
+      }, IDLE_MS)
+    }
+    const eventos = ['mousemove','mousedown','keydown','touchstart','scroll','wheel']
+    eventos.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => { if (timer) clearTimeout(timer); eventos.forEach(e => window.removeEventListener(e, reset)) }
+  }, [user?.id])
+
   if (!checked) return (
     <div style={{minHeight:'100vh',background:'var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text-muted)'}}>
       Carregando...
