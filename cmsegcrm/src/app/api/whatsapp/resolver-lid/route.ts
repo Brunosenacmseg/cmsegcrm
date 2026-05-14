@@ -55,9 +55,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Evolution v2 não retorna campo 'lid' nos contatos — só id+pushName.
-    // Estratégia: matching por pushName.
+    // Estratégia: matching por pushName, mas SÓ se o pushName for UNICO na
+    // lista (caso contrario, ambiguidade — pode mapear pro contato errado).
     const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-    const mapNomeTel: Record<string, string> = {}
+    const telPorNome: Record<string, Set<string>> = {}
     debug.contatos_total = contatos.length
     if (contatos[0]) {
       debug.primeiro_contato_keys = Object.keys(contatos[0])
@@ -68,9 +69,18 @@ export async function GET(req: NextRequest) {
       const idJid = c?.id || c?.remoteJid || c?.jid || ''
       if (!nome || !idJid || idJid.includes('@lid')) continue
       const numero = String(idJid).replace(/@.*$/, '').replace(/\D/g, '')
-      if (numero.length >= 10 && numero.length <= 15 && !mapNomeTel[nome]) mapNomeTel[nome] = numero
+      if (numero.length >= 10 && numero.length <= 15) {
+        if (!telPorNome[nome]) telPorNome[nome] = new Set()
+        telPorNome[nome].add(numero)
+      }
     }
-    debug.nomes_mapeados = Object.keys(mapNomeTel).length
+    // Só mantem nomes que apontam pra exatamente 1 telefone
+    const mapNomeTel: Record<string, string> = {}
+    for (const [nome, tels] of Object.entries(telPorNome)) {
+      if (tels.size === 1) mapNomeTel[nome] = Array.from(tels)[0]
+    }
+    debug.nomes_unicos = Object.keys(mapNomeTel).length
+    debug.nomes_ambiguos = Object.keys(telPorNome).length - Object.keys(mapNomeTel).length
 
     // @lid distintos na nossa base SEM numero, com pushName
     const { data: faltantes } = await sa
