@@ -121,11 +121,14 @@ export default function MetasPage() {
       valor_meta: parseFloat(form.valor_meta), valor_atual: 0,
       periodo_inicio: form.periodo_inicio, periodo_fim: form.periodo_fim, status: 'ativa',
     }
+    let erro: any = null
     if (editando) {
-      await supabase.from('metas').update(payload).eq('id', editando.id)
+      const { error } = await supabase.from('metas').update(payload).eq('id', editando.id)
+      erro = error
     } else {
-      await supabase.from('metas').insert(payload)
-      if (form.user_id !== profile?.id) {
+      const { error } = await supabase.from('metas').insert(payload)
+      erro = error
+      if (!error && form.user_id !== profile?.id) {
         await supabase.from('notificacoes').insert({
           user_id: form.user_id, tipo: 'sistema',
           titulo: `${profile?.nome} definiu uma meta para você`,
@@ -134,7 +137,9 @@ export default function MetasPage() {
         })
       }
     }
-    setModalAberto(false); setEditando(null); resetForm(); setSalvando(false)
+    setSalvando(false)
+    if (erro) { alert('Erro ao salvar meta: ' + erro.message); return }
+    setModalAberto(false); setEditando(null); resetForm()
     await carregarMetas()
   }
 

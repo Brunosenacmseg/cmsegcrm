@@ -156,7 +156,8 @@ export default function DespesasOperacaoPage() {
 
   async function salvarItem(id: string, campo: 'descricao' | 'valor', valor: any) {
     const v = campo === 'valor' ? Number(String(valor).replace(',', '.')) || 0 : valor
-    await supabase.from('despesas_operacao_itens').update({ [campo]: v }).eq('id', id)
+    const { error } = await supabase.from('despesas_operacao_itens').update({ [campo]: v }).eq('id', id)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
     setItens(prev => prev.map(i => i.id === id ? { ...i, [campo]: v } : i))
   }
 
@@ -181,7 +182,8 @@ export default function DespesasOperacaoPage() {
     const v = ['salario_fixo','encargos_pct','comissao_pct','faturamento_mes'].includes(campo as string)
       ? Number(String(valor).replace(',', '.')) || 0
       : valor
-    await supabase.from('despesas_operacao_vendedores').update({ [campo]: v }).eq('id', id)
+    const { error } = await supabase.from('despesas_operacao_vendedores').update({ [campo]: v }).eq('id', id)
+    if (error) { alert('Erro ao salvar vendedor: ' + error.message); return }
     setVendedores(prev => prev.map(x => x.id === id ? { ...x, [campo]: v } : x))
   }
 
@@ -193,7 +195,8 @@ export default function DespesasOperacaoPage() {
   async function salvarOpCampo(campo: 'margem_lucro_pct' | 'nome' | 'observacao', valor: any) {
     if (!opSel) return
     const v = campo === 'margem_lucro_pct' ? Number(String(valor).replace(',', '.')) || 0 : valor
-    await supabase.from('despesas_operacao').update({ [campo]: v }).eq('id', opSel.id)
+    const { error } = await supabase.from('despesas_operacao').update({ [campo]: v }).eq('id', opSel.id)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
     setOperacoes(prev => prev.map(o => o.id === opSel.id ? { ...o, [campo]: v } : o))
   }
 
