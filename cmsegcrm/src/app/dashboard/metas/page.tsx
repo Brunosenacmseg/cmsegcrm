@@ -83,7 +83,15 @@ export default function MetasPage() {
     } else if (ids) {
       q = q.in('user_id', ids)
     }
-    const { data } = await q
+    const { data, error } = await q
+    if (error) {
+      console.error('[metas] erro ao carregar:', error)
+      // Fallback: query simples sem JOIN para não deixar a tela em branco
+      const { data: simples } = await supabase
+        .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
+      setMetas(simples || [])
+      return
+    }
     setMetas(data || [])
   }
 
