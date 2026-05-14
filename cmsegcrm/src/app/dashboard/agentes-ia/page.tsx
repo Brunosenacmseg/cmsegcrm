@@ -26,9 +26,10 @@ const emptyFluxo = {
   horario_util_fim: '18:00',
   prompt_template:
 `Mande uma mensagem curta para o lead {{nome}} (tentativa {{tentativa_n}} de {{total_tentativas}} — {{tipo_tentativa}}).
-- Se for abertura: apresente-se brevemente e pergunte sobre o produto/veículo.
-- Se for followup: tom gentil, sem pressão.
-- Se for última tentativa: mensagem de despedida cordial.
+Dados do card: placa={{placa}}, modelo={{modelo_veiculo}}.
+- Se for abertura: cumprimente o cliente e apresente-se como Marcelo Cunha da CM Seguros, e confirme se podem seguir pelo WhatsApp mencionando a solicitação. Modelo: "Olá, {{nome}}, tudo bem? Muito prazer, Marcelo Cunha da CM Seguros aqui!! Recebi sua solicitação de cotação do seguro para a {{placa}}. Podemos seguir por aqui?". Se {{placa}} estiver vazia, peça gentilmente pela placa ou modelo+ano do veículo no lugar.
+- Se for followup: tom gentil, sem pressão, lembrando que está disponível pra ajudar.
+- Se for última tentativa: diga que vai aguardar contato dele quando puder, sem cobrança.
 Português BR informal mas profissional. Máx 2 frases.`,
   ativo: true,
 }
@@ -620,7 +621,7 @@ export default function AgentesIAPage() {
               <textarea value={formFluxo.prompt_template} onChange={e=>setFormFluxo((f:any)=>({...f,prompt_template:e.target.value}))} rows={10}
                 style={{...inp,resize:'vertical',fontFamily:'monospace',fontSize:12,lineHeight:1.5}} />
               <div style={{fontSize:10,color:'var(--text-muted)',marginTop:6,lineHeight:1.5}}>
-                Placeholders: <code>{'{{nome}}'}</code>, <code>{'{{tentativa_n}}'}</code>, <code>{'{{total_tentativas}}'}</code>, <code>{'{{tipo_tentativa}}'}</code> (= <code>abertura</code> | <code>followup</code> | <code>ultima_tentativa</code>).
+                Placeholders: <code>{'{{nome}}'}</code>, <code>{'{{tentativa_n}}'}</code>, <code>{'{{total_tentativas}}'}</code>, <code>{'{{tipo_tentativa}}'}</code> (= <code>abertura</code> | <code>followup</code> | <code>ultima_tentativa</code>), <code>{'{{placa}}'}</code>, <code>{'{{modelo_veiculo}}'}</code> (vindos do card; podem vir vazios — instrua o LLM a lidar com isso).
                 A persona/regras gerais ficam no <b>system_prompt do agente IA</b>.
               </div>
             </div>

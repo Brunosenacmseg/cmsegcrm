@@ -62,6 +62,8 @@ interface Fluxo {
 interface ContextoLead {
   nomeCliente: string
   primeiroNome: string
+  placa: string
+  modeloVeiculo: string
 }
 
 function primeiroNomeDe(nome: string | null | undefined): string {
@@ -69,13 +71,20 @@ function primeiroNomeDe(nome: string | null | undefined): string {
   return String(nome).trim().split(/\s+/)[0] || ''
 }
 
-// Substitui placeholders {{nome}}, {{tentativa_n}}, {{total_tentativas}}, {{tipo_tentativa}}.
-function renderizarPrompt(template: string, ctx: { nome: string; n: number; total: number; tipo: string }): string {
+// Substitui placeholders do template do fluxo. Campos do card (placa,
+// modelo_veiculo) caem em string vazia quando ausentes — o prompt deve
+// instruir o LLM a lidar com isso.
+function renderizarPrompt(template: string, ctx: {
+  nome: string; n: number; total: number; tipo: string;
+  placa: string; modeloVeiculo: string;
+}): string {
   return template
     .replace(/\{\{\s*nome\s*\}\}/g, ctx.nome)
     .replace(/\{\{\s*tentativa_n\s*\}\}/g, String(ctx.n))
     .replace(/\{\{\s*total_tentativas\s*\}\}/g, String(ctx.total))
     .replace(/\{\{\s*tipo_tentativa\s*\}\}/g, ctx.tipo)
+    .replace(/\{\{\s*placa\s*\}\}/g, ctx.placa)
+    .replace(/\{\{\s*modelo_veiculo\s*\}\}/g, ctx.modeloVeiculo)
 }
 
 function tipoDaTentativa(n: number, total: number): 'abertura'|'followup'|'ultima_tentativa' {
@@ -110,7 +119,7 @@ function evoConfig(inst: any): EvoConfigCompleta | null {
   return { evo_url, api_key, instance: inst.nome }
 }
 
-async function carregarContextoCard(negocio: any): Promise<{ nome: string; jid: string | null }> {
+async function carregarContextoCard(negocio: any): Promise<{ nome: string; jid: string | null; placa: string; modeloVeiculo: string }> {
   let nome = ''
   let telefone = (negocio.telefone_negocio as string | null) || ''
   if (negocio.cliente_id) {
@@ -119,7 +128,9 @@ async function carregarContextoCard(negocio: any): Promise<{ nome: string; jid: 
     if (!telefone && cli?.telefone) telefone = cli.telefone
   }
   if (!nome) nome = (negocio.titulo as string) || ''
-  return { nome, jid: numeroParaJid(telefone) }
+  const placa = (negocio.placa_veiculo as string | null)?.trim().toUpperCase() || ''
+  const modeloVeiculo = (negocio.modelo_veiculo as string | null)?.trim() || ''
+  return { nome, jid: numeroParaJid(telefone), placa, modeloVeiculo }
 }
 
 async function criarTarefaSemWhatsApp(negocioId: string, vendedorId: string | null, nomeCliente: string, nomeFluxo: string) {
@@ -140,6 +151,8 @@ async function gerarMensagem(fluxo: Fluxo, agente: any, ctxLead: ContextoLead, n
   const promptUsuario = renderizarPrompt(fluxo.prompt_template, {
     nome: ctxLead.primeiroNome || ctxLead.nomeCliente || 'lead',
     n, total, tipo,
+    placa: ctxLead.placa,
+    modeloVeiculo: ctxLead.modeloVeiculo,
   })
   return await chamarChatGPT({
     modelo: agente.modelo,
@@ -157,7 +170,7 @@ async function processarInitsDoFluxo(fluxo: Fluxo): Promise<{ processados: numbe
   const supabase = sa()
   const { data: candidatos } = await supabase
     .from('negocios')
-    .select('id, titulo, etapa, funil_id, vendedor_id, cliente_id, telefone_negocio, status')
+    .select('id, titulo, etapa, funil_id, vendedor_id, cliente_id, telefone_negocio, status, placa_veiculo, modelo_veiculo')
     .eq('funil_id', fluxo.funil_id)
     .eq('status', 'em_andamento')
     .order('created_at', { ascending: false })
@@ -234,7 +247,12 @@ async function processarInitsDoFluxo(fluxo: Fluxo): Promise<{ processados: numbe
         agente_ativo: true,
       }, { onConflict: 'instancia_id,remoto_jid' })
 
-      const ctxLead: ContextoLead = { nomeCliente: ctxCard.nome, primeiroNome: primeiroNomeDe(ctxCard.nome) }
+      const ctxLead: ContextoLead = {
+        nomeCliente: ctxCard.nome,
+        primeiroNome: primeiroNomeDe(ctxCard.nome),
+        placa: ctxCard.placa,
+        modeloVeiculo: ctxCard.modeloVeiculo,
+      }
       let mensagem = ''
       try {
         mensagem = await gerarMensagem(fluxo, agente, ctxLead, 1)
@@ -314,7 +332,7 @@ async function processarFollowupsDoFluxo(fluxo: Fluxo): Promise<{ processados: n
       if (!Number.isFinite(tentativaAtual) || tentativaAtual < 1) continue
 
       const { data: negocio } = await supabase.from('negocios')
-        .select('id, etapa, funil_id, vendedor_id, cliente_id, telefone_negocio, titulo, status')
+        .select('id, etapa, funil_id, vendedor_id, cliente_id, telefone_negocio, titulo, status, placa_veiculo, modelo_veiculo')
         .eq('id', state.negocio_id).maybeSingle()
       if (!negocio) {
         await supabase.from('negocios_suhai_state').update({
@@ -388,7 +406,12 @@ async function processarFollowupsDoFluxo(fluxo: Fluxo): Promise<{ processados: n
       if (!agente) { falhas++; continue }
 
       const ctxCard = await carregarContextoCard(negocio)
-      const ctxLead: ContextoLead = { nomeCliente: ctxCard.nome, primeiroNome: primeiroNomeDe(ctxCard.nome) }
+      const ctxLead: ContextoLead = {
+        nomeCliente: ctxCard.nome,
+        primeiroNome: primeiroNomeDe(ctxCard.nome),
+        placa: ctxCard.placa,
+        modeloVeiculo: ctxCard.modeloVeiculo,
+      }
       let mensagem = ''
       try {
         mensagem = await gerarMensagem(fluxo, agente, ctxLead, proximaN)
