@@ -75,7 +75,7 @@ export default function RelatoriosPage() {
       const acc: any[] = []
       for (let off = 0; ; off += PAGE) {
         let q = supabase.from('negocios')
-          .select('id, etapa, status, premio, comissao_pct, produto, seguradora, funil_id, vendedor_id, created_at, data_fechamento, funis(tipo,nome,emoji), clientes(nome)')
+          .select('id, etapa, status, premio, comissao_pct, produto, seguradora, funil_id, vendedor_id, created_at, data_fechamento, motivo_perda, motivo_perda_id, anotacao_motivo_perda, funis(tipo,nome,emoji), clientes(nome)')
           .gte('created_at', dataInicio)
           .order('created_at', { ascending: false })
           .range(off, off + PAGE - 1)
@@ -153,7 +153,9 @@ export default function RelatoriosPage() {
       totalNegocios: todos.length, apolicesAtivas: ativos.length,
       ganhos: ganhos.length, perdidos: perdidos.length,
       novosClientes: (clientes||[]).filter((c:any)=>c.created_at>=dataInicio).length,
-      porRamo, porSeg, porFunil, porMes })
+      porRamo, porSeg, porFunil, porMes,
+      perdidosList: perdidos,
+    })
     setLoading(false)
   }
 
@@ -294,7 +296,106 @@ export default function RelatoriosPage() {
           </table>
         </div>
       </div>
+
+      {/* Negociações Perdidas — por etapa e motivo */}
+      <RelatorioPerdidos perdidos={dados.perdidosList || []} />
     </PageShell>
+  )
+}
+
+function RelatorioPerdidos({ perdidos }: { perdidos: any[] }) {
+  // Agrupa por etapa → motivo → { count, premio }
+  const tree: Record<string, Record<string, { count: number; premio: number }>> = {}
+  for (const n of perdidos) {
+    const etapa  = n.etapa || '(sem etapa)'
+    const motivo = (n.motivo_perda && String(n.motivo_perda).trim()) || '(sem motivo)'
+    if (!tree[etapa]) tree[etapa] = {}
+    if (!tree[etapa][motivo]) tree[etapa][motivo] = { count: 0, premio: 0 }
+    tree[etapa][motivo].count++
+    tree[etapa][motivo].premio += Number(n.premio || 0)
+  }
+  const etapas = Object.keys(tree).sort((a,b) => {
+    const sa = Object.values(tree[a]).reduce((s,x)=>s+x.count,0)
+    const sb = Object.values(tree[b]).reduce((s,x)=>s+x.count,0)
+    return sb - sa
+  })
+  const totalGeral = perdidos.length
+  const premioTotalPerdido = perdidos.reduce((s,n)=>s+Number(n.premio||0),0)
+
+  function exportarCSV() {
+    const linhas: string[][] = [['Etapa','Motivo','Quantidade','Prêmio R$']]
+    for (const etapa of etapas) {
+      for (const [motivo, v] of Object.entries(tree[etapa])) {
+        linhas.push([etapa, motivo, String(v.count), v.premio.toFixed(2).replace('.', ',')])
+      }
+    }
+    const csv = linhas.map(r => r.map(c => {
+      const s = String(c ?? '')
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g,'""') + '"' : s
+    }).join(',')).join('\r\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url
+    a.download = `negociacoes-perdidas-${new Date().toISOString().slice(0,10)}.csv`
+    a.click()
+    setTimeout(()=>URL.revokeObjectURL(url), 1000)
+  }
+
+  return (
+    <div style={{marginTop:24,background:'#fff',border:'1px solid var(--border-soft)',borderRadius:12,overflow:'hidden'}}>
+      <div style={{padding:'14px 18px',background:'var(--bg-soft)',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--border-soft)'}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>✕ Negociações Perdidas — por Etapa e Motivo</div>
+          <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>
+            Total: <strong>{totalGeral}</strong> {totalGeral === 1 ? 'negócio' : 'negócios'} ·
+            Prêmio perdido: <strong>R$ {premioTotalPerdido.toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+          </div>
+        </div>
+        {totalGeral > 0 && (
+          <button onClick={exportarCSV} style={{padding:'7px 14px',borderRadius:6,border:'1px solid var(--teal)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontSize:12,fontWeight:600}}>⬇ Exportar CSV</button>
+        )}
+      </div>
+      {totalGeral === 0 ? (
+        <div style={{padding:24,textAlign:'center',color:'var(--text-muted)'}}>Sem negociações perdidas no período.</div>
+      ) : (
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead>
+            <tr style={{background:'var(--bg-subtle)',textAlign:'left'}}>
+              <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase'}}>Etapa</th>
+              <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase'}}>Motivo</th>
+              <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',textAlign:'right'}}>Quantidade</th>
+              <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',textAlign:'right'}}>Prêmio</th>
+              <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',textAlign:'right'}}>% da etapa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {etapas.flatMap(etapa => {
+              const motivos = Object.entries(tree[etapa]).sort((a,b) => b[1].count - a[1].count)
+              const totalEtapa = motivos.reduce((s,[,v])=>s+v.count,0)
+              const premioEtapa = motivos.reduce((s,[,v])=>s+v.premio,0)
+              return [
+                <tr key={'etapa-'+etapa} style={{background:'rgba(224,82,82,0.06)',fontWeight:700,color:'#0f172a',borderTop:'1px solid var(--border-soft)'}}>
+                  <td style={{padding:'8px 14px'}}>{etapa}</td>
+                  <td style={{padding:'8px 14px',color:'var(--text-muted)',fontWeight:400}}>{motivos.length} motivo(s)</td>
+                  <td style={{padding:'8px 14px',textAlign:'right'}}>{totalEtapa}</td>
+                  <td style={{padding:'8px 14px',textAlign:'right'}}>R$ {premioEtapa.toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                  <td style={{padding:'8px 14px',textAlign:'right',color:'var(--text-muted)',fontWeight:400}}>{((totalEtapa/totalGeral)*100).toFixed(1)}%</td>
+                </tr>,
+                ...motivos.map(([motivo, v]) => (
+                  <tr key={etapa+'-'+motivo} style={{borderTop:'1px solid var(--border-soft)'}}>
+                    <td style={{padding:'8px 14px',paddingLeft:32,color:'var(--text-muted)'}}>—</td>
+                    <td style={{padding:'8px 14px'}}>{motivo}</td>
+                    <td style={{padding:'8px 14px',textAlign:'right'}}>{v.count}</td>
+                    <td style={{padding:'8px 14px',textAlign:'right'}}>R$ {v.premio.toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                    <td style={{padding:'8px 14px',textAlign:'right',color:'var(--text-muted)'}}>{((v.count/totalEtapa)*100).toFixed(1)}%</td>
+                  </tr>
+                ))
+              ]
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
   )
 }
 
