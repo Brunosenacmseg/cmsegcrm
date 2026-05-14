@@ -296,7 +296,9 @@ export default function AgentesIAPage() {
               </div>
             ) : (
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(360px, 1fr))',gap:18}}>
-                {agentes.map(a => (
+                {agentes.map(a => {
+                  const fluxosDoAgente = fluxos.filter((f: any) => f.agente_id === a.id)
+                  return (
                   <div key={a.id} className="card" style={{display:'flex',flexDirection:'column'}}>
                     <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:10}}>
                       <div style={{flex:1,minWidth:0}}>
@@ -314,6 +316,24 @@ export default function AgentesIAPage() {
                     </details>
                     <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:10}}>
                       Temp {a.temperatura} · max {a.max_tokens} tokens
+                    </div>
+
+                    <div style={{fontSize:11,marginBottom:10,padding:'8px 10px',borderRadius:8,background:'rgba(255,255,255,0.03)',border:'1px solid var(--border)'}}>
+                      <div style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:6}}>
+                        🚀 Fluxos cadastrados ({fluxosDoAgente.length})
+                      </div>
+                      {fluxosDoAgente.length === 0 ? (
+                        <div style={{color:'var(--text-muted)',fontStyle:'italic'}}>Não está em nenhum fluxo</div>
+                      ) : (
+                        <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+                          {fluxosDoAgente.map((f: any) => (
+                            <span key={f.id} title={f.funis?.nome ? `Funil: ${f.funis.nome}` : undefined}
+                              style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:f.ativo?'rgba(28,181,160,0.10)':'rgba(255,255,255,0.05)',color:f.ativo?'var(--teal)':'var(--text-muted)',border:'1px solid '+(f.ativo?'rgba(28,181,160,0.3)':'var(--border)')}}>
+                              {f.nome}{!f.ativo && ' (inativo)'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {testando === a.id && (
@@ -349,7 +369,8 @@ export default function AgentesIAPage() {
                         style={{padding:'5px 10px',borderRadius:6,fontSize:11,border:'1px solid rgba(224,82,82,0.3)',background:'rgba(224,82,82,0.06)',color:'var(--red)',cursor:'pointer'}}>🗑</button>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </>
