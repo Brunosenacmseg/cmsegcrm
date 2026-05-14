@@ -54,46 +54,51 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    // Monta map lid → telefone. Estrutura comum: { id: '5511...@s.whatsapp.net', lid: 'xxx@lid', pushName, profilePicUrl }
-    const mapLidTel: Record<string, string> = {}
+    // Evolution v2 não retorna campo 'lid' nos contatos — só id+pushName.
+    // Estratégia: matching por pushName.
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+    const mapNomeTel: Record<string, string> = {}
     debug.contatos_total = contatos.length
     if (contatos[0]) {
       debug.primeiro_contato_keys = Object.keys(contatos[0])
       debug.primeiro_contato = JSON.stringify(contatos[0]).slice(0, 800)
     }
     for (const c of contatos) {
-      const lid = c?.lid || c?.lidJid || c?.lid_jid || ''
+      const nome = norm(c?.pushName || '')
       const idJid = c?.id || c?.remoteJid || c?.jid || ''
-      if (lid) debug.contatos_com_lid++
-      if (lid && idJid && !idJid.includes('@lid')) {
-        const numero = String(idJid).replace(/@.*$/, '').replace(/\D/g, '')
-        if (numero.length >= 10 && numero.length <= 15) mapLidTel[lid] = numero
-      }
+      if (!nome || !idJid || idJid.includes('@lid')) continue
+      const numero = String(idJid).replace(/@.*$/, '').replace(/\D/g, '')
+      if (numero.length >= 10 && numero.length <= 15 && !mapNomeTel[nome]) mapNomeTel[nome] = numero
     }
+    debug.nomes_mapeados = Object.keys(mapNomeTel).length
 
-    // Lids distintos na nossa base sem numero
+    // @lid distintos na nossa base SEM numero, com pushName
     const { data: faltantes } = await sa
       .from('whatsapp_mensagens')
-      .select('remoto_jid')
+      .select('remoto_jid, remoto_nome')
       .eq('instancia_id', inst.id)
       .like('remoto_jid', '%@lid')
       .or('remoto_numero.is.null,remoto_numero.eq.')
       .limit(5000)
-    const lidsDistintos = Array.from(new Set(((faltantes || []) as any[]).map(r => r.remoto_jid).filter(Boolean)))
+    const porJid: Record<string, string> = {}
+    for (const r of (faltantes || []) as any[]) {
+      if (!porJid[r.remoto_jid] && r.remoto_nome) porJid[r.remoto_jid] = r.remoto_nome
+    }
 
-    for (const lid of lidsDistintos) {
+    for (const lid of Object.keys(porJid)) {
       if (Date.now() - tStart > HARD_LIMIT) break
-      const numero = mapLidTel[lid as string]
-      if (!numero) { naoResolvidos.push(`${inst.nome} ${lid}`); continue }
+      const nome = norm(porJid[lid])
+      const numero = mapNomeTel[nome]
+      if (!numero) { naoResolvidos.push(`${inst.nome} ${lid} (${porJid[lid]})`); continue }
       const { error, count } = await sa
         .from('whatsapp_mensagens')
         .update({ remoto_numero: numero }, { count: 'exact' })
         .eq('instancia_id', inst.id)
-        .eq('remoto_jid', lid as string)
+        .eq('remoto_jid', lid)
       if (error) erros.push(`${inst.nome} ${lid}: update ${error.message}`)
       else {
         totalAtualizados += count || 0
-        if (detalhe.length < 50) detalhe.push({ instancia: inst.nome, lid: lid as string, numero, atualizadas: count || 0 })
+        if (detalhe.length < 50) detalhe.push({ instancia: inst.nome, lid, numero, atualizadas: count || 0 })
       }
     }
   }
