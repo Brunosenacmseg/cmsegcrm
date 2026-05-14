@@ -336,7 +336,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const eventos = ['mousemove','mousedown','keydown','touchstart','scroll','wheel']
     eventos.forEach(e => window.addEventListener(e, reset, { passive: true }))
     reset()
-    return () => { if (timer) clearTimeout(timer); eventos.forEach(e => window.removeEventListener(e, reset)) }
+
+    // Captura fechamento de aba/navegador via sendBeacon (assincrono na unload):
+    // garante que TODO logout (clique, inatividade, fechar aba) tenha registro.
+    const onPageHide = () => {
+      try {
+        const blob = new Blob([JSON.stringify({
+          user_id: user.id,
+          acao: 'logout_fechou_aba',
+          pathname: window.location.pathname,
+        })], { type: 'application/json' })
+        navigator.sendBeacon('/api/logs/beacon', blob)
+      } catch {}
+    }
+    window.addEventListener('pagehide', onPageHide)
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      eventos.forEach(e => window.removeEventListener(e, reset))
+      window.removeEventListener('pagehide', onPageHide)
+    }
   }, [user?.id])
 
   if (!checked) return (
