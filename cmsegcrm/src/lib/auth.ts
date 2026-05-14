@@ -37,9 +37,10 @@ export async function getVisibleUserIds(): Promise<string[] | null> {
   // Admin e Financeiro veem todos
   if (profile.role === 'admin' || profile.role === 'financeiro') return null // null = sem filtro
 
-  // Equipe GESTÃO tem acesso total a funis e negociações,
-  // independente de vendedor.
-  if (await isMemberOfGestao(profile.id)) return null
+  // Equipes GESTÃO e PÓS VENDA têm acesso total a funis e
+  // negociações, independente de vendedor (espelha o bypass das
+  // policies de RLS — migrations 093 e 105).
+  if (await isMemberOfGestaoOuPosvenda(profile.id)) return null
 
   // Líder vê próprio + equipe
   if (profile.role === 'lider') {
@@ -57,13 +58,18 @@ export async function getVisibleUserIds(): Promise<string[] | null> {
   return [profile.id]
 }
 
-async function isMemberOfGestao(userId: string): Promise<boolean> {
+async function isMemberOfGestaoOuPosvenda(userId: string): Promise<boolean> {
   const supabase = createClient()
   const norm = (s: string) =>
     (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
-  const isGestao = (n?: string | null) => {
+  const isBypass = (n?: string | null) => {
     const v = norm(n || '')
-    return v === 'gestao' || v === 'equipe gestao'
+    return v === 'gestao'
+        || v === 'equipe gestao'
+        || v === 'pos venda'
+        || v === 'pos-venda'
+        || v === 'posvenda'
+        || v === 'equipe pos venda'
   }
 
   const [{ data: membros }, { data: lideradas }] = await Promise.all([
@@ -71,7 +77,7 @@ async function isMemberOfGestao(userId: string): Promise<boolean> {
     supabase.from('equipes').select('nome').eq('lider_id', userId),
   ])
 
-  if ((membros || []).some((m: any) => isGestao(m.equipes?.nome))) return true
-  if ((lideradas || []).some((e: any) => isGestao(e.nome))) return true
+  if ((membros || []).some((m: any) => isBypass(m.equipes?.nome))) return true
+  if ((lideradas || []).some((e: any) => isBypass(e.nome))) return true
   return false
 }

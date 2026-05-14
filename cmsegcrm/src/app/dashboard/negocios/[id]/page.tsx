@@ -25,6 +25,8 @@ export default function NegocioDetailPage() {
   const [tarefas, setTarefas]   = useState<any[]>([])
   const [eventos, setEventos]   = useState<any[]>([])
   const [notas, setNotas]       = useState<any[]>([])
+  const [editandoNotaId, setEditandoNotaId]       = useState<string|null>(null)
+  const [editandoNotaTexto, setEditandoNotaTexto] = useState('')
   const [produtos, setProdutos] = useState<any[]>([])
   const [produtosAll, setProdutosAll] = useState<any[]>([])
   const [modalProduto, setModalProduto] = useState(false)
@@ -123,6 +125,15 @@ export default function NegocioDetailPage() {
   async function excluirNota(notaId: string) {
     if (!confirm('Excluir esta anotação?')) return
     await supabase.from('negocio_notas').delete().eq('id', notaId)
+    recarregarNotas()
+  }
+
+  async function salvarEdicaoNota(notaId: string, novoConteudo: string) {
+    const txt = (novoConteudo || '').trim()
+    if (!txt) return
+    await supabase.from('negocio_notas').update({ conteudo: txt }).eq('id', notaId)
+    setEditandoNotaId(null)
+    setEditandoNotaTexto('')
     recarregarNotas()
   }
 
@@ -274,7 +285,14 @@ export default function NegocioDetailPage() {
     <div style={{padding:'18px 24px',maxWidth:1400,margin:'0 auto'}}>
       {/* Header */}
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
-        <button onClick={()=>router.back()}
+        <button onClick={()=>{
+          // Volta ao funil de origem do card, em vez do funil padrão.
+          if (negocio?.funil_id) {
+            router.push(`/dashboard/funis?funil=${negocio.funil_id}`)
+          } else {
+            router.back()
+          }
+        }}
           style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:8,padding:'6px 10px',cursor:'pointer',fontSize:13}}>←</button>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:2}}>
@@ -382,7 +400,7 @@ export default function NegocioDetailPage() {
               options={seguradorasAll.map(s => ({ value: s.nome, label: s.nome }))} />
             <EditableField label="Comissão (%)"           value={negocio.comissao_pct}        type="percentual" onSave={(v)=>salvarCampo('comissao_pct', v)}
               options={Array.from({length:51}, (_,i) => ({ value: i, label: `${i}%` }))} />
-            <EditableField label="Rastreador"             value={negocio.rastreador}          onSave={(v)=>salvarCampo('rastreador', v)} />
+            <EditableField label="Rastreador"             value={negocio.rastreador}          onSave={(v)=>salvarCampo('rastreador', v)} options={[{value:'SIM',label:'SIM'},{value:'NAO',label:'NÃO'}]} />
             <EditableField label="Vigência início"        value={negocio.vigencia_seguro_ini} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_ini', v)} />
             <EditableField label="Vigência fim"           value={negocio.vigencia_seguro_fim} type="date"  onSave={(v)=>salvarCampo('vigencia_seguro_fim', v)} />
             <EditableField label="E-mail"                 value={negocio.email_negocio}       type="email" onSave={(v)=>salvarCampo('email_negocio', v)} />
@@ -607,28 +625,51 @@ export default function NegocioDetailPage() {
                       {filt.map((item, idx) => {
                         if (item.kind === 'nota') {
                           const n = item.raw
+                          const podeEditar = me?.id === n.user_id || me?.role === 'admin'
+                          const editando   = editandoNotaId === n.id
                           return (
                             <div key={'n'+n.id} style={{display:'flex',gap:10,paddingBottom:14,marginBottom:4,position:'relative',background:n.pinned?'rgba(201,168,76,0.06)':'transparent',borderRadius:n.pinned?8:0,padding:n.pinned?'10px 12px':'0 0 14px 0',border:n.pinned?'1px solid rgba(201,168,76,0.30)':'none'}}>
                               <div style={{width:8,height:8,borderRadius:'50%',background:n.pinned?'var(--gold)':'var(--blue)',marginTop:7,flexShrink:0}}/>
                               <div style={{flex:1,minWidth:0}}>
-                                <div style={{fontSize:13,color:'var(--text)',marginBottom:3,whiteSpace:'pre-wrap'}}>
-                                  {n.pinned && <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gold-soft)',color:'var(--gold)',textTransform:'uppercase',letterSpacing:0.5,marginRight:6}}>📌 Fixada</span>}
-                                  {n.conteudo}
-                                </div>
-                                <div style={{fontSize:11,color:'var(--text-muted)'}}>
-                                  {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
-                                </div>
-                              </div>
-                              <div style={{display:'flex',gap:4,alignSelf:'flex-start'}}>
-                                <button onClick={()=>togglePin(n)} title={n.pinned?'Desfixar':'Fixar no topo'}
-                                  style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:n.pinned?'var(--gold)':'var(--text-muted)'}}>
-                                  {n.pinned?'📌':'📍'}
-                                </button>
-                                {me?.id === n.user_id && (
-                                  <button onClick={()=>excluirNota(n.id)} title="Excluir"
-                                    style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:'var(--text-muted)'}}>🗑</button>
+                                {editando ? (
+                                  <div>
+                                    <textarea value={editandoNotaTexto} onChange={e=>setEditandoNotaTexto(e.target.value)} rows={3}
+                                      style={{width:'100%',border:'1px solid var(--border-soft)',borderRadius:6,padding:'8px 10px',fontSize:13,outline:'none',resize:'vertical',fontFamily:'inherit',background:'#fff',boxSizing:'border-box'}}/>
+                                    <div style={{display:'flex',gap:6,justifyContent:'flex-end',marginTop:6}}>
+                                      <button onClick={()=>{setEditandoNotaId(null);setEditandoNotaTexto('')}}
+                                        style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'5px 10px',fontSize:12,cursor:'pointer',color:'var(--text-muted)'}}>Cancelar</button>
+                                      <button onClick={()=>salvarEdicaoNota(n.id, editandoNotaTexto)} disabled={!editandoNotaTexto.trim()}
+                                        style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer',opacity:editandoNotaTexto.trim()?1:0.5}}>Salvar</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div style={{fontSize:13,color:'var(--text)',marginBottom:3,whiteSpace:'pre-wrap'}}>
+                                      {n.pinned && <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gold-soft)',color:'var(--gold)',textTransform:'uppercase',letterSpacing:0.5,marginRight:6}}>📌 Fixada</span>}
+                                      {n.conteudo}
+                                    </div>
+                                    <div style={{fontSize:11,color:'var(--text-muted)'}}>
+                                      {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                                    </div>
+                                  </>
                                 )}
                               </div>
+                              {!editando && (
+                                <div style={{display:'flex',gap:4,alignSelf:'flex-start'}}>
+                                  <button onClick={()=>togglePin(n)} title={n.pinned?'Desfixar':'Fixar no topo'}
+                                    style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:n.pinned?'var(--gold)':'var(--text-muted)'}}>
+                                    {n.pinned?'📌':'📍'}
+                                  </button>
+                                  {podeEditar && (
+                                    <button onClick={()=>{setEditandoNotaId(n.id);setEditandoNotaTexto(n.conteudo||'')}} title="Editar"
+                                      style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:'var(--text-muted)'}}>✎</button>
+                                  )}
+                                  {podeEditar && (
+                                    <button onClick={()=>excluirNota(n.id)} title="Excluir"
+                                      style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:'var(--text-muted)'}}>🗑</button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )
                         }
@@ -1112,9 +1153,53 @@ function EditableField({ label, value, onSave, type='text', readOnly, options }:
             <button onClick={commit} disabled={saving}
               style={{marginLeft:8,fontSize:11,padding:'2px 8px',borderRadius:6,border:'1px solid var(--blue)',background:'var(--blue)',color:'#fff',cursor:'pointer'}}>OK</button>
           </div>
+        ) : type === 'date' ? (
+          /* Input mascarado dd/mm/aaaa — permite apagar 1 dígito por vez
+             (o native <input type=date> apaga blocos inteiros). */
+          (() => {
+            const toBR = (v: any) => {
+              const s = String(v ?? '')
+              const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+              if (m) return `${m[3]}/${m[2]}/${m[1]}`
+              return s
+            }
+            const draftBR = typeof draft === 'string' && /^\d{4}-\d{2}-\d{2}/.test(draft) ? toBR(draft) : (draft || '')
+            const mask = (raw: string) => {
+              const d = raw.replace(/\D/g,'').slice(0,8)
+              if (d.length <= 2) return d
+              if (d.length <= 4) return d.slice(0,2)+'/'+d.slice(2)
+              return d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4)
+            }
+            const toISO = (br: string) => {
+              const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+              if (!m) return ''
+              return `${m[3]}-${m[2]}-${m[1]}`
+            }
+            return (
+              <input autoFocus value={draftBR}
+                inputMode="numeric"
+                placeholder="dd/mm/aaaa"
+                maxLength={10}
+                onClick={e=>e.stopPropagation()}
+                onChange={e=>setDraft(mask(e.target.value))}
+                onBlur={async () => {
+                  if (readOnly || !onSave) { setEditing(false); return }
+                  const cur = String(draft || '')
+                  const iso = cur ? toISO(cur) : ''
+                  if (cur && !iso) { alert('Data inválida. Use dd/mm/aaaa.'); return }
+                  setSaving(true)
+                  try { await onSave(iso || null) } catch(e:any) { alert('Erro ao salvar: '+(e?.message||e)) }
+                  setSaving(false)
+                  setEditing(false)
+                }}
+                onKeyDown={e=>{ if (e.key==='Enter') (e.target as HTMLInputElement).blur(); if (e.key==='Escape') { setDraft(value??''); setEditing(false) } }}
+                disabled={saving}
+                style={inputStyle} />
+            )
+          })()
         ) : (
           <input autoFocus value={draft}
-            type={type==='date'?'date':type==='email'?'email':'text'}
+            type={type==='email'?'email':'text'}
             onClick={e=>e.stopPropagation()}
             onChange={e=>setDraft(e.target.value)}
             onBlur={commit}
