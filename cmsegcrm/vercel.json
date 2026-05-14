@@ -11,6 +11,10 @@
     {
       "path": "/api/rdstation/poll",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/whatsapp/relatorio-auditoria",
+      "schedule": "0 9 */2 * *"
     }
   ]
 }
