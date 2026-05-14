@@ -73,10 +73,12 @@ export default function DespesasOperacaoPage() {
     Promise.all([
       supabase.from('despesas_operacao_itens').select('*').eq('operacao_id', opSelId).order('ordem'),
       supabase.from('despesas_operacao_vendedores').select('*').eq('operacao_id', opSelId).order('ordem'),
-    ]).then(([{ data: it }, { data: vd }]) => {
-      setItens((it || []) as any)
-      setVendedores((vd || []) as any)
-    })
+    ]).then(([resI, resV]) => {
+      if (resI.error) { console.error('[despesas/itens]', resI.error); alert('Erro ao carregar despesas: ' + resI.error.message) }
+      if (resV.error) { console.error('[despesas/vendedores]', resV.error); alert('Erro ao carregar vendedores: ' + resV.error.message) }
+      setItens((resI.data || []) as any)
+      setVendedores((resV.data || []) as any)
+    }).catch(e => { console.error('[despesas/load]', e); alert('Erro ao carregar: ' + (e?.message || e)) })
   }, [opSelId])
 
   const opSel = useMemo(() => operacoes.find(o => o.id === opSelId) || null, [operacoes, opSelId])
