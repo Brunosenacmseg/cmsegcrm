@@ -115,7 +115,7 @@ export async function GET(_req: NextRequest) {
 
   if (adminIds.length) {
     await sa.from('notificacoes').insert(
-      adminIds.map(uid => ({
+      adminIds.map((uid: string) => ({
         user_id: uid,
         tipo: 'sistema',
         titulo: '📊 Auditoria WhatsApp · ' + new Date().toLocaleDateString('pt-BR'),
