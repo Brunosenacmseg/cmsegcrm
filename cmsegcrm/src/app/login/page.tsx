@@ -72,6 +72,16 @@ export default function LoginPage() {
       user_email: data.user?.email ?? email,
       sucesso: true,
     })
+    // Espelha o login em system_logs (timeline unificada de atividades)
+    try {
+      await supabase.from('system_logs').insert({
+        user_id: data.user?.id ?? null,
+        user_email: data.user?.email ?? email,
+        acao: 'login',
+        pathname: '/login',
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      })
+    } catch {}
     window.location.replace('/dashboard/mural')
   }
 
