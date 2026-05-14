@@ -3,6 +3,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { decryptSecret } from '@/lib/email-crypto'
+import { enviarEmail } from '@/lib/email-smtp'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -106,23 +108,14 @@ export async function GET(_req: NextRequest) {
   }
   const texto = linhas.join('\n')
 
-  // 5) Cria notificacao para admins e membros de GESTAO
-  const { data: alvos } = await sa.from('users').select('id, role').is('deleted_at', null)
-  const adminIds = ((alvos || []) as any[]).filter(u => u.role === 'admin').map(u => u.id)
+  // 5) Cria notificacao APENAS para admins
+  const { data: admins } = await sa.from('users')
+    .select('id, email, nome').eq('role', 'admin').is('deleted_at', null)
+  const adminIds = (admins || []).map((u: any) => u.id)
 
-  const { data: gestaoMembros } = await sa.from('equipe_membros')
-    .select('user_id, equipes!inner(nome)')
-  const gestaoIds = ((gestaoMembros || []) as any[])
-    .filter(m => {
-      const n = String((m as any).equipes?.nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
-      return n === 'gestao' || n === 'equipe gestao'
-    })
-    .map(m => m.user_id)
-
-  const alvosUnicos = Array.from(new Set([...adminIds, ...gestaoIds]))
-  if (alvosUnicos.length) {
+  if (adminIds.length) {
     await sa.from('notificacoes').insert(
-      alvosUnicos.map(uid => ({
+      adminIds.map(uid => ({
         user_id: uid,
         tipo: 'sistema',
         titulo: '📊 Auditoria WhatsApp · ' + new Date().toLocaleDateString('pt-BR'),
@@ -132,9 +125,40 @@ export async function GET(_req: NextRequest) {
     )
   }
 
+  // 6) Envia email para cada admin que tenha uma conta SMTP ativa.
+  // Usa a propria SMTP do destinatario quando disponivel; senao, pula.
+  const html = `<pre style="font-family:Consolas,monospace;font-size:12px;line-height:1.5;background:#f8fafc;padding:16px;border:1px solid #e5e7eb;border-radius:8px;white-space:pre-wrap;">${
+    texto.replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' } as any)[c])
+  }</pre>`
+  let emailsEnviados = 0
+  const emailErros: string[] = []
+  for (const adm of (admins || []) as any[]) {
+    if (!adm.email) continue
+    const { data: ec } = await sa.from('email_contas')
+      .select('*').eq('user_id', adm.id).eq('ativo', true).maybeSingle()
+    if (!ec) continue
+    try {
+      const pass = (ec as any).smtp_pass_enc ? decryptSecret((ec as any).smtp_pass_enc) : ''
+      const res = await enviarEmail({
+        smtp: { host: (ec as any).smtp_host, port: (ec as any).smtp_port, secure: !!(ec as any).smtp_secure, user: (ec as any).smtp_user, pass },
+        from: { email: (ec as any).from_email, nome: (ec as any).from_nome || 'CM CRM' },
+        para: adm.email,
+        assunto: '📊 Auditoria WhatsApp · ' + new Date().toLocaleDateString('pt-BR'),
+        html,
+        texto,
+      })
+      if ((res as any).ok) emailsEnviados++
+      else emailErros.push(`${adm.email}: ${(res as any).erro}`)
+    } catch (e: any) {
+      emailErros.push(`${adm.email}: ${e?.message || e}`)
+    }
+  }
+
   return NextResponse.json({
     ok: true,
-    notificados: alvosUnicos.length,
+    notificados: adminIds.length,
+    emails_enviados: emailsEnviados,
+    email_erros: emailErros,
     stats_corretor,
     aguardando: aguardando.slice(0, 20),
     inadequados: inadequados.slice(0, 20),
