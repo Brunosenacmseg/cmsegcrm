@@ -327,7 +327,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (timer) clearTimeout(timer)
       timer = setTimeout(async () => {
         // Aguarda o log ser gravado ANTES do signOut (signOut invalida o token e RLS bloqueia o INSERT)
-        try { await registrarLog({ acao: 'logout_inatividade', detalhe: { idle_min: 10 } }) } catch {}
+        try { await registrarLog({ acao: 'logout_inatividade', detalhe: 'idle 10min' }) } catch {}
         try { await supabase.auth.signOut() } catch {}
         alert('Sessão encerrada por 10 minutos de inatividade.')
         window.location.replace('/login')
