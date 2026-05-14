@@ -46,10 +46,10 @@ function formatarTelefone(numero?: string | null): string | null {
   return `+${d}`
 }
 
-// Texto para exibir o contato: nome > telefone formatado > "Sem número".
+// Texto para exibir o contato: SEMPRE usa o pushName do WhatsApp (remoto_nome).
+// Não pega o nome do cliente do CRM — WhatsApp tem sua própria identidade.
 // Nunca devolve o código @lid bruto.
 function rotuloContato(c: any): string {
-  if (c?.clientes?.nome) return c.clientes.nome
   if (c?.remoto_nome && !c.remoto_nome.includes('@lid')) return c.remoto_nome
   const tel = formatarTelefone(c?.remoto_numero)
   if (tel) return tel
