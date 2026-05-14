@@ -817,7 +817,13 @@ function FunisPage() {
   async function carregarFunis() {
     const { data: fs } = await supabase.from('funis').select('*').order('ordem')
     setFunis(fs||[])
-    if (fs?.length && !funilAtivo) setFunilAtivo(fs[0].id)
+    if (fs?.length && !funilAtivo) {
+      // Se a URL trouxer ?funil=<id>, abrir esse funil — usado pelo botão
+      // "voltar" da página do negócio pra retornar ao funil de origem.
+      const desejado = searchParams?.get('funil') || null
+      const inicial  = (desejado && fs.find((f:any) => f.id === desejado)) ? desejado : fs[0].id
+      setFunilAtivo(inicial)
+    }
     await carregarContagens(fs || [])
   }
 
