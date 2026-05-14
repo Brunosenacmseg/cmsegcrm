@@ -32,6 +32,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/autentique',   icon:'✍️', label:'Autentique', equipePosVenda:true },
   { href:'/dashboard/comissoes',    icon:'💰', label:'Comissões', section:'Financeiro' },
   { href:'/dashboard/financeiro',   icon:'💼', label:'Financeiro / DRE', adminOnly:true },
+  { href:'/dashboard/financeiro/despesas-operacao', icon:'🧾', label:'Despesas da Operação', section:'Financeiro', equipeGestao:true },
   { href:'/dashboard/contas-pagar', icon:'💳', label:'Contas a Pagar', adminOnly:true },
   { href:'/dashboard/campanhas',    icon:'📣', label:'Campanhas Meta', section:'Marketing', adminOnly:true },
   { href:'/dashboard/seguradoras',  icon:'🛡️', label:'Seguradoras', section:'Seguradoras', equipeGestao:true },
@@ -89,6 +90,7 @@ function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolea
     ])},
     { label: 'Financeiro', children: compact([
       child('/dashboard/financeiro', 'Financeiro / DRE'),
+      child('/dashboard/financeiro/despesas-operacao', 'Despesas da Operação'),
       child('/dashboard/contas-pagar', 'Contas a Pagar'),
     ])},
     { label: 'RH', href: '/dashboard/rh' },
