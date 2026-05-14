@@ -643,15 +643,9 @@ export default function WhatsAppPage() {
                       </div>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:600,fontSize:14}}>{rotuloContato(conversa)}</div>
-                        <div style={{fontSize:11,color:'var(--text-muted)'}}>
-                          {(() => {
-                            const tel = formatarTelefone(conversa.remoto_numero)
-                            if (tel) return <>📱 {tel}</>
-                            const nome = conversa.remoto_nome && !conversa.remoto_nome.includes('@lid') ? conversa.remoto_nome : null
-                            if (nome) return <>👤 {nome} (WhatsApp)</>
-                            return 'número não disponível'
-                          })()}
-                        </div>
+                        {formatarTelefone(conversa.remoto_numero) && (
+                          <div style={{fontSize:11,color:'var(--text-muted)'}}>📱 {formatarTelefone(conversa.remoto_numero)}</div>
+                        )}
                       </div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
                         <button onClick={()=>{setEditandoContato(true);setEditNome(conversa.remoto_nome||'');setEditNumero(conversa.remoto_numero||'')}}
