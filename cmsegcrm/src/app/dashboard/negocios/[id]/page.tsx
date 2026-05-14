@@ -124,14 +124,16 @@ export default function NegocioDetailPage() {
 
   async function excluirNota(notaId: string) {
     if (!confirm('Excluir esta anotação?')) return
-    await supabase.from('negocio_notas').delete().eq('id', notaId)
+    const { error } = await supabase.from('negocio_notas').delete().eq('id', notaId)
+    if (error) { alert('Erro ao excluir: ' + error.message); return }
     recarregarNotas()
   }
 
   async function salvarEdicaoNota(notaId: string, novoConteudo: string) {
     const txt = (novoConteudo || '').trim()
     if (!txt) return
-    await supabase.from('negocio_notas').update({ conteudo: txt }).eq('id', notaId)
+    const { error } = await supabase.from('negocio_notas').update({ conteudo: txt }).eq('id', notaId)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
     setEditandoNotaId(null)
     setEditandoNotaTexto('')
     recarregarNotas()
