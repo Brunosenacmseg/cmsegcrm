@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
   const detalhe: Array<{ instancia: string; lid: string; numero: string; atualizadas: number }> = []
   const erros: string[] = []
   const naoResolvidos: string[] = []
+  const debug: any = { contatos_total: 0, contatos_com_lid: 0, primeiro_contato_keys: [], primeiro_contato: null }
 
   for (const inst of ativas) {
     if (Date.now() - tStart > HARD_LIMIT) break
@@ -55,9 +56,15 @@ export async function GET(req: NextRequest) {
 
     // Monta map lid → telefone. Estrutura comum: { id: '5511...@s.whatsapp.net', lid: 'xxx@lid', pushName, profilePicUrl }
     const mapLidTel: Record<string, string> = {}
+    debug.contatos_total = contatos.length
+    if (contatos[0]) {
+      debug.primeiro_contato_keys = Object.keys(contatos[0])
+      debug.primeiro_contato = JSON.stringify(contatos[0]).slice(0, 800)
+    }
     for (const c of contatos) {
-      const lid = c?.lid || c?.lidJid || ''
-      const idJid = c?.id || c?.remoteJid || ''
+      const lid = c?.lid || c?.lidJid || c?.lid_jid || ''
+      const idJid = c?.id || c?.remoteJid || c?.jid || ''
+      if (lid) debug.contatos_com_lid++
       if (lid && idJid && !idJid.includes('@lid')) {
         const numero = String(idJid).replace(/@.*$/, '').replace(/\D/g, '')
         if (numero.length >= 10 && numero.length <= 15) mapLidTel[lid] = numero
@@ -100,5 +107,6 @@ export async function GET(req: NextRequest) {
     duracao_ms: Date.now() - tStart,
     amostra: detalhe.slice(0, 30),
     amostra_nao_resolvidos: naoResolvidos.slice(0, 20),
+    debug,
   })
 }
