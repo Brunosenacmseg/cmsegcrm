@@ -145,15 +145,21 @@ export default function DespesasOperacaoPage() {
     setOpSelId(operacoes.filter(o => o.id !== opSel.id)[0]?.id || null)
   }
 
+  const [novoItemDesc, setNovoItemDesc] = useState('')
+  const [novoItemValor, setNovoItemValor] = useState('')
   async function adicionarItem() {
     if (!opSel) return
-    const desc = prompt('Descrição (ex: Aluguel, Café, Faxineira, Marketing):')
-    if (!desc?.trim()) return
-    const valor = Number(prompt('Valor (R$):', '0')?.replace(',', '.') || 0)
-    const { data } = await supabase.from('despesas_operacao_itens').insert({
-      operacao_id: opSel.id, descricao: desc.trim(), valor, ordem: itens.length,
+    const desc = novoItemDesc.trim()
+    if (!desc) { alert('Informe a descrição'); return }
+    const valor = Number(String(novoItemValor).replace(',', '.')) || 0
+    const { data, error } = await supabase.from('despesas_operacao_itens').insert({
+      operacao_id: opSel.id, descricao: desc, valor, ordem: itens.length,
     }).select().single()
-    if (data) setItens(prev => [...prev, data as any])
+    if (error) { alert('Erro ao adicionar: ' + error.message); return }
+    if (data) {
+      setItens(prev => [...prev, data as any])
+      setNovoItemDesc(''); setNovoItemValor('')
+    }
   }
 
   async function salvarItem(id: string, campo: 'descricao' | 'valor', valor: any) {
@@ -254,9 +260,19 @@ export default function DespesasOperacaoPage() {
 
           {/* Despesas */}
           <div style={{background:'#fff',border:'1px solid var(--border-soft)',borderRadius:12,marginBottom:18,overflow:'hidden'}}>
-            <div style={{padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--bg-soft)',borderBottom:'1px solid var(--border-soft)'}}>
+            <div style={{padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--bg-soft)',borderBottom:'1px solid var(--border-soft)',gap:10,flexWrap:'wrap'}}>
               <div style={{fontWeight:600,fontSize:13,color:'#0f172a'}}>🏢 Despesas da Operação</div>
-              <button onClick={adicionarItem} style={{padding:'6px 12px',background:'var(--teal)',color:'#fff',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer'}}>+ Adicionar despesa</button>
+              <div style={{display:'flex',gap:6,alignItems:'center',flex:1,maxWidth:560}}>
+                <input value={novoItemDesc} onChange={e=>setNovoItemDesc(e.target.value)}
+                  placeholder="Descrição (ex: Aluguel, Café, Faxineira, Marketing)"
+                  onKeyDown={e=>{ if(e.key==='Enter') adicionarItem() }}
+                  style={{...inp, flex:2}}/>
+                <input value={novoItemValor} onChange={e=>setNovoItemValor(e.target.value)}
+                  placeholder="Valor R$" type="number" step="0.01"
+                  onKeyDown={e=>{ if(e.key==='Enter') adicionarItem() }}
+                  style={{...inp, flex:1, maxWidth:130, textAlign:'right'}}/>
+                <button onClick={adicionarItem} style={{padding:'6px 12px',background:'var(--teal)',color:'#fff',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>+ Adicionar</button>
+              </div>
             </div>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead>
