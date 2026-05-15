@@ -60,8 +60,13 @@ const HUMORES = [
 ]
 
 function isoHoje() {
+  // Avaliação SEMANAL: retorna a data da segunda-feira da semana atual.
+  // Uma avaliação por (líder, colaborador, semana_inicio).
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  const dow = d.getDay() // 0=domingo, 1=segunda
+  const offsetParaSegunda = dow === 0 ? -6 : 1 - dow
+  d.setDate(d.getDate() + offsetParaSegunda)
   return d.toISOString().slice(0, 10)
 }
 
@@ -211,7 +216,7 @@ export default function GestaoEquipePage() {
 
       <div style={{ display: 'flex', gap: 4, padding: '12px 28px 0', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
         {([
-          { k: 'hoje',       l: '⭐ Avaliação de Hoje' },
+          { k: 'hoje',       l: '⭐ Avaliação Semanal' },
           { k: 'historico',  l: '📜 Histórico'         },
           { k: 'relatorio',  l: '📊 Relatório'         },
           ...(isAdmin ? [{ k: 'perguntas', l: '⚙️ Perguntas' }] : []),
@@ -313,7 +318,7 @@ function HojeTab({ colaboradores, avalHoje, onAvaliar, onRefresh }: {
             Rotina diária — {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
           </div>
           <div style={{ fontSize: 18, fontWeight: 600 }}>
-            {avaliados} de {total} colaboradores avaliados hoje
+            {avaliados} de {total} colaboradores avaliados nesta semana
           </div>
           <div style={{ marginTop: 8, height: 8, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
             <div style={{
