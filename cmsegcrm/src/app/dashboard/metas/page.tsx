@@ -321,7 +321,14 @@ export default function MetasPage() {
                       <div style={{ height: '100%', borderRadius: 2, background: u.pct >= 100 ? 'var(--teal)' : 'var(--gold)', width: `${Math.min(u.pct, 100)}%`, transition: 'width 0.5s' }} />
                     </div>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: u.pct >= 100 ? 'var(--teal)' : 'var(--gold)', flexShrink: 0 }}>{u.pct.toFixed(0)}%</div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>
+                      R$ {u.totalAtual.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </div>
+                    {u.totalMeta > 0 && (
+                      <div style={{ fontSize: 10, color: u.pct >= 100 ? 'var(--teal)' : 'var(--text-muted)', fontWeight: 600 }}>{u.pct.toFixed(0)}%</div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
