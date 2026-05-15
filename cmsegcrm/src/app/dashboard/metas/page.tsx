@@ -33,6 +33,7 @@ export default function MetasPage() {
   const [profile, setProfile]         = useState<any>(null)
   const [usuarios, setUsuarios]       = useState<any[]>([])
   const [metas, setMetas]             = useState<any[]>([])
+  const [vendasMesPorUser, setVendasMesPorUser] = useState<Record<string, number>>({})
   const [loading, setLoading]         = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [salvando, setSalvando]       = useState(false)
@@ -93,6 +94,24 @@ export default function MetasPage() {
       return
     }
     setMetas(data || [])
+    // Carrega vendas ganhas no mes atual por vendedor (independente de meta)
+    const hoje = new Date()
+    const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10)
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10) + 'T23:59:59'
+    let qV: any = supabase.from('negocios')
+      .select('vendedor_id, premio')
+      .eq('status', 'ganho')
+      .gte('data_fechamento', ini)
+      .lte('data_fechamento', fim)
+    if (prof?.role === 'corretor') qV = qV.eq('vendedor_id', prof.id)
+    else if (ids) qV = qV.in('vendedor_id', ids)
+    const { data: vendas } = await qV
+    const map: Record<string, number> = {}
+    for (const v of (vendas || []) as any[]) {
+      if (!v.vendedor_id) continue
+      map[v.vendedor_id] = (map[v.vendedor_id] || 0) + Number(v.premio || 0)
+    }
+    setVendasMesPorUser(map)
   }
 
   async function recalcularTodas() {
@@ -194,13 +213,15 @@ export default function MetasPage() {
   })
   const roleCor: Record<string, string> = { admin: 'var(--red)', lider: 'var(--gold)', corretor: 'var(--teal)' }
 
+  // Ranking inclui TODOS os usuarios com producao no mes, mesmo sem meta.
+  // totalAtual = soma de vendas 'ganho' do mes atual (independente de meta).
   const ranking = usuarios.map(u => {
     const mu = metas.filter(m => m.user_id === u.id && m.tipo === 'premio')
     const totalMeta = mu.reduce((s, m) => s + m.valor_meta, 0)
-    const totalAtual = mu.reduce((s, m) => s + m.valor_atual, 0)
+    const totalAtual = vendasMesPorUser[u.id] || 0
     const pct = totalMeta > 0 ? (totalAtual / totalMeta) * 100 : 0
     return { ...u, totalMeta, totalAtual, pct, qtdMetas: mu.length }
-  }).filter(u => u.qtdMetas > 0).sort((a, b) => b.pct - a.pct)
+  }).filter(u => u.totalAtual > 0 || u.qtdMetas > 0).sort((a, b) => b.totalAtual - a.totalAtual)
 
   const inp: React.CSSProperties = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 13, fontFamily: 'Open Sans,sans-serif', outline: 'none', boxSizing: 'border-box' as const }
 
