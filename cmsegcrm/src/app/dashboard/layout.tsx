@@ -238,24 +238,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     })
   }, [user, pathname])
 
-  // Conexão WhatsApp obrigatória: se o usuário tem uma instância WhatsApp
-  // provisionada e ela não está 'connected', força ir pra /dashboard/whatsapp.
-  // Login só conclui depois que ele conectar.
-  const [whatsCheck, setWhatsCheck] = useState<'pending' | 'ok' | 'bloqueado'>('pending')
-  useEffect(() => {
-    if (!user) return
-    if (!pathname) return
-    if (pathname.startsWith('/dashboard/whatsapp')) { setWhatsCheck('ok'); return }
-    supabase.from('whatsapp_instancias')
-      .select('status').eq('user_id', user.id).maybeSingle()
-      .then(({ data }: any) => {
-        if (!data) { setWhatsCheck('ok'); return }  // sem instância → não bloqueia
-        if (data.status === 'connected') { setWhatsCheck('ok'); return }
-        setWhatsCheck('bloqueado')
-        router.replace('/dashboard/whatsapp?conectar=1')
-      })
-  }, [user?.id, pathname])
-
   async function carregarProfile(userId: string) {
     const { data } = await supabase.from('users').select('id,nome,role,avatar_url,ramal_goto').eq('id', userId).single()
     setProfile(data)
