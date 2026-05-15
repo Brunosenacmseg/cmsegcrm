@@ -3,9 +3,40 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-type Aba = 'sistema' | 'logins' | 'jornadas'
+type Aba = 'sistema' | 'logins' | 'jornadas' | 'tempo'
 
 const PAGE_SIZE = 100
+
+type UsoRow = {
+  data: string         // 'YYYY-MM-DD' (Brasília)
+  user_id: string
+  user_nome: string
+  user_email: string
+  inicio: Date
+  fim: Date
+  horas: number
+}
+
+function brDateOf(d: Date | string): string {
+  const dt = typeof d === 'string' ? new Date(d) : d
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(dt)
+}
+
+function brTimeOf(d: Date | string): string {
+  const dt = typeof d === 'string' ? new Date(d) : d
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(dt)
+}
+
+function brDataBR(yyyymmdd: string): string {
+  const [y, m, d] = yyyymmdd.split('-')
+  return `${d}/${m}/${y}`
+}
 
 export default function LogsPage() {
   const supabase = createClient()
@@ -25,6 +56,8 @@ export default function LogsPage() {
   const [loginLogs, setLoginLogs] = useState<any[]>([])
   const [jornadasLogs, setJornadasLogs] = useState<any[]>([])
   const [jornadasFaltantes, setJornadasFaltantes] = useState<any[]>([])
+  const [tempoLinhas, setTempoLinhas] = useState<UsoRow[]>([])
+  const [tempoCarregando, setTempoCarregando] = useState(false)
 
   useEffect(() => { init() }, [])
 
@@ -72,7 +105,7 @@ export default function LogsPage() {
       if (filtroAte)  q = q.lte('criado_em', filtroAte + 'T23:59:59')
       const { data } = await q
       setLoginLogs(data || [])
-    } else {
+    } else if (aba === 'jornadas') {
       // Aba 'jornadas' — mostra inícios de jornada (jornadas + system_logs cruzados)
       let q = supabase.from('jornadas').select('*, users(id,nome,email)').order('iniciada_em', { ascending: false }).limit(PAGE_SIZE)
       if (filtroUser) q = q.eq('user_id', filtroUser)
@@ -88,6 +121,108 @@ export default function LogsPage() {
       const { data: us } = await supabase.from('users').select('id,nome,email,role').order('nome')
       const faltantes = (us || []).filter((u:any) => !userIdsHoje.has(u.id))
       setJornadasFaltantes(faltantes)
+    } else if (aba === 'tempo') {
+      await carregarTempo()
+    }
+  }
+
+  async function carregarTempo() {
+    setTempoCarregando(true)
+    try {
+      const hojeISO = brDateOf(new Date())
+      const de = filtroDe || hojeISO
+      const ate = filtroAte || hojeISO
+
+      // Limite de 31 dias para evitar consultas pesadas
+      const diff = Math.abs(new Date(ate + 'T00:00:00-03:00').getTime() - new Date(de + 'T00:00:00-03:00').getTime()) / 86400000
+      if (diff > 31) {
+        alert('Período máximo: 31 dias. Ajuste o intervalo.')
+        setTempoLinhas([])
+        return
+      }
+
+      const inicioISO = de + 'T00:00:00.000-03:00'
+      const fimISO    = ate + 'T23:59:59.999-03:00'
+
+      let qLogins: any = supabase.from('login_logs')
+        .select('user_id,user_nome,user_email,criado_em,sucesso')
+        .gte('criado_em', inicioISO).lte('criado_em', fimISO)
+        .eq('sucesso', true).limit(5000)
+      if (filtroUser) qLogins = qLogins.eq('user_id', filtroUser)
+
+      let qJornadas: any = supabase.from('jornadas')
+        .select('user_id,iniciada_em,users(nome,email)')
+        .gte('iniciada_em', inicioISO).lte('iniciada_em', fimISO).limit(5000)
+      if (filtroUser) qJornadas = qJornadas.eq('user_id', filtroUser)
+
+      let qSystem: any = supabase.from('system_logs')
+        .select('user_id,user_nome,user_email,criado_em')
+        .gte('criado_em', inicioISO).lte('criado_em', fimISO).limit(50000)
+      if (filtroUser) qSystem = qSystem.eq('user_id', filtroUser)
+
+      const [rLogins, rJornadas, rSystem] = await Promise.all([qLogins, qJornadas, qSystem])
+
+      type Agg = {
+        data: string, user_id: string, user_nome: string, user_email: string,
+        inicio: Date | null, fim: Date | null,
+      }
+      const mapa = new Map<string, Agg>()
+      function ensure(key: string, data: string, user_id: string, nome: string, email: string): Agg {
+        let r = mapa.get(key)
+        if (!r) {
+          r = { data, user_id, user_nome: nome, user_email: email, inicio: null, fim: null }
+          mapa.set(key, r)
+        }
+        if (nome && !r.user_nome) r.user_nome = nome
+        if (email && !r.user_email) r.user_email = email
+        return r
+      }
+
+      for (const l of (rLogins.data || [])) {
+        if (!l.user_id) continue
+        const dt = new Date(l.criado_em)
+        const d = brDateOf(dt)
+        const r = ensure(`${d}|${l.user_id}`, d, l.user_id, l.user_nome || '', l.user_email || '')
+        if (!r.inicio || dt < r.inicio) r.inicio = dt
+      }
+      for (const j of (rJornadas.data || [])) {
+        if (!j.user_id) continue
+        const dt = new Date(j.iniciada_em)
+        const d = brDateOf(dt)
+        const r = ensure(`${d}|${j.user_id}`, d, j.user_id, j.users?.nome || '', j.users?.email || '')
+        if (!r.inicio || dt < r.inicio) r.inicio = dt
+      }
+      for (const s of (rSystem.data || [])) {
+        if (!s.user_id) continue
+        const dt = new Date(s.criado_em)
+        const d = brDateOf(dt)
+        const r = ensure(`${d}|${s.user_id}`, d, s.user_id, s.user_nome || '', s.user_email || '')
+        if (!r.fim || dt > r.fim) r.fim = dt
+      }
+
+      const uById = new Map(usuarios.map((u: any) => [u.id, u]))
+      const linhas: UsoRow[] = []
+      for (const r of mapa.values()) {
+        if (!r.inicio) continue
+        const fim = r.fim || r.inicio
+        const u: any = uById.get(r.user_id)
+        const nome = r.user_nome || u?.nome || '—'
+        const email = r.user_email || u?.email || ''
+        const horas = (fim.getTime() - r.inicio.getTime()) / 3600000
+        linhas.push({
+          data: r.data, user_id: r.user_id,
+          user_nome: nome, user_email: email,
+          inicio: r.inicio, fim, horas,
+        })
+      }
+
+      linhas.sort((a, b) => {
+        if (a.data !== b.data) return a.data < b.data ? 1 : -1
+        return b.horas - a.horas
+      })
+      setTempoLinhas(linhas)
+    } finally {
+      setTempoCarregando(false)
     }
   }
 
@@ -130,7 +265,7 @@ export default function LogsPage() {
           l.user_agent || '', l.sucesso === false ? 'falhou' : 'ok',
         ])
       }
-    } else {
+    } else if (aba === 'jornadas') {
       nomeArquivo = `logs-jornadas-${new Date().toISOString().slice(0,10)}.csv`
       linhas = [['Iniciada em','Encerrada em','Usuario','Email','Duracao (min)']]
       for (const l of jornadasLogs) {
@@ -142,6 +277,17 @@ export default function LogsPage() {
           fim ? fmtData(l.encerrada_em) : 'Em andamento',
           l.users?.nome || '', l.users?.email || '',
           String(dur),
+        ])
+      }
+    } else {
+      nomeArquivo = `tempo-uso-${new Date().toISOString().slice(0,10)}.csv`
+      linhas = [['Data','Usuario','Email','Inicio','Fim','Horas']]
+      for (const l of tempoLinhas) {
+        linhas.push([
+          brDataBR(l.data),
+          l.user_nome, l.user_email,
+          brTimeOf(l.inicio), brTimeOf(l.fim),
+          l.horas.toFixed(2).replace('.', ','),
         ])
       }
     }
@@ -189,6 +335,7 @@ export default function LogsPage() {
           { k:'sistema',  l:'Atividades no sistema' },
           { k:'logins',   l:'Logins' },
           { k:'jornadas', l:'Início de Jornada' },
+          { k:'tempo',    l:'Tempo de uso' },
         ] as {k:Aba,l:string}[]).map(t => (
           <div key={t.k} onClick={()=>setAba(t.k)}
             style={{
@@ -222,7 +369,7 @@ export default function LogsPage() {
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:12}}>
         <button onClick={exportarCSV}
           style={{padding:'8px 14px',borderRadius:8,border:'1px solid var(--teal)',background:'rgba(28,181,160,0.10)',color:'var(--teal)',cursor:'pointer',fontSize:12,fontWeight:600,fontFamily:'Open Sans,sans-serif'}}>
-          ⬇ Exportar CSV ({aba === 'sistema' ? sistemaFiltrado.length : aba === 'logins' ? loginsFiltrados.length : jornadasLogs.length})
+          ⬇ Exportar CSV ({aba === 'sistema' ? sistemaFiltrado.length : aba === 'logins' ? loginsFiltrados.length : aba === 'jornadas' ? jornadasLogs.length : tempoLinhas.length})
         </button>
       </div>
 
@@ -332,6 +479,72 @@ export default function LogsPage() {
           </div>
         </div>
       )}
+
+      {aba === 'tempo' && (() => {
+        const porData = new Map<string, UsoRow[]>()
+        for (const l of tempoLinhas) {
+          const arr = porData.get(l.data) || []
+          arr.push(l); porData.set(l.data, arr)
+        }
+        const datasOrdenadas = Array.from(porData.keys()).sort((a, b) => a < b ? 1 : -1)
+        return (
+          <>
+            <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12}}>
+              Início = primeiro entre login bem-sucedido e início de jornada. Fim = última atividade registrada em <code>system_logs</code>. Horário de Brasília.
+              {!filtroDe && !filtroAte ? ' Período padrão: hoje.' : ''}
+            </div>
+            {tempoCarregando ? (
+              <div className="card" style={{padding:24, textAlign:'center', color:'var(--text-muted)'}}>Calculando...</div>
+            ) : datasOrdenadas.length === 0 ? (
+              <div className="card" style={{padding:24, textAlign:'center', color:'var(--text-muted)'}}>
+                Nenhum registro de uso encontrado no período.
+              </div>
+            ) : datasOrdenadas.map(data => {
+              const rows = porData.get(data)!
+              const total = rows.reduce((acc, r) => acc + r.horas, 0)
+              return (
+                <div key={data} className="card" style={{padding:0, overflow:'hidden', marginBottom:18}}>
+                  <div style={{padding:'10px 14px', borderBottom:'1px solid var(--border-soft)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                    <div style={{fontSize:13, fontWeight:700, color:'var(--text)'}}>{brDataBR(data)}</div>
+                    <div style={{fontSize:12, color:'var(--text-muted)'}}>
+                      {rows.length} usuários · Total: <strong style={{color:'var(--gold)'}}>{total.toFixed(2).replace('.', ',')} h</strong>
+                    </div>
+                  </div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
+                      <thead>
+                        <tr style={{background:'var(--bg-soft)', textAlign:'left'}}>
+                          <th style={th}>#</th>
+                          <th style={th}>Usuário</th>
+                          <th style={{...th, textAlign:'right'}}>Início</th>
+                          <th style={{...th, textAlign:'right'}}>Fim</th>
+                          <th style={{...th, textAlign:'right'}}>Horas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={`${r.data}|${r.user_id}`} style={{borderTop:'1px solid var(--border-soft)'}}>
+                            <td style={{...td, color:'var(--text-muted)', width:36}}>{i+1}</td>
+                            <td style={td}>
+                              <div>{r.user_nome}</div>
+                              <div style={{fontSize:11, color:'var(--text-muted)'}}>{r.user_email}</div>
+                            </td>
+                            <td style={{...td, textAlign:'right', fontFamily:'monospace'}}>{brTimeOf(r.inicio)}</td>
+                            <td style={{...td, textAlign:'right', fontFamily:'monospace'}}>{brTimeOf(r.fim)}</td>
+                            <td style={{...td, textAlign:'right', fontWeight:600, color: r.horas >= 8 ? 'var(--teal)' : r.horas >= 4 ? 'var(--text)' : 'var(--text-muted)'}}>
+                              {r.horas.toFixed(2).replace('.', ',')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )
+      })()}
 
       {aba === 'jornadas' && (
         <>
