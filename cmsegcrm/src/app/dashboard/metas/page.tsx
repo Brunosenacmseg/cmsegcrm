@@ -78,22 +78,29 @@ export default function MetasPage() {
       .select('*, users!metas_user_id_fkey(id,nome,role), users!metas_criado_por_fkey(id,nome)')
       .eq('status', 'ativa')
       .order('periodo_fim', { ascending: true })
-    // Corretor: só as próprias. Líder: só do time. Admin: todas.
     if (prof?.role === 'corretor') {
       q = q.eq('user_id', prof.id)
     } else if (ids) {
       q = q.in('user_id', ids)
     }
     const { data, error } = await q
+    let metasArr: any[] = []
     if (error) {
-      console.error('[metas] erro ao carregar:', error)
-      // Fallback: query simples sem JOIN para não deixar a tela em branco
+      console.error('[metas] erro ao carregar com JOIN:', error)
+      // Fallback: query simples sem JOIN, mapeia user_id/criado_por aos nomes via state.usuarios
       const { data: simples } = await supabase
         .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
-      setMetas(simples || [])
-      return
+      const byId: Record<string, any> = {}
+      for (const u of usuarios) byId[u.id] = u
+      metasArr = (simples || []).map((m: any) => ({
+        ...m,
+        'users!metas_user_id_fkey': byId[m.user_id] ? { id: m.user_id, nome: byId[m.user_id].nome, role: byId[m.user_id].role } : null,
+        'users!metas_criado_por_fkey': byId[m.criado_por] ? { id: m.criado_por, nome: byId[m.criado_por].nome } : null,
+      }))
+    } else {
+      metasArr = data || []
     }
-    setMetas(data || [])
+    setMetas(metasArr)
     // Carrega vendas ganhas no mes atual por vendedor (independente de meta)
     const hoje = new Date()
     const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10)
@@ -105,7 +112,8 @@ export default function MetasPage() {
       .lte('data_fechamento', fim)
     if (prof?.role === 'corretor') qV = qV.eq('vendedor_id', prof.id)
     else if (ids) qV = qV.in('vendedor_id', ids)
-    const { data: vendas } = await qV
+    const { data: vendas, error: errVendas } = await qV
+    if (errVendas) console.error('[metas] erro ao carregar vendas do mes:', errVendas)
     const map: Record<string, number> = {}
     for (const v of (vendas || []) as any[]) {
       if (!v.vendedor_id) continue
