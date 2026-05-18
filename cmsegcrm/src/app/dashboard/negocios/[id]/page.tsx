@@ -102,18 +102,33 @@ export default function NegocioDetailPage() {
   }, [id])
 
   async function recarregarNotas() {
-    const { data } = await supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false})
+    const { data, error } = await supabase
+      .from('negocio_notas')
+      .select('*, users(id,nome,avatar_url,role)')
+      .eq('negocio_id', id)
+      .order('pinned', { ascending: false })
+      .order('criado_em', { ascending: false })
+    if (error) {
+      console.error('[notas] erro ao carregar (com JOIN):', error)
+      // Fallback sem JOIN — não trava a tela
+      const { data: simples } = await supabase
+        .from('negocio_notas').select('*').eq('negocio_id', id)
+        .order('pinned', { ascending: false }).order('criado_em', { ascending: false })
+      setNotas(simples || [])
+      return
+    }
     setNotas(data || [])
   }
 
   async function criarAnotacao() {
     if (!novaAnotacao.trim() || !me?.id) return
     setCriandoNota(true)
-    await supabase.from('negocio_notas').insert({
+    const { error } = await supabase.from('negocio_notas').insert({
       negocio_id: id, user_id: me.id, conteudo: novaAnotacao.trim(), pinned: false,
     })
-    setNovaAnotacao('')
     setCriandoNota(false)
+    if (error) { alert('Erro ao salvar anotação: ' + error.message); return }
+    setNovaAnotacao('')
     recarregarNotas()
   }
 
