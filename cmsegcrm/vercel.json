@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/rdstation/poll",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/whatsapp/relatorio-auditoria",
