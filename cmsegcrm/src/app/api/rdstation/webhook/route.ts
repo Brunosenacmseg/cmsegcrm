@@ -51,6 +51,12 @@ export async function aplicarDeal(d: RDDeal, eventType: string) {
     return { ok: false, motivo: 'pipeline nao mapeado em funis.rd_id' }
   }
 
+  // Bloqueia integração com o funil RECICLADOS — o time do CRM gerencia esse
+  // funil manualmente. Sem isso, eventos do RD reabriam cards já tratados.
+  if (funil.nome === 'RECICLADOS') {
+    return { ok: false, motivo: 'funil RECICLADOS bloqueado para sync RD' }
+  }
+
   // Resolver etapa
   let etapa = d.deal_stage?.name || (funil.etapas?.[0] || 'Novo')
   if (!(funil.etapas as string[]).includes(etapa)) etapa = funil.etapas?.[0] || 'Novo'

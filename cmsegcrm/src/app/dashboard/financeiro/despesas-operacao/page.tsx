@@ -151,7 +151,7 @@ export default function DespesasOperacaoPage() {
     if (!opSel) return
     const desc = novoItemDesc.trim()
     if (!desc) { alert('Informe a descrição'); return }
-    const valor = Number(String(novoItemValor).replace(',', '.')) || 0
+    const valor = Number(String(novoItemValor).replace(/\./g, '').replace(',', '.')) || 0
     const { data, error } = await supabase.from('despesas_operacao_itens').insert({
       operacao_id: opSel.id, descricao: desc, valor, ordem: itens.length,
     }).select().single()
@@ -163,7 +163,7 @@ export default function DespesasOperacaoPage() {
   }
 
   async function salvarItem(id: string, campo: 'descricao' | 'valor', valor: any) {
-    const v = campo === 'valor' ? Number(String(valor).replace(',', '.')) || 0 : valor
+    const v = campo === 'valor' ? Number(String(valor).replace(/\./g, '').replace(',', '.')) || 0 : valor
     const { error } = await supabase.from('despesas_operacao_itens').update({ [campo]: v }).eq('id', id)
     if (error) { alert('Erro ao salvar: ' + error.message); return }
     setItens(prev => prev.map(i => i.id === id ? { ...i, [campo]: v } : i))
@@ -188,7 +188,7 @@ export default function DespesasOperacaoPage() {
 
   async function salvarVendedor(id: string, campo: keyof Vendedor, valor: any) {
     const v = ['salario_fixo','encargos_pct','comissao_pct','faturamento_mes'].includes(campo as string)
-      ? Number(String(valor).replace(',', '.')) || 0
+      ? Number(String(valor).replace(/\./g, '').replace(',', '.')) || 0
       : valor
     const { error } = await supabase.from('despesas_operacao_vendedores').update({ [campo]: v }).eq('id', id)
     if (error) { alert('Erro ao salvar vendedor: ' + error.message); return }
@@ -202,7 +202,7 @@ export default function DespesasOperacaoPage() {
 
   async function salvarOpCampo(campo: 'margem_lucro_pct' | 'nome' | 'observacao', valor: any) {
     if (!opSel) return
-    const v = campo === 'margem_lucro_pct' ? Number(String(valor).replace(',', '.')) || 0 : valor
+    const v = campo === 'margem_lucro_pct' ? Number(String(valor).replace(/\./g, '').replace(',', '.')) || 0 : valor
     const { error } = await supabase.from('despesas_operacao').update({ [campo]: v }).eq('id', opSel.id)
     if (error) { alert('Erro ao salvar: ' + error.message); return }
     setOperacoes(prev => prev.map(o => o.id === opSel.id ? { ...o, [campo]: v } : o))
