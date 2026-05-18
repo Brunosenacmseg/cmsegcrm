@@ -1913,12 +1913,15 @@ function FunisPage() {
                             <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(74,128,240,0.14)',color:'#1d4ed8',display:'inline-flex',alignItems:'center',gap:4}}>
                               <span style={{width:7,height:7,borderRadius:'50%',background:'#1d4ed8'}}/>Em andamento
                             </span>
-                            {cronometro && (
-                              <span title="Tempo desde a última movimentação do card"
-                                style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:esfriando?'rgba(217,119,6,0.16)':'rgba(107,114,128,0.14)',color:esfriando?'#a16207':'#4b5563',display:'inline-flex',alignItems:'center',gap:4,fontVariantNumeric:'tabular-nums'}}>
-                                ⏱ {cronometro}
-                              </span>
-                            )}
+                            {cronometro && (() => {
+                              const passou4h = (diffMs || 0) >= 4*3600_000
+                              return (
+                                <span title="Tempo desde a última movimentação do card"
+                                  style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:passou4h?'rgba(224,82,82,0.16)':'rgba(28,181,160,0.16)',color:passou4h?'#b91c1c':'#0f8a72',display:'inline-flex',alignItems:'center',gap:4,fontVariantNumeric:'tabular-nums'}}>
+                                  ⏱ {cronometro}
+                                </span>
+                              )
+                            })()}
                             {esfriando && (
                               <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(217,119,6,0.16)',color:'#a16207',display:'inline-flex',alignItems:'center',gap:4}}>
                                 <span style={{width:7,height:7,borderRadius:'50%',background:'#d97706'}}/>Esfriando há {diasSemMov} dia{diasSemMov!==1?'s':''}
