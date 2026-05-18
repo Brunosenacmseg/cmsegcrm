@@ -76,7 +76,7 @@ export default function NegocioDetailPage() {
         neg.cliente_id ? supabase.from('clientes').select('id,nome,telefone,email,cpf_cnpj').eq('id', neg.cliente_id).single() : Promise.resolve({ data: null } as any),
         neg.vendedor_id ? supabase.from('users').select('id,nome,email,avatar_url,role').eq('id', neg.vendedor_id).single() : Promise.resolve({ data: null } as any),
         supabase.from('tarefas').select('*').eq('negocio_id', id).order('prazo', { ascending: true }),
-        supabase.from('negocio_notas').select('*, users:user_id(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false}),
+        supabase.from('negocio_notas').select('*, users(id,nome,avatar_url,role)').eq('negocio_id', id).order('pinned',{ascending:false}).order('criado_em',{ascending:false}),
         supabase.from('negocio_produtos').select('*').eq('negocio_id', id).order('criado_em',{ascending:true}),
         supabase.from('produtos').select('id,nome,preco_base').eq('ativo',true).order('nome'),
       ])
@@ -88,7 +88,15 @@ export default function NegocioDetailPage() {
       setCliente(cl)
       setResp(rp)
       setTarefas(tr || [])
-      setNotas(nt || [])
+      if (nt && nt.length > 0) {
+        setNotas(nt)
+      } else {
+        // Fallback sem JOIN — não trava a tela quando a relação embedada falha silenciosamente
+        const { data: simples } = await supabase
+          .from('negocio_notas').select('*').eq('negocio_id', id)
+          .order('pinned',{ascending:false}).order('criado_em',{ascending:false})
+        setNotas(simples || [])
+      }
       setProdutos(pr || [])
       setProdutosAll(pAll || [])
       const { data: anx } = await supabase.from('anexos').select('*').eq('negocio_id', id).eq('categoria','negocio').order('created_at',{ascending:false})
