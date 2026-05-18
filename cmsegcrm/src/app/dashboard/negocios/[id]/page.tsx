@@ -600,6 +600,17 @@ export default function NegocioDetailPage() {
                 type Item = { kind:'nota'|'tarefa'|'log'; pinned:boolean; ts:number; raw:any }
                 const items: Item[] = []
                 notas.forEach(n => items.push({ kind:'nota', pinned: !!n.pinned, ts: new Date(n.criado_em).getTime(), raw: n }))
+                // Inclui o campo obs do negócio (geralmente preenchido por importações antigas)
+                // como item de histórico, exceto quando é um marcador interno do sistema.
+                const obsTxt = String(negocio?.obs || '').trim()
+                const obsInterno = /^movido_de_funil:|^Negócio:/.test(obsTxt)
+                if (obsTxt && !obsInterno) {
+                  items.push({
+                    kind:'nota', pinned:false,
+                    ts: new Date(negocio?.created_at || 0).getTime(),
+                    raw: { id:'obs-'+id, conteudo: obsTxt, criado_em: negocio?.created_at, user_id: null, users: null, pinned: false, _origemObs: true },
+                  })
+                }
                 tarefas.forEach(t => items.push({ kind:'tarefa', pinned:false, ts: new Date(t.created_at||t.prazo||0).getTime(), raw: t }))
                 eventos.forEach(e => items.push({ kind:'log', pinned:false, ts: new Date(e.criado_em).getTime(), raw: e }))
                 let filt = items
@@ -650,7 +661,8 @@ export default function NegocioDetailPage() {
                       {filt.map((item, idx) => {
                         if (item.kind === 'nota') {
                           const n = item.raw
-                          const podeEditar = me?.id === n.user_id || me?.role === 'admin'
+                          const ehObsImportada = !!n._origemObs
+                          const podeEditar = !ehObsImportada && (me?.id === n.user_id || me?.role === 'admin')
                           const editando   = editandoNotaId === n.id
                           return (
                             <div key={'n'+n.id} style={{display:'flex',gap:10,paddingBottom:14,marginBottom:4,position:'relative',background:n.pinned?'rgba(201,168,76,0.06)':'transparent',borderRadius:n.pinned?8:0,padding:n.pinned?'10px 12px':'0 0 14px 0',border:n.pinned?'1px solid rgba(201,168,76,0.30)':'none'}}>
@@ -671,15 +683,16 @@ export default function NegocioDetailPage() {
                                   <>
                                     <div style={{fontSize:13,color:'var(--text)',marginBottom:3,whiteSpace:'pre-wrap'}}>
                                       {n.pinned && <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--gold-soft)',color:'var(--gold)',textTransform:'uppercase',letterSpacing:0.5,marginRight:6}}>📌 Fixada</span>}
+                                      {ehObsImportada && <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'rgba(148,163,184,0.18)',color:'#64748b',textTransform:'uppercase',letterSpacing:0.5,marginRight:6}}>importada</span>}
                                       {n.conteudo}
                                     </div>
                                     <div style={{fontSize:11,color:'var(--text-muted)'}}>
-                                      {n.users?.nome || '—'} · {new Date(n.criado_em).toLocaleString('pt-BR')}
+                                      {ehObsImportada ? 'Importada da planilha' : (n.users?.nome || '—')}{n.criado_em ? ' · ' + new Date(n.criado_em).toLocaleString('pt-BR') : ''}
                                     </div>
                                   </>
                                 )}
                               </div>
-                              {!editando && (
+                              {!editando && !ehObsImportada && (
                                 <div style={{display:'flex',gap:4,alignSelf:'flex-start'}}>
                                   <button onClick={()=>togglePin(n)} title={n.pinned?'Desfixar':'Fixar no topo'}
                                     style={{background:'transparent',border:'1px solid var(--border-soft)',borderRadius:6,padding:'4px 7px',cursor:'pointer',fontSize:12,color:n.pinned?'var(--gold)':'var(--text-muted)'}}>
