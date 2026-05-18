@@ -15,6 +15,7 @@ export default function VendasVendedorWrapper() {
 
 type Linha = {
   id: string
+  titulo?: string | null
   premio: number
   comissao_pct: number
   data_fechamento: string
@@ -73,7 +74,7 @@ function VendasVendedorPage() {
     // EMISSÃO E IMPLANTAÇÃO (não soma no ranking nem na produção).
     const funisExcluidos = await getFunilIdsSemValor()
     let q: any = supabase.from('negocios')
-      .select('id, premio, comissao_pct, data_fechamento, produto, seguradora, funil_id, funis(nome,emoji), clientes(nome)')
+      .select('id, titulo, premio, comissao_pct, data_fechamento, produto, seguradora, funil_id, funis(nome,emoji), clientes(nome)')
       .eq('status', 'ganho')
       .eq('vendedor_id', vendedorId)
       .gte('data_fechamento', inicio)
@@ -192,7 +193,7 @@ function VendasVendedorPage() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                           >
                             <td style={{padding:'10px 14px', whiteSpace:'nowrap'}}>{l.data_fechamento ? new Date(l.data_fechamento).toLocaleDateString('pt-BR') : '—'}</td>
-                            <td style={{padding:'10px 14px'}}>{l.clientes?.nome || '—'}</td>
+                            <td style={{padding:'10px 14px'}}>{l.titulo || l.clientes?.nome || '—'}</td>
                             <td style={{padding:'10px 14px', whiteSpace:'nowrap'}}>{l.funis?.emoji || ''} {l.funis?.nome || '—'}</td>
                             <td style={{padding:'10px 14px'}}>{l.produto || '—'}</td>
                             <td style={{padding:'10px 14px'}}>{l.seguradora || '—'}</td>
