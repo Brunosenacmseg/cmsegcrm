@@ -9,7 +9,9 @@ const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov'
 export default function RelatoriosPage() {
   const supabase = createClient()
   const [dados, setDados]     = useState<any>(null)
-  const [periodo, setPeriodo] = useState('mes')  // mes | trimestre | ano
+  const [periodo, setPeriodo] = useState('mes')  // mes | trimestre | ano | custom
+  const [dataDe, setDataDe]   = useState('')
+  const [dataAte, setDataAte] = useState('')
   const [loading, setLoading] = useState(true)
 
   // Visibilidade
@@ -23,7 +25,7 @@ export default function RelatoriosPage() {
   const [iniciado, setIniciado]           = useState(false)
 
   useEffect(() => { init() }, [])
-  useEffect(() => { if (iniciado) carregar() }, [periodo, filtroEquipe, filtroUsuario, iniciado])
+  useEffect(() => { if (iniciado) carregar() }, [periodo, dataDe, dataAte, filtroEquipe, filtroUsuario, iniciado])
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -61,9 +63,14 @@ export default function RelatoriosPage() {
     setLoading(true)
     const hoje = new Date()
     let dataInicio: string
-    if (periodo === 'mes')       dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()
+    let dataFimISO: string | null = null
+    if (periodo === 'custom' && (dataDe || dataAte)) {
+      dataInicio = dataDe ? new Date(dataDe + 'T00:00:00').toISOString() : new Date(2000, 0, 1).toISOString()
+      if (dataAte) dataFimISO = new Date(dataAte + 'T23:59:59.999').toISOString()
+    }
+    else if (periodo === 'mes')       dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()
     else if (periodo === 'trimestre') dataInicio = new Date(hoje.getFullYear(), hoje.getMonth()-2, 1).toISOString()
-    else                         dataInicio = new Date(hoje.getFullYear(), 0, 1).toISOString()
+    else                              dataInicio = new Date(hoje.getFullYear(), 0, 1).toISOString()
 
     const ids = userIdsParaFiltro()
     const funisExcluidos = await getFunilIdsSemValor()
@@ -79,6 +86,7 @@ export default function RelatoriosPage() {
           .gte('created_at', dataInicio)
           .order('created_at', { ascending: false })
           .range(off, off + PAGE - 1)
+        if (dataFimISO) q = q.lte('created_at', dataFimISO)
         if (ids) {
           if (ids.length === 0) q = q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
           else                  q = q.in('vendedor_id', ids)
@@ -94,6 +102,7 @@ export default function RelatoriosPage() {
     }
 
     let qCli = supabase.from('clientes').select('id, created_at, vendedor_id').gte('created_at', dataInicio)
+    if (dataFimISO) qCli = qCli.lte('created_at', dataFimISO)
     if (ids) {
       if (ids.length === 0) qCli = qCli.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
       else                  qCli = qCli.in('vendedor_id', ids)
@@ -102,7 +111,9 @@ export default function RelatoriosPage() {
     const [negs, { data: clientes }, { data: hist }] = await Promise.all([
       carregarPaginado(),
       qCli,
-      supabase.from('historico').select('created_at, tipo').gte('created_at', dataInicio),
+      (dataFimISO
+        ? supabase.from('historico').select('created_at, tipo').gte('created_at', dataInicio).lte('created_at', dataFimISO)
+        : supabase.from('historico').select('created_at, tipo').gte('created_at', dataInicio)),
     ])
 
     const todos  = negs
@@ -169,7 +180,7 @@ export default function RelatoriosPage() {
     <PageShell title="Relatórios">
       {/* Filtro de período + escopo */}
       <div style={{display:'flex',gap:6,marginBottom:24,flexWrap:'wrap',alignItems:'center'}}>
-        {[['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano']].map(([k,l])=>(
+        {[['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano'],['custom','Personalizado']].map(([k,l])=>(
           <button key={k} onClick={()=>setPeriodo(k)} style={{
             padding:'7px 18px',borderRadius:20,fontSize:12,fontWeight:periodo===k?700:400,
             cursor:'pointer',border:'1px solid var(--border)',fontFamily:'Open Sans,sans-serif',
@@ -177,6 +188,15 @@ export default function RelatoriosPage() {
             color:periodo===k?'var(--navy)':'var(--text-muted)',transition:'all 0.16s'
           }}>{l}</button>
         ))}
+        {periodo==='custom' && (
+          <>
+            <input type="date" value={dataDe} onChange={e=>setDataDe(e.target.value)} title="De"
+              style={{padding:'7px 10px',borderRadius:8,fontSize:12,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',outline:'none',fontFamily:'Open Sans,sans-serif'}}/>
+            <span style={{fontSize:12,color:'var(--text-muted)'}}>até</span>
+            <input type="date" value={dataAte} onChange={e=>setDataAte(e.target.value)} title="Até"
+              style={{padding:'7px 10px',borderRadius:8,fontSize:12,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',outline:'none',fontFamily:'Open Sans,sans-serif'}}/>
+          </>
+        )}
 
         {profile && profile.role !== 'corretor' && (
           <>
