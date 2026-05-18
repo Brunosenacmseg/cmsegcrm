@@ -12,7 +12,7 @@ import { ToastProvider, ConfirmProvider } from '@/components/Toast'
 import { registrarLog } from '@/lib/logs'
 import JornadaGate from '@/components/JornadaGate'
 
-const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean; liderOnly?: boolean }> = [
+const NAV: Array<{ href: string; icon: string; label: string; section?: string; badge?: string; adminOnly?: boolean; equipePosVenda?: boolean; equipeGestao?: boolean; liderEquipeAdm?: boolean; liderOnly?: boolean }> = [
   { href:'/dashboard',              icon:'📈', label:'Dashboard' },
   { href:'/dashboard/funis',        icon:'🏗', label:'Funis' },
   { href:'/dashboard/cotacoes',     icon:'🔍', label:'Cotações', adminOnly:true },
@@ -49,6 +49,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/melhorias',    icon:'💡', label:'Melhorias CRM', section:'Empresa' },
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', equipeGestao:true },
   { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true },
+  { href:'/dashboard/importar/renovacoes', icon:'🔄', label:'Importar Renovações', section:'Config', liderEquipeAdm:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
   { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', equipeGestao:true },
@@ -57,12 +58,13 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
 
 type MenuGroup = { label: string; href?: string; badge?: string; children?: Array<{ href: string; label: string; icon?: string; badge?: string }> }
 
-function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolean, ehLider: boolean): MenuGroup[] {
+function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolean, ehLider: boolean, ehLiderAdm: boolean): MenuGroup[] {
   const all = NAV.filter(item => {
     if (item.adminOnly && !isAdmin) return false
     if (item.equipePosVenda && !isAdmin && !ehPosVenda) return false
     if (item.equipeGestao && !isAdmin && !ehGestao) return false
     if (item.liderOnly && !isAdmin && !ehLider) return false
+    if (item.liderEquipeAdm && !isAdmin && !ehLiderAdm) return false
     return true
   })
   const has = (href: string) => all.find(i => i.href === href)
@@ -127,6 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [ehPosVenda, setEhPosVenda]       = useState(false)
   const [ehGestao, setEhGestao]           = useState(false)
   const [ehLider, setEhLider]             = useState(false)
+  const [ehLiderAdm, setEhLiderAdm]       = useState(false)
   // Seções recolhidas — começa com Marketing/Integrações/Empresa/Config
   // recolhidos para reduzir densidade visual. Persiste em localStorage.
   const [secoesRecolhidas, setSecoesRecolhidas] = useState<Record<string,boolean>>(() => {
@@ -224,7 +227,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (rotaLider && !isAdminUser && !ehLider) {
       router.replace('/dashboard')
     }
-  }, [profile, ehPosVenda, ehGestao, ehLider, pathname, router])
+    const rotaLiderAdm = NAV.find(item => item.liderEquipeAdm && (pathname === item.href || pathname.startsWith(item.href + '/')))
+    if (rotaLiderAdm && !isAdminUser && !ehLiderAdm) {
+      router.replace('/dashboard')
+    }
+  }, [profile, ehPosVenda, ehGestao, ehLider, ehLiderAdm, pathname, router])
 
   // Registra navegação do usuário (auditoria). Usa o label do NAV quando
   // possível para que o log fique legível no painel de admin.
@@ -265,6 +272,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', userId).limit(1)
       setEhLider(!!(eqs && eqs.length))
     }
+    // Líder da EQUIPE ADM? (libera Importar Renovações)
+    const { data: eqAdm } = await supabase.from('equipes').select('id, nome, lider_id').ilike('nome', 'EQUIPE ADM')
+    setEhLiderAdm(!!(eqAdm || []).find((e: any) => e.lider_id === userId))
   }
 
   async function carregarBadges(userId: string) {
@@ -387,13 +397,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (item.equipePosVenda && !isAdmin && !ehPosVenda) return false
     if (item.equipeGestao && !isAdmin && !ehGestao) return false
     if (item.liderOnly && !isAdmin && !ehLider) return false
+    if (item.liderEquipeAdm && !isAdmin && !ehLiderAdm) return false
     // Financeiro / DRE: agora é adminOnly (já filtrado acima); o flag
     // temAcessoFin permanece como no-op para compat.
     if (item.href === '/dashboard/financeiro' && !temAcessoFin) return false
     return true
   })
 
-  const menuGroups = buildMenuGroups(isAdmin, ehPosVenda, ehGestao, ehLider)
+  const menuGroups = buildMenuGroups(isAdmin, ehPosVenda, ehGestao, ehLider, ehLiderAdm)
   const tarefasAtrasadas = badges['tarefas'] || 0
   const tarefasPendentes = (badges as any)['tarefas_pendentes'] || 0
 
