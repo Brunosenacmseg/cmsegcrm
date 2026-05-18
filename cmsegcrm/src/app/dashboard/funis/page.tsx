@@ -491,7 +491,7 @@ function FunisPage() {
     const prod = produtosAll.find(p => p.id === novoProdNeg.produto_id)
     if (!prod) return
     const qtd = parseInt(novoProdNeg.quantidade) || 1
-    const valor = parseFloat(novoProdNeg.valor_unit.replace(',', '.')) || prod.preco_base || 0
+    const valor = (parseValorBR(novoProdNeg.valor_unit) ?? 0) || prod.preco_base || 0
     const { data } = await supabase.from('negocio_produtos').insert({
       negocio_id: cardAtivo.id, produto_id: prod.id, nome_snapshot: prod.nome,
       quantidade: qtd, valor_unit: valor,
@@ -765,6 +765,7 @@ function FunisPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
+    if (prof?.id) setFiltroUsuario(prof.id)
     const ids = await getVisibleUserIds()
     setVisibleIds(ids)
     let usrQ = supabase.from('users').select('id,nome,role').order('nome')
@@ -960,7 +961,7 @@ function FunisPage() {
       titulo:          formNovo.titulo,
       produto:         formNovo.produto || null,
       seguradora:      formNovo.seguradora || null,
-      premio:          formNovo.premio ? parseFloat(formNovo.premio) : null,
+      premio:          formNovo.premio ? (parseValorBR(formNovo.premio) ?? null) : null,
       obs:             formNovo.obs || null,
       telefone_negocio: formNovo.telefone?.trim() || null,
       email_negocio:   formNovo.contato_email?.trim() || null,
@@ -2689,7 +2690,7 @@ function FunisPage() {
                         const update: any = {
                           nome_snapshot: novoNome.trim() || p.nome_snapshot,
                           quantidade: Number(novaQtd) || p.quantidade,
-                          valor_unit: Number(String(novoVal).replace(',', '.')) || p.valor_unit,
+                          valor_unit: Number(String(novoVal).replace(/\./g, '').replace(',', '.')) || p.valor_unit,
                         }
                         if (novoProdId && novoProdId.trim() !== p.produto_id) update.produto_id = novoProdId.trim()
                         const { error } = await supabase.from('negocio_produtos').update(update).eq('id', p.id)
