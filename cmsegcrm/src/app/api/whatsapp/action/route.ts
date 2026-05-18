@@ -73,6 +73,38 @@ function normalizarNumero(raw: string): string {
   return n
 }
 
+// Quando o JID é @lid (WhatsApp Local ID), os dígitos antes do `@` NÃO são
+// um número real — só funcionam se mapearmos para o telefone verdadeiro.
+// Usa o `remoto_numero` que já foi resolvido em mensagens passadas (rotina
+// /api/whatsapp/resolver-lid) ou tenta extrair de outras mensagens da mesma
+// conversa.
+async function resolverNumeroParaEnvio(jidRaw: string, instanceName: string | null): Promise<string> {
+  const jid = String(jidRaw || '').trim()
+  if (!jid) return ''
+  if (jid.endsWith('@g.us')) return jid
+  if (!jid.includes('@lid')) return normalizarNumero(jid)
+  // @lid: tenta achar remoto_numero já resolvido na mesma instância
+  let instanciaId: string | null = null
+  if (instanceName) {
+    const { data: inst } = await supabaseAdmin()
+      .from('whatsapp_instancias').select('id').eq('nome', instanceName).maybeSingle()
+    instanciaId = inst?.id || null
+  }
+  if (instanciaId) {
+    const { data } = await supabaseAdmin()
+      .from('whatsapp_mensagens').select('remoto_numero')
+      .eq('remoto_jid', jid).eq('instancia_id', instanciaId)
+      .not('remoto_numero', 'is', null).limit(1).maybeSingle()
+    if (data?.remoto_numero) return normalizarNumero(data.remoto_numero)
+  }
+  const { data: any2 } = await supabaseAdmin()
+    .from('whatsapp_mensagens').select('remoto_numero')
+    .eq('remoto_jid', jid).not('remoto_numero', 'is', null)
+    .limit(1).maybeSingle()
+  if (any2?.remoto_numero) return normalizarNumero(any2.remoto_numero)
+  return ''
+}
+
 export async function POST(request: NextRequest) {
   try {
     const guard = await exigirAutenticado(request)
@@ -129,7 +161,9 @@ export async function POST(request: NextRequest) {
 
       case 'enviar': {
         const { numero, mensagem } = params
-        const numClean = normalizarNumero(numero)
+        let numClean = await resolverNumeroParaEnvio(numero, instance)
+        // Última tentativa: Evolution v2 também aceita o jid completo
+        if (!numClean && numero) numClean = String(numero)
         if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendText/${instance}`, 'POST', {
           number: numClean,
@@ -144,8 +178,8 @@ export async function POST(request: NextRequest) {
 
       case 'enviar_midia': {
         const { numero, base64, mimetype, nome_arquivo, caption } = params
-        const numClean = normalizarNumero(numero)
-        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
+        const numClean = await resolverNumeroParaEnvio(numero, instance)
+        if (!numClean) return NextResponse.json({ error: 'Não foi possível resolver o número de destino (contato @lid).' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendMedia/${instance}`, 'POST', {
           number: numClean,
           mediatype: mimetype?.startsWith('image') ? 'image'
@@ -165,8 +199,8 @@ export async function POST(request: NextRequest) {
 
       case 'enviar_audio': {
         const { numero, base64 } = params
-        const numClean = normalizarNumero(numero)
-        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
+        const numClean = await resolverNumeroParaEnvio(numero, instance)
+        if (!numClean) return NextResponse.json({ error: 'Não foi possível resolver o número de destino (contato @lid).' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendWhatsAppAudio/${instance}`, 'POST', {
           number: numClean,
           audio: base64,
@@ -181,8 +215,8 @@ export async function POST(request: NextRequest) {
 
       case 'enviar_sticker': {
         const { numero, base64 } = params
-        const numClean = normalizarNumero(numero)
-        if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
+        const numClean = await resolverNumeroParaEnvio(numero, instance)
+        if (!numClean) return NextResponse.json({ error: 'Não foi possível resolver o número de destino (contato @lid).' }, { status: 400 })
         const r = await evoFetch(evo_url, api_key, `/message/sendSticker/${instance}`, 'POST', {
           number: numClean,
           sticker: base64,
