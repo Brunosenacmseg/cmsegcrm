@@ -35,6 +35,13 @@ function FunisPage() {
   const topScrollRef = useRef<HTMLDivElement>(null)
   const [kanbanWidth, setKanbanWidth] = useState(0)
 
+  // Tick a cada 60s para atualizar cronômetros "tempo sem movimento" nos cards
+  const [tickNow, setTickNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setTickNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   // Motivos de perda (admin cadastra em /dashboard/configuracoes)
   const [motivosPerda, setMotivosPerda] = useState<any[]>([])
   // Drag & drop kanban
@@ -1884,15 +1891,34 @@ function FunisPage() {
 
                       {/* Badges de status estilo RD (acima do título) */}
                       {!isGanho && !isPerdido && (() => {
-                        const diasSemMov = neg.updated_at ? Math.floor((Date.now() - new Date(neg.updated_at).getTime())/86400000) : null
+                        const updatedMs = neg.updated_at ? new Date(neg.updated_at).getTime() : null
+                        const diffMs = updatedMs ? Math.max(0, tickNow - updatedMs) : null
+                        const diasSemMov = diffMs !== null ? Math.floor(diffMs/86400000) : null
                         const cfg = (funiAtual?.meta_etapas as any)?.[neg.etapa]
                         const limite = (cfg?.esfriando ? Number(cfg?.dias)||3 : null)
                         const esfriando = limite !== null && diasSemMov !== null && diasSemMov >= limite
+                        let cronometro: string | null = null
+                        if (diffMs !== null) {
+                          const min = Math.floor(diffMs/60000)
+                          if (min < 60) cronometro = `${min}min`
+                          else if (min < 1440) cronometro = `${Math.floor(min/60)}h ${min%60}min`
+                          else {
+                            const d = Math.floor(min/1440)
+                            const h = Math.floor((min%1440)/60)
+                            cronometro = h ? `${d}d ${h}h` : `${d}d`
+                          }
+                        }
                         return (
                           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
                             <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(74,128,240,0.14)',color:'#1d4ed8',display:'inline-flex',alignItems:'center',gap:4}}>
                               <span style={{width:7,height:7,borderRadius:'50%',background:'#1d4ed8'}}/>Em andamento
                             </span>
+                            {cronometro && (
+                              <span title="Tempo desde a última movimentação do card"
+                                style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:esfriando?'rgba(217,119,6,0.16)':'rgba(107,114,128,0.14)',color:esfriando?'#a16207':'#4b5563',display:'inline-flex',alignItems:'center',gap:4,fontVariantNumeric:'tabular-nums'}}>
+                                ⏱ {cronometro}
+                              </span>
+                            )}
                             {esfriando && (
                               <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:4,background:'rgba(217,119,6,0.16)',color:'#a16207',display:'inline-flex',alignItems:'center',gap:4}}>
                                 <span style={{width:7,height:7,borderRadius:'50%',background:'#d97706'}}/>Esfriando há {diasSemMov} dia{diasSemMov!==1?'s':''}
