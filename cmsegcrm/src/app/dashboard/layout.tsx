@@ -47,8 +47,8 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/gestao-equipe',icon:'🧭', label:'Gestão de Equipe', section:'Empresa', liderOnly:true },
   { href:'/dashboard/rh',           icon:'🧑‍💼', label:'RH', section:'Empresa' },
   { href:'/dashboard/melhorias',    icon:'💡', label:'Melhorias CRM', section:'Empresa' },
-  { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', equipeGestao:true },
-  { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true },
+  { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', equipeGestao:true, liderEquipeAdm:true },
+  { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true, liderEquipeAdm:true },
   { href:'/dashboard/importar/renovacoes', icon:'🔄', label:'Importar Renovações', section:'Config', liderEquipeAdm:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
@@ -60,12 +60,19 @@ type MenuGroup = { label: string; href?: string; badge?: string; children?: Arra
 
 function buildMenuGroups(isAdmin: boolean, ehPosVenda: boolean, ehGestao: boolean, ehLider: boolean, ehLiderAdm: boolean): MenuGroup[] {
   const all = NAV.filter(item => {
-    if (item.adminOnly && !isAdmin) return false
-    if (item.equipePosVenda && !isAdmin && !ehPosVenda) return false
-    if (item.equipeGestao && !isAdmin && !ehGestao) return false
-    if (item.liderOnly && !isAdmin && !ehLider) return false
-    if (item.liderEquipeAdm && !isAdmin && !ehLiderAdm) return false
-    return true
+    if (isAdmin) return true
+    // Quando o item tem múltiplas flags (ex.: equipeGestao + liderEquipeAdm),
+    // basta o usuário satisfazer UMA delas pra liberar.
+    const flags: Array<[boolean|undefined, boolean]> = [
+      [item.adminOnly,       false],
+      [item.equipePosVenda,  ehPosVenda],
+      [item.equipeGestao,    ehGestao],
+      [item.liderOnly,       ehLider],
+      [item.liderEquipeAdm,  ehLiderAdm],
+    ]
+    const restricted = flags.filter(([flag]) => !!flag)
+    if (restricted.length === 0) return true
+    return restricted.some(([, ok]) => ok)
   })
   const has = (href: string) => all.find(i => i.href === href)
   const child = (href: string, label?: string, badge?: string) => {
@@ -209,27 +216,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!profile) return
     const isAdminUser = profile.role === 'admin' || profile.role === 'financeiro'
-    const rotaAdmin = NAV.find(item => item.adminOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
-    if (rotaAdmin && !isAdminUser) {
-      router.replace('/dashboard')
-      return
-    }
-    const rotaGestao = NAV.find(item => item.equipeGestao && (pathname === item.href || pathname.startsWith(item.href + '/')))
-    if (rotaGestao && !isAdminUser && !ehGestao) {
-      router.replace('/dashboard'); return
-    }
-    const rotaPosVenda = NAV.find(item => item.equipePosVenda && (pathname === item.href || pathname.startsWith(item.href + '/')))
-    if (rotaPosVenda && !isAdminUser && !ehPosVenda) {
-      router.replace('/dashboard')
-      return
-    }
-    const rotaLider = NAV.find(item => item.liderOnly && (pathname === item.href || pathname.startsWith(item.href + '/')))
-    if (rotaLider && !isAdminUser && !ehLider) {
-      router.replace('/dashboard')
-    }
-    const rotaLiderAdm = NAV.find(item => item.liderEquipeAdm && (pathname === item.href || pathname.startsWith(item.href + '/')))
-    if (rotaLiderAdm && !isAdminUser && !ehLiderAdm) {
-      router.replace('/dashboard')
+    // Item correspondente à rota atual (se houver). Mesma lógica do menu:
+    // se o item tem múltiplas flags, basta o usuário satisfazer UMA pra liberar.
+    const rota = NAV.find(item => pathname === item.href || pathname.startsWith(item.href + '/'))
+    if (rota) {
+      if (isAdminUser) return
+      const restricted: Array<[boolean|undefined, boolean]> = [
+        [rota.adminOnly,       false],
+        [rota.equipePosVenda,  ehPosVenda],
+        [rota.equipeGestao,    ehGestao],
+        [rota.liderOnly,       ehLider],
+        [rota.liderEquipeAdm,  ehLiderAdm],
+      ].filter(([flag]) => !!flag) as Array<[boolean|undefined, boolean]>
+      if (restricted.length > 0 && !restricted.some(([, ok]) => ok)) {
+        router.replace('/dashboard')
+      }
     }
   }, [profile, ehPosVenda, ehGestao, ehLider, ehLiderAdm, pathname, router])
 
