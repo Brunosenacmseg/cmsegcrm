@@ -765,6 +765,7 @@ function FunisPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
+    if (prof?.id) setFiltroUsuario(prof.id)
     const ids = await getVisibleUserIds()
     setVisibleIds(ids)
     let usrQ = supabase.from('users').select('id,nome,role').order('nome')
