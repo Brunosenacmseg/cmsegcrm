@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
+import { AvaliacaoDetalheModal } from '@/components/AvaliacaoDetalheModal'
 
 type Tab = 'funcionarios' | 'ferias' | 'avaliacoes' | 'comissoes' | 'beneficios' | 'aniversariantes' | 'cargos' | 'desligamentos' | 'documentos'
 
@@ -81,14 +82,7 @@ export default function RHPage() {
             {tab === 'funcionarios'    && isRH && <FuncionariosTab isAdmin={podeEditar} />}
             {tab === 'aniversariantes' && isRH && <AniversariantesTab />}
             {tab === 'ferias'          && <FeriasTab isRH={isRH} userId={profile?.id} />}
-            {tab === 'avaliacoes'      && <SimpleListTab table="rh_avaliacoes"  isAdmin={isRH} columns={[
-              {k:'periodo',label:'Período'},{k:'nota_geral',label:'Nota'},{k:'feedback',label:'Feedback'}
-            ]} createFields={[
-              {k:'funcionario_id',label:'Funcionário',type:'funcionario'},{k:'periodo',label:'Período (ex: 2026-Q1)',type:'text'},
-              {k:'nota_geral',label:'Nota geral (0-10)',type:'number'},{k:'pontos_fortes',label:'Pontos fortes',type:'textarea'},
-              {k:'pontos_melhoria',label:'Pontos de melhoria',type:'textarea'},{k:'metas',label:'Metas',type:'textarea'},
-              {k:'feedback',label:'Feedback geral',type:'textarea'}
-            ]} />}
+            {tab === 'avaliacoes'      && <AvaliacoesRHTab isAdmin={isRH} userId={profile?.id} />}
             {tab === 'comissoes'       && <ComissoesTab isRH={isRH} userId={profile?.id} />}
             {tab === 'beneficios'      && isRH && <SimpleListTab table="rh_beneficios" isAdmin={podeEditar} columns={[
               {k:'tipo',label:'Tipo'},{k:'valor',label:'Valor'},{k:'inicio',label:'Início'}
@@ -466,6 +460,97 @@ function FeriasTab({ isRH, userId }: { isRH: boolean; userId: string }) {
         </div>,
         document.body
       )}
+    </div>
+  )
+}
+
+// ────────── Avaliações (com detalhe por tópico) ──────────
+function AvaliacoesRHTab({ isAdmin, userId }: { isAdmin: boolean; userId?: string }) {
+  const supabase = createClient()
+  const [linhas, setLinhas] = useState<any[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [detalheId, setDetalheId] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+
+  useEffect(() => { (async () => {
+    setCarregando(true); setAviso(null)
+    let q = supabase
+      .from('rh_avaliacoes')
+      .select('id, periodo, nota_geral, feedback, criado_em, gestao_avaliacao_id, avaliador_id, funcionario_id, rh_funcionarios(id, nome, user_id), avaliador:users!rh_avaliacoes_avaliador_id_fkey(id, nome)')
+      .order('criado_em', { ascending: false })
+      .limit(300)
+    if (!isAdmin && userId) {
+      // Líder direto (avaliador) OU próprio avaliado (funcionario.user_id = userId)
+      const { data: meusFuncs } = await supabase.from('rh_funcionarios').select('id').eq('user_id', userId)
+      const meusFuncIds = (meusFuncs || []).map((f: any) => f.id)
+      const ors = [`avaliador_id.eq.${userId}`]
+      if (meusFuncIds.length) ors.push(`funcionario_id.in.(${meusFuncIds.join(',')})`)
+      q = q.or(ors.join(','))
+    }
+    const { data, error } = await q
+    if (error) {
+      // Fallback sem join (caso a relação não esteja exposta no PostgREST)
+      let q2 = supabase.from('rh_avaliacoes')
+        .select('id, periodo, nota_geral, feedback, criado_em, gestao_avaliacao_id, avaliador_id, funcionario_id')
+        .order('criado_em', { ascending: false }).limit(300)
+      if (!isAdmin && userId) {
+        const { data: meusFuncs } = await supabase.from('rh_funcionarios').select('id').eq('user_id', userId)
+        const meusFuncIds = (meusFuncs || []).map((f: any) => f.id)
+        const ors = [`avaliador_id.eq.${userId}`]
+        if (meusFuncIds.length) ors.push(`funcionario_id.in.(${meusFuncIds.join(',')})`)
+        q2 = q2.or(ors.join(','))
+      }
+      const { data: rows } = await q2
+      const funIds = Array.from(new Set((rows || []).map((r: any) => r.funcionario_id).filter(Boolean)))
+      const avIds  = Array.from(new Set((rows || []).map((r: any) => r.avaliador_id).filter(Boolean)))
+      const [{ data: fs }, { data: us }] = await Promise.all([
+        funIds.length ? supabase.from('rh_funcionarios').select('id, nome, user_id').in('id', funIds) : Promise.resolve({ data: [] } as any),
+        avIds.length  ? supabase.from('users').select('id, nome').in('id', avIds) : Promise.resolve({ data: [] } as any),
+      ])
+      const fMap: Record<string, any> = {}; for (const f of (fs || [])) fMap[f.id] = f
+      const uMap: Record<string, any> = {}; for (const u of (us || [])) uMap[u.id] = u
+      setLinhas((rows || []).map((r: any) => ({ ...r, rh_funcionarios: fMap[r.funcionario_id] || null, avaliador: uMap[r.avaliador_id] || null })))
+    } else {
+      setLinhas(data || [])
+    }
+    setCarregando(false)
+  })() }, [isAdmin, userId])
+
+  function abrir(l: any) {
+    if (l.gestao_avaliacao_id) { setDetalheId(l.gestao_avaliacao_id); return }
+    setAviso('Esta avaliação não tem detalhes por tópico (registro antigo ou criado manualmente).')
+    setTimeout(() => setAviso(null), 4000)
+  }
+
+  return (
+    <div>
+      {aviso && <div style={{padding:10,marginBottom:10,borderRadius:8,background:'#fef3c7',color:'#92400e',fontSize:12}}>{aviso}</div>}
+      <div className="card">
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Funcionário','Período','Avaliador','Nota','Feedback'].map(h =>
+            <th key={h} style={{fontSize:10,fontWeight:600,letterSpacing:'1px',textTransform:'uppercase',color:'var(--text-muted)',textAlign:'left',padding:'0 0 10px',borderBottom:'1px solid var(--border)'}}>{h}</th>
+          )}</tr></thead>
+          <tbody>
+            {carregando && <tr><td colSpan={5} style={{padding:20,textAlign:'center',color:'var(--text-muted)'}}>Carregando…</td></tr>}
+            {!carregando && linhas.length === 0 && <tr><td colSpan={5} style={{padding:30,textAlign:'center',color:'var(--text-muted)'}}>Sem avaliações.</td></tr>}
+            {linhas.map((l: any) => (
+              <tr key={l.id}>
+                <td style={{padding:'10px 8px 10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>
+                  <button onClick={() => abrir(l)}
+                    style={{background:'none',border:'none',padding:0,color:'var(--teal,#1cb5a0)',cursor:'pointer',fontSize:12,fontWeight:600,textAlign:'left'}}>
+                    {l.rh_funcionarios?.nome || '—'}
+                  </button>
+                </td>
+                <td style={{padding:'10px 8px',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{l.periodo || '—'}</td>
+                <td style={{padding:'10px 8px',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{l.avaliador?.nome || '—'}</td>
+                <td style={{padding:'10px 8px',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,fontWeight:600}}>{l.nota_geral != null ? Number(l.nota_geral).toFixed(1) : '—'}</td>
+                <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12,color:'var(--text-muted)'}}>{String(l.feedback || '—').slice(0, 80)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {detalheId && <AvaliacaoDetalheModal avaliacaoId={detalheId} onClose={() => setDetalheId(null)} />}
     </div>
   )
 }

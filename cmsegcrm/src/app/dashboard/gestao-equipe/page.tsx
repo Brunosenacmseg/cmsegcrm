@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Avatar from '@/components/Avatar'
+import { AvaliacaoDetalheModal } from '@/components/AvaliacaoDetalheModal'
 
 type Tab = 'hoje' | 'historico' | 'relatorio' | 'perguntas'
 
@@ -637,6 +638,7 @@ function HistoricoTab({ colaboradores, isAdmin }: { colaboradores: Colaborador[]
   const [dataAte, setDataAte]         = useState<string>(isoHoje())
   const [linhas, setLinhas]           = useState<any[]>([])
   const [carregando, setCarregando]   = useState(false)
+  const [detalheId, setDetalheId]     = useState<string | null>(null)
 
   const colMap = useMemo(() => Object.fromEntries(colaboradores.map(c => [c.id, c])), [colaboradores])
 
@@ -691,7 +693,8 @@ function HistoricoTab({ colaboradores, isAdmin }: { colaboradores: Colaborador[]
         {linhas.map(l => {
           const c = colMap[l.colaborador_id]
           return (
-            <div key={l.id} style={{ ...card, padding: 12, display: 'flex', gap: 14, alignItems: 'center' }}>
+            <div key={l.id} onClick={() => setDetalheId(l.id)} title="Abrir avaliação completa"
+              style={{ ...card, padding: 12, display: 'flex', gap: 14, alignItems: 'center', cursor: 'pointer' }}>
               <Avatar nome={c?.nome || '—'} avatarUrl={c?.avatar_url || undefined} role={c?.role || undefined} size={34} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{c?.nome || l.colaborador_id}</div>
@@ -710,6 +713,7 @@ function HistoricoTab({ colaboradores, isAdmin }: { colaboradores: Colaborador[]
           )
         })}
       </div>
+      {detalheId && <AvaliacaoDetalheModal avaliacaoId={detalheId} onClose={() => setDetalheId(null)} />}
     </div>
   )
 }
