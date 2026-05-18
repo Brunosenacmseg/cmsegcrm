@@ -129,10 +129,12 @@ export default function NegocioDetailPage() {
   }
 
   async function criarAnotacao() {
-    if (!novaAnotacao.trim() || !me?.id) return
+    if (!novaAnotacao.trim()) return
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.id) { alert('Sessão expirada. Faça login novamente.'); return }
     setCriandoNota(true)
     const { error } = await supabase.from('negocio_notas').insert({
-      negocio_id: id, user_id: me.id, conteudo: novaAnotacao.trim(), pinned: false,
+      negocio_id: id, user_id: user.id, conteudo: novaAnotacao.trim(), pinned: false,
     })
     setCriandoNota(false)
     if (error) { alert('Erro ao salvar anotação: ' + error.message); return }
