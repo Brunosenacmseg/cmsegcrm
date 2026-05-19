@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/integrador/cron/dispatch",
-      "schedule": "* * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/suhai-followup",
-      "schedule": "* * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/rdstation/poll",
