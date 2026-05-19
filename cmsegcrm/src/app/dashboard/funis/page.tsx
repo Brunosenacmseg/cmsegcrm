@@ -171,6 +171,8 @@ function FunisPage() {
   // Tarefas: lista no card aberto e mapa "próxima tarefa em aberto" por negócio
   const [tarefasCard, setTarefasCard]           = useState<any[]>([])
   const [tarefasPorNegocio, setTarefasPorNegocio] = useState<Record<string, any>>({})
+  const [tarefaEditId, setTarefaEditId]         = useState<string|null>(null)
+  const [tarefaEditForm, setTarefaEditForm]     = useState<{ titulo: string; prazo: string }>({ titulo:'', prazo:'' })
   const [novaTarefa, setNovaTarefa]             = useState<{ titulo: string; prazo: string }>({ titulo:'', prazo:'' })
   const [titulosHistTarefa, setTitulosHistTarefa] = useState<string[]>([])
   const [salvandoTarefa, setSalvandoTarefa]     = useState(false)
@@ -619,6 +621,23 @@ function FunisPage() {
     const novas = tarefasCard.map(t => t.id === id ? { ...t, status } : t)
     setTarefasCard(novas)
     if (cardAtivo) atualizarBadgeKanban(cardAtivo.id, novas)
+  }
+
+  function iniciarEdicaoTarefa(t: any) {
+    const prazoLocal = t.prazo ? new Date(t.prazo).toISOString().slice(0,16) : ''
+    setTarefaEditForm({ titulo: t.titulo || '', prazo: prazoLocal })
+    setTarefaEditId(t.id)
+  }
+  async function salvarEdicaoTarefa() {
+    if (!tarefaEditId) return
+    const titulo = tarefaEditForm.titulo.trim()
+    if (!titulo) { alert('Título é obrigatório'); return }
+    const prazoIso = tarefaEditForm.prazo ? new Date(tarefaEditForm.prazo).toISOString() : null
+    const { error } = await supabase.from('tarefas').update({ titulo, prazo: prazoIso }).eq('id', tarefaEditId)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    const novas = tarefasCard.map(t => t.id === tarefaEditId ? { ...t, titulo, prazo: prazoIso } : t)
+    setTarefasCard(novas)
+    setTarefaEditId(null)
   }
 
   async function excluirTarefa(id: string) {
@@ -2795,6 +2814,24 @@ function FunisPage() {
                     return (
                       <div key={t.id}
                         style={{padding:'8px 10px',borderRadius:8,border:'1px solid '+corBorda,background:corFundo,display:'flex',alignItems:'flex-start',gap:8}}>
+                        {tarefaEditId === t.id ? (
+                          <div style={{flex:1,display:'flex',flexDirection:'column',gap:6}}>
+                            <input type="text" value={tarefaEditForm.titulo}
+                              onChange={e=>setTarefaEditForm({...tarefaEditForm, titulo:e.target.value})}
+                              placeholder="Título"
+                              style={{padding:'5px 8px',fontSize:11,borderRadius:5,border:'1px solid var(--border)',background:'rgba(0,0,0,0.2)',color:'var(--text)'}} />
+                            <input type="datetime-local" value={tarefaEditForm.prazo}
+                              onChange={e=>setTarefaEditForm({...tarefaEditForm, prazo:e.target.value})}
+                              style={{padding:'5px 8px',fontSize:11,borderRadius:5,border:'1px solid var(--border)',background:'rgba(0,0,0,0.2)',color:'var(--text)'}} />
+                            <div style={{display:'flex',gap:6}}>
+                              <button onClick={salvarEdicaoTarefa}
+                                style={{padding:'3px 10px',fontSize:10,borderRadius:5,border:'1px solid var(--teal)',background:'rgba(28,181,160,0.15)',color:'var(--teal)',cursor:'pointer',fontWeight:600}}>Salvar</button>
+                              <button onClick={()=>setTarefaEditId(null)}
+                                style={{padding:'3px 10px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>Cancelar</button>
+                            </div>
+                          </div>
+                        ) : (
+                        <>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                             <span style={{fontSize:12,fontWeight:600,color:atrasada?'var(--red)':'var(--text)',textDecoration:concluida||cancelada?'line-through':'none',opacity:concluida||cancelada?0.7:1}}>
@@ -2824,10 +2861,15 @@ function FunisPage() {
                               title="Reabrir"
                               style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',cursor:'pointer'}}>↺</button>
                           )}
+                          <button onClick={()=>iniciarEdicaoTarefa(t)}
+                            title="Editar"
+                            style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid var(--border)',background:'transparent',color:'var(--gold)',cursor:'pointer'}}>✎</button>
                           <button onClick={()=>excluirTarefa(t.id)}
                             title="Excluir"
                             style={{padding:'3px 8px',fontSize:10,borderRadius:5,border:'1px solid rgba(224,82,82,0.3)',background:'transparent',color:'var(--red)',cursor:'pointer'}}>×</button>
                         </div>
+                        </>
+                        )}
                       </div>
                     )
                   })}

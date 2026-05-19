@@ -329,18 +329,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.location.replace('/login')
   }
 
-  // Auto-logout por inatividade: 10 min sem mover mouse / teclado / clique / toque
+  // Auto-logout por inatividade: 60 min sem mover mouse / teclado / clique / toque
   useEffect(() => {
     if (!user) return
-    const IDLE_MS = 10 * 60 * 1000
+    const IDLE_MS = 60 * 60 * 1000
     let timer: any = null
     const reset = () => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(async () => {
         // Aguarda o log ser gravado ANTES do signOut (signOut invalida o token e RLS bloqueia o INSERT)
-        try { await registrarLog({ acao: 'logout_inatividade', detalhe: 'idle 10min' }) } catch {}
+        try { await registrarLog({ acao: 'logout_inatividade', detalhe: 'idle 60min' }) } catch {}
         try { await supabase.auth.signOut() } catch {}
-        alert('Sessão encerrada por 10 minutos de inatividade.')
+        alert('Sessão encerrada por 60 minutos de inatividade.')
         window.location.replace('/login')
       }, IDLE_MS)
     }
