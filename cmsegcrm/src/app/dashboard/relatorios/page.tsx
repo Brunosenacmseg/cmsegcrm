@@ -75,18 +75,25 @@ export default function RelatoriosPage() {
     const ids = userIdsParaFiltro()
     const funisExcluidos = await getFunilIdsSemValor()
 
-    // Query slim: so campos que o relatorio usa, filtrada por created_at
-    // (relatorio mostra dados do periodo). Pagina ate 5000 por seguranca.
+    // Filtro de data MISTO:
+    // - ganhos/perdidos: por data_fechamento (quando o negocio foi finalizado)
+    // - em andamento:    por created_at (quando entrou no funil)
+    // Implementado com .or() do PostgREST.
     async function carregarPaginado(): Promise<any[]> {
       const PAGE = 1000
       const acc: any[] = []
+      const orParts: string[] = []
+      const fimFech = dataFimISO ? `,data_fechamento.lte.${dataFimISO}` : ''
+      const fimCri  = dataFimISO ? `,created_at.lte.${dataFimISO}` : ''
+      orParts.push(`and(status.in.(ganho,perdido),data_fechamento.gte.${dataInicio}${fimFech})`)
+      orParts.push(`and(status.not.in.(ganho,perdido),created_at.gte.${dataInicio}${fimCri})`)
+      const orFiltro = orParts.join(',')
       for (let off = 0; ; off += PAGE) {
         let q = supabase.from('negocios')
           .select('id, etapa, status, premio, comissao_pct, produto, seguradora, funil_id, vendedor_id, created_at, data_fechamento, motivo_perda, motivo_perda_id, anotacao_motivo_perda, funis(tipo,nome,emoji), clientes(nome)')
-          .gte('created_at', dataInicio)
+          .or(orFiltro)
           .order('created_at', { ascending: false })
           .range(off, off + PAGE - 1)
-        if (dataFimISO) q = q.lte('created_at', dataFimISO)
         if (ids) {
           if (ids.length === 0) q = q.eq('vendedor_id', '00000000-0000-0000-0000-000000000000')
           else                  q = q.in('vendedor_id', ids)
