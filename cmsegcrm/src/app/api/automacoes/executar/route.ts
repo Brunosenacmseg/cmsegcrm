@@ -115,48 +115,6 @@ async function executarAcao(acao: Acao, negocio: any, userId?: string): Promise<
       return { ok: true }
     }
 
-    if (acao.tipo === 'cotar_suhai') {
-      // Dispara o robô Suhai em background. NÃO espera o resultado pra
-      // não travar a UI do CRM (cotação leva 1-2 min). O robô grava o
-      // histórico diretamente no Supabase quando termina.
-      const ROBO_URL = process.env.COTACAO_ROBO_URL || process.env.COTACAO_CONSULTA_URL || ''
-      const ROBO_TOKEN = process.env.COTACAO_ROBO_TOKEN || ''
-      if (!ROBO_URL) return { ok: false, erro: 'COTACAO_ROBO_URL não configurada' }
-      const cpf = ((negocio as any).cpf_cnpj || '').replace(/\D/g, '')
-      const placa = (((negocio as any).placa || (negocio as any).placa_veiculo) || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-      const cep = (((negocio as any).cep || (negocio as any).cep_negocio) || '').replace(/\D/g, '')
-      if (!cpf || !placa) return { ok: false, erro: 'negócio sem CPF ou placa' }
-      if (!(negocio as any).cliente_id) return { ok: false, erro: 'negócio sem cliente_id' }
-
-      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
-      if (ROBO_TOKEN) headers['x-robo-token'] = ROBO_TOKEN
-
-      const payload = {
-        negocio_id: (negocio as any).id,
-        cliente_id: (negocio as any).cliente_id,
-        user_id: userId || null,
-        dados: { cpf, placa, cep, vendedor: acao.vendedor || undefined },
-      }
-
-      // Timeout curto: o endpoint async devolve 202 em < 1s.
-      const ctrl = new AbortController()
-      const t = setTimeout(() => ctrl.abort(), 8000)
-      try {
-        const resp = await fetch(`${ROBO_URL.replace(/\/$/, '')}/cotacao-suhai-async`, {
-          method: 'POST', headers, body: JSON.stringify(payload), signal: ctrl.signal,
-        })
-        clearTimeout(t)
-        if (!resp.ok && resp.status !== 202) {
-          const json: any = await resp.json().catch(() => ({}))
-          return { ok: false, erro: json?.erro || `robô respondeu ${resp.status}` }
-        }
-      } catch (e: any) {
-        clearTimeout(t)
-        return { ok: false, erro: `falha ao acionar robô: ${e?.message || 'timeout'}` }
-      }
-      return { ok: true, detalhe: { status: 'iniciado em background' } }
-    }
-
     if (acao.tipo === 'set_custom_field') {
       if (!acao.chave) return { ok: false, erro: 'chave obrigatória' }
       const cf = { ...(negocio.custom_fields || {}), [acao.chave]: acao.valor }

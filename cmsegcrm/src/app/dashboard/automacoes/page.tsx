@@ -16,7 +16,6 @@ const TIPOS_ACAO = [
   { id: 'criar_tarefa',           nome: '✅ Criar tarefa' },
   { id: 'notificar',              nome: '🔔 Notificar usuário' },
   { id: 'set_custom_field',       nome: '✏ Setar valor de campo personalizado' },
-  { id: 'cotar_suhai',            nome: '🛡 Cotador Suhai (gera cotação no portal da Suhai)' },
 ]
 
 const empty = {
@@ -375,17 +374,6 @@ export default function AutomacoesPage() {
                         {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
                       </select>
                       <input value={ac.titulo||''} onChange={e=>alterarAcao(idx,{titulo:e.target.value})} placeholder="Título da notificação" style={inp} />
-                    </div>
-                  )}
-
-                  {ac.tipo === 'cotar_suhai' && (
-                    <div style={{display:'grid',gap:8}}>
-                      <input value={ac.vendedor||''} onChange={e=>alterarAcao(idx,{vendedor:e.target.value})} placeholder='Vendedor no portal Suhai (default: BRUNO PEREIRA BONACCORSI DE SENA)' style={inp} />
-                      <div style={{fontSize:11,color:'var(--text-muted)'}}>
-                        O robô faz login na Suhai, preenche CPF/placa/CEP do negócio,
-                        clica Calcular e salva no histórico as opções "Roubo + Furto + Terceiros (RCF)"
-                        e "Roubo + Furto + Perda Total + Terceiros (RCF)" com parcelas.
-                      </div>
                     </div>
                   )}
 
