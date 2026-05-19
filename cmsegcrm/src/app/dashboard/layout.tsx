@@ -578,11 +578,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     { label:'Funis de venda', href:'/dashboard/funis/configurar', admin: true },
                     { label:'Configurar campos', href:'/dashboard/configuracoes/campos', admin: true },
                     { label:'Convites, usuários e equipes', href:'/dashboard/usuarios', admin: true },
-                    { label:'Importar Renovações', href:'/dashboard/importar/renovacoes', admin: true },
+                    { label:'Importar Renovações', href:'/dashboard/importar/renovacoes', liderAdmOk: true },
+                    { label:'Importação RCO', href:'/dashboard/importar/rco', liderAdmOk: true },
                     { label:'Todas as configurações', href:'/dashboard/configuracoes/hub', gestao: true },
-                  ].filter(opt => {
+                  ].filter((opt: any) => {
                     if (opt.admin && (isAdmin)) return true
                     if (opt.gestao && (isAdmin || ehGestao)) return true
+                    if (opt.liderAdmOk && (isAdmin || ehLiderAdm)) return true
                     return false
                   }).map(opt => (
                     <Link key={opt.href} href={opt.href} prefetch={false}
