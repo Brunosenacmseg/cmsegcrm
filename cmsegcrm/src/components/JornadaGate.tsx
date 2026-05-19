@@ -87,19 +87,35 @@ export default function JornadaGate({ children, userId }: { children: React.Reac
       if (typeof navigator !== 'undefined' && navigator.geolocation) {
         try {
           const pos = await new Promise<GeolocationPosition>((res, rej) => {
-            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000, maximumAge: 60000 })
+            const to = setTimeout(() => rej(new Error('geo-timeout')), 3500)
+            navigator.geolocation.getCurrentPosition(
+              (p) => { clearTimeout(to); res(p) },
+              (e) => { clearTimeout(to); rej(e) },
+              { timeout: 3000, maximumAge: 60000 }
+            )
           })
           coords = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy }
         } catch {/* sem geolocation — segue sem coords */}
       }
       const { data: { session } } = await supabase.auth.getSession()
-      const r = await fetch('/api/jornadas/iniciar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
-        body: JSON.stringify(coords),
-      })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j.error || 'Falha ao iniciar jornada')
+      const ctrl = new AbortController()
+      const fetchTimeout = setTimeout(() => ctrl.abort(), 20000)
+      let r: Response
+      try {
+        r = await fetch('/api/jornadas/iniciar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+          body: JSON.stringify(coords),
+          signal: ctrl.signal,
+        })
+      } catch (e: any) {
+        if (e?.name === 'AbortError') throw new Error('Tempo esgotado. Tente novamente.')
+        throw e
+      } finally {
+        clearTimeout(fetchTimeout)
+      }
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `Falha ao iniciar jornada (HTTP ${r.status})`)
       setIniciada(true)
     } catch (e: any) {
       setErro(String(e?.message || e))

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 15
 
 function admin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -65,22 +66,24 @@ export async function POST(req: NextRequest) {
   }).select('id, iniciada_em').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Log do sistema (table system_logs)
-  try {
-    const { data: u } = await sa.from('users').select('email,nome').eq('id', uid).single()
-    await sa.from('system_logs').insert({
-      user_id: uid,
-      user_email: u?.email || null,
-      user_nome: u?.nome || null,
-      acao: 'inicio_jornada',
-      recurso: 'Início de Jornada',
-      pathname: '/dashboard/mural',
-      ip,
-      user_agent: ua,
-      metadata: { lat, lng, accuracy_m, cidade, uf },
-      detalhe: `Jornada iniciada de ${cidade || '—'}${uf?'/'+uf:''}${lat?` (${lat.toFixed(4)},${lng?.toFixed(4)})`:''}`,
-    } as any)
-  } catch {/* nao bloqueia */}
+  // Log do sistema (table system_logs) — fire-and-forget para não atrasar a resposta
+  ;(async () => {
+    try {
+      const { data: u } = await sa.from('users').select('email,nome').eq('id', uid).single()
+      await sa.from('system_logs').insert({
+        user_id: uid,
+        user_email: u?.email || null,
+        user_nome: u?.nome || null,
+        acao: 'inicio_jornada',
+        recurso: 'Início de Jornada',
+        pathname: '/dashboard/mural',
+        ip,
+        user_agent: ua,
+        metadata: { lat, lng, accuracy_m, cidade, uf },
+        detalhe: `Jornada iniciada de ${cidade || '—'}${uf?'/'+uf:''}${lat?` (${lat.toFixed(4)},${lng?.toFixed(4)})`:''}`,
+      } as any)
+    } catch {/* nao bloqueia */}
+  })()
 
   return NextResponse.json({ ok: true, jornada_id: nova?.id, iniciada_em: nova?.iniciada_em })
 }
