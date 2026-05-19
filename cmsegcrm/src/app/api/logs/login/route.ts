@@ -31,7 +31,7 @@ async function geolocalizar(ip: string): Promise<any | null> {
     const fields = 'status,country,regionName,city,lat,lon,timezone,isp,query'
     const res = await fetch(`http://ip-api.com/json/${ip}?fields=${fields}`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(1500),
     })
     if (!res.ok) return null
     const j = await res.json()
