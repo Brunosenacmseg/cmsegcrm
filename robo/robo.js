@@ -446,6 +446,31 @@ async function processarCotacaoAsync(cotacao_id, dados) {
   }
 }
 
+// Cotação Suhai — cotador específico da Suhai Seguradora
+// Recebe { dados: { cpf, placa, cep, vendedor? } } e devolve { ok, coberturas, screenshot }.
+app.post('/cotacao-suhai', async (req, res) => {
+  const { dados } = req.body || {}
+  if (!dados) return res.status(400).json({ ok: false, erro: 'dados obrigatórios' })
+  if (!dados.cpf || !dados.placa) {
+    return res.status(400).json({ ok: false, erro: 'cpf e placa são obrigatórios' })
+  }
+
+  let session = null
+  const suhai = require('./lib/suhai')
+  try {
+    session = await browser.newSession()
+    const r = await suhai.cotarSuhai(session.page, dados)
+    res.json(r)
+  } catch (err) {
+    log.error('Erro em /cotacao-suhai', { erro: err.message })
+    let screenshotErro = null
+    if (session) screenshotErro = await salvarErroScreenshot(session.page, 'suhai')
+    res.status(500).json({ ok: false, erro: err.message, screenshot_erro: screenshotErro })
+  } finally {
+    if (session) await session.close()
+  }
+})
+
 // ─── Inicialização ───────────────────────────────────────────────────
 
 const server = app.listen(PORT, HOST, () => {
