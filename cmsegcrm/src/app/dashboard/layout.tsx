@@ -51,6 +51,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true, liderEquipeAdm:true },
   { href:'/dashboard/importar/renovacoes', icon:'🔄', label:'Importar Renovações', section:'Config', liderEquipeAdm:true },
   { href:'/dashboard/importar/rco', icon:'📑', label:'Importação RCO', section:'Config', liderEquipeAdm:true },
+  { href:'/dashboard/importar/vida', icon:'❤️', label:'Importação VIDA', section:'Config', liderEquipeAdm:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
   { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', equipeGestao:true },
@@ -580,6 +581,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     { label:'Convites, usuários e equipes', href:'/dashboard/usuarios', admin: true },
                     { label:'Importar Renovações', href:'/dashboard/importar/renovacoes', liderAdmOk: true },
                     { label:'Importação RCO', href:'/dashboard/importar/rco', liderAdmOk: true },
+                    { label:'Importação VIDA', href:'/dashboard/importar/vida', liderAdmOk: true },
                     { label:'Todas as configurações', href:'/dashboard/configuracoes/hub', gestao: true },
                   ].filter((opt: any) => {
                     if (opt.admin && (isAdmin)) return true
