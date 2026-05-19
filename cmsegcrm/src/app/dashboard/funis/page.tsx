@@ -791,9 +791,13 @@ function FunisPage() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data: prof } = await supabase.from('users').select('*').eq('id', user?.id||'').single()
     setProfile(prof)
-    if (prof?.id) setFiltroUsuario(prof.id)
     const ids = await getVisibleUserIds()
     setVisibleIds(ids)
+    // Filtro padrão por usuário só faz sentido quando há visão restrita.
+    // Admin/financeiro/GESTÃO/PÓS VENDA (ids === null) precisam ver todos
+    // os cards do funil por padrão — se aplicarmos filtroUsuario = self,
+    // o kanban fica vazio para esses perfis (não são vendedores).
+    if (prof?.id && ids !== null) setFiltroUsuario(prof.id)
     let usrQ = supabase.from('users').select('id,nome,role').order('nome')
     if (ids) usrQ = usrQ.in('id', ids)
     const { data: usr } = await usrQ
