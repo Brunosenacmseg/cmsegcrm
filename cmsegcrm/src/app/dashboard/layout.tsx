@@ -50,6 +50,7 @@ const NAV: Array<{ href: string; icon: string; label: string; section?: string; 
   { href:'/dashboard/importar',     icon:'📥', label:'Importar Dados', section:'Config', equipeGestao:true, liderEquipeAdm:true },
   { href:'/dashboard/importar/cobranca', icon:'💰', label:'Importar Cobrança', section:'Config', equipeGestao:true, liderEquipeAdm:true },
   { href:'/dashboard/importar/renovacoes', icon:'🔄', label:'Importar Renovações', section:'Config', liderEquipeAdm:true },
+  { href:'/dashboard/importar/rco', icon:'📑', label:'Importação RCO', section:'Config', liderEquipeAdm:true },
   { href:'/dashboard/perfil',       icon:'👤', label:'Meu Perfil', section:'Config' },
   { href:'/dashboard/usuarios',     icon:'👥', label:'Usuários', section:'Config', adminOnly:true },
   { href:'/dashboard/logs',         icon:'📜', label:'Log do Sistema', section:'Config', equipeGestao:true },
