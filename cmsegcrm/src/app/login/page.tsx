@@ -42,7 +42,8 @@ export default function LoginPage() {
       // Após cadastro, tenta login direto
       const { data: dataCad, error: errLogin } = await supabase.auth.signInWithPassword({ email, password: senha })
       if (!errLogin) {
-        await registrarLoginLog({
+        // Log em background — não bloqueia o redirect.
+        registrarLoginLog({
           user_id: dataCad.user?.id ?? null,
           user_email: email,
           user_nome: nome,
@@ -67,20 +68,22 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    await registrarLoginLog({
+    // Logs em background — NÃO bloqueiam o redirect. Antes eram awaited e,
+    // quando /api/logs/login (ip-api.com) ou system_logs ficavam lentos, o
+    // botão travava em "Aguarde..." indefinidamente.
+    registrarLoginLog({
       user_id: data.user?.id ?? null,
       user_email: data.user?.email ?? email,
       sucesso: true,
     })
-    // Espelha o login em system_logs (timeline unificada de atividades)
     try {
-      await supabase.from('system_logs').insert({
+      supabase.from('system_logs').insert({
         user_id: data.user?.id ?? null,
         user_email: data.user?.email ?? email,
         acao: 'login',
         pathname: '/login',
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      })
+      }).then(() => {}, () => {})
     } catch {}
     window.location.replace('/dashboard/mural')
   }
