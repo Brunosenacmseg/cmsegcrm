@@ -480,9 +480,45 @@ export default function WhatsAppPage() {
     if (!novoNumero.trim() || !instancia) { alert('Informe o número'); return }
     setIniciando(true)
     const numeroLimpo = novoNumero.replace(/\D/g,'')
-    const jid = `${numeroLimpo}@s.whatsapp.net`
-    const existente = conversas.find(c => c.remoto_jid===jid||c.remoto_numero===numeroLimpo)
+    const sufixo = numeroLimpo.slice(-8)
+
+    // 1) Procura na lista já carregada por número (sufixo de 8 dígitos
+    //    cobre variações com/sem DDI 55 e nono dígito).
+    let existente = conversas.find(c => {
+      const dig = (c.remoto_numero || '').replace(/\D/g,'')
+      const jidDig = (c.remoto_jid || '').replace(/@.*$/,'').replace(/\D/g,'')
+      return (dig && dig.endsWith(sufixo)) || (jidDig && jidDig.endsWith(sufixo))
+    })
+
+    // 2) Se não achou em memória, busca no banco — a conversa real pode
+    //    estar salva com JID @lid e nunca aparecer por match de string.
+    if (!existente && sufixo.length >= 8) {
+      const { data: viaNumero } = await supabase
+        .from('whatsapp_mensagens')
+        .select('remoto_jid, remoto_nome, remoto_numero, cliente_id, clientes(nome)')
+        .eq('instancia_id', instancia.id)
+        .like('remoto_numero', `%${sufixo}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (viaNumero && viaNumero.length) {
+        existente = { ...viaNumero[0], conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
+      } else {
+        const { data: viaJid } = await supabase
+          .from('whatsapp_mensagens')
+          .select('remoto_jid, remoto_nome, remoto_numero, cliente_id, clientes(nome)')
+          .eq('instancia_id', instancia.id)
+          .like('remoto_jid', `%${sufixo}%`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (viaJid && viaJid.length) {
+          existente = { ...viaJid[0], conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
+        }
+      }
+    }
+
     if (existente) { setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); await selecionarConversa(existente); setIniciando(false); return }
+
+    const jid = `${numeroLimpo}@s.whatsapp.net`
     const novaConv = { remoto_jid:jid, remoto_numero:numeroLimpo, remoto_nome:clienteNovaConversa?.nome||novaNomeBusca||numeroLimpo, cliente_id:clienteNovaConversa?.id||null, clientes:clienteNovaConversa?{nome:clienteNovaConversa.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
     setConversas(prev=>[novaConv,...prev]); setConversa(novaConv); setMensagens([])
     setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); setIniciando(false)
