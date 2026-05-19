@@ -471,6 +471,71 @@ app.post('/cotacao-suhai', async (req, res) => {
   }
 })
 
+// Cotação Suhai ASSÍNCRONA — retorna 202 imediato, processa em background
+// e grava direto no histórico do negócio via Supabase service-role.
+// Usado pela automação (etapa_alterada) pra não bloquear a UI do CRM.
+app.post('/cotacao-suhai-async', async (req, res) => {
+  const { dados, negocio_id, cliente_id, user_id } = req.body || {}
+  if (!dados || !dados.cpf || !dados.placa) {
+    return res.status(400).json({ ok: false, erro: 'cpf e placa são obrigatórios' })
+  }
+  if (!negocio_id || !cliente_id) {
+    return res.status(400).json({ ok: false, erro: 'negocio_id e cliente_id obrigatórios' })
+  }
+  if (!supa.configurado()) {
+    return res.status(500).json({ ok: false, erro: 'SUPABASE_URL/SERVICE_ROLE não configurados no robô' })
+  }
+
+  res.status(202).json({ ok: true, status: 'iniciado', negocio_id })
+
+  setImmediate(() => processarSuhaiAsync({ dados, negocio_id, cliente_id, user_id }).catch(err => {
+    log.error('Erro fatal em processarSuhaiAsync', { erro: err.message, negocio_id })
+  }))
+})
+
+async function processarSuhaiAsync({ dados, negocio_id, cliente_id, user_id }) {
+  const sb = supa.get()
+  const suhai = require('./lib/suhai')
+  let session = null
+  log.info('Suhai async iniciado', { negocio_id })
+  try {
+    session = await browser.newSession()
+    const r = await suhai.cotarSuhai(session.page, dados)
+    const coberturas = Array.isArray(r.coberturas) ? r.coberturas : []
+    const inserts = coberturas.map(c => {
+      const linhas = (Array.isArray(c.parcelas) ? c.parcelas : [])
+        .map(p => `${p.n_parcelas}x  R$ ${p.valor_parcela}   (total R$ ${p.valor_total}, juros ${p.juros || '—'})`)
+        .join('\n')
+      const descricao = [
+        c.premio_liquido && `Prêmio Líquido: R$ ${c.premio_liquido}`,
+        c.premio_total   && `Prêmio Total:   R$ ${c.premio_total}`,
+        linhas && '\nOpções de pagamento:\n' + linhas,
+        c.erro && `Erro: ${c.erro}`,
+      ].filter(Boolean).join('\n')
+      return {
+        cliente_id, negocio_id, tipo: 'cotacao',
+        titulo: `Suhai — ${c.titulo}`, descricao, user_id: user_id || null,
+      }
+    })
+    if (inserts.length) {
+      const { error } = await sb.from('historico').insert(inserts)
+      if (error) log.error('Falha inserindo histórico Suhai', { erro: error.message, negocio_id })
+    }
+    log.info('Suhai async concluído', { negocio_id, coberturas: coberturas.length })
+  } catch (err) {
+    log.error('Erro em Suhai async', { erro: err.message, negocio_id })
+    if (session) await salvarErroScreenshot(session.page, 'suhai-async')
+    await sb.from('historico').insert({
+      cliente_id, negocio_id, tipo: 'cotacao',
+      titulo: 'Suhai — falhou',
+      descricao: `Erro ao cotar na Suhai: ${err.message}`,
+      user_id: user_id || null,
+    }).catch(() => {})
+  } finally {
+    if (session) await session.close()
+  }
+}
+
 // ─── Inicialização ───────────────────────────────────────────────────
 
 const server = app.listen(PORT, HOST, () => {
