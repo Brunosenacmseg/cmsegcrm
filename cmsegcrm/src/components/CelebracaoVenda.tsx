@@ -78,15 +78,27 @@ export default function CelebracaoVenda() {
           <button onClick={()=>fechar(c.id)} aria-label="Fechar"
             style={{position:'absolute',top:6,right:8,width:22,height:22,padding:0,border:'none',background:'rgba(0,0,0,0.15)',color:'#1a1f2e',borderRadius:'50%',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
           {(() => {
-            const ehSinistro = String(c.funil_nome || '').toUpperCase().includes('SINISTRO')
-            const headline = ehSinistro
-              ? `${c.vendedor_nome || 'Alguém'} finalizou mais um sinistro`
-              : `${c.vendedor_nome || 'Alguém'} fechou uma venda de ${fmtBRL(c.valor)}`
-            const sub = c.mensagem || (ehSinistro ? 'AQUI NÃO TEM PROBLEMA, SÓ TEM SOLUÇÃO!!' : 'O CHORO É LIVRE!!')
+            const fn = String(c.funil_nome || '').toUpperCase()
+            const ehSinistro = fn.includes('SINISTRO')
+            const ehCobranca = fn.includes('COBRAN')
+            let headline: string, sub: string, icon: string
+            if (ehSinistro) {
+              headline = `${c.vendedor_nome || 'Alguém'} finalizou mais um sinistro`
+              sub = c.mensagem || 'AQUI NÃO TEM PROBLEMA, SÓ TEM SOLUÇÃO!!'
+              icon = '🛡️'
+            } else if (ehCobranca) {
+              headline = `${c.vendedor_nome || 'Alguém'} é diferenciada, finalizou mais uma cobrança!`
+              sub = c.mensagem || 'OU PAGA OU PAGAAA'
+              icon = '💸'
+            } else {
+              headline = `${c.vendedor_nome || 'Alguém'} fechou uma venda de ${fmtBRL(c.valor)}`
+              sub = c.mensagem || 'O CHORO É LIVRE!!'
+              icon = '🎉'
+            }
             return (
               <>
                 <div style={{fontSize:13,fontWeight:700,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:18}}>{ehSinistro ? '🛡️' : '🎉'}</span>
+                  <span style={{fontSize:18}}>{icon}</span>
                   <span>{headline}</span>
                 </div>
                 <div style={{fontSize:14,fontWeight:800,fontStyle:'italic',letterSpacing:0.3}}>{sub}</div>
