@@ -383,8 +383,8 @@ function FeriasTab({ isRH, userId }: { isRH: boolean; userId: string }) {
               return (
                 <tr key={f.id}>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>{f.rh_funcionarios?.nome || '—'}</td>
-                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.inicio).toLocaleDateString('pt-BR')}</td>
-                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.fim).toLocaleDateString('pt-BR')}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.inicio+'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{new Date(f.fim+'T00:00:00').toLocaleDateString('pt-BR')}</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:12}}>{f.dias}d</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11,color:'var(--text-muted)',maxWidth:240,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={f.justificativa || ''}>{f.justificativa || '—'}</td>
                   <td style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:11}}>
