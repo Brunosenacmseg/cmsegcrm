@@ -260,6 +260,13 @@ export default function DashboardPage() {
       .eq('status', 'ganho')
       .gte('data_fechamento', intervalo.inicio).lte('data_fechamento', intervalo.fim)
     if (funisExcluidosRanking.length) qNegs = qNegs.not('funil_id', 'in', `(${funisExcluidosRanking.join(',')})`)
+    // Regra especial: EQUIPE LEAD JUNDIAI só conta negócios do funil META + MULTICANAL
+    const equipeFiltrada = equipes.find((e: any) => e.id === filtroEquipe)
+    if (equipeFiltrada && equipeFiltrada.nome.toUpperCase().includes('LEAD JUNDIAI')) {
+      const { data: fMM } = await supabase.from('funis').select('id').or('nome.ilike.%META%MULTICANAL%,nome.ilike.%META + MULTICANAL%').limit(1).maybeSingle()
+      if (fMM?.id) qNegs = qNegs.eq('funil_id', fMM.id)
+      else         qNegs = qNegs.eq('funil_id', '00000000-0000-0000-0000-000000000000')
+    }
     if (onlyMine) qNegs = qNegs.eq('vendedor_id', meId)
     else if (userIdsFiltro && userIdsFiltro.length) qNegs = qNegs.in('vendedor_id', userIdsFiltro)
     else if (userIdsFiltro) qNegs = qNegs.eq('vendedor_id', '00000000-0000-0000-0000-000000000000') // equipe vazia
