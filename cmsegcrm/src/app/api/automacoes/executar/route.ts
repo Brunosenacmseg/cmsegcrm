@@ -115,60 +115,6 @@ async function executarAcao(acao: Acao, negocio: any, userId?: string): Promise<
       return { ok: true }
     }
 
-    if (acao.tipo === 'cotar_suhai') {
-      // Chama o robô da Suhai e salva resultado no histórico do negócio.
-      const ROBO_URL = process.env.COTACAO_ROBO_URL || process.env.COTACAO_CONSULTA_URL || ''
-      const ROBO_TOKEN = process.env.COTACAO_ROBO_TOKEN || ''
-      if (!ROBO_URL) return { ok: false, erro: 'COTACAO_ROBO_URL não configurada' }
-      const cpf = (negocio.cpf_cnpj || '').replace(/\D/g, '')
-      const placa = (negocio.placa || negocio.placa_veiculo || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-      const cep = (negocio.cep || negocio.cep_negocio || '').replace(/\D/g, '')
-      if (!cpf || !placa) return { ok: false, erro: 'negócio sem CPF ou placa' }
-
-      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
-      if (ROBO_TOKEN) headers['x-robo-token'] = ROBO_TOKEN
-
-      const resp = await fetch(`${ROBO_URL.replace(/\/$/, '')}/cotacao-suhai`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ dados: { cpf, placa, cep, vendedor: acao.vendedor || undefined } }),
-      })
-      const json: any = await resp.json().catch(() => ({}))
-      if (!resp.ok || !json?.ok) {
-        return { ok: false, erro: json?.erro || `robô respondeu ${resp.status}` }
-      }
-
-      const coberturas: any[] = Array.isArray(json.coberturas) ? json.coberturas : []
-      if (!negocio.cliente_id) return { ok: false, erro: 'negócio sem cliente_id (não dá pra gravar histórico)' }
-
-      // Insere um item de histórico por cobertura capturada
-      const inserts = coberturas.map((c: any) => {
-        const linhasParcelas = (Array.isArray(c.parcelas) ? c.parcelas : [])
-          .map((p: any) => `${p.n_parcelas}x  R$ ${p.valor_parcela}   (total R$ ${p.valor_total}, juros ${p.juros || '—'})`)
-          .join('\n')
-        const descricao = [
-          c.premio_liquido && `Prêmio Líquido: R$ ${c.premio_liquido}`,
-          c.premio_total   && `Prêmio Total:   R$ ${c.premio_total}`,
-          linhasParcelas && '\nOpções de pagamento:\n' + linhasParcelas,
-          c.erro && `Erro: ${c.erro}`,
-        ].filter(Boolean).join('\n')
-        return {
-          cliente_id: negocio.cliente_id,
-          negocio_id: negocio.id,
-          tipo: 'cotacao',
-          titulo: `Suhai — ${c.titulo}`,
-          descricao,
-          user_id: userId || null,
-        }
-      })
-
-      if (inserts.length) {
-        const { error } = await supabaseAdmin().from('historico').insert(inserts)
-        if (error) return { ok: false, erro: error.message }
-      }
-      return { ok: true, detalhe: { coberturas: coberturas.length } }
-    }
-
     if (acao.tipo === 'set_custom_field') {
       if (!acao.chave) return { ok: false, erro: 'chave obrigatória' }
       const cf = { ...(negocio.custom_fields || {}), [acao.chave]: acao.valor }
