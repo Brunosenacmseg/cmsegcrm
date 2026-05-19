@@ -383,14 +383,32 @@ export async function POST(request: NextRequest) {
         // da instância: se houver linha pra esse remoto_jid, manda nela;
         // senão, cai no agente padrão da instância.
         const entradaIA = transcricao || conteudoTexto
-        const { data: convCfg } = await supabase
+        // 1) Tenta match pelo JID exato.
+        let { data: convCfg } = await supabase
           .from('whatsapp_conversa_agentes')
           .select('agente_id, agente_ativo')
           .eq('instancia_id', inst.id)
           .eq('remoto_jid', remotoJid)
           .maybeSingle()
+        // 2) Fallback por número: a mesma conversa pode ter sido salva com
+        //    JID em outro formato (ex: usuário criou via "Nova conversa"
+        //    como <num>@s.whatsapp.net mas as mensagens chegam como @lid).
+        //    Match qualquer linha cuja JID contenha os dígitos do telefone.
+        if (!convCfg && remotoNumero && remotoNumero.length >= 8) {
+          const sufixo = remotoNumero.slice(-8)
+          const { data: alt } = await supabase
+            .from('whatsapp_conversa_agentes')
+            .select('agente_id, agente_ativo')
+            .eq('instancia_id', inst.id)
+            .like('remoto_jid', `%${sufixo}%`)
+            .limit(1)
+            .maybeSingle()
+          convCfg = alt || null
+        }
+        // Override da conversa é unitário: se existe linha, ela manda.
+        // Só cai no agente da instância quando NÃO houver override salvo.
         const agenteAtivo = convCfg ? convCfg.agente_ativo : inst.agente_ativo
-        const agenteId    = convCfg?.agente_id ?? inst.agente_id
+        const agenteId    = convCfg ? convCfg.agente_id    : inst.agente_id
         if (agenteAtivo && agenteId && remotoJid && entradaIA) {
           try {
             const { data: agente } = await supabase.from('ai_agentes').select('*').eq('id', agenteId).maybeSingle()
