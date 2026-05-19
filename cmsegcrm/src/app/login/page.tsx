@@ -42,8 +42,7 @@ export default function LoginPage() {
       // Após cadastro, tenta login direto
       const { data: dataCad, error: errLogin } = await supabase.auth.signInWithPassword({ email, password: senha })
       if (!errLogin) {
-        // Log em background — não bloqueia o redirect.
-        registrarLoginLog({
+        await registrarLoginLog({
           user_id: dataCad.user?.id ?? null,
           user_email: email,
           user_nome: nome,
@@ -59,6 +58,7 @@ export default function LoginPage() {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha })
     if (error || !data.session) {
+      // Aqui pode esperar — login falhou, nem redirecionar tem
       await registrarLoginLog({
         user_email: email,
         sucesso: false,
@@ -68,23 +68,19 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    // Logs em background — NÃO bloqueiam o redirect. Antes eram awaited e,
-    // quando /api/logs/login (ip-api.com) ou system_logs ficavam lentos, o
-    // botão travava em "Aguarde..." indefinidamente.
+    // Login OK: dispara logs sem esperar (fire-and-forget) e redireciona imediatamente
     registrarLoginLog({
       user_id: data.user?.id ?? null,
       user_email: data.user?.email ?? email,
       sucesso: true,
-    })
-    try {
-      supabase.from('system_logs').insert({
-        user_id: data.user?.id ?? null,
-        user_email: data.user?.email ?? email,
-        acao: 'login',
-        pathname: '/login',
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      }).then(() => {}, () => {})
-    } catch {}
+    }).catch(() => {})
+    supabase.from('system_logs').insert({
+      user_id: data.user?.id ?? null,
+      user_email: data.user?.email ?? email,
+      acao: 'login',
+      pathname: '/login',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    }).then(() => {}, () => {})
     window.location.replace('/dashboard/mural')
   }
 
