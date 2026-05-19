@@ -79,8 +79,9 @@ export default function CelebracaoVenda() {
             style={{position:'absolute',top:6,right:8,width:22,height:22,padding:0,border:'none',background:'rgba(0,0,0,0.15)',color:'#1a1f2e',borderRadius:'50%',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
           {(() => {
             const fn = String(c.funil_nome || '').toUpperCase()
-            const ehSinistro = fn.includes('SINISTRO')
-            const ehCobranca = fn.includes('COBRAN')
+            const ehSinistro    = fn.includes('SINISTRO')
+            const ehCobranca    = fn.includes('COBRAN')
+            const ehAssistencia = fn.includes('ASSIST')
             let headline: string, sub: string, icon: string
             if (ehSinistro) {
               headline = `${c.vendedor_nome || 'Alguém'} finalizou mais um sinistro`
@@ -90,6 +91,10 @@ export default function CelebracaoVenda() {
               headline = `${c.vendedor_nome || 'Alguém'} é diferenciada, finalizou mais uma cobrança!`
               sub = c.mensagem || 'OU PAGA OU PAGAAA'
               icon = '💸'
+            } else if (ehAssistencia) {
+              headline = `${c.vendedor_nome || 'Alguém'} fez a boa, mais uma assistência concluída`
+              sub = c.mensagem || 'MAIS UMA ASSISTÊNCIA CONCLUÍDA'
+              icon = '🛠️'
             } else {
               headline = `${c.vendedor_nome || 'Alguém'} fechou uma venda de ${fmtBRL(c.valor)}`
               sub = c.mensagem || 'O CHORO É LIVRE!!'
