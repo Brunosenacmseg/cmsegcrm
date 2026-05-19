@@ -58,6 +58,7 @@ export default function LoginPage() {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha })
     if (error || !data.session) {
+      // Aqui pode esperar — login falhou, nem redirecionar tem
       await registrarLoginLog({
         user_email: email,
         sucesso: false,
@@ -67,21 +68,19 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    await registrarLoginLog({
+    // Login OK: dispara logs sem esperar (fire-and-forget) e redireciona imediatamente
+    registrarLoginLog({
       user_id: data.user?.id ?? null,
       user_email: data.user?.email ?? email,
       sucesso: true,
-    })
-    // Espelha o login em system_logs (timeline unificada de atividades)
-    try {
-      await supabase.from('system_logs').insert({
-        user_id: data.user?.id ?? null,
-        user_email: data.user?.email ?? email,
-        acao: 'login',
-        pathname: '/login',
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      })
-    } catch {}
+    }).catch(() => {})
+    supabase.from('system_logs').insert({
+      user_id: data.user?.id ?? null,
+      user_email: data.user?.email ?? email,
+      acao: 'login',
+      pathname: '/login',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    }).then(() => {}, () => {})
     window.location.replace('/dashboard/mural')
   }
 
