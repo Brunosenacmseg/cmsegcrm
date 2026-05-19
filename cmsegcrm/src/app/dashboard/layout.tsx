@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import ChatIA from '@/components/ChatIA'
+import CelebracaoVenda from '@/components/CelebracaoVenda'
 import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 import BoasVindasLider from '@/components/BoasVindasLider'
@@ -621,6 +622,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </main>
 
       <ChatIA />
+      <CelebracaoVenda />
       <MetaPixel />
       <BoasVindasLider visivel={profile?.role === 'lider' && pathname !== '/dashboard/gestao-equipe'} />
 
