@@ -8,6 +8,47 @@ const FUNIL_NOME = 'RCO'
 const ETAPA_PADRAO = 'RENOVAÇÕES À VENCER'
 const EQUIPE_ADM = 'EQUIPE ADM'
 
+type Tipo = 'text' | 'number' | 'date'
+const CAMPOS: Record<string, Tipo> = {
+  titulo: 'text',
+  cpf_cnpj: 'text',
+  telefone_negocio: 'text',
+  email_negocio: 'text',
+  placa: 'text',
+  modelo_veiculo: 'text',
+  produto: 'text',
+  seguradora: 'text',
+  seguradora_atual: 'text',
+  premio: 'number',
+  comissao_pct: 'number',
+  vencimento: 'date',
+  vigencia_seguro_ini: 'date',
+  vigencia_seguro_fim: 'date',
+  previsao_fechamento: 'date',
+  obs: 'text',
+}
+// Hints para fallback (compat com chamadas antigas sem mapeamento)
+const HINTS: Record<string, string[]> = {
+  titulo:              ['titulo','título','negócio','negocio','cliente','nome','segurado'],
+  cpf_cnpj:            ['cpf','cnpj','cpf/cnpj','documento'],
+  telefone_negocio:    ['telefone','celular','whatsapp','fone'],
+  email_negocio:       ['email','e-mail'],
+  placa:               ['placa'],
+  modelo_veiculo:      ['modelo','modelo do veículo','veiculo','veículo'],
+  produto:             ['produto','ramo','tipo de seguro'],
+  seguradora:          ['seguradora','seguradora atual'],
+  seguradora_atual:    ['seguradora atual'],
+  premio:              ['premio','prêmio','valor','valor total','valor anual'],
+  comissao_pct:        ['comissao','comissão','comissao %'],
+  vencimento:          ['vencimento','data vencimento','vigencia fim','vigência fim'],
+  vigencia_seguro_ini: ['vigencia inicio','vigência início','inicio vigencia'],
+  vigencia_seguro_fim: ['vigencia fim','vigência fim','fim vigencia'],
+  previsao_fechamento: ['vencimento','data vencimento','vigencia fim','vigência fim'],
+  obs:                 ['obs','observacao','observação','anotacoes','anotações','observacoes'],
+}
+// Também grava placa_veiculo quando placa é mapeada
+const ESPELHO_PLACA = true
+
 function norm(s: string) { return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim() }
 function s(v: any): string | null { const t = String(v ?? '').trim(); return t || null }
 function n(v: any): number | null {
@@ -29,7 +70,7 @@ function dt(v: any): string | null {
   return null
 }
 
-function pegar(row: Record<string, any>, hints: string[]): any {
+function pegarHint(row: Record<string, any>, hints: string[]): any {
   const keys = Object.keys(row)
   for (const h of hints) {
     const k = keys.find(k => norm(k) === norm(h))
@@ -39,6 +80,26 @@ function pegar(row: Record<string, any>, hints: string[]): any {
     const k = keys.find(k => norm(k).includes(norm(h)))
     if (k) return row[k]
   }
+  return null
+}
+
+// Extrai valor para um campo usando a lista de colunas mapeadas.
+// Texto: concatena valores não-vazios com " | "
+// Número/Data: pega o primeiro valor que parseia
+function extrair(row: Record<string, any>, colunas: string[], tipo: Tipo): any {
+  if (!colunas || colunas.length === 0) return null
+  const valores = colunas.map(c => row[c]).filter(v => v != null && String(v).trim() !== '')
+  if (!valores.length) return null
+  if (tipo === 'text') {
+    const txts = valores.map(v => String(v).trim()).filter(Boolean)
+    return txts.length ? txts.join(' | ') : null
+  }
+  if (tipo === 'number') {
+    for (const v of valores) { const x = n(v); if (x != null) return x }
+    return null
+  }
+  // date
+  for (const v of valores) { const x = dt(v); if (x) return x }
   return null
 }
 
@@ -68,6 +129,9 @@ export async function POST(req: NextRequest) {
     const rows: Record<string, any>[] = Array.isArray(body?.rows) ? body.rows : []
     if (!rows.length) return NextResponse.json({ error: 'planilha vazia' }, { status: 400 })
 
+    // Mapeamento manual { campo: [coluna,...] }. Se ausente, usa hints (compat).
+    const mapeamento: Record<string, string[]> | null = (body?.mapeamento && typeof body.mapeamento === 'object') ? body.mapeamento : null
+
     const { data: funil } = await sa.from('funis').select('id, etapas').eq('nome', FUNIL_NOME).maybeSingle()
     if (!funil) return NextResponse.json({ error: `funil ${FUNIL_NOME} não encontrado` }, { status: 500 })
     const etapa = (funil.etapas as string[]).includes(ETAPA_PADRAO) ? ETAPA_PADRAO : (funil.etapas as string[])[0]
@@ -75,12 +139,24 @@ export async function POST(req: NextRequest) {
     const { data: bruno } = await sa.from('users').select('id').ilike('email', BRUNO_EMAIL).maybeSingle()
     if (!bruno?.id) return NextResponse.json({ error: `usuário ${BRUNO_EMAIL} não encontrado` }, { status: 500 })
 
+    function valorCampo(row: Record<string, any>, campo: string): any {
+      const tipo = CAMPOS[campo]
+      if (mapeamento && Array.isArray(mapeamento[campo])) {
+        return extrair(row, mapeamento[campo], tipo)
+      }
+      const v = pegarHint(row, HINTS[campo] || [])
+      if (v == null) return null
+      if (tipo === 'text') return s(v)
+      if (tipo === 'number') return n(v)
+      return dt(v)
+    }
+
     let criados = 0
     const erros: string[] = []
 
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i]
-      const titulo = s(pegar(r, ['titulo','título','negócio','negocio','cliente','nome','segurado']))
+      const titulo = valorCampo(r, 'titulo')
       if (!titulo) { erros.push(`linha ${i + 2}: sem título/cliente`); continue }
 
       const payload: any = {
@@ -89,22 +165,14 @@ export async function POST(req: NextRequest) {
         etapa,
         vendedor_id: bruno.id,
         status: 'em_andamento',
-        premio:              n(pegar(r, ['premio','prêmio','valor','valor total','valor anual'])),
-        seguradora:          s(pegar(r, ['seguradora','seguradora atual'])),
-        seguradora_atual:    s(pegar(r, ['seguradora atual'])),
-        produto:             s(pegar(r, ['produto','ramo','tipo de seguro'])),
-        cpf_cnpj:            s(pegar(r, ['cpf','cnpj','cpf/cnpj','documento'])),
-        telefone_negocio:    s(pegar(r, ['telefone','celular','whatsapp','fone'])),
-        email_negocio:       s(pegar(r, ['email','e-mail'])),
-        placa:               s(pegar(r, ['placa'])),
-        placa_veiculo:       s(pegar(r, ['placa','placa do veículo'])),
-        modelo_veiculo:      s(pegar(r, ['modelo','modelo do veículo','veiculo','veículo'])),
-        vencimento:          dt(pegar(r, ['vencimento','data vencimento','vigencia fim','vigência fim'])),
-        vigencia_seguro_ini: dt(pegar(r, ['vigencia inicio','vigência início','inicio vigencia'])),
-        vigencia_seguro_fim: dt(pegar(r, ['vigencia fim','vigência fim','fim vigencia'])),
-        previsao_fechamento: dt(pegar(r, ['vencimento','data vencimento','vigencia fim','vigência fim'])),
-        comissao_pct:        n(pegar(r, ['comissao','comissão','comissao %'])),
-        obs:                 s(pegar(r, ['obs','observacao','observação','anotacoes','anotações','observacoes'])),
+      }
+      for (const campo of Object.keys(CAMPOS)) {
+        if (campo === 'titulo') continue
+        const v = valorCampo(r, campo)
+        if (v != null) payload[campo] = v
+      }
+      if (ESPELHO_PLACA && payload.placa && !payload.placa_veiculo) {
+        payload.placa_veiculo = payload.placa
       }
 
       const { error } = await sa.from('negocios').insert(payload)
