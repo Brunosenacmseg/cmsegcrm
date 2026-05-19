@@ -710,6 +710,38 @@ export default function ImportarPage() {
                 </div>
               </div>
 
+              {/* Atalho: Importar Renovações (cria cards no funil RENOVAÇÕES) */}
+              <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--teal)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:240}}>
+                    <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>🔄 Importar Renovações</div>
+                    <div style={{fontSize:12,color:'var(--text-muted)'}}>
+                      Sobe uma planilha XLSX/CSV e cria negociações no funil <b>RENOVAÇÕES</b> (etapa RENOVAÇÕES À VENCER), com <b>Bruno Sena</b> como responsável.
+                    </div>
+                  </div>
+                  <a href="/dashboard/importar/renovacoes" className="btn-primary"
+                    style={{textDecoration:'none',padding:'10px 18px',borderRadius:8,fontSize:13,fontWeight:600}}>
+                    Abrir importação de Renovações →
+                  </a>
+                </div>
+              </div>
+
+              {/* Atalho: Importação RCO (cria cards no funil RCO) */}
+              <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--teal)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:240}}>
+                    <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>📑 Importação RCO</div>
+                    <div style={{fontSize:12,color:'var(--text-muted)'}}>
+                      Sobe uma planilha XLSX/CSV e cria negociações no funil <b>RCO</b> (etapa RENOVAÇÕES À VENCER), com <b>Bruno Sena</b> como responsável.
+                    </div>
+                  </div>
+                  <a href="/dashboard/importar/rco" className="btn-primary"
+                    style={{textDecoration:'none',padding:'10px 18px',borderRadius:8,fontSize:13,fontWeight:600}}>
+                    Abrir importação RCO →
+                  </a>
+                </div>
+              </div>
+
               {/* Sincronizar planilha COMPLETA: preenche todos os campos vazios + custom_fields */}
               <div className="card" style={{padding:18,marginBottom:20,border:'1px solid var(--teal)'}}>
                 <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>📋 Sincronizar planilha completa do RD CRM</div>
