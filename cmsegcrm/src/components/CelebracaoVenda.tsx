@@ -8,6 +8,7 @@ type Celebracao = {
   vendedor_nome: string | null
   valor: number | null
   mensagem: string | null
+  funil_nome: string | null
   criado_em: string
 }
 
@@ -76,13 +77,22 @@ export default function CelebracaoVenda() {
           }}>
           <button onClick={()=>fechar(c.id)} aria-label="Fechar"
             style={{position:'absolute',top:6,right:8,width:22,height:22,padding:0,border:'none',background:'rgba(0,0,0,0.15)',color:'#1a1f2e',borderRadius:'50%',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-            <span style={{fontSize:18}}>🎉</span>
-            <span>{c.vendedor_nome || 'Alguém'} fechou uma venda de {fmtBRL(c.valor)}</span>
-          </div>
-          <div style={{fontSize:14,fontWeight:800,fontStyle:'italic',letterSpacing:0.3}}>
-            {c.mensagem || 'O CHORO É LIVRE!!'}
-          </div>
+          {(() => {
+            const ehSinistro = String(c.funil_nome || '').toUpperCase().includes('SINISTRO')
+            const headline = ehSinistro
+              ? `${c.vendedor_nome || 'Alguém'} finalizou mais um sinistro`
+              : `${c.vendedor_nome || 'Alguém'} fechou uma venda de ${fmtBRL(c.valor)}`
+            const sub = c.mensagem || (ehSinistro ? 'AQUI NÃO TEM PROBLEMA, SÓ TEM SOLUÇÃO!!' : 'O CHORO É LIVRE!!')
+            return (
+              <>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:18}}>{ehSinistro ? '🛡️' : '🎉'}</span>
+                  <span>{headline}</span>
+                </div>
+                <div style={{fontSize:14,fontWeight:800,fontStyle:'italic',letterSpacing:0.3}}>{sub}</div>
+              </>
+            )
+          })()}
         </div>
       ))}
       <style jsx>{`
