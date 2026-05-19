@@ -5,10 +5,6 @@
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron/suhai-followup",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/rdstation/poll",
       "schedule": "*/5 * * * *"
     },
