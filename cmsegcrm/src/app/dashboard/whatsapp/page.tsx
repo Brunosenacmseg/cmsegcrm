@@ -518,8 +518,12 @@ export default function WhatsAppPage() {
 
     if (existente) { setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); await selecionarConversa(existente); setIniciando(false); return }
 
-    const jid = `${numeroLimpo}@s.whatsapp.net`
-    const novaConv = { remoto_jid:jid, remoto_numero:numeroLimpo, remoto_nome:clienteNovaConversa?.nome||novaNomeBusca||numeroLimpo, cliente_id:clienteNovaConversa?.id||null, clientes:clienteNovaConversa?{nome:clienteNovaConversa.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
+    // Garante DDI 55 quando o usuário digitou um BR sem código de país
+    // (10 ou 11 dígitos). Sem isso a Evolution não roteia.
+    const comDdi = (numeroLimpo.length === 10 || numeroLimpo.length === 11)
+      ? `55${numeroLimpo}` : numeroLimpo
+    const jid = `${comDdi}@s.whatsapp.net`
+    const novaConv = { remoto_jid:jid, remoto_numero:comDdi, remoto_nome:clienteNovaConversa?.nome||novaNomeBusca||comDdi, cliente_id:clienteNovaConversa?.id||null, clientes:clienteNovaConversa?{nome:clienteNovaConversa.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
     setConversas(prev=>[novaConv,...prev]); setConversa(novaConv); setMensagens([])
     setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); setIniciando(false)
   }
