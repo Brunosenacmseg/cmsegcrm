@@ -19,7 +19,7 @@ export default function PerfilPage() {
   const [msgSenha, setMsgSenha]   = useState('')
 
   const [form, setForm] = useState({
-    nome: '', telefone: '', email: '',
+    nome: '', telefone: '', email: '', mensagem_venda: '',
   })
 
   useEffect(() => { init() }, [])
@@ -32,6 +32,7 @@ export default function PerfilPage() {
       nome:     prof?.nome     || user?.user_metadata?.nome || '',
       telefone: prof?.telefone || '',
       email:    user?.email    || '',
+      mensagem_venda: prof?.mensagem_venda || '',
     })
     setLoading(false)
   }
@@ -45,6 +46,7 @@ export default function PerfilPage() {
       const { error } = await supabase.from('users').update({
         nome:     form.nome,
         telefone: form.telefone,
+        mensagem_venda: form.mensagem_venda.trim() || null,
       }).eq('id', user?.id||'')
 
       if (error) throw error
@@ -164,6 +166,10 @@ export default function PerfilPage() {
               <div>
                 <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>E-mail</label>
                 <input value={form.email} disabled style={{...inp,opacity:0.5,cursor:'not-allowed'}} />
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>🎉 Mensagem de venda <span style={{color:'var(--text-muted)',fontWeight:400}}>(aparece pra todos quando você fechar uma venda)</span></label>
+                <input value={form.mensagem_venda} maxLength={120} onChange={e=>setForm(f=>({...f,mensagem_venda:e.target.value}))} placeholder="Ex: O CHORO É LIVRE!! (padrão se deixar vazio)" style={inp} />
               </div>
             </div>
 
