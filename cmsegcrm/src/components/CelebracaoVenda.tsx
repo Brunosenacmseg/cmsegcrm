@@ -39,9 +39,9 @@ export default function CelebracaoVenda() {
     if (jaViu(c.id)) return
     marcarVisto(c.id)
     setFila(prev => [...prev, c])
-    setTimeout(() => {
-      setFila(prev => prev.filter(x => x.id !== c.id))
-    }, 9000)
+  }
+  function fechar(id: string) {
+    setFila(prev => prev.filter(x => x.id !== id))
   }
 
   useEffect(() => {
@@ -63,16 +63,19 @@ export default function CelebracaoVenda() {
       {fila.map(c => (
         <div key={c.id}
           style={{
+            position:'relative',
             pointerEvents:'auto',
             minWidth:300, maxWidth:380,
             background:'linear-gradient(135deg, #c9a84c 0%, #b8923a 100%)',
             color:'#1a1f2e',
-            padding:'14px 18px',
+            padding:'14px 36px 14px 18px',
             borderRadius:12,
             boxShadow:'0 12px 40px rgba(0,0,0,0.35)',
             border:'2px solid #fff',
             animation:'celebraSlide 0.4s ease-out',
           }}>
+          <button onClick={()=>fechar(c.id)} aria-label="Fechar"
+            style={{position:'absolute',top:6,right:8,width:22,height:22,padding:0,border:'none',background:'rgba(0,0,0,0.15)',color:'#1a1f2e',borderRadius:'50%',cursor:'pointer',fontSize:13,fontWeight:700,lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
           <div style={{fontSize:13,fontWeight:700,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
             <span style={{fontSize:18}}>🎉</span>
             <span>{c.vendedor_nome || 'Alguém'} fechou uma venda de {fmtBRL(c.valor)}</span>
