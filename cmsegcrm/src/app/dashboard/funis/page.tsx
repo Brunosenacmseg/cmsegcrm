@@ -2062,6 +2062,19 @@ function FunisPage() {
                           + Criar Tarefa
                         </button>
                       )}
+                      {(isGanho || isPerdido) && (
+                        <button
+                          onClick={e=>{
+                            e.stopPropagation()
+                            if (!confirm('Retomar negociação? O card volta para "Em andamento".')) return
+                            marcarStatus(neg.id, 'em_andamento')
+                          }}
+                          onMouseDown={e=>e.stopPropagation()}
+                          draggable={false}
+                          style={{marginTop:8,width:'100%',padding:'6px 0',borderRadius:6,border:'1px solid var(--gold)',background:'rgba(201,168,76,0.12)',color:'var(--gold)',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                          ↺ Retomar negociação
+                        </button>
+                      )}
                     </div>
                     )
                   })}
@@ -3009,9 +3022,12 @@ function FunisPage() {
                   ✕ Marcar Perdido
                 </button>
                 {cardAtivo.status && cardAtivo.status !== 'em_andamento' && (
-                  <button onClick={()=>marcarStatus(cardAtivo.id,'em_andamento')}
-                    style={{padding:'8px 12px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text-muted)',fontFamily:'Open Sans,sans-serif'}}>
-                    ↺ Reabrir
+                  <button onClick={()=>{
+                    if (!confirm('Retomar negociação? O card volta para "Em andamento".')) return
+                    marcarStatus(cardAtivo.id,'em_andamento')
+                  }}
+                    style={{flex:1,minWidth:140,padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid var(--gold)',background:'rgba(201,168,76,0.15)',color:'var(--gold)',fontFamily:'Open Sans,sans-serif'}}>
+                    ↺ Retomar negociação
                   </button>
                 )}
               </div>
