@@ -24,17 +24,30 @@ export default function JornadaGate({ children, userId }: { children: React.Reac
   // Verifica jornada do dia
   useEffect(() => {
     if (!userId) { setIniciada(null); return }
+    let cancelled = false
+    // Fallback: se a query não responder em 4s, assume jornada não iniciada
+    // para o usuário não ficar preso em "Carregando…" indefinidamente.
+    const fallback = setTimeout(() => {
+      if (!cancelled) setIniciada(prev => prev === null ? false : prev)
+    }, 4000)
     ;(async () => {
-      const hoje = new Date(); hoje.setHours(0,0,0,0)
-      const { data } = await supabase
-        .from('jornadas')
-        .select('id')
-        .eq('user_id', userId)
-        .gte('iniciada_em', hoje.toISOString())
-        .is('encerrada_em', null)
-        .limit(1)
-      setIniciada(!!(data && data.length > 0))
+      try {
+        const hoje = new Date(); hoje.setHours(0,0,0,0)
+        const { data, error } = await supabase
+          .from('jornadas')
+          .select('id')
+          .eq('user_id', userId)
+          .gte('iniciada_em', hoje.toISOString())
+          .is('encerrada_em', null)
+          .limit(1)
+        if (cancelled) return
+        if (error) { setIniciada(false); return }
+        setIniciada(!!(data && data.length > 0))
+      } catch {
+        if (!cancelled) setIniciada(false)
+      }
     })()
+    return () => { cancelled = true; clearTimeout(fallback) }
   }, [userId])
 
   // Redireciona quem não iniciou jornada e tenta ir para outras rotas
