@@ -898,7 +898,7 @@ function FunisPage() {
         id, titulo, etapa, status, qualificacao, premio, vencimento,
         funil_id, cliente_id, vendedor_id, equipe_id, origem_id,
         produto, seguradora, cpf_cnpj, motivo_perda, obs,
-        custom_fields, created_at, data_fechamento, telefone_negocio,
+        custom_fields, created_at, updated_at, data_fechamento, telefone_negocio,
         clientes(id,nome,cpf_cnpj,telefone,email),
         users!negocios_vendedor_id_fkey(nome)
       `).eq('funil_id', funilAtivo)
