@@ -20,7 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import type { Database } from '@/lib/supabase/database.types'
 import { chamarChatGPT } from '@/lib/openai'
-import { enviarTextoEvo, enviarTextoEvoDetalhado, numeroParaJid } from '@/lib/whatsapp-evo'
+import { enviarTextoEvo, enviarTextoEvoDetalhado, numeroParaJid, resolverJidCanonico } from '@/lib/whatsapp-evo'
 import { horarioUtilAdd, dentroDaJanelaUtil } from '@/lib/horario-util'
 
 export const dynamic = 'force-dynamic'
@@ -122,7 +122,7 @@ function evoConfig(inst: any): EvoConfigCompleta | null {
   return { evo_url, api_key, instance: inst.nome }
 }
 
-async function carregarContextoCard(negocio: any): Promise<{ nome: string; jid: string | null }> {
+async function carregarContextoCard(negocio: any, instanciaId?: string | null): Promise<{ nome: string; jid: string | null }> {
   let nome = ''
   let telefone = (negocio.telefone_negocio as string | null) || ''
   if (negocio.cliente_id) {
@@ -131,7 +131,13 @@ async function carregarContextoCard(negocio: any): Promise<{ nome: string; jid: 
     if (!telefone && cli?.telefone) telefone = cli.telefone
   }
   if (!nome) nome = (negocio.titulo as string) || ''
-  return { nome: tituloCase(nome), jid: numeroParaJid(telefone) }
+  // Reusa o JID de uma conversa existente nessa instância pra esse número,
+  // se houver — evita duplicar conversa quando o JID canônico do WhatsApp
+  // difere do normalizado (caso típico em BR: com vs sem o "9").
+  const jid = instanciaId && telefone
+    ? await resolverJidCanonico(sa(), instanciaId, telefone)
+    : numeroParaJid(telefone)
+  return { nome: tituloCase(nome), jid }
 }
 
 async function criarTarefaSemWhatsApp(negocioId: string, vendedorId: string | null, nomeCliente: string, nomeFluxo: string) {
@@ -202,8 +208,8 @@ async function processarInitsDoFluxo(fluxo: Fluxo): Promise<{ processados: numbe
       })
       if (reservaErr) { continue }
 
-      const ctxCard = await carregarContextoCard(negocio)
       const inst    = await carregarInstanciaDoVendedor(negocio.vendedor_id)
+      const ctxCard = await carregarContextoCard(negocio, inst?.id)
 
       if (!ctxCard.jid) {
         await supabase.from('negocios_suhai_state').update({
@@ -404,7 +410,7 @@ async function processarFollowupsDoFluxo(fluxo: Fluxo): Promise<{ processados: n
       }
       if (!agente) { falhas++; continue }
 
-      const ctxCard = await carregarContextoCard(negocio)
+      const ctxCard = await carregarContextoCard(negocio, inst.id)
       const ctxLead: ContextoLead = { nomeCliente: ctxCard.nome, primeiroNome: primeiroNomeDe(ctxCard.nome) }
       let mensagem = ''
       try {
