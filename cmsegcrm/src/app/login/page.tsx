@@ -42,6 +42,7 @@ export default function LoginPage() {
       // Após cadastro, tenta login direto
       const { data: dataCad, error: errLogin } = await supabase.auth.signInWithPassword({ email, password: senha })
       if (!errLogin) {
+        try { sessionStorage.removeItem('cm_alerta_metas_sessao') } catch {}
         await registrarLoginLog({
           user_id: dataCad.user?.id ?? null,
           user_email: email,
@@ -68,7 +69,9 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    // Login OK: dispara logs sem esperar (fire-and-forget) e redireciona imediatamente
+    // Login OK: garante que o pop-up de metas reapareça neste login
+    try { sessionStorage.removeItem('cm_alerta_metas_sessao') } catch {}
+    // dispara logs sem esperar (fire-and-forget) e redireciona imediatamente
     registrarLoginLog({
       user_id: data.user?.id ?? null,
       user_email: data.user?.email ?? email,
