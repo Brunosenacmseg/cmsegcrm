@@ -4,6 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { getVisibleUserIds } from '@/lib/auth'
 
+function fmtErro(data: any): string {
+  if (!data) return ''
+  const e = data.error
+  if (!e) return ''
+  if (typeof e === 'string') return e
+  try { return JSON.stringify(e) } catch { return String(e) }
+}
+
 async function wppHeaders(supabase: any): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession()
   const tok = data?.session?.access_token
@@ -385,10 +393,11 @@ export default function WhatsAppPage() {
     if (!textoEnvio.trim() || !conversa || !instancia) return
     setEnviando(true)
     setShowEmojis(false)
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, mensagem:textoEnvio }) })
+    const destino = conversa.remoto_numero || conversa.remoto_jid
+    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:destino, mensagem:textoEnvio }) })
     const data = await res.json()
-    if (!data.error) { await salvarMensagemBanco(textoEnvio, 'text'); setTextoEnvio('') }
-    else alert('Erro ao enviar: ' + data.error)
+    if (!fmtErro(data)) { await salvarMensagemBanco(textoEnvio, 'text'); setTextoEnvio('') }
+    else alert('Erro ao enviar: ' + fmtErro(data))
     setEnviando(false)
   }
 
@@ -400,10 +409,10 @@ export default function WhatsAppPage() {
     const reader = new FileReader()
     reader.onload = async () => {
       const base64 = (reader.result as string).split(',')[1]
-      const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar_midia', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, base64, mimetype:file.type, nome_arquivo:file.name, caption:'' }) })
+      const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar_midia', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:(conversa.remoto_numero||conversa.remoto_jid), base64, mimetype:file.type, nome_arquivo:file.name, caption:'' }) })
       const data = await res.json()
-      if (!data.error) await salvarMensagemBanco(`📎 ${file.name}`, file.type.startsWith('image')?'image':'document')
-      else alert('Erro ao enviar arquivo: ' + data.error)
+      if (!fmtErro(data)) await salvarMensagemBanco(`📎 ${file.name}`, file.type.startsWith('image')?'image':'document')
+      else alert('Erro ao enviar arquivo: ' + fmtErro(data))
       setEnviando(false)
     }
     reader.readAsDataURL(file)
@@ -435,10 +444,10 @@ export default function WhatsAppPage() {
       reader.onload = async () => {
         const base64 = (reader.result as string).split(',')[1]
         setEnviando(true)
-        const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar_audio', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, base64 }) })
+        const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar_audio', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:(conversa.remoto_numero||conversa.remoto_jid), base64 }) })
         const data = await res.json()
-        if (!data.error) await salvarMensagemBanco('🎵 Áudio', 'audio')
-        else alert('Erro ao enviar áudio: ' + data.error)
+        if (!fmtErro(data)) await salvarMensagemBanco('🎵 Áudio', 'audio')
+        else alert('Erro ao enviar áudio: ' + fmtErro(data))
         setEnviando(false)
       }
       reader.readAsDataURL(blob)
@@ -460,9 +469,9 @@ export default function WhatsAppPage() {
     if (!conversa || !instancia) return
     setShowStickers(false)
     setEnviando(true)
-    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:conversa.remoto_jid, mensagem:sticker.emoji }) })
+    const res = await fetch('/api/whatsapp/action', { method:'POST', headers: await wppHeaders(supabase), body: JSON.stringify({ action:'enviar', evo_url:instancia.evolution_url, api_key:instancia.api_key, instance:instancia.nome, numero:(conversa.remoto_numero||conversa.remoto_jid), mensagem:sticker.emoji }) })
     const data = await res.json()
-    if (!data.error) await salvarMensagemBanco(sticker.emoji, 'sticker')
+    if (!fmtErro(data)) await salvarMensagemBanco(sticker.emoji, 'sticker')
     setEnviando(false)
   }
 

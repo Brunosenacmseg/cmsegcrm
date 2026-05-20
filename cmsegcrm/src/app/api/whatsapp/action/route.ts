@@ -57,8 +57,11 @@ function extrairBase64(data: any): string | null {
 function mensagemErro(r: EvoResp): string {
   const d = r.data || {}
   const m = d?.response?.message || d?.message || d?.error || d?._raw
-  if (Array.isArray(m)) return m.join(' | ')
+  if (Array.isArray(m)) return m.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' | ')
   if (typeof m === 'string') return m
+  if (m && typeof m === 'object') {
+    try { return JSON.stringify(m) } catch { /* fallthrough */ }
+  }
   return `Evolution API retornou status ${r.status}`
 }
 
