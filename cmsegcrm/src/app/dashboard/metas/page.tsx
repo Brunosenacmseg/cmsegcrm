@@ -91,11 +91,11 @@ export default function MetasPage() {
       const { data: eq } = await supabase.from('equipes').select('id,nome').order('nome')
       setEquipes(eq || [])
     }
-    await carregarMetas(prof, ids)
+    await carregarMetas(prof, ids, usr || [])
     setLoading(false)
   }
 
-  async function carregarMetas(prof = profile, ids: string[] | null = visibleIds) {
+  async function carregarMetas(prof = profile, ids: string[] | null = visibleIds, usrList: any[] = usuarios) {
     let q = supabase
       .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
     if (prof?.role === 'corretor') {
@@ -112,7 +112,7 @@ export default function MetasPage() {
       metasList.flatMap(m => [m.user_id, m.criado_por]).filter(Boolean)
     ))
     let nameMap: Record<string, { id: string; nome: string; role?: string }> = {}
-    for (const u of usuarios) nameMap[u.id] = { id: u.id, nome: u.nome, role: u.role }
+    for (const u of usrList) nameMap[u.id] = { id: u.id, nome: u.nome, role: u.role }
     const faltam = refIds.filter(id => !nameMap[id])
     if (faltam.length) {
       const { data: extra } = await supabase.from('users').select('id, nome, role, email').in('id', faltam)
