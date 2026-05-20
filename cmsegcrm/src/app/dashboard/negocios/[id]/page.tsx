@@ -422,7 +422,8 @@ export default function NegocioDetailPage() {
             <EditableField label="CPF"                    value={negocio.cpf_cnpj}            onSave={(v)=>salvarCampo('cpf_cnpj', v)} />
             <EditableField label="CPF 2"                  value={negocio.cpf_2}               onSave={(v)=>salvarCampo('cpf_2', v)} />
             <EditableField label="CEP"                    value={negocio.cep_negocio || negocio.cep} onSave={(v)=>salvarCampo('cep_negocio', v)} />
-            <EditableField label="Tipo do seguro"         value={negocio.tipo_seguro}         onSave={(v)=>salvarCampo('tipo_seguro', v)} />
+            <EditableField label="Tipo do seguro"         value={negocio.tipo_seguro}         onSave={(v)=>salvarCampo('tipo_seguro', v)}
+              suggestions={['SEGURO NOVO','RENOVAÇÃO ESCRITÓRIO','RENOVAÇÃO CONGÊNERE','ENDOSSO']} />
             <EditableField label="Seguradora"             value={negocio.seguradora}          onSave={(v)=>salvarCampo('seguradora', v)}
               options={seguradorasAll.map(s => ({ value: s.nome, label: s.nome }))} />
             <EditableField label="Comissão (%)"           value={negocio.comissao_pct}        type="percentual" onSave={(v)=>salvarCampo('comissao_pct', v)}
@@ -1110,9 +1111,11 @@ function KV({ label, value, mono }: { label:string; value:any; mono?:boolean }) 
 }
 
 type EditableType = 'text' | 'email' | 'date' | 'moeda' | 'percentual' | 'qualificacao'
-function EditableField({ label, value, onSave, type='text', readOnly, options }: {
-  label: string; value: any; onSave?: (v:any)=>void|Promise<void>; type?: EditableType; readOnly?: boolean; options?: { value: string|number; label: string }[]
+function EditableField({ label, value, onSave, type='text', readOnly, options, suggestions }: {
+  label: string; value: any; onSave?: (v:any)=>void|Promise<void>; type?: EditableType; readOnly?: boolean;
+  options?: { value: string|number; label: string }[]; suggestions?: string[]
 }) {
+  const listId = label.replace(/\s+/g,'-').toLowerCase() + '-sugg'
   const [editing, setEditing] = useState(false)
   const [hover, setHover]     = useState(false)
   const [draft, setDraft]     = useState<any>(value ?? '')
@@ -1226,14 +1229,22 @@ function EditableField({ label, value, onSave, type='text', readOnly, options }:
             )
           })()
         ) : (
-          <input autoFocus value={draft}
-            type={type==='email'?'email':'text'}
-            onClick={e=>e.stopPropagation()}
-            onChange={e=>setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={e=>{ if (e.key==='Enter') { (e.target as HTMLInputElement).blur() } if (e.key==='Escape') { setDraft(value??''); setEditing(false) } }}
-            disabled={saving}
-            style={inputStyle} />
+          <>
+            <input autoFocus value={draft}
+              type={type==='email'?'email':'text'}
+              list={suggestions ? listId : undefined}
+              onClick={e=>e.stopPropagation()}
+              onChange={e=>setDraft(e.target.value)}
+              onBlur={commit}
+              onKeyDown={e=>{ if (e.key==='Enter') { (e.target as HTMLInputElement).blur() } if (e.key==='Escape') { setDraft(value??''); setEditing(false) } }}
+              disabled={saving}
+              style={inputStyle} />
+            {suggestions && (
+              <datalist id={listId}>
+                {suggestions.map(s => <option key={s} value={s} />)}
+              </datalist>
+            )}
+          </>
         )
       ) : (
         <span style={{color:'var(--text)',overflowWrap:'anywhere'}}>{display}</span>

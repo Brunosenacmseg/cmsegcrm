@@ -416,8 +416,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   function badgeFor(badgeKey?: string): { count: number; danger: boolean } | null {
     if (!badgeKey) return null
     if (badgeKey === 'tarefas') {
+      // Só mostra badge quando existem tarefas atrasadas — sempre em vermelho.
       if (tarefasAtrasadas > 0) return { count: tarefasAtrasadas, danger: true }
-      if (tarefasPendentes > 0) return { count: tarefasPendentes, danger: false }
       return null
     }
     const c = badges[badgeKey] || 0
