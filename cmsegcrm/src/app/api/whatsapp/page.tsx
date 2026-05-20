@@ -36,6 +36,8 @@ export default function WhatsAppPage() {
     const interval = setInterval(() => {
       verificarStatus()
       if (conversa) carregarMensagens(conversa.remoto_jid)
+      // QR Code da Evolution expira em ~40s — renova enquanto aguarda escaneamento
+      if (instancia.status === 'qrcode') gerarQRCodeFor(instancia)
     }, 5000)
     return () => clearInterval(interval)
   }, [instancia, conversa])
@@ -170,9 +172,30 @@ export default function WhatsAppPage() {
       body: JSON.stringify({ action:'criar_instancia', evo_url:config.evo_url, api_key:config.api_key, instance:nomeInst })
     })
     const data = await res.json()
-    if (data?.qrcode?.base64) {
-      await supabase.from('whatsapp_instancias').update({ qrcode: data.qrcode.base64, status:'qrcode' }).eq('id', inst.id)
-      setInstancia((prev: any) => ({ ...prev, qrcode: data.qrcode.base64, status:'qrcode' }))
+    const base64 = data?.base64 || data?.qrcode?.base64
+    if (base64) {
+      await supabase.from('whatsapp_instancias').update({ qrcode: base64, status:'qrcode' }).eq('id', inst.id)
+      setInstancia((prev: any) => ({ ...prev, qrcode: base64, status:'qrcode' }))
+    } else {
+      // Sem QR na resposta de criação — busca via endpoint dedicado
+      await gerarQRCodeFor(inst)
+    }
+  }
+
+  async function gerarQRCodeFor(inst: any) {
+    for (let i = 0; i < 10; i++) {
+      const res = await fetch('/api/whatsapp/action', {
+        method: 'POST',
+        headers: await wppHeaders(supabase),
+        body: JSON.stringify({ action:'qrcode', evo_url:inst.evolution_url, api_key:inst.api_key, instance:inst.nome })
+      })
+      const data = await res.json()
+      if (data?.base64) {
+        await supabase.from('whatsapp_instancias').update({ qrcode: data.base64, status:'qrcode' }).eq('id', inst.id)
+        setInstancia((prev: any) => ({ ...prev, qrcode: data.base64, status:'qrcode' }))
+        return
+      }
+      await new Promise(r => setTimeout(r, 2000))
     }
   }
 
