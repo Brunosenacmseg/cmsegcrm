@@ -149,15 +149,19 @@ async function criarTarefaSemWhatsApp(negocioId: string, vendedorId: string | nu
 async function gerarMensagem(fluxo: Fluxo, agente: any, ctxLead: ContextoLead, n: number): Promise<string> {
   const total = fluxo.etapas_tentativas.length
   const tipo  = tipoDaTentativa(n, total)
-  const promptUsuario = renderizarPrompt(fluxo.prompt_template, {
+  const ctxPlaceholders = {
     nome: ctxLead.primeiroNome || ctxLead.nomeCliente || 'lead',
     n, total, tipo,
-  })
+  }
+  const promptUsuario = renderizarPrompt(fluxo.prompt_template, ctxPlaceholders)
+  // Renderiza placeholders também no system_prompt e na base de conhecimento
+  // (alguns agentes têm exemplos com {{nome}} embutidos).
+  const systemRaw = agente.base_conhecimento
+    ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
+    : agente.system_prompt
   return await chamarChatGPT({
     modelo: agente.modelo,
-    systemPrompt: agente.base_conhecimento
-      ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
-      : agente.system_prompt,
+    systemPrompt: renderizarPrompt(systemRaw, ctxPlaceholders),
     mensagem: promptUsuario,
     maxTokens: agente.max_tokens || 500,
     temperatura: Number(agente.temperatura) || 0.7,
