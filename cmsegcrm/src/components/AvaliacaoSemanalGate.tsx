@@ -23,10 +23,9 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { if (!cancelled) setEstado('ok'); return }
         const { data: prof } = await supabase.from('users').select('id, role, email').eq('id', user.id).single()
-        const ehGiovanna = prof?.email === 'giovanna@cmseguros.com.br'
         const ehLider = prof?.role === 'lider'
         const ehAdmin = prof?.role === 'admin'
-        if (!prof || (!ehLider && !ehGiovanna && !ehAdmin)) { if (!cancelled) setEstado('ok'); return }
+        if (!prof || (!ehLider && !ehAdmin)) { if (!cancelled) setEstado('ok'); return }
 
         const hoje = new Date()
         // Só ativa nas quintas-feiras (0=domingo, 4=quinta)
@@ -40,7 +39,7 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
 
         // Lista de colaboradores que este usuário precisa avaliar.
         // - Líder: membros das equipes que ele lidera
-        // - Giovanna: todos os usuários com role='lider'
+        // - Admin: a usuária giovanna@cmseguros.com.br
         let memberIds: string[] = []
         if (ehLider) {
           const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', user.id)
@@ -49,9 +48,6 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
             const { data: mems } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eqIds)
             memberIds = Array.from(new Set((mems || []).map((m: any) => m.user_id)))
           }
-        } else if (ehGiovanna) {
-          const { data: lideres } = await supabase.from('users').select('id').eq('role', 'lider')
-          memberIds = (lideres || []).map((u: any) => u.id)
         } else if (ehAdmin) {
           const { data: gio } = await supabase.from('users').select('id').eq('email', 'giovanna@cmseguros.com.br')
           memberIds = (gio || []).map((u: any) => u.id)

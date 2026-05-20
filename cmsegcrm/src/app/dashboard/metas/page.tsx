@@ -97,32 +97,34 @@ export default function MetasPage() {
 
   async function carregarMetas(prof = profile, ids: string[] | null = visibleIds) {
     let q = supabase
-      .from('metas')
-      .select('*, users!metas_user_id_fkey(id,nome,role), users!metas_criado_por_fkey(id,nome)')
-      .eq('status', 'ativa')
-      .order('periodo_fim', { ascending: true })
+      .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
     if (prof?.role === 'corretor') {
       q = q.eq('user_id', prof.id)
     } else if (ids) {
       q = q.in('user_id', ids)
     }
-    const { data, error } = await q
-    let metasArr: any[] = []
-    if (error) {
-      console.error('[metas] erro ao carregar com JOIN:', error)
-      // Fallback: query simples sem JOIN, mapeia user_id/criado_por aos nomes via state.usuarios
-      const { data: simples } = await supabase
-        .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
-      const byId: Record<string, any> = {}
-      for (const u of usuarios) byId[u.id] = u
-      metasArr = (simples || []).map((m: any) => ({
-        ...m,
-        'users!metas_user_id_fkey': byId[m.user_id] ? { id: m.user_id, nome: byId[m.user_id].nome, role: byId[m.user_id].role } : null,
-        'users!metas_criado_por_fkey': byId[m.criado_por] ? { id: m.criado_por, nome: byId[m.criado_por].nome } : null,
-      }))
-    } else {
-      metasArr = data || []
+    const { data: metasRaw } = await q
+    const metasList = (metasRaw || []) as any[]
+
+    // Resolve nomes de TODOS os user_ids referenciados (user_id e criado_por),
+    // não dependendo apenas do state usuarios (que pode estar incompleto via RLS).
+    const refIds = Array.from(new Set(
+      metasList.flatMap(m => [m.user_id, m.criado_por]).filter(Boolean)
+    ))
+    let nameMap: Record<string, { id: string; nome: string; role?: string }> = {}
+    for (const u of usuarios) nameMap[u.id] = { id: u.id, nome: u.nome, role: u.role }
+    const faltam = refIds.filter(id => !nameMap[id])
+    if (faltam.length) {
+      const { data: extra } = await supabase.from('users').select('id, nome, role, email').in('id', faltam)
+      for (const u of (extra || []) as any[]) {
+        nameMap[u.id] = { id: u.id, nome: u.nome || u.email || `Usuário ${u.id.slice(0, 6)}`, role: u.role }
+      }
     }
+    const metasArr = metasList.map(m => ({
+      ...m,
+      'users!metas_user_id_fkey': nameMap[m.user_id] || null,
+      'users!metas_criado_por_fkey': nameMap[m.criado_por] || null,
+    }))
     setMetas(metasArr)
     // Carrega vendas ganhas no mes atual por vendedor (independente de meta)
     const hoje = new Date()
