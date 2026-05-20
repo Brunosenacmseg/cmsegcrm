@@ -406,12 +406,24 @@ export async function POST(request: NextRequest) {
                 role: m.direcao === 'enviada' ? 'assistant' as const : 'user' as const,
                 content: m.transcricao || m.conteudo || '',
               }))
+              // Usa o primeiro nome do contato (capitalizado) como {{nome}}
+              // no system_prompt — agente espera ver o nome do cliente
+              // em exemplos como "Oi, {{nome}}!".
+              const minusculas = new Set(['de','da','do','das','dos','e','di','du','del','la'])
+              const tituloCase = (s: string) => s.toLowerCase().split(/(\s+)/).map((w,i)=>{
+                if (/^\s+$/.test(w)) return w
+                if (i>0 && minusculas.has(w)) return w
+                return w.charAt(0).toUpperCase()+w.slice(1)
+              }).join('')
+              const primeiroNome = pushName ? tituloCase(String(pushName).trim().split(/\s+/)[0] || '') : 'amigo(a)'
+              const systemRaw = (agente.base_conhecimento
+                ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
+                : agente.system_prompt) +
+`\n\n=== INTERVENÇÃO HUMANA ===\nSe o cliente pedir explicitamente para falar com um humano/atendente, se a pergunta exigir uma decisão fora do seu escopo, se houver reclamação séria, ou se você não conseguir ajudar com segurança, responda APENAS com o token exato: [INTERVENCAO_HUMANA]\nNada mais. Sem explicações, sem despedida, sem texto adicional. Esse token NÃO será enviado ao cliente — apenas alerta o time interno.`
+              const systemPrompt = systemRaw.replace(/\{\{\s*nome\s*\}\}/g, primeiroNome)
               const resposta = await chamarChatGPT({
                 modelo: agente.modelo,
-                systemPrompt: (agente.base_conhecimento
-                  ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
-                  : agente.system_prompt) +
-`\n\n=== INTERVENÇÃO HUMANA ===\nSe o cliente pedir explicitamente para falar com um humano/atendente, se a pergunta exigir uma decisão fora do seu escopo, se houver reclamação séria, ou se você não conseguir ajudar com segurança, responda APENAS com o token exato: [INTERVENCAO_HUMANA]\nNada mais. Sem explicações, sem despedida, sem texto adicional. Esse token NÃO será enviado ao cliente — apenas alerta o time interno.`,
+                systemPrompt,
                 mensagem: entradaIA,
                 historico,
                 maxTokens: agente.max_tokens || 1024,
