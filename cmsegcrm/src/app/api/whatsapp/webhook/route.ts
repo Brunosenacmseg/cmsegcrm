@@ -33,8 +33,11 @@ async function enviarRespostaEvo(evo_url: string, api_key: string, instance: str
 }
 
 // Extrai o número real de telefone (ignorando IDs internos @lid do Meta).
-function extrairContato(data: any): { jid: string; numero: string } {
+// Devolve também o @lid original (quando houver) pra o handler usar tanto pro
+// upsert no mapping (lid→canon) quanto pro lookup quando o número não veio.
+function extrairContato(data: any): { jid: string; numero: string; lid: string } {
   const jidOriginal = data?.key?.remoteJid || ''
+  const lid = jidOriginal.includes('@lid') ? jidOriginal : ''
   const candidatos: string[] = [
     data?.key?.senderPn, data?.key?.senderPnJid,
     data?.senderPn, data?.senderPnJid,
@@ -49,16 +52,31 @@ function extrairContato(data: any): { jid: string; numero: string } {
     if (!c || c.includes('@lid')) continue
     const digitos = String(c).replace(/\D/g, '')
     if (digitos.length >= 10 && digitos.length <= 15) {
-      return { jid: c.includes('@') ? c : `${digitos}@s.whatsapp.net`, numero: digitos }
+      return { jid: c.includes('@') ? c : `${digitos}@s.whatsapp.net`, numero: digitos, lid }
     }
   }
   if (jidOriginal && !jidOriginal.includes('@lid')) {
     const digitos = jidOriginal.replace(/@.*$/, '').replace(/\D/g, '')
     if (digitos.length >= 10 && digitos.length <= 15) {
-      return { jid: jidOriginal, numero: digitos }
+      return { jid: jidOriginal, numero: digitos, lid }
     }
   }
-  return { jid: jidOriginal, numero: '' }
+  return { jid: jidOriginal, numero: '', lid }
+}
+
+// Consulta whatsapp_lid_map pra resolver um @lid no JID canônico
+// (@s.whatsapp.net). Retorna null se não houver mapeamento conhecido.
+async function resolverLidNoCanon(instanciaId: string, jidLid: string): Promise<{ jid: string; numero: string } | null> {
+  if (!jidLid || !jidLid.includes('@lid')) return null
+  const { data } = await supabase
+    .from('whatsapp_lid_map' as any)
+    .select('jid_canon')
+    .eq('instancia_id', instanciaId)
+    .eq('jid_lid', jidLid)
+    .maybeSingle()
+  const canon = (data as any)?.jid_canon as string | undefined
+  if (!canon) return null
+  return { jid: canon, numero: canon.split('@')[0].replace(/\D/g, '') }
 }
 
 // Detecta o tipo da mensagem e extrai metadados de mídia (se houver).
@@ -242,7 +260,8 @@ export async function POST(request: NextRequest) {
     //               — replicamos no CRM pra histórico ficar completo nos dois lados.
     if (event === 'messages.upsert' && (data?.key?.fromMe === false || data?.key?.fromMe === true)) {
       const direcaoMsg: 'recebida' | 'enviada' = data?.key?.fromMe === true ? 'enviada' : 'recebida'
-      const { jid: remotoJid, numero: remotoNumero } = extrairContato(data)
+      let { jid: remotoJid, numero: remotoNumero } = extrairContato(data)
+      const lidOriginal = data?.key?.remoteJid?.includes('@lid') ? data.key.remoteJid : ''
       const meta = detectarTipoEMidia(data.message)
       const conteudoTexto = data.message?.conversation
                          || data.message?.extendedTextMessage?.text
@@ -262,6 +281,30 @@ export async function POST(request: NextRequest) {
       } : null
 
       if (inst) {
+        // Mapping @lid → JID canônico. O WhatsApp moderno entrega muitos
+        // eventos com remoteJid=@lid (privacy ID do Meta), sem expor o número
+        // real. Sem isso, cada contato vira "duas conversas" e a config do
+        // agente IA (gravada sob o JID canônico) some quando a resposta volta.
+        //
+        // 1) Aprende: se temos os DOIS (número real + @lid), grava o par.
+        // 2) Resolve: se só temos @lid (sem senderPn no payload), consulta
+        //    o que já aprendemos pra trocar pro JID canônico.
+        if (lidOriginal && remotoNumero && remotoJid && !remotoJid.includes('@lid')) {
+          await supabase.from('whatsapp_lid_map' as any).upsert({
+            instancia_id: inst.id,
+            jid_lid:      lidOriginal,
+            jid_canon:    remotoJid,
+            pushname:     (data.pushName && String(data.pushName).trim()) || null,
+            updated_at:   new Date().toISOString(),
+          }, { onConflict: 'instancia_id,jid_lid' })
+        } else if (remotoJid && remotoJid.includes('@lid')) {
+          const canon = await resolverLidNoCanon(inst.id, remotoJid)
+          if (canon) {
+            remotoJid    = canon.jid
+            remotoNumero = canon.numero || remotoNumero
+          }
+        }
+
         let clienteId: string | null = null
         if (remotoNumero && remotoNumero.length >= 8) {
           const { data: cliente } = await supabase
