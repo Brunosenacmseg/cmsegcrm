@@ -261,6 +261,34 @@ export default function TokioMarinePage() {
                 {executando ? 'Executando…' : `🌐 Buscar do Webservice`}
               </button>
 
+              <button
+                onClick={async () => {
+                  setExecutando(true)
+                  setResultado(null)
+                  setMsg({ tipo: 'info', texto: `Diagnosticando ${servicoAtivo}...` })
+                  try {
+                    const r = await fetch('/api/tokio/sync', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'diagnose_servico', servico: servicoAtivo, dataInicio, dataFim }),
+                    })
+                    const j = await r.json()
+                    setResultado(j)
+                    setMsg({ tipo: 'ok', texto: `Diagnóstico concluído — veja o JSON abaixo` })
+                  } catch (err: any) {
+                    setMsg({ tipo: 'err', texto: err.message })
+                  } finally { setExecutando(false) }
+                }}
+                disabled={executando}
+                style={{
+                  padding:'10px 18px', borderRadius:8, border:'1px solid var(--border)',
+                  background:'rgba(255,255,255,0.05)', color:'var(--text-muted)', cursor:'pointer',
+                  fontSize:13, fontWeight:600, opacity: executando ? 0.6 : 1,
+                }}
+              >
+                🔬 Diagnosticar (testa 10 formatos)
+              </button>
+
               <input
                 ref={inputRef}
                 type="file"
