@@ -28,7 +28,10 @@ export async function enviarTextoEvoDetalhado(cfg: EvoConfig, jid: string, texto
     const res = await fetch(`${urlBase(cfg)}/message/sendText/${cfg.instance}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': cfg.api_key },
-      body: JSON.stringify({ number: numero || jid, text: texto }),
+      // Envia em ambos os formatos: `text` (Evolution v2) e
+      // `textMessage.text` (Evolution v1). Servidores aceitam um e ignoram
+      // o outro — evita 400 "instance requires property textMessage".
+      body: JSON.stringify({ number: numero || jid, text: texto, textMessage: { text: texto } }),
       signal: AbortSignal.timeout(20_000),
     })
     if (!res.ok) {
