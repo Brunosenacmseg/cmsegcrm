@@ -473,7 +473,7 @@ export default function WhatsAppPage() {
 
   function selecionarClienteNovaConversa(c: any) {
     setClienteNovaConversa(c); setNovaNomeBusca(c.nome); setClientesBusca([])
-    if (c.telefone) setNovoNumero(c.telefone.replace(/\D/g,''))
+    if (c.telefone) setNovoNumero(normalizarTelefoneBR(c.telefone))
   }
 
   // Normaliza um telefone brasileiro para o formato E.164 sem o '+': 55 + DDD + número.
@@ -879,7 +879,10 @@ export default function WhatsAppPage() {
             )}
             <div style={{marginBottom:20}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Número do WhatsApp *</label>
-              <input value={novoNumero} onChange={e=>setNovoNumero(e.target.value)} placeholder="11978222350" style={inp} />
+              <input value={novoNumero}
+                onChange={e=>setNovoNumero(e.target.value)}
+                onBlur={e=>{ const n = normalizarTelefoneBR(e.target.value); if (n && n !== e.target.value.replace(/\D/g,'')) setNovoNumero(n) }}
+                placeholder="11978222350" style={inp} />
               <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Aceita DDD + número (ex: 11978222350) ou com 55 na frente. Se o número estiver cadastrado em um cliente, o vínculo é feito automaticamente.</div>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
