@@ -59,3 +59,40 @@ export function numeroParaJid(numero: string): string | null {
   if (d.length < 12 || d.length > 14) return null
   return `${d}@s.whatsapp.net`
 }
+
+// Resolve o JID canônico para um número numa instância: se já existe uma
+// conversa (whatsapp_mensagens) para o mesmo telefone, reutiliza o JID
+// gravado lá. Caso contrário, devolve o JID normalizado por numeroParaJid.
+//
+// Necessário porque, em BR, o mesmo número pode ter dois JIDs válidos
+// (com/sem o "9" de celular) e o WhatsApp/Evolution escolhe um. Se a gente
+// só normalizar pra um lado, criamos uma conversa nova quando já existia
+// uma sob o outro JID — e a resposta do cliente cai na conversa antiga.
+export async function resolverJidCanonico(
+  supabase: any,
+  instanciaId: string,
+  numero: string,
+): Promise<string | null> {
+  const jidNormalizado = numeroParaJid(numero)
+  if (!jidNormalizado) return null
+  // Últimos 8 dígitos do número local — bastante específico pra identificar
+  // o mesmo contato mesmo com variações de DDI/DDD ou do "9".
+  const digitos = String(numero).replace(/\D/g, '')
+  if (digitos.length < 8) return jidNormalizado
+  const sufixo = digitos.slice(-8)
+  try {
+    const { data } = await supabase
+      .from('whatsapp_mensagens')
+      .select('remoto_jid')
+      .eq('instancia_id', instanciaId)
+      .ilike('remoto_jid', `%${sufixo}@s.whatsapp.net`)
+      .not('remoto_jid', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (data && data.length && data[0].remoto_jid) return data[0].remoto_jid as string
+  } catch {
+    // Em caso de erro no lookup, cai pra normalização padrão — pior caso
+    // é o comportamento anterior, não pior que isso.
+  }
+  return jidNormalizado
+}
