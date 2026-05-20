@@ -14,6 +14,13 @@ function urlBase(cfg: EvoConfig): string {
 // Envia mensagem de texto. Não lança em caso de erro de rede — apenas
 // loga e retorna false. Quem chama decide o que fazer.
 export async function enviarTextoEvo(cfg: EvoConfig, jid: string, texto: string): Promise<boolean> {
+  const r = await enviarTextoEvoDetalhado(cfg, jid, texto)
+  return r.ok
+}
+
+// Versão detalhada: devolve status + body trimmed do response. Usada
+// quando quem chama precisa gravar o motivo concreto da falha.
+export async function enviarTextoEvoDetalhado(cfg: EvoConfig, jid: string, texto: string): Promise<{ ok: boolean; status?: number; body?: string; erro?: string }> {
   try {
     const res = await fetch(`${urlBase(cfg)}/message/sendText/${cfg.instance}`, {
       method: 'POST',
@@ -24,12 +31,12 @@ export async function enviarTextoEvo(cfg: EvoConfig, jid: string, texto: string)
     if (!res.ok) {
       const body = await res.text().catch(() => '')
       console.error('[Evolution] sendText falhou', res.status, body.slice(0, 200))
-      return false
+      return { ok: false, status: res.status, body: body.slice(0, 300) }
     }
-    return true
-  } catch (e) {
+    return { ok: true, status: res.status }
+  } catch (e: any) {
     console.error('[Evolution] erro ao enviar texto:', e)
-    return false
+    return { ok: false, erro: String(e?.message || e).slice(0, 200) }
   }
 }
 
