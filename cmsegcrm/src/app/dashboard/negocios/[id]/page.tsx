@@ -1194,39 +1194,27 @@ function EditableField({ label, value, onSave, type='text', readOnly, options }:
               style={{marginLeft:8,fontSize:11,padding:'2px 8px',borderRadius:6,border:'1px solid var(--blue)',background:'var(--blue)',color:'#fff',cursor:'pointer'}}>OK</button>
           </div>
         ) : type === 'date' ? (
-          /* Input mascarado dd/mm/aaaa — permite apagar 1 dígito por vez
-             (o native <input type=date> apaga blocos inteiros). */
+          /* <input type="date"> abre o calendário ao clicar no ícone e também
+             permite digitar no formato local (no pt-BR: dd/mm/aaaa). Guarda
+             internamente como ISO (yyyy-mm-dd) — o que o Supabase espera. */
           (() => {
-            const toBR = (v: any) => {
+            const toISO = (v: any) => {
               const s = String(v ?? '')
-              const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-              if (m) return `${m[3]}/${m[2]}/${m[1]}`
-              return s
-            }
-            const draftBR = typeof draft === 'string' && /^\d{4}-\d{2}-\d{2}/.test(draft) ? toBR(draft) : (draft || '')
-            const mask = (raw: string) => {
-              const d = raw.replace(/\D/g,'').slice(0,8)
-              if (d.length <= 2) return d
-              if (d.length <= 4) return d.slice(0,2)+'/'+d.slice(2)
-              return d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4)
-            }
-            const toISO = (br: string) => {
-              const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-              if (!m) return ''
-              return `${m[3]}-${m[2]}-${m[1]}`
+              if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+              const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+              if (m) return `${m[3]}-${m[2]}-${m[1]}`
+              return ''
             }
             return (
-              <input autoFocus value={draftBR}
-                inputMode="numeric"
-                placeholder="dd/mm/aaaa"
-                maxLength={10}
+              <input autoFocus
+                type="date"
+                value={toISO(draft)}
                 onClick={e=>e.stopPropagation()}
-                onChange={e=>setDraft(mask(e.target.value))}
+                onChange={e=>setDraft(e.target.value)}
                 onBlur={async () => {
                   if (readOnly || !onSave) { setEditing(false); return }
-                  const cur = String(draft || '')
-                  const iso = cur ? toISO(cur) : ''
-                  if (cur && !iso) { alert('Data inválida. Use dd/mm/aaaa.'); return }
+                  const iso = toISO(draft)
+                  if (draft && !iso) { alert('Data inválida.'); return }
                   setSaving(true)
                   try { await onSave(iso || null) } catch(e:any) { alert('Erro ao salvar: '+(e?.message||e)) }
                   setSaving(false)
