@@ -25,7 +25,8 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
         const { data: prof } = await supabase.from('users').select('id, role, email').eq('id', user.id).single()
         const ehGiovanna = prof?.email === 'giovanna@cmseguros.com.br'
         const ehLider = prof?.role === 'lider'
-        if (!prof || (!ehLider && !ehGiovanna)) { if (!cancelled) setEstado('ok'); return }
+        const ehAdmin = prof?.role === 'admin'
+        if (!prof || (!ehLider && !ehGiovanna && !ehAdmin)) { if (!cancelled) setEstado('ok'); return }
 
         const hoje = new Date()
         // Só ativa nas quintas-feiras (0=domingo, 4=quinta)
@@ -51,6 +52,9 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
         } else if (ehGiovanna) {
           const { data: lideres } = await supabase.from('users').select('id').eq('role', 'lider')
           memberIds = (lideres || []).map((u: any) => u.id)
+        } else if (ehAdmin) {
+          const { data: gio } = await supabase.from('users').select('id').eq('email', 'giovanna@cmseguros.com.br')
+          memberIds = (gio || []).map((u: any) => u.id)
         }
         if (!memberIds.length) { if (!cancelled) setEstado('ok'); return }
 
