@@ -216,7 +216,13 @@ export default function WhatsAppPage() {
     if (!instancia) return
     const { data } = await supabase.from('whatsapp_mensagens').select('*').eq('instancia_id', instancia.id).eq('remoto_jid', jid).order('created_at', { ascending: true })
     setMensagens(data || [])
-    await supabase.from('whatsapp_mensagens').update({ lida: true }).eq('instancia_id', instancia.id).eq('remoto_jid', jid).eq('lida', false)
+    const { error: updErr, count } = await supabase.from('whatsapp_mensagens')
+      .update({ lida: true }, { count: 'exact' })
+      .eq('instancia_id', instancia.id).eq('remoto_jid', jid).eq('lida', false)
+    if (!updErr && (count || 0) > 0) {
+      // Zera o contador da lista lateral sem precisar refazer carregarConversas.
+      setConversas(prev => prev.map(c => c.remoto_jid === jid ? { ...c, nao_lidas: 0 } : c))
+    }
   }
 
   async function selecionarConversa(conv: any) {
