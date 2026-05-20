@@ -305,6 +305,22 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Dedup global por evolution_id: Evolution/WhatsApp às vezes
+        // re-entrega o mesmo evento (retry, ack atrasado). Sem isso, a IA
+        // responde 2x à mesma mensagem do cliente. Faz isso ANTES de baixar
+        // mídia ou chamar a IA pra economizar tudo.
+        if (data?.key?.id) {
+          const { data: jaProcessada } = await supabase
+            .from('whatsapp_mensagens')
+            .select('id')
+            .eq('instancia_id', inst.id)
+            .eq('evolution_id', data.key.id)
+            .limit(1)
+          if (jaProcessada && jaProcessada.length) {
+            return NextResponse.json({ ok: true, deduped: true })
+          }
+        }
+
         let clienteId: string | null = null
         if (remotoNumero && remotoNumero.length >= 8) {
           const { data: cliente } = await supabase
