@@ -165,9 +165,13 @@ export async function POST(request: NextRequest) {
         // Última tentativa: Evolution v2 também aceita o jid completo
         if (!numClean && numero) numClean = String(numero)
         if (!numClean) return NextResponse.json({ error: 'Número de destino inválido' }, { status: 400 })
+        // Envia em ambos formatos: `text` (Evolution v2) e
+        // `textMessage.text` (Evolution v1) — servidores aceitam um e
+        // ignoram o outro. Evita 400 "instance requires property textMessage".
         const r = await evoFetch(evo_url, api_key, `/message/sendText/${instance}`, 'POST', {
           number: numClean,
           text: mensagem,
+          textMessage: { text: mensagem },
         })
         if (!r.ok) {
           console.error('[wpp:enviar] falha', { instance, numero, numClean, status: r.status, data: r.data })
