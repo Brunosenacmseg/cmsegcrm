@@ -83,7 +83,7 @@ export default function MetasPage() {
     setProfile(prof)
     const ids = await getVisibleUserIds()
     setVisibleIds(ids)
-    let q = supabase.from('users').select('id,nome,role').order('nome')
+    let q = supabase.from('users').select('id,nome,role,email').order('nome')
     if (ids) q = q.in('id', ids)
     const { data: usr } = await q
     setUsuarios(usr || [])
@@ -97,32 +97,34 @@ export default function MetasPage() {
 
   async function carregarMetas(prof = profile, ids: string[] | null = visibleIds) {
     let q = supabase
-      .from('metas')
-      .select('*, users!metas_user_id_fkey(id,nome,role), users!metas_criado_por_fkey(id,nome)')
-      .eq('status', 'ativa')
-      .order('periodo_fim', { ascending: true })
+      .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
     if (prof?.role === 'corretor') {
       q = q.eq('user_id', prof.id)
     } else if (ids) {
       q = q.in('user_id', ids)
     }
-    const { data, error } = await q
-    let metasArr: any[] = []
-    if (error) {
-      console.error('[metas] erro ao carregar com JOIN:', error)
-      // Fallback: query simples sem JOIN, mapeia user_id/criado_por aos nomes via state.usuarios
-      const { data: simples } = await supabase
-        .from('metas').select('*').eq('status', 'ativa').order('periodo_fim', { ascending: true })
-      const byId: Record<string, any> = {}
-      for (const u of usuarios) byId[u.id] = u
-      metasArr = (simples || []).map((m: any) => ({
-        ...m,
-        'users!metas_user_id_fkey': byId[m.user_id] ? { id: m.user_id, nome: byId[m.user_id].nome, role: byId[m.user_id].role } : null,
-        'users!metas_criado_por_fkey': byId[m.criado_por] ? { id: m.criado_por, nome: byId[m.criado_por].nome } : null,
-      }))
-    } else {
-      metasArr = data || []
+    const { data: metasRaw } = await q
+    const metasList = (metasRaw || []) as any[]
+
+    // Resolve nomes de TODOS os user_ids referenciados (user_id e criado_por),
+    // não dependendo apenas do state usuarios (que pode estar incompleto via RLS).
+    const refIds = Array.from(new Set(
+      metasList.flatMap(m => [m.user_id, m.criado_por]).filter(Boolean)
+    ))
+    let nameMap: Record<string, { id: string; nome: string; role?: string }> = {}
+    for (const u of usuarios) nameMap[u.id] = { id: u.id, nome: u.nome, role: u.role }
+    const faltam = refIds.filter(id => !nameMap[id])
+    if (faltam.length) {
+      const { data: extra } = await supabase.from('users').select('id, nome, role, email').in('id', faltam)
+      for (const u of (extra || []) as any[]) {
+        nameMap[u.id] = { id: u.id, nome: u.nome || u.email || `Usuário ${u.id.slice(0, 6)}`, role: u.role }
+      }
     }
+    const metasArr = metasList.map(m => ({
+      ...m,
+      'users!metas_user_id_fkey': nameMap[m.user_id] || null,
+      'users!metas_criado_por_fkey': nameMap[m.criado_por] || null,
+    }))
     setMetas(metasArr)
     // Carrega vendas ganhas no mes atual por vendedor (independente de meta)
     const hoje = new Date()
@@ -282,7 +284,7 @@ export default function MetasPage() {
             {usuarios
               .filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id))
               .map(u => (
-              <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'Open Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{u.nome.split(' ')[0]}</button>
+              <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'Open Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{(u.nome || u.email || 'Usuário').split(' ')[0]}</button>
             ))}
           </div>
         )}
@@ -351,9 +353,9 @@ export default function MetasPage() {
               {ranking.map((u, i) => (
                 <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', borderRadius: 10, background: i === 0 ? 'rgba(201,168,76,0.08)' : 'transparent', border: i === 0 ? '1px solid rgba(201,168,76,0.2)' : '1px solid transparent' }}>
                   <div style={{ fontSize: 18, width: 28, textAlign: 'center', flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</div>
-                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg,${roleCor[u.role] || 'var(--teal)'},var(--navy))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{u.nome.slice(0, 2).toUpperCase()}</div>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg,${roleCor[u.role] || 'var(--teal)'},var(--navy))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{(u.nome || u.email || 'US').slice(0, 2).toUpperCase()}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: u.abaixoEsperado ? 700 : 500, color: u.abaixoEsperado ? 'var(--red)' : 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nome.split(' ')[0]}</div>
+                    <div style={{ fontSize: 13, fontWeight: u.abaixoEsperado ? 700 : 500, color: u.abaixoEsperado ? 'var(--red)' : 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(u.nome || u.email || 'Usuário').split(' ')[0]}</div>
                     <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', marginTop: 4, overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 2, background: u.pct >= 100 ? 'var(--teal)' : u.abaixoEsperado ? 'var(--red)' : 'var(--gold)', width: `${Math.min(u.pct, 100)}%`, transition: 'width 0.5s' }} />
                     </div>

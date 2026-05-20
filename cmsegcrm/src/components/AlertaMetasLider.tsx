@@ -12,14 +12,20 @@ type Abaixo = {
   atual: number
 }
 
+type EquipeBloco = {
+  equipe_id: string
+  equipe_nome: string
+  esperado: number
+  atual: number
+  abaixo: Abaixo[]
+}
+
 type Dados = {
   role: string
   nomeUsuario: string
   esperadoUser: number
   atualUser: number
-  esperadoEquipe?: number
-  atualEquipe?: number
-  abaixo: Abaixo[]
+  equipes: EquipeBloco[]
 }
 
 function calcEsperado(periodoIni: string, periodoFim: string, valorMeta: number): number {
@@ -45,25 +51,22 @@ export default function AlertaMetasLider() {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: prof } = await supabase.from('users').select('id,nome,role').eq('id', user.id).single()
+      const { data: prof } = await supabase.from('users').select('id,nome,role,email').eq('id', user.id).single()
       if (!prof) return
 
       const ehLider = prof.role === 'lider' || prof.role === 'admin'
 
-      // Mês corrente para somar produção realizada
       const hoje = new Date()
       const mesIni = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10)
       const mesFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10) + 'T23:59:59'
 
-      // Metas próprias (premio) ativas + premio realizado próprio
+      // Próprias
       const { data: metasProprias } = await supabase
         .from('metas')
         .select('valor_meta, valor_atual, periodo_inicio, periodo_fim')
         .eq('status', 'ativa').eq('tipo', 'premio').eq('user_id', prof.id)
-
       const esperadoUser = (metasProprias || []).reduce(
         (s: number, m: any) => s + calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0)), 0)
-
       const { data: vendasProprias } = await supabase
         .from('negocios').select('premio')
         .eq('vendedor_id', prof.id).eq('status', 'ganho')
@@ -72,69 +75,116 @@ export default function AlertaMetasLider() {
 
       const base: Dados = {
         role: prof.role,
-        nomeUsuario: prof.nome,
+        nomeUsuario: prof.nome || prof.email || 'Usuário',
         esperadoUser,
         atualUser,
-        abaixo: [],
+        equipes: [],
       }
 
       if (ehLider) {
-        // Membros visíveis
-        let memberIds: string[] = []
-        if (prof.role === 'admin') {
-          const { data: us } = await supabase.from('users').select('id').neq('role', 'admin')
-          memberIds = (us || []).map((u: any) => u.id)
-        } else {
-          const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', user.id)
-          const eqIds = (eqs || []).map((e: any) => e.id)
-          if (eqIds.length) {
-            const { data: mems } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eqIds)
-            memberIds = (mems || []).map((m: any) => m.user_id)
+        // Equipes lideradas (admin vê todas as equipes)
+        let qEqs: any = supabase.from('equipes').select('id, nome').order('nome')
+        if (prof.role !== 'admin') qEqs = qEqs.eq('lider_id', user.id)
+        const { data: equipes } = await qEqs
+        const equipesList = (equipes || []) as any[]
+        const allEqIds = equipesList.map(e => e.id)
+
+        // Membros por equipe
+        let mems: any[] = []
+        if (allEqIds.length) {
+          const { data: m } = await supabase.from('equipe_membros').select('equipe_id, user_id').in('equipe_id', allEqIds)
+          mems = m || []
+        }
+
+        // Membros únicos
+        const allMemberIds = Array.from(new Set(mems.map(m => m.user_id)))
+
+        // Nomes
+        const nomePorUser: Record<string, string> = {}
+        if (allMemberIds.length) {
+          const { data: usersEq } = await supabase.from('users').select('id, nome, email').in('id', allMemberIds)
+          for (const u of (usersEq || []) as any[]) {
+            nomePorUser[u.id] = u.nome || u.email || `Usuário ${u.id.slice(0, 6)}`
           }
         }
 
-        if (memberIds.length) {
-          const { data: metasEq } = await supabase
-            .from('metas')
-            .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim, users!metas_user_id_fkey(nome)')
-            .eq('status', 'ativa').eq('tipo', 'premio').in('user_id', memberIds)
+        // Metas + vendas dos membros
+        const { data: metasEq } = allMemberIds.length
+          ? await supabase.from('metas')
+              .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim')
+              .eq('status', 'ativa').eq('tipo', 'premio').in('user_id', allMemberIds)
+          : { data: [] as any[] }
+        const { data: vendasEq } = allMemberIds.length
+          ? await supabase.from('negocios').select('vendedor_id, premio')
+              .in('vendedor_id', allMemberIds).eq('status', 'ganho')
+              .gte('data_fechamento', mesIni).lte('data_fechamento', mesFim)
+          : { data: [] as any[] }
 
-          const { data: vendasEq } = await supabase
-            .from('negocios').select('vendedor_id, premio')
-            .in('vendedor_id', memberIds).eq('status', 'ganho')
-            .gte('data_fechamento', mesIni).lte('data_fechamento', mesFim)
+        const realizadoPorUser: Record<string, number> = {}
+        for (const v of (vendasEq || []) as any[]) {
+          if (!v.vendedor_id) continue
+          realizadoPorUser[v.vendedor_id] = (realizadoPorUser[v.vendedor_id] || 0) + Number(v.premio || 0)
+        }
+        const esperadoPorUser: Record<string, { esperado: number; meta: number }> = {}
+        for (const m of (metasEq || []) as any[]) {
+          const e = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
+          const entry = esperadoPorUser[m.user_id] || { esperado: 0, meta: 0 }
+          entry.esperado += e
+          entry.meta += Number(m.valor_meta || 0)
+          esperadoPorUser[m.user_id] = entry
+        }
 
-          const realizadoPorUser: Record<string, number> = {}
-          for (const v of (vendasEq || []) as any[]) {
-            if (!v.vendedor_id) continue
-            realizadoPorUser[v.vendedor_id] = (realizadoPorUser[v.vendedor_id] || 0) + Number(v.premio || 0)
-          }
-
-          const esperadoPorUser: Record<string, { nome: string; esperado: number; meta: number }> = {}
-          for (const m of (metasEq || []) as any[]) {
-            const e = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
-            const entry = esperadoPorUser[m.user_id] || {
-              nome: m['users!metas_user_id_fkey']?.nome || 'Sem nome', esperado: 0, meta: 0,
+        // Para admin, bloco extra "Sem equipe" para usuários com meta/produção fora de qualquer equipe
+        if (prof.role === 'admin') {
+          const { data: allUsers } = await supabase.from('users').select('id, nome, email').neq('role', 'admin')
+          const usersInEquipe = new Set(mems.map(m => m.user_id))
+          const semEquipe = (allUsers || []).filter((u: any) => !usersInEquipe.has(u.id))
+          if (semEquipe.length) {
+            const semEqIds = semEquipe.map((u: any) => u.id)
+            for (const u of semEquipe) nomePorUser[u.id] = u.nome || u.email || `Usuário ${u.id.slice(0, 6)}`
+            const { data: metasSE } = await supabase.from('metas')
+              .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim')
+              .eq('status', 'ativa').eq('tipo', 'premio').in('user_id', semEqIds)
+            for (const m of (metasSE || []) as any[]) {
+              const e = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
+              const entry = esperadoPorUser[m.user_id] || { esperado: 0, meta: 0 }
+              entry.esperado += e
+              entry.meta += Number(m.valor_meta || 0)
+              esperadoPorUser[m.user_id] = entry
             }
-            entry.esperado += e
-            entry.meta += Number(m.valor_meta || 0)
-            esperadoPorUser[m.user_id] = entry
+            const { data: vendasSE } = await supabase.from('negocios').select('vendedor_id, premio')
+              .in('vendedor_id', semEqIds).eq('status', 'ganho')
+              .gte('data_fechamento', mesIni).lte('data_fechamento', mesFim)
+            for (const v of (vendasSE || []) as any[]) {
+              if (!v.vendedor_id) continue
+              realizadoPorUser[v.vendedor_id] = (realizadoPorUser[v.vendedor_id] || 0) + Number(v.premio || 0)
+            }
+            // adiciona equipe virtual
+            equipesList.push({ id: '__sem_equipe__', nome: 'Sem equipe' })
+            for (const u of semEquipe) mems.push({ equipe_id: '__sem_equipe__', user_id: u.id })
           }
+        }
 
-          const esperadoEquipe = Object.values(esperadoPorUser).reduce((s, x) => s + x.esperado, 0)
-          const atualEquipe = Object.values(realizadoPorUser).reduce((s, x) => s + x, 0)
-          base.esperadoEquipe = esperadoEquipe
-          base.atualEquipe = atualEquipe
-
+        // Bloco por equipe
+        for (const eq of equipesList) {
+          const membros = mems.filter(m => m.equipe_id === eq.id).map(m => m.user_id)
+          let esperadoTot = 0, atualTot = 0
           const abaixo: Abaixo[] = []
-          for (const [uid, info] of Object.entries(esperadoPorUser)) {
+          for (const uid of membros) {
+            const e = esperadoPorUser[uid]?.esperado || 0
+            const meta = esperadoPorUser[uid]?.meta || 0
             const atual = realizadoPorUser[uid] || 0
-            if (atual < info.esperado) {
-              abaixo.push({ user_id: uid, nome: info.nome, meta: info.meta, esperado: info.esperado, atual })
+            esperadoTot += e
+            atualTot += atual
+            if (e > 0 && atual < e) {
+              abaixo.push({ user_id: uid, nome: nomePorUser[uid] || 'Sem nome', meta, esperado: e, atual })
             }
           }
           abaixo.sort((a, b) => (b.esperado - b.atual) - (a.esperado - a.atual))
-          base.abaixo = abaixo
+          base.equipes.push({
+            equipe_id: eq.id, equipe_nome: eq.nome,
+            esperado: esperadoTot, atual: atualTot, abaixo,
+          })
         }
       }
 
@@ -153,9 +203,6 @@ export default function AlertaMetasLider() {
   const diffUser = dados.esperadoUser - dados.atualUser
   const userAbaixo = diffUser > 0 && dados.esperadoUser > 0
   const ehLider = dados.role === 'lider' || dados.role === 'admin'
-  const diffEquipe = ehLider && dados.esperadoEquipe !== undefined && dados.atualEquipe !== undefined
-    ? dados.esperadoEquipe - dados.atualEquipe : 0
-  const equipeAbaixo = ehLider && diffEquipe > 0 && (dados.esperadoEquipe || 0) > 0
 
   return (
     <div style={{
@@ -164,7 +211,7 @@ export default function AlertaMetasLider() {
     }}>
       <div style={{
         background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14,
-        width: 'min(640px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 28,
+        width: 'min(680px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 28,
         fontFamily: 'Open Sans, sans-serif', boxShadow: 'var(--shadow-lg)',
       }}>
         <div style={{ fontSize: 30, marginBottom: 6 }}>🎯</div>
@@ -191,51 +238,56 @@ export default function AlertaMetasLider() {
           )}
         </div>
 
-        {ehLider && dados.esperadoEquipe !== undefined && (
-          <div style={{
-            border: `1px solid ${equipeAbaixo ? 'rgba(224,82,82,0.35)' : 'var(--border)'}`,
-            borderRadius: 10, padding: '14px 16px', marginBottom: 14,
-            background: equipeAbaixo ? 'rgba(224,82,82,0.06)' : 'var(--bg-soft)',
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--gold)' }}>👥 Equipe</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Meta esperada da equipe até hoje:</div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>{fmt(dados.esperadoEquipe)}</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Produção da equipe até hoje:</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: equipeAbaixo ? 'var(--red)' : 'var(--teal)' }}>{fmt(dados.atualEquipe || 0)}</div>
-            {equipeAbaixo && (
-              <div style={{ marginTop: 8, fontSize: 13, color: 'var(--red)', fontWeight: 600 }}>
-                ⚠️ Equipe está {fmt(diffEquipe)} abaixo do esperado.
+        {ehLider && dados.equipes.map(eq => {
+          const diffEq = eq.esperado - eq.atual
+          const eqAbaixo = diffEq > 0 && eq.esperado > 0
+          return (
+            <div key={eq.equipe_id} style={{
+              border: `1px solid ${eqAbaixo ? 'rgba(224,82,82,0.35)' : 'var(--border)'}`,
+              borderRadius: 10, padding: '14px 16px', marginBottom: 14,
+              background: eqAbaixo ? 'rgba(224,82,82,0.06)' : 'var(--bg-soft)',
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: 'var(--gold)' }}>
+                👥 {eq.equipe_nome}
               </div>
-            )}
-          </div>
-        )}
-
-        {ehLider && dados.abaixo.length > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
-              VENDEDORES ABAIXO DA META:
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {dados.abaixo.map(v => (
-                <div key={v.user_id} style={{
-                  border: '1px solid rgba(224,82,82,0.35)', borderRadius: 8,
-                  padding: '10px 12px', background: 'rgba(224,82,82,0.06)',
-                }}>
-                  <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                    {v.nome}
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Meta esperada da equipe até hoje:</div>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>{fmt(eq.esperado)}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Produção da equipe até hoje:</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: eqAbaixo ? 'var(--red)' : 'var(--teal)' }}>{fmt(eq.atual)}</div>
+              {eqAbaixo && (
+                <div style={{ marginTop: 8, fontSize: 13, color: 'var(--red)', fontWeight: 600 }}>
+                  ⚠️ Equipe está {fmt(diffEq)} abaixo do esperado.
+                </div>
+              )}
+              {eq.abaixo.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+                    VENDEDORES ABAIXO DA META:
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Esperado: <strong>{fmt(v.esperado)}</strong> · Realizado:{' '}
-                    <strong style={{ color: 'var(--red)' }}>{fmt(v.atual)}</strong> ·{' '}
-                    <span style={{ color: 'var(--red)', fontWeight: 700 }}>
-                      Abaixo em {fmt(v.esperado - v.atual)}
-                    </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {eq.abaixo.map(v => (
+                      <div key={v.user_id} style={{
+                        border: '1px solid rgba(224,82,82,0.35)', borderRadius: 8,
+                        padding: '8px 10px', background: 'rgba(224,82,82,0.06)',
+                      }}>
+                        <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: 13, marginBottom: 2 }}>
+                          {v.nome}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Esperado: <strong>{fmt(v.esperado)}</strong> · Realizado:{' '}
+                          <strong style={{ color: 'var(--red)' }}>{fmt(v.atual)}</strong> ·{' '}
+                          <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                            Abaixo em {fmt(v.esperado - v.atual)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-        )}
+          )
+        })}
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
           <button onClick={fechar} style={{
