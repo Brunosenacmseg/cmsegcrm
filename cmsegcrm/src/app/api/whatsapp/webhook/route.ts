@@ -404,22 +404,42 @@ export async function POST(request: NextRequest) {
               }))
               const resposta = await chamarChatGPT({
                 modelo: agente.modelo,
-                systemPrompt: agente.base_conhecimento
+                systemPrompt: (agente.base_conhecimento
                   ? `${agente.system_prompt}\n\n=== BASE DE CONHECIMENTO ===\n${agente.base_conhecimento}`
-                  : agente.system_prompt,
+                  : agente.system_prompt) +
+`\n\n=== INTERVENÇÃO HUMANA ===\nSe o cliente pedir explicitamente para falar com um humano/atendente, se a pergunta exigir uma decisão fora do seu escopo, se houver reclamação séria, ou se você não conseguir ajudar com segurança, responda APENAS com o token exato: [INTERVENCAO_HUMANA]\nNada mais. Sem explicações, sem despedida, sem texto adicional. Esse token NÃO será enviado ao cliente — apenas alerta o time interno.`,
                 mensagem: entradaIA,
                 historico,
                 maxTokens: agente.max_tokens || 1024,
                 temperatura: Number(agente.temperatura) || 0.7,
               })
               if (resposta) {
-                await enviarRespostaEvo(inst.evolution_url, inst.api_key, inst.nome, remotoJid, resposta)
-                await supabase.from('whatsapp_mensagens').insert({
-                  instancia_id: inst.id, cliente_id: clienteId,
-                  remoto_jid: remotoJid, remoto_numero: remotoNumero || null,
-                  remoto_nome: pushName, conteudo: resposta, tipo: 'text',
-                  direcao: 'enviada', lida: true,
-                })
+                const pedeIntervencao = /\[INTERVENCAO_HUMANA\]/i.test(resposta)
+                if (pedeIntervencao) {
+                  // Não envia mensagem ao cliente. Registra aviso interno e pausa o agente.
+                  await supabase.from('whatsapp_mensagens').insert({
+                    instancia_id: inst.id, cliente_id: clienteId,
+                    remoto_jid: remotoJid, remoto_numero: remotoNumero || null,
+                    remoto_nome: pushName, conteudo: '🚨 SOLICITADO INTERVENÇÃO HUMANA',
+                    tipo: 'sistema', direcao: 'enviada', lida: false,
+                  })
+                  await supabase.from('whatsapp_conversa_agentes').upsert({
+                    instancia_id: inst.id,
+                    remoto_jid: remotoJid,
+                    agente_id: agenteId,
+                    agente_ativo: false,
+                    intervencao_solicitada: true,
+                    intervencao_solicitada_em: new Date().toISOString(),
+                  }, { onConflict: 'instancia_id,remoto_jid' })
+                } else {
+                  await enviarRespostaEvo(inst.evolution_url, inst.api_key, inst.nome, remotoJid, resposta)
+                  await supabase.from('whatsapp_mensagens').insert({
+                    instancia_id: inst.id, cliente_id: clienteId,
+                    remoto_jid: remotoJid, remoto_numero: remotoNumero || null,
+                    remoto_nome: pushName, conteudo: resposta, tipo: 'text',
+                    direcao: 'enviada', lida: true,
+                  })
+                }
               }
             }
           } catch (e) {
