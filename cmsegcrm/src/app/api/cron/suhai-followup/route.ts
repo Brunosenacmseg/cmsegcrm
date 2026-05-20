@@ -64,9 +64,21 @@ interface ContextoLead {
   primeiroNome: string
 }
 
+// Converte "ALICE BONACCORSI DE SENA" → "Alice Bonaccorsi de Sena".
+// Mantém preposições/artigos curtos em minúsculo (de, da, do, dos, e).
+function tituloCase(s: string): string {
+  const minusculas = new Set(['de','da','do','das','dos','e','di','du','del','la'])
+  return s.toLowerCase().split(/(\s+)/).map((w, i) => {
+    if (/^\s+$/.test(w)) return w
+    if (i > 0 && minusculas.has(w)) return w
+    return w.charAt(0).toUpperCase() + w.slice(1)
+  }).join('')
+}
+
 function primeiroNomeDe(nome: string | null | undefined): string {
   if (!nome) return ''
-  return String(nome).trim().split(/\s+/)[0] || ''
+  const primeiro = String(nome).trim().split(/\s+/)[0] || ''
+  return tituloCase(primeiro)
 }
 
 // Substitui placeholders {{nome}}, {{tentativa_n}}, {{total_tentativas}}, {{tipo_tentativa}}.
@@ -119,7 +131,7 @@ async function carregarContextoCard(negocio: any): Promise<{ nome: string; jid: 
     if (!telefone && cli?.telefone) telefone = cli.telefone
   }
   if (!nome) nome = (negocio.titulo as string) || ''
-  return { nome, jid: numeroParaJid(telefone) }
+  return { nome: tituloCase(nome), jid: numeroParaJid(telefone) }
 }
 
 async function criarTarefaSemWhatsApp(negocioId: string, vendedorId: string | null, nomeCliente: string, nomeFluxo: string) {
