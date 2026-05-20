@@ -134,6 +134,37 @@ export default function AlertaMetasLider() {
           esperadoPorUser[m.user_id] = entry
         }
 
+        // Para admin, bloco extra "Sem equipe" para usuários com meta/produção fora de qualquer equipe
+        if (prof.role === 'admin') {
+          const { data: allUsers } = await supabase.from('users').select('id, nome, email').neq('role', 'admin')
+          const usersInEquipe = new Set(mems.map(m => m.user_id))
+          const semEquipe = (allUsers || []).filter((u: any) => !usersInEquipe.has(u.id))
+          if (semEquipe.length) {
+            const semEqIds = semEquipe.map((u: any) => u.id)
+            for (const u of semEquipe) nomePorUser[u.id] = u.nome || u.email || `Usuário ${u.id.slice(0, 6)}`
+            const { data: metasSE } = await supabase.from('metas')
+              .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim')
+              .eq('status', 'ativa').eq('tipo', 'premio').in('user_id', semEqIds)
+            for (const m of (metasSE || []) as any[]) {
+              const e = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
+              const entry = esperadoPorUser[m.user_id] || { esperado: 0, meta: 0 }
+              entry.esperado += e
+              entry.meta += Number(m.valor_meta || 0)
+              esperadoPorUser[m.user_id] = entry
+            }
+            const { data: vendasSE } = await supabase.from('negocios').select('vendedor_id, premio')
+              .in('vendedor_id', semEqIds).eq('status', 'ganho')
+              .gte('data_fechamento', mesIni).lte('data_fechamento', mesFim)
+            for (const v of (vendasSE || []) as any[]) {
+              if (!v.vendedor_id) continue
+              realizadoPorUser[v.vendedor_id] = (realizadoPorUser[v.vendedor_id] || 0) + Number(v.premio || 0)
+            }
+            // adiciona equipe virtual
+            equipesList.push({ id: '__sem_equipe__', nome: 'Sem equipe' })
+            for (const u of semEquipe) mems.push({ equipe_id: '__sem_equipe__', user_id: u.id })
+          }
+        }
+
         // Bloco por equipe
         for (const eq of equipesList) {
           const membros = mems.filter(m => m.equipe_id === eq.id).map(m => m.user_id)

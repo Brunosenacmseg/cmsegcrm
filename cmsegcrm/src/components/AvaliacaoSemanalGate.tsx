@@ -22,8 +22,10 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { if (!cancelled) setEstado('ok'); return }
-        const { data: prof } = await supabase.from('users').select('id, role').eq('id', user.id).single()
-        if (!prof || prof.role !== 'lider') { if (!cancelled) setEstado('ok'); return }
+        const { data: prof } = await supabase.from('users').select('id, role, email').eq('id', user.id).single()
+        const ehGiovanna = prof?.email === 'giovanna@cmseguros.com.br'
+        const ehLider = prof?.role === 'lider'
+        if (!prof || (!ehLider && !ehGiovanna)) { if (!cancelled) setEstado('ok'); return }
 
         const hoje = new Date()
         // Só ativa nas quintas-feiras (0=domingo, 4=quinta)
@@ -35,14 +37,21 @@ export default function AvaliacaoSemanalGate({ children }: { children: React.Rea
         const segunda = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - offsetSegunda)
         const segundaStr = segunda.toISOString().slice(0, 10)
 
-        // Equipes lideradas
-        const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', user.id)
-        const eqIds = (eqs || []).map((e: any) => e.id)
-        if (!eqIds.length) { if (!cancelled) setEstado('ok'); return }
-
-        // Membros únicos
-        const { data: mems } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eqIds)
-        const memberIds = Array.from(new Set((mems || []).map((m: any) => m.user_id)))
+        // Lista de colaboradores que este usuário precisa avaliar.
+        // - Líder: membros das equipes que ele lidera
+        // - Giovanna: todos os usuários com role='lider'
+        let memberIds: string[] = []
+        if (ehLider) {
+          const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', user.id)
+          const eqIds = (eqs || []).map((e: any) => e.id)
+          if (eqIds.length) {
+            const { data: mems } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eqIds)
+            memberIds = Array.from(new Set((mems || []).map((m: any) => m.user_id)))
+          }
+        } else if (ehGiovanna) {
+          const { data: lideres } = await supabase.from('users').select('id').eq('role', 'lider')
+          memberIds = (lideres || []).map((u: any) => u.id)
+        }
         if (!memberIds.length) { if (!cancelled) setEstado('ok'); return }
 
         // Avaliações da semana feitas pelo líder
