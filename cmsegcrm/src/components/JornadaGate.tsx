@@ -50,13 +50,11 @@ export default function JornadaGate({ children, userId }: { children: React.Reac
     return () => { cancelled = true; clearTimeout(fallback) }
   }, [userId])
 
-  // Redireciona quem não iniciou jornada e tenta ir para outras rotas
+  // Auto-inicia a jornada do dia silenciosamente quando ainda não existe.
   useEffect(() => {
-    if (iniciada === null) return
-    if (!iniciada && pathname && !pathname.startsWith('/dashboard/mural') && pathname.startsWith('/dashboard')) {
-      router.replace('/dashboard/mural')
-    }
-  }, [iniciada, pathname, router])
+    if (iniciada !== false || iniciando) return
+    iniciar()
+  }, [iniciada])
 
   // Logoff automático à meia-noite local
   useEffect(() => {
@@ -108,34 +106,6 @@ export default function JornadaGate({ children, userId }: { children: React.Reac
     }
   }
 
-  if (iniciada === null) {
-    return <div style={{padding:40,textAlign:'center',color:'var(--text-muted)'}}>Carregando…</div>
-  }
-
-  // Banner em cima do mural quando jornada não iniciada
-  if (!iniciada && pathname?.startsWith('/dashboard/mural')) {
-    return (
-      <>
-        <div style={{padding:'32px 24px',maxWidth:720,margin:'24px auto 0',background:'#fff',border:'1px solid var(--border-soft)',borderRadius:14,boxShadow:'var(--shadow-md)',textAlign:'center'}}>
-          <div style={{fontSize:42,marginBottom:10}}>⏱️</div>
-          <h2 style={{fontFamily:'DM Serif Display,serif',fontSize:22,color:'var(--text)',marginBottom:18}}>Bom dia! Vamos começar?</h2>
-          <button onClick={iniciar} disabled={iniciando}
-            style={{background:'var(--teal)',color:'#fff',border:'none',padding:'12px 28px',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer',opacity:iniciando?0.6:1}}>
-            {iniciando ? 'Registrando…' : '▶ Iniciar trabalho'}
-          </button>
-          {erro && <div style={{marginTop:10,color:'var(--red)',fontSize:12}}>{erro}</div>}
-        </div>
-        <div style={{opacity:0.35,pointerEvents:'none',marginTop:24}}>
-          {children}
-        </div>
-      </>
-    )
-  }
-
-  // Caso fora do mural sem jornada, o effect já redireciona
-  if (!iniciada) {
-    return <div style={{padding:40,textAlign:'center',color:'var(--text-muted)'}}>Redirecionando para iniciar a jornada…</div>
-  }
-
+  // A jornada é iniciada automaticamente em background; não bloqueia mais a UI.
   return <>{children}</>
 }

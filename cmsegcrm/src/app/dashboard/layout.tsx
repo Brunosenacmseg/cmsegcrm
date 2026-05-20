@@ -8,6 +8,7 @@ import CelebracaoVenda from '@/components/CelebracaoVenda'
 import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 import BoasVindasLider from '@/components/BoasVindasLider'
+import AlertaMetasLider from '@/components/AlertaMetasLider'
 import CommandPalette from '@/components/CommandPalette'
 import { ToastProvider, ConfirmProvider } from '@/components/Toast'
 import { registrarLog } from '@/lib/logs'
@@ -626,6 +627,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <CelebracaoVenda />
       <MetaPixel />
       <BoasVindasLider visivel={profile?.role === 'lider' && pathname !== '/dashboard/gestao-equipe'} />
+      <AlertaMetasLider />
 
       {/* Toasts de tarefas vencendo agora */}
       {toasts.length > 0 && (
