@@ -21,10 +21,11 @@ const BUCKET = 'cmsegcrm'
 async function enviarRespostaEvo(evo_url: string, api_key: string, instance: string, jid: string, texto: string) {
   try {
     const url = `${evo_url.replace(/\/$/,'')}/message/sendText/${instance}`
+    const numero = String(jid || '').split('@')[0].replace(/\D/g, '')
     await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': api_key },
-      body: JSON.stringify({ number: jid, text: texto }),
+      body: JSON.stringify({ number: numero || jid, text: texto }),
     })
   } catch (e) {
     console.error('[WhatsApp] erro ao enviar resposta IA:', e)

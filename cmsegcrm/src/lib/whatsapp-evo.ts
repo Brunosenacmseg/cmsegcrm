@@ -22,10 +22,13 @@ export async function enviarTextoEvo(cfg: EvoConfig, jid: string, texto: string)
 // quando quem chama precisa gravar o motivo concreto da falha.
 export async function enviarTextoEvoDetalhado(cfg: EvoConfig, jid: string, texto: string): Promise<{ ok: boolean; status?: number; body?: string; erro?: string }> {
   try {
+    // Evolution rejeita o JID completo no campo `number` em algumas
+    // versões — manda só os dígitos (DDI+DDD+número).
+    const numero = String(jid || '').split('@')[0].replace(/\D/g, '')
     const res = await fetch(`${urlBase(cfg)}/message/sendText/${cfg.instance}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': cfg.api_key },
-      body: JSON.stringify({ number: jid, text: texto }),
+      body: JSON.stringify({ number: numero || jid, text: texto }),
       signal: AbortSignal.timeout(20_000),
     })
     if (!res.ok) {
