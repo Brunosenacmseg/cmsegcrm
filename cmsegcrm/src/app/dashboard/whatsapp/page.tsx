@@ -186,6 +186,15 @@ export default function WhatsAppPage() {
     ;(data || []).forEach((m: any) => {
       if (!map[m.remoto_jid]) map[m.remoto_jid] = { ...m, nao_lidas: 0 }
       if (!m.lida && m.direcao === 'recebida') map[m.remoto_jid].nao_lidas++
+      // Nome do contato vem só de mensagens recebidas (em enviadas seria
+      // o nome do operador). Preferimos o nome mais recente recebido.
+      if (m.direcao === 'recebida' && m.remoto_nome && !map[m.remoto_jid].__nomeRecebido) {
+        map[m.remoto_jid].remoto_nome = m.remoto_nome
+        map[m.remoto_jid].__nomeRecebido = true
+      }
+      if (m.remoto_numero && !map[m.remoto_jid].remoto_numero) {
+        map[m.remoto_jid].remoto_numero = m.remoto_numero
+      }
     })
     setConversas(Object.values(map))
     const { data: cfgs } = await supabase
