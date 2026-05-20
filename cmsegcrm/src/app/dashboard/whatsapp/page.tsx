@@ -476,14 +476,48 @@ export default function WhatsAppPage() {
     if (c.telefone) setNovoNumero(c.telefone.replace(/\D/g,''))
   }
 
+  // Normaliza um telefone brasileiro para o formato E.164 sem o '+': 55 + DDD + número.
+  // Aceita entradas como "11978222350" (11 dígitos), "(11) 97822-2350", "5511978222350".
+  function normalizarTelefoneBR(entrada: string): string {
+    let d = (entrada || '').replace(/\D/g, '')
+    if (d.startsWith('00')) d = d.slice(2)
+    if ((d.length === 10 || d.length === 11) && !d.startsWith('55')) d = '55' + d
+    return d
+  }
+
   async function iniciarNovaConversa() {
     if (!novoNumero.trim() || !instancia) { alert('Informe o número'); return }
     setIniciando(true)
-    const numeroLimpo = novoNumero.replace(/\D/g,'')
+    const numeroLimpo = normalizarTelefoneBR(novoNumero)
+    if (numeroLimpo.length < 12 || numeroLimpo.length > 13) {
+      alert('Número inválido. Use DDD + número (ex: 11978222350) ou 55 + DDD + número.')
+      setIniciando(false); return
+    }
     const jid = `${numeroLimpo}@s.whatsapp.net`
-    const existente = conversas.find(c => c.remoto_jid===jid||c.remoto_numero===numeroLimpo)
+    const existente = conversas.find(c => {
+      if (c.remoto_jid === jid) return true
+      const num = (c.remoto_numero || '').replace(/\D/g,'')
+      return num === numeroLimpo || normalizarTelefoneBR(num) === numeroLimpo
+    })
     if (existente) { setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); await selecionarConversa(existente); setIniciando(false); return }
-    const novaConv = { remoto_jid:jid, remoto_numero:numeroLimpo, remoto_nome:clienteNovaConversa?.nome||novaNomeBusca||numeroLimpo, cliente_id:clienteNovaConversa?.id||null, clientes:clienteNovaConversa?{nome:clienteNovaConversa.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
+
+    // Se o usuário não selecionou um cliente da busca, tenta localizar
+    // automaticamente pelo telefone digitado (compara só os dígitos finais).
+    let clienteVinculado = clienteNovaConversa
+    if (!clienteVinculado) {
+      const ddNum = numeroLimpo.slice(-11)
+      const { data: candidatos } = await supabase
+        .from('clientes')
+        .select('id,nome,telefone')
+        .ilike('telefone', `%${ddNum.slice(-9)}%`)
+        .limit(10)
+      clienteVinculado = (candidatos || []).find((c: any) => {
+        const t = (c.telefone || '').replace(/\D/g,'')
+        return t.endsWith(ddNum) || ddNum.endsWith(t.slice(-10))
+      }) || null
+    }
+
+    const novaConv = { remoto_jid:jid, remoto_numero:numeroLimpo, remoto_nome:clienteVinculado?.nome||novaNomeBusca||numeroLimpo, cliente_id:clienteVinculado?.id||null, clientes:clienteVinculado?{nome:clienteVinculado.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
     setConversas(prev=>[novaConv,...prev]); setConversa(novaConv); setMensagens([])
     setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); setIniciando(false)
   }
@@ -845,8 +879,8 @@ export default function WhatsAppPage() {
             )}
             <div style={{marginBottom:20}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Número do WhatsApp *</label>
-              <input value={novoNumero} onChange={e=>setNovoNumero(e.target.value)} placeholder="5511999999999" style={inp} />
-              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Formato: 55 + DDD + número</div>
+              <input value={novoNumero} onChange={e=>setNovoNumero(e.target.value)} placeholder="11978222350" style={inp} />
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Aceita DDD + número (ex: 11978222350) ou com 55 na frente. Se o número estiver cadastrado em um cliente, o vínculo é feito automaticamente.</div>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn-secondary" onClick={()=>setModalNovaConversa(false)}>Cancelar</button>
