@@ -9,6 +9,7 @@ import MetaPixel from '@/components/MetaPixel'
 import Avatar from '@/components/Avatar'
 import BoasVindasLider from '@/components/BoasVindasLider'
 import AlertaMetasLider from '@/components/AlertaMetasLider'
+import AvaliacaoSemanalGate from '@/components/AvaliacaoSemanalGate'
 import CommandPalette from '@/components/CommandPalette'
 import { ToastProvider, ConfirmProvider } from '@/components/Toast'
 import { registrarLog } from '@/lib/logs'
@@ -620,7 +621,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 
       <main className="cm-main" style={{flex:1,minWidth:0,maxWidth:'100vw',display:'flex',flexDirection:'column',position:'relative',zIndex:1}} onClick={()=>{setShowNotif(false);setShowGear(false)}}>
-        <JornadaGate userId={user?.id || null}>{children}</JornadaGate>
+        <JornadaGate userId={user?.id || null}><AvaliacaoSemanalGate>{children}</AvaliacaoSemanalGate></JornadaGate>
       </main>
 
       <ChatIA />

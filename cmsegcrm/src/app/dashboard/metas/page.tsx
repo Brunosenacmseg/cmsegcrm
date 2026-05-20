@@ -83,7 +83,7 @@ export default function MetasPage() {
     setProfile(prof)
     const ids = await getVisibleUserIds()
     setVisibleIds(ids)
-    let q = supabase.from('users').select('id,nome,role').order('nome')
+    let q = supabase.from('users').select('id,nome,role,email').order('nome')
     if (ids) q = q.in('id', ids)
     const { data: usr } = await q
     setUsuarios(usr || [])
@@ -282,7 +282,7 @@ export default function MetasPage() {
             {usuarios
               .filter(u => filtroEquipe === 'todos' || (equipeMembros[filtroEquipe] || []).includes(u.id))
               .map(u => (
-              <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'Open Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{u.nome.split(' ')[0]}</button>
+              <button key={u.id} onClick={() => setFiltroUser(u.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', fontFamily: 'Open Sans,sans-serif', background: filtroUser === u.id ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.04)', color: filtroUser === u.id ? 'var(--gold)' : 'var(--text-muted)', borderColor: filtroUser === u.id ? 'var(--gold)' : 'var(--border)' }}>{(u.nome || u.email || 'Usuário').split(' ')[0]}</button>
             ))}
           </div>
         )}
@@ -351,9 +351,9 @@ export default function MetasPage() {
               {ranking.map((u, i) => (
                 <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', borderRadius: 10, background: i === 0 ? 'rgba(201,168,76,0.08)' : 'transparent', border: i === 0 ? '1px solid rgba(201,168,76,0.2)' : '1px solid transparent' }}>
                   <div style={{ fontSize: 18, width: 28, textAlign: 'center', flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</div>
-                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg,${roleCor[u.role] || 'var(--teal)'},var(--navy))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{u.nome.slice(0, 2).toUpperCase()}</div>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg,${roleCor[u.role] || 'var(--teal)'},var(--navy))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{(u.nome || u.email || 'US').slice(0, 2).toUpperCase()}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: u.abaixoEsperado ? 700 : 500, color: u.abaixoEsperado ? 'var(--red)' : 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nome.split(' ')[0]}</div>
+                    <div style={{ fontSize: 13, fontWeight: u.abaixoEsperado ? 700 : 500, color: u.abaixoEsperado ? 'var(--red)' : 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(u.nome || u.email || 'Usuário').split(' ')[0]}</div>
                     <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', marginTop: 4, overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 2, background: u.pct >= 100 ? 'var(--teal)' : u.abaixoEsperado ? 'var(--red)' : 'var(--gold)', width: `${Math.min(u.pct, 100)}%`, transition: 'width 0.5s' }} />
                     </div>
