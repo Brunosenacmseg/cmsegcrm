@@ -319,12 +319,15 @@ export async function POST(request: NextRequest) {
             pulaInsert = true
           }
         }
+        // remoto_nome só faz sentido em mensagens RECEBIDAS — em enviadas,
+        // pushName seria o nome do operador, não do contato.
+        const nomeContato = direcaoMsg === 'recebida' ? pushName : null
         if (!pulaInsert) await supabase.from('whatsapp_mensagens').insert({
           instancia_id:   inst.id,
           cliente_id:     clienteId,
           remoto_jid:     remotoJid,
           remoto_numero:  remotoNumero || null,
-          remoto_nome:    pushName,
+          remoto_nome:    nomeContato,
           conteudo:       conteudoFinal,
           tipo:           meta.tipo,
           direcao:        direcaoMsg,
