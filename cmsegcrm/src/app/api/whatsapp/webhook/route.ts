@@ -25,7 +25,7 @@ async function enviarRespostaEvo(evo_url: string, api_key: string, instance: str
     await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': api_key },
-      body: JSON.stringify({ number: numero || jid, text: texto }),
+      body: JSON.stringify({ number: numero || jid, text: texto, textMessage: { text: texto } }),
     })
   } catch (e) {
     console.error('[WhatsApp] erro ao enviar resposta IA:', e)
