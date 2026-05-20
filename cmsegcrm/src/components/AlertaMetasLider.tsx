@@ -96,8 +96,13 @@ export default function AlertaMetasLider() {
         if (memberIds.length) {
           const { data: metasEq } = await supabase
             .from('metas')
-            .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim, users!metas_user_id_fkey(nome)')
+            .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim')
             .eq('status', 'ativa').eq('tipo', 'premio').in('user_id', memberIds)
+
+          const { data: usersEq } = await supabase
+            .from('users').select('id, nome').in('id', memberIds)
+          const nomePorUser: Record<string, string> = {}
+          for (const u of (usersEq || []) as any[]) nomePorUser[u.id] = u.nome
 
           const { data: vendasEq } = await supabase
             .from('negocios').select('vendedor_id, premio')
@@ -114,7 +119,7 @@ export default function AlertaMetasLider() {
           for (const m of (metasEq || []) as any[]) {
             const e = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
             const entry = esperadoPorUser[m.user_id] || {
-              nome: m['users!metas_user_id_fkey']?.nome || 'Sem nome', esperado: 0, meta: 0,
+              nome: nomePorUser[m.user_id] || 'Sem nome', esperado: 0, meta: 0,
             }
             entry.esperado += e
             entry.meta += Number(m.valor_meta || 0)
