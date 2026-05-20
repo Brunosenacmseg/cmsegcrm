@@ -57,8 +57,11 @@ function extrairBase64(data: any): string | null {
 function mensagemErro(r: EvoResp): string {
   const d = r.data || {}
   const m = d?.response?.message || d?.message || d?.error || d?._raw
-  if (Array.isArray(m)) return m.join(' | ')
+  if (Array.isArray(m)) return m.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' | ')
   if (typeof m === 'string') return m
+  if (m && typeof m === 'object') {
+    try { return JSON.stringify(m) } catch { /* fallthrough */ }
+  }
   return `Evolution API retornou status ${r.status}`
 }
 
@@ -136,6 +139,15 @@ export async function POST(request: NextRequest) {
       }
 
       case 'qrcode': {
+        // Se a instância já está conectada (sessão antiga), Evolution não
+        // emite QR. Força logout antes para garantir um QR fresco — caso
+        // típico de usuários que já haviam conectado outro número.
+        const estado = await evoFetch(evo_url, api_key, `/instance/connectionState/${instance}`)
+        const stateStr = String(estado.data?.instance?.state || estado.data?.state || '').toLowerCase()
+        if (stateStr === 'open' || stateStr === 'connecting') {
+          await evoFetch(evo_url, api_key, `/instance/logout/${instance}`, 'DELETE')
+          await new Promise(res => setTimeout(res, 400))
+        }
         let r = await evoFetch(evo_url, api_key, `/instance/connect/${instance}`)
         // Auto-recupera: se a instância sumiu no servidor Evolution, recria e tenta de novo
         if (instanciaInexistente(r)) {
@@ -145,6 +157,12 @@ export async function POST(request: NextRequest) {
           const base64Criar = extrairBase64(criar.data)
           if (base64Criar) return NextResponse.json({ base64: base64Criar, raw: criar.data })
           await new Promise(res => setTimeout(res, 500))
+          r = await evoFetch(evo_url, api_key, `/instance/connect/${instance}`)
+        }
+        // Fallback: connect sem base64 → tenta um logout+connect adicional
+        if (!extrairBase64(r.data) && r.ok) {
+          await evoFetch(evo_url, api_key, `/instance/logout/${instance}`, 'DELETE')
+          await new Promise(res => setTimeout(res, 400))
           r = await evoFetch(evo_url, api_key, `/instance/connect/${instance}`)
         }
         const base64 = extrairBase64(r.data)
