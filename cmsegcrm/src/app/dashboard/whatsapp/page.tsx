@@ -142,7 +142,7 @@ export default function WhatsAppPage() {
     const interval = setInterval(() => {
       verificarStatus()
       if (conversa) carregarMensagens(conversa.remoto_jid)
-      carregarIntervencoes(instancia.id)
+      carregarConversas(instancia.id)
     }, 5000)
     return () => clearInterval(interval)
   }, [instancia, conversa])
