@@ -38,6 +38,8 @@ export default function FinanceiroPage() {
   const [categorias, setCategorias]   = useState<any[]>([])
   const [despesas, setDespesas]       = useState<any[]>([])
   const [recorrentes, setRecorrentes] = useState<any[]>([])
+  const [equipes, setEquipes]         = useState<any[]>([])
+  const [filtroEquipe, setFiltroEquipe] = useState<string>('')
   const [faturamentoSeg, setFaturamentoSeg] = useState<any[]>([])
   const [dre, setDre] = useState<any>(null)
   const [acessos, setAcessos] = useState<any[]>([])
@@ -83,6 +85,7 @@ export default function FinanceiroPage() {
     forma_pagto:'PIX', condicao:'',
     fornecedor:'', obs:'',
     recorrente_id:'',
+    equipe_id:'',
     salvar_recorrente: true
   }
   const [formDespesa, setFormDespesa] = useState<any>(emptyDespesa)
@@ -95,7 +98,7 @@ export default function FinanceiroPage() {
   const emptyRecorrente = {
     descricao:'', categoria_id:'', tipo_despesa:'FIXA',
     forma_pagto:'PIX', condicao:'', dia_vencimento:'10',
-    valor_padrao:'', fornecedor:'', obs:''
+    valor_padrao:'', fornecedor:'', obs:'', equipe_id:''
   }
   const [formRecorrente, setFormRecorrente] = useState<any>(emptyRecorrente)
 
@@ -166,22 +169,23 @@ export default function FinanceiroPage() {
     const dataField = modo === 'projecao' ? 'data_vencimento' : 'data_pgto'
 
     let despQuery = supabase.from('financeiro_despesas')
-      .select('*, financeiro_categorias(codigo,nome,tipo)')
+      .select('*, financeiro_categorias(codigo,nome,tipo), equipes(id,nome)')
       .gte(dataField, desdeMes).lt(dataField, ateMesNum)
       .order(dataField, { ascending: false })
     if (modo === 'real') despQuery = despQuery.not('data_pgto','is',null)
 
-    const [{data: seg}, {data: cat}, {data: desp}, {data: rec}, {data: fat}, {data: dreData}, {data: ac}, {data: usrs}] = await Promise.all([
+    const [{data: seg}, {data: cat}, {data: desp}, {data: rec}, {data: eqs}, {data: fat}, {data: dreData}, {data: ac}, {data: usrs}] = await Promise.all([
       supabase.from('financeiro_seguradoras').select('*').eq('ativo', true).order('codigo'),
       supabase.from('financeiro_categorias').select('*').eq('ativo', true).order('codigo'),
       despQuery,
-      supabase.from('financeiro_despesas_recorrentes').select('*, financeiro_categorias(codigo,nome)').eq('ativo', true).order('descricao'),
+      supabase.from('financeiro_despesas_recorrentes').select('*, financeiro_categorias(codigo,nome), equipes(id,nome)').eq('ativo', true).order('descricao'),
+      supabase.from('equipes').select('id,nome').order('nome'),
       supabase.from('financeiro_faturamento_seguradora').select('*').eq('competencia', competencia),
       supabase.from(dreView).select('*').eq('competencia', competencia).maybeSingle(),
       profile?.role === 'admin' ? supabase.from('financeiro_acessos').select('*, users(id,nome,email,role)') : Promise.resolve({data:[]}),
       profile?.role === 'admin' ? supabase.from('users').select('id,nome,email,role').order('nome') : Promise.resolve({data:[]}),
     ])
-    setSeguradoras(seg||[]); setCategorias(cat||[]); setDespesas(desp||[]); setRecorrentes(rec||[])
+    setSeguradoras(seg||[]); setCategorias(cat||[]); setDespesas(desp||[]); setRecorrentes(rec||[]); setEquipes(eqs||[])
     setFaturamentoSeg(fat||[]); setDre(dreData||null); setAcessos(ac||[]); setUsuarios(usrs||[])
   }
 
@@ -205,6 +209,7 @@ export default function FinanceiroPage() {
       fornecedor:      formDespesa.fornecedor || null,
       obs:             formDespesa.obs || null,
       recorrente_id:   formDespesa.recorrente_id || null,
+      equipe_id:       formDespesa.equipe_id || null,
       registrado_por:  profile?.id,
     }
     if (editandoDespesa) {
@@ -228,6 +233,7 @@ export default function FinanceiroPage() {
             valor_padrao:   valor,
             fornecedor:     formDespesa.fornecedor || null,
             obs:            formDespesa.obs || null,
+            equipe_id:      formDespesa.equipe_id || null,
             criado_por:     profile?.id,
           })
         }
@@ -253,6 +259,7 @@ export default function FinanceiroPage() {
       fornecedor: rec.fornecedor || '',
       obs: rec.obs || '',
       recorrente_id: rec.id,
+      equipe_id: rec.equipe_id || '',
     })
   }
 
@@ -290,6 +297,7 @@ export default function FinanceiroPage() {
       valor_padrao:   valor,
       fornecedor:     formRecorrente.fornecedor || null,
       obs:            formRecorrente.obs || null,
+      equipe_id:      formRecorrente.equipe_id || null,
       criado_por:     profile?.id,
     }
     if (editandoRecorrente) {
@@ -409,6 +417,25 @@ export default function FinanceiroPage() {
   const inp: React.CSSProperties = { width:'100%', background:'rgba(255,255,255,0.05)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 13px', color:'var(--text)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'Open Sans,sans-serif' }
   const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 }
 
+  // Aplica filtro por equipe
+  const despesasFiltradas = filtroEquipe
+    ? (filtroEquipe === '__sem__'
+        ? despesas.filter((d:any) => !d.equipe_id)
+        : despesas.filter((d:any) => d.equipe_id === filtroEquipe))
+    : despesas
+
+  // Total de despesas por equipe (pra DRE)
+  const despesasPorEquipe: Record<string,{ id: string; nome: string; total: number; qtd: number }> = {}
+  for (const d of despesas) {
+    const id = d.equipe_id || '__sem__'
+    const nome = d.equipes?.nome || 'Sem equipe'
+    if (!despesasPorEquipe[id]) despesasPorEquipe[id] = { id, nome, total: 0, qtd: 0 }
+    despesasPorEquipe[id].total += Number(d.valor || 0)
+    despesasPorEquipe[id].qtd += 1
+  }
+  const equipesOrdenadas = Object.values(despesasPorEquipe).sort((a,b)=>b.total-a.total)
+  const totalDespesasGeral = equipesOrdenadas.reduce((s,e)=>s+e.total, 0)
+
   // Total de despesas por categoria (pra DRE)
   const despesasPorCategoria: Record<string,{ codigo: string; nome: string; total: number }> = {}
   for (const d of despesas) {
@@ -448,6 +475,14 @@ export default function FinanceiroPage() {
         <select value={ano} onChange={e=>setAno(Number(e.target.value))}
           style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
           {[ano-2,ano-1,ano,ano+1].map(a=><option key={a}>{a}</option>)}
+        </select>
+
+        <select value={filtroEquipe} onChange={e=>setFiltroEquipe(e.target.value)}
+          title="Filtrar despesas por unidade de negócio (equipe)"
+          style={{padding:'7px 12px',borderRadius:8,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--text)',fontSize:12,cursor:'pointer'}}>
+          <option value="">👥 Todas as equipes</option>
+          <option value="__sem__">— Sem equipe —</option>
+          {equipes.map(eq=> <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
         </select>
 
         {isAdmin && (
@@ -552,6 +587,46 @@ export default function FinanceiroPage() {
               )}
             </div>
 
+            <div className="card" style={{marginBottom:18}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:16}}>
+                Despesas por Unidade de Negócio (Equipe) — {MESES[mes-1]}/{ano} <span style={{fontSize:12,color:'var(--text-muted)',marginLeft:8}}>({modo==='projecao'?'projetado':'real'})</span>
+              </div>
+              {equipesOrdenadas.length === 0 ? (
+                <div style={{padding:24,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>Nenhuma despesa nesse mês.</div>
+              ) : (
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                  <thead>
+                    <tr style={{textAlign:'left',color:'var(--text-muted)',fontSize:10,letterSpacing:'1px',textTransform:'uppercase'}}>
+                      <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Equipe</th>
+                      <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}>Lançamentos</th>
+                      <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}>Total</th>
+                      <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}>% do mês</th>
+                      <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equipesOrdenadas.map(e => {
+                      const pct = totalDespesasGeral > 0 ? (e.total / totalDespesasGeral) * 100 : 0
+                      return (
+                        <tr key={e.id} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                          <td style={{padding:'10px 4px',fontWeight:500}}>{e.nome}</td>
+                          <td style={{padding:'10px 4px',textAlign:'right',color:'var(--text-muted)'}}>{e.qtd}</td>
+                          <td style={{padding:'10px 4px',textAlign:'right',color:'var(--danger)',fontWeight:600}}>R$ {fmt(e.total)}</td>
+                          <td style={{padding:'10px 4px',textAlign:'right',color:'var(--text-muted)'}}>{pct.toFixed(1)}%</td>
+                          <td style={{padding:'10px 4px',textAlign:'right'}}>
+                            <button onClick={()=>{setFiltroEquipe(e.id);setAba('despesas')}}
+                              style={{padding:'4px 10px',borderRadius:5,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer'}}>
+                              Ver despesas →
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
             <div className="card">
               <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:16}}>
                 Despesas por Categoria — {MESES[mes-1]}/{ano} <span style={{fontSize:12,color:'var(--text-muted)',marginLeft:8}}>({modo==='projecao'?'projetado':'real'})</span>
@@ -585,10 +660,18 @@ export default function FinanceiroPage() {
         {/* Despesas */}
         {aba === 'despesas' && (
           <div className="card">
-            <div style={{fontFamily:'DM Serif Display,serif',fontSize:15,marginBottom:16}}>
-              Lançamentos — {MESES[mes-1]}/{ano} ({despesas.length}) <span style={{fontSize:12,color:'var(--text-muted)',marginLeft:8}}>({modo==='projecao'?'todas (projetadas + pagas)':'apenas pagas'})</span>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,gap:12,flexWrap:'wrap'}}>
+              <div style={{fontFamily:'DM Serif Display,serif',fontSize:15}}>
+                Lançamentos — {MESES[mes-1]}/{ano} ({despesasFiltradas.length}{filtroEquipe?` de ${despesas.length}`:''}) <span style={{fontSize:12,color:'var(--text-muted)',marginLeft:8}}>({modo==='projecao'?'todas (projetadas + pagas)':'apenas pagas'})</span>
+              </div>
+              {filtroEquipe && (
+                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,padding:'4px 10px',borderRadius:6,background:'rgba(201,168,76,0.10)',border:'1px solid rgba(201,168,76,0.3)',color:'var(--gold)'}}>
+                  👥 Equipe: {filtroEquipe==='__sem__' ? 'Sem equipe' : (equipes.find(eq=>eq.id===filtroEquipe)?.nome || '—')}
+                  <button onClick={()=>setFiltroEquipe('')} style={{background:'none',border:'none',color:'var(--gold)',cursor:'pointer',fontSize:14,lineHeight:1}}>✕</button>
+                </div>
+              )}
             </div>
-            {despesas.length === 0 ? (
+            {despesasFiltradas.length === 0 ? (
               <div style={{padding:24,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>Nenhuma despesa nesse mês. Clique em <b>+ Lançar despesa</b>.</div>
             ) : (
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
@@ -598,6 +681,7 @@ export default function FinanceiroPage() {
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Pago em</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Tipo</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Descrição</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Equipe</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Forma</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Cond.</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)',textAlign:'right'}}>Valor</th>
@@ -605,7 +689,7 @@ export default function FinanceiroPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {despesas.map((d:any) => {
+                  {despesasFiltradas.map((d:any) => {
                     const pago = !!d.data_pgto
                     return (
                       <tr key={d.id} style={{borderBottom:'1px solid rgba(255,255,255,0.04)',opacity: pago ? 1 : 0.85}}>
@@ -624,6 +708,11 @@ export default function FinanceiroPage() {
                           <div>{d.descricao}</div>
                           {d.fornecedor && <div style={{fontSize:11,color:'var(--text-muted)'}}>{d.fornecedor}</div>}
                         </td>
+                        <td style={{padding:'10px 4px',fontSize:11}}>
+                          {d.equipes?.nome ? (
+                            <span style={{padding:'2px 7px',borderRadius:5,background:'rgba(122,163,248,0.12)',color:'#7aa3f8',fontWeight:600}}>{d.equipes.nome}</span>
+                          ) : <span style={{color:'var(--text-muted)'}}>—</span>}
+                        </td>
                         <td style={{padding:'10px 4px',fontSize:11,color:'var(--text-muted)'}}>{d.forma_pagto || '—'}</td>
                         <td style={{padding:'10px 4px',fontSize:11,color:'var(--text-muted)',fontFamily:'monospace'}}>{d.condicao || '—'}</td>
                         <td style={{padding:'10px 4px',textAlign:'right',color:'var(--danger)',fontWeight:600}}>R$ {fmt(d.valor)}</td>
@@ -638,7 +727,8 @@ export default function FinanceiroPage() {
                               forma_pagto:d.forma_pagto||'PIX',
                               condicao:d.condicao||'',
                               fornecedor:d.fornecedor||'', obs:d.obs||'',
-                              recorrente_id:d.recorrente_id||''
+                              recorrente_id:d.recorrente_id||'',
+                              equipe_id:d.equipe_id||''
                             })
                             setModalDespesa(true)
                           }}
@@ -673,6 +763,7 @@ export default function FinanceiroPage() {
                   <tr style={{textAlign:'left',color:'var(--text-muted)',fontSize:10,letterSpacing:'1px',textTransform:'uppercase'}}>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Descrição</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Categoria</th>
+                    <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Equipe</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Tipo</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Forma</th>
                     <th style={{padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>Cond.</th>
@@ -689,6 +780,9 @@ export default function FinanceiroPage() {
                         {r.fornecedor && <div style={{fontSize:11,color:'var(--text-muted)'}}>{r.fornecedor}</div>}
                       </td>
                       <td style={{padding:'10px 4px',fontSize:11,fontFamily:'monospace',color:'var(--gold)'}}>{r.financeiro_categorias?.codigo} {r.financeiro_categorias?.nome}</td>
+                      <td style={{padding:'10px 4px',fontSize:11}}>
+                        {r.equipes?.nome ? <span style={{padding:'2px 7px',borderRadius:5,background:'rgba(122,163,248,0.12)',color:'#7aa3f8',fontWeight:600}}>{r.equipes.nome}</span> : <span style={{color:'var(--text-muted)'}}>—</span>}
+                      </td>
                       <td style={{padding:'10px 4px'}}>
                         <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:5,background:r.tipo_despesa==='FIXA'?'rgba(201,168,76,0.15)':'rgba(122,163,248,0.15)',color:r.tipo_despesa==='FIXA'?'var(--gold)':'#7aa3f8'}}>{r.tipo_despesa}</span>
                       </td>
@@ -705,7 +799,8 @@ export default function FinanceiroPage() {
                             descricao:r.descricao, categoria_id:r.categoria_id||'',
                             tipo_despesa:r.tipo_despesa, forma_pagto:r.forma_pagto||'PIX',
                             condicao:r.condicao||'', dia_vencimento:String(r.dia_vencimento||10),
-                            valor_padrao:String(r.valor_padrao||''), fornecedor:r.fornecedor||'', obs:r.obs||''
+                            valor_padrao:String(r.valor_padrao||''), fornecedor:r.fornecedor||'', obs:r.obs||'',
+                            equipe_id:r.equipe_id||''
                           })
                           setModalRecorrente(true)
                         }} style={{padding:'4px 8px',borderRadius:5,fontSize:11,border:'1px solid var(--border)',background:'rgba(255,255,255,0.04)',color:'var(--gold)',cursor:'pointer',marginRight:4}}>✎</button>
@@ -899,6 +994,14 @@ export default function FinanceiroPage() {
             </div>
 
             <div style={{marginBottom:14}}>
+              <label style={lbl}>Unidade de negócio (Equipe)</label>
+              <select value={formDespesa.equipe_id} onChange={e=>setFormDespesa((f:any)=>({...f,equipe_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                <option value="">— sem equipe / despesa geral —</option>
+                {equipes.map(eq=> <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
+              </select>
+            </div>
+
+            <div style={{marginBottom:14}}>
               <label style={lbl}>Observações</label>
               <textarea value={formDespesa.obs} onChange={e=>setFormDespesa((f:any)=>({...f,obs:e.target.value}))} rows={2} style={{...inp,resize:'none'}} placeholder="Detalhes..."/>
             </div>
@@ -977,9 +1080,18 @@ export default function FinanceiroPage() {
               </div>
             </div>
 
-            <div style={{marginBottom:14}}>
-              <label style={lbl}>Fornecedor</label>
-              <input value={formRecorrente.fornecedor} onChange={e=>setFormRecorrente((f:any)=>({...f,fornecedor:e.target.value}))} placeholder="Razão social/CNPJ (opcional)" style={inp} />
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+              <div>
+                <label style={lbl}>Fornecedor</label>
+                <input value={formRecorrente.fornecedor} onChange={e=>setFormRecorrente((f:any)=>({...f,fornecedor:e.target.value}))} placeholder="Razão social/CNPJ (opcional)" style={inp} />
+              </div>
+              <div>
+                <label style={lbl}>Unidade de negócio (Equipe)</label>
+                <select value={formRecorrente.equipe_id} onChange={e=>setFormRecorrente((f:any)=>({...f,equipe_id:e.target.value}))} style={{...inp,background:'#ffffff'}}>
+                  <option value="">— sem equipe —</option>
+                  {equipes.map(eq=> <option key={eq.id} value={eq.id}>{eq.nome}</option>)}
+                </select>
+              </div>
             </div>
 
             <div style={{marginBottom:18}}>
