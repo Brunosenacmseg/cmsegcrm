@@ -1043,6 +1043,17 @@ function FunisPage() {
   }
 
   async function marcarStatus(negocioId: string, status: 'ganho'|'perdido'|'em_andamento', motivo?: string, motivoId?: string|null) {
+    // Se o card do prêmio está aberto com valor editado mas ainda não salvo
+    // (ex.: usuário clicou em "Marcar Ganho" sem tirar o foco do input),
+    // grava o novo prêmio antes para não perder a alteração.
+    if (cardAtivo && cardAtivo.id === negocioId && podeEditarPremio(cardAtivo)) {
+      const bruto = (premioInput || '').replace(/\./g, '').replace(',', '.').trim()
+      const novo = bruto === '' ? 0 : Number(bruto)
+      const atual = Number(cardAtivo.premio || 0)
+      if (!Number.isNaN(novo) && novo >= 0 && novo !== atual) {
+        await salvarPremioDoCard()
+      }
+    }
     const patch: any = { status }
     if (status === 'em_andamento') {
       patch.data_fechamento = null
@@ -1057,12 +1068,35 @@ function FunisPage() {
         patch.motivo_perda_id = motivoId || null
       }
     }
+    // Ao marcar PERDA, pergunta se o usuário quer excluir as tarefas
+    // pendentes vinculadas. Sem perguntar, o usuário tinha que ir até a
+    // aba Tarefas e remover manualmente — ou ficavam lembrando de um
+    // lead que já foi descartado.
+    if (status === 'perdido') {
+      const { data: tarefasAbertas } = await supabase
+        .from('tarefas')
+        .select('id')
+        .eq('negocio_id', negocioId)
+        .in('status', ['pendente','em_andamento'])
+      const qtd = (tarefasAbertas || []).length
+      if (qtd > 0) {
+        const excluir = confirm(`Existe(m) ${qtd} tarefa(s) em aberto vinculada(s) a este negócio. Deseja excluí-la(s)?`)
+        if (excluir) {
+          const ids = (tarefasAbertas as any[]).map(t => t.id)
+          await supabase.from('tarefa_responsaveis').delete().in('tarefa_id', ids)
+          await supabase.from('tarefas').delete().in('id', ids)
+        } else {
+          await supabase.from('tarefas').update({ status: 'cancelada' }).in('id', (tarefasAbertas as any[]).map(t => t.id))
+        }
+      }
+    }
+
     await supabase.from('negocios').update(patch).eq('id', negocioId)
 
-    // Ao marcar perda/ganho, encerra tarefas pendentes vinculadas ao negócio
-    // (cancela as pendentes/em andamento). Evita ficar lembrando o usuário
-    // de tarefas de um lead já fechado.
-    if (status === 'perdido' || status === 'ganho') {
+    // Ao marcar ganho, encerra tarefas pendentes vinculadas ao negócio
+    // (cancela as pendentes/em andamento) — não pergunta porque o lead foi
+    // convertido em venda e não faz sentido manter cobrança.
+    if (status === 'ganho') {
       await supabase
         .from('tarefas')
         .update({ status: 'cancelada' })
