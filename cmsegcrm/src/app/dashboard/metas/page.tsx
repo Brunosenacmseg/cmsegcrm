@@ -11,16 +11,39 @@ const TIPOS_META = [
   { key:'comissao', label:'Comissão (R$)',  icon:'💵', desc:'Total em comissões recebidas' },
 ]
 
-function ProgressBar({ valor, meta, cor }: { valor: number, meta: number, cor: string }) {
+function calcEsperadoProporcional(periodoIni: string, periodoFim: string, valorMeta: number): number {
+  const ini = new Date(periodoIni + 'T00:00:00')
+  const fim = new Date(periodoFim + 'T23:59:59')
+  const hoje = new Date()
+  const msDia = 1000 * 60 * 60 * 24
+  const totalDias = Math.max(1, Math.round((fim.getTime() - ini.getTime()) / msDia) + 1)
+  const refDia = hoje < ini ? ini : hoje > fim ? fim : hoje
+  const diasPassados = Math.max(0, Math.round((refDia.getTime() - ini.getTime()) / msDia) + 1)
+  return (valorMeta / totalDias) * Math.min(diasPassados, totalDias)
+}
+
+function ProgressBar({ valor, meta, cor, esperado }: { valor: number, meta: number, cor: string, esperado?: number }) {
   const pct = meta > 0 ? Math.min((valor / meta) * 100, 100) : 0
+  const abaixoEsperado = esperado !== undefined && valor < esperado && pct < 100
+  const corBarra = pct >= 100 ? 'var(--teal)' : abaixoEsperado ? 'var(--red)' : pct >= 70 ? cor : 'rgba(201,168,76,0.6)'
+  const corTexto = pct >= 100 ? 'var(--teal)' : abaixoEsperado ? 'var(--red)' : cor
   return (
     <div>
-      <div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginBottom: 6 }}>
-        <div style={{ height: '100%', borderRadius: 4, background: pct >= 100 ? 'var(--teal)' : pct >= 70 ? cor : 'rgba(201,168,76,0.6)', width: `${pct}%`, transition: 'width 0.5s ease' }} />
+      <div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginBottom: 6, position: 'relative' }}>
+        <div style={{ height: '100%', borderRadius: 4, background: corBarra, width: `${pct}%`, transition: 'width 0.5s ease' }} />
+        {esperado !== undefined && meta > 0 && (
+          <div title={`Esperado para hoje: ${esperado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+            style={{ position: 'absolute', top: -2, bottom: -2, left: `${Math.min((esperado / meta) * 100, 100)}%`, width: 2, background: 'var(--text-muted)' }} />
+        )}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
-        <span style={{ color: pct >= 100 ? 'var(--teal)' : cor, fontWeight: 600 }}>{pct.toFixed(0)}% concluído</span>
-        {pct < 100 && <span>Faltam: {Math.max(meta - valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>}
+        <span style={{ color: corTexto, fontWeight: 600 }}>{pct.toFixed(0)}% concluído{abaixoEsperado ? ' · ABAIXO DO ESPERADO' : ''}</span>
+        {pct < 100 && esperado !== undefined && (
+          <span style={{ color: abaixoEsperado ? 'var(--red)' : 'var(--text-muted)', fontWeight: abaixoEsperado ? 600 : 400 }}>
+            Esperado: {esperado.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        )}
+        {pct < 100 && esperado === undefined && <span>Faltam: {Math.max(meta - valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>}
         {pct >= 100 && <span style={{ color: 'var(--teal)', fontWeight: 600 }}>✅ Meta atingida!</span>}
       </div>
     </div>
@@ -228,7 +251,9 @@ export default function MetasPage() {
     const totalMeta = mu.reduce((s, m) => s + m.valor_meta, 0)
     const totalAtual = vendasMesPorUser[u.id] || 0
     const pct = totalMeta > 0 ? (totalAtual / totalMeta) * 100 : 0
-    return { ...u, totalMeta, totalAtual, pct, qtdMetas: mu.length }
+    const esperadoTotal = mu.reduce((s, m) => s + calcEsperadoProporcional(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0)), 0)
+    const abaixoEsperado = esperadoTotal > 0 && totalAtual < esperadoTotal && pct < 100
+    return { ...u, totalMeta, totalAtual, pct, qtdMetas: mu.length, esperadoTotal, abaixoEsperado }
   }).filter(u => u.totalAtual > 0 || u.qtdMetas > 0).sort((a, b) => b.totalAtual - a.totalAtual)
 
   const inp: React.CSSProperties = { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', color: 'var(--text)', fontSize: 13, fontFamily: 'Open Sans,sans-serif', outline: 'none', boxSizing: 'border-box' as const }
@@ -275,8 +300,12 @@ export default function MetasPage() {
               const pct = meta.valor_meta > 0 ? Math.min((meta.valor_atual / meta.valor_meta) * 100, 100) : 0
               const diasRestantes = Math.ceil((new Date(meta.periodo_fim).getTime() - Date.now()) / (1000 * 3600 * 24))
               const corMeta = roleCor[meta['users!metas_user_id_fkey']?.role] || 'var(--teal)'
+              const esperadoMeta = (meta.tipo === 'premio' || meta.tipo === 'comissao')
+                ? calcEsperadoProporcional(meta.periodo_inicio, meta.periodo_fim, Number(meta.valor_meta || 0))
+                : undefined
+              const abaixoEsperadoMeta = esperadoMeta !== undefined && Number(meta.valor_atual || 0) < esperadoMeta && pct < 100
               return (
-                <div key={meta.id} className="card" style={{ marginBottom: 16, padding: '18px 20px', borderLeft: `3px solid ${pct >= 100 ? 'var(--teal)' : corMeta}` }}>
+                <div key={meta.id} className="card" style={{ marginBottom: 16, padding: '18px 20px', borderLeft: `3px solid ${pct >= 100 ? 'var(--teal)' : abaixoEsperadoMeta ? 'var(--red)' : corMeta}` }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
                     <div style={{ fontSize: 28, flexShrink: 0 }}>{tipoConfig?.icon || '🎯'}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -296,7 +325,7 @@ export default function MetasPage() {
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: pct >= 100 ? 'var(--teal)' : 'var(--gold)' }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: pct >= 100 ? 'var(--teal)' : abaixoEsperadoMeta ? 'var(--red)' : 'var(--gold)' }}>
                         {meta.tipo === 'premio' || meta.tipo === 'comissao' ? 'R$ ' : ''}{meta.valor_atual.toLocaleString('pt-BR', { minimumFractionDigits: meta.tipo === 'premio' ? 2 : 0 })}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -304,7 +333,7 @@ export default function MetasPage() {
                       </div>
                     </div>
                   </div>
-                  <ProgressBar valor={meta.valor_atual} meta={meta.valor_meta} cor={corMeta} />
+                  <ProgressBar valor={meta.valor_atual} meta={meta.valor_meta} cor={corMeta} esperado={esperadoMeta} />
                   {isAdminOrLider && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
                       <button onClick={() => abrirEditar(meta)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', fontFamily: 'Open Sans,sans-serif' }}>✏️ Editar</button>
@@ -324,17 +353,17 @@ export default function MetasPage() {
                   <div style={{ fontSize: 18, width: 28, textAlign: 'center', flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</div>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg,${roleCor[u.role] || 'var(--teal)'},var(--navy))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{u.nome.slice(0, 2).toUpperCase()}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nome.split(' ')[0]}</div>
+                    <div style={{ fontSize: 13, fontWeight: u.abaixoEsperado ? 700 : 500, color: u.abaixoEsperado ? 'var(--red)' : 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nome.split(' ')[0]}</div>
                     <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', marginTop: 4, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', borderRadius: 2, background: u.pct >= 100 ? 'var(--teal)' : 'var(--gold)', width: `${Math.min(u.pct, 100)}%`, transition: 'width 0.5s' }} />
+                      <div style={{ height: '100%', borderRadius: 2, background: u.pct >= 100 ? 'var(--teal)' : u.abaixoEsperado ? 'var(--red)' : 'var(--gold)', width: `${Math.min(u.pct, 100)}%`, transition: 'width 0.5s' }} />
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: u.abaixoEsperado ? 'var(--red)' : 'var(--gold)' }}>
                       R$ {u.totalAtual.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </div>
                     {u.totalMeta > 0 && (
-                      <div style={{ fontSize: 10, color: u.pct >= 100 ? 'var(--teal)' : 'var(--text-muted)', fontWeight: 600 }}>{u.pct.toFixed(0)}%</div>
+                      <div style={{ fontSize: 10, color: u.pct >= 100 ? 'var(--teal)' : u.abaixoEsperado ? 'var(--red)' : 'var(--text-muted)', fontWeight: 600 }}>{u.pct.toFixed(0)}%</div>
                     )}
                   </div>
                 </div>
