@@ -110,8 +110,13 @@ export default function WhatsAppPage() {
 
   // Override de agente por CONVERSA (sobrepõe o agente padrão da instância).
   // null = usa o agente da instância; objeto = config específica desta conversa.
-  const [convAgenteCfg, setConvAgenteCfg] = useState<{ agente_id: string|null; agente_ativo: boolean } | null>(null)
+  const [convAgenteCfg, setConvAgenteCfg] = useState<{ agente_id: string|null; agente_ativo: boolean; intervencao_solicitada?: boolean } | null>(null)
   const [salvandoAgenteConv, setSalvandoAgenteConv] = useState(false)
+
+  // Mapa remoto_jid → intervencao_solicitada, para destacar/listar conversas
+  // que o agente IA marcou como "precisa de humano".
+  const [intervencoes, setIntervencoes] = useState<Record<string, boolean>>({})
+  const [filtroIntervencao, setFiltroIntervencao] = useState(false)
 
   // Visualização do WhatsApp de outro usuário (admin → todos; líder → time).
   // Quando viewUserId !== meuUserId o envio é bloqueado (modo somente leitura).
@@ -183,6 +188,14 @@ export default function WhatsAppPage() {
       if (!m.lida && m.direcao === 'recebida') map[m.remoto_jid].nao_lidas++
     })
     setConversas(Object.values(map))
+    const { data: cfgs } = await supabase
+      .from('whatsapp_conversa_agentes')
+      .select('remoto_jid, intervencao_solicitada')
+      .eq('instancia_id', instanciaId)
+      .eq('intervencao_solicitada', true)
+    const intMap: Record<string, boolean> = {}
+    ;(cfgs || []).forEach((c: any) => { intMap[c.remoto_jid] = true })
+    setIntervencoes(intMap)
   }
 
   async function carregarMensagens(jid: string) {
@@ -208,11 +221,22 @@ export default function WhatsAppPage() {
     if (!instancia) return
     const { data } = await supabase
       .from('whatsapp_conversa_agentes')
-      .select('agente_id, agente_ativo')
+      .select('agente_id, agente_ativo, intervencao_solicitada')
       .eq('instancia_id', instancia.id)
       .eq('remoto_jid', jid)
       .maybeSingle()
-    setConvAgenteCfg(data ? { agente_id: data.agente_id, agente_ativo: !!data.agente_ativo } : null)
+    setConvAgenteCfg(data ? { agente_id: data.agente_id, agente_ativo: !!data.agente_ativo, intervencao_solicitada: !!data.intervencao_solicitada } : null)
+  }
+
+  async function resolverIntervencao() {
+    if (!instancia || !conversa) return
+    await supabase
+      .from('whatsapp_conversa_agentes')
+      .update({ intervencao_solicitada: false, intervencao_solicitada_em: null })
+      .eq('instancia_id', instancia.id)
+      .eq('remoto_jid', conversa.remoto_jid)
+    setIntervencoes(prev => { const n = { ...prev }; delete n[conversa.remoto_jid]; return n })
+    setConvAgenteCfg(prev => prev ? { ...prev, intervencao_solicitada: false } : prev)
   }
 
   async function upsertAgenteConversa(patch: { agente_id?: string|null; agente_ativo?: boolean }) {
@@ -473,17 +497,51 @@ export default function WhatsAppPage() {
 
   function selecionarClienteNovaConversa(c: any) {
     setClienteNovaConversa(c); setNovaNomeBusca(c.nome); setClientesBusca([])
-    if (c.telefone) setNovoNumero(c.telefone.replace(/\D/g,''))
+    if (c.telefone) setNovoNumero(normalizarTelefoneBR(c.telefone))
+  }
+
+  // Normaliza um telefone brasileiro para o formato E.164 sem o '+': 55 + DDD + número.
+  // Aceita entradas como "11978222350" (11 dígitos), "(11) 97822-2350", "5511978222350".
+  function normalizarTelefoneBR(entrada: string): string {
+    let d = (entrada || '').replace(/\D/g, '')
+    if (d.startsWith('00')) d = d.slice(2)
+    if ((d.length === 10 || d.length === 11) && !d.startsWith('55')) d = '55' + d
+    return d
   }
 
   async function iniciarNovaConversa() {
     if (!novoNumero.trim() || !instancia) { alert('Informe o número'); return }
     setIniciando(true)
-    const numeroLimpo = novoNumero.replace(/\D/g,'')
+    const numeroLimpo = normalizarTelefoneBR(novoNumero)
+    if (numeroLimpo.length < 12 || numeroLimpo.length > 13) {
+      alert('Número inválido. Use DDD + número (ex: 11978222350) ou 55 + DDD + número.')
+      setIniciando(false); return
+    }
     const jid = `${numeroLimpo}@s.whatsapp.net`
-    const existente = conversas.find(c => c.remoto_jid===jid||c.remoto_numero===numeroLimpo)
+    const existente = conversas.find(c => {
+      if (c.remoto_jid === jid) return true
+      const num = (c.remoto_numero || '').replace(/\D/g,'')
+      return num === numeroLimpo || normalizarTelefoneBR(num) === numeroLimpo
+    })
     if (existente) { setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); await selecionarConversa(existente); setIniciando(false); return }
-    const novaConv = { remoto_jid:jid, remoto_numero:numeroLimpo, remoto_nome:clienteNovaConversa?.nome||novaNomeBusca||numeroLimpo, cliente_id:clienteNovaConversa?.id||null, clientes:clienteNovaConversa?{nome:clienteNovaConversa.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
+
+    // Se o usuário não selecionou um cliente da busca, tenta localizar
+    // automaticamente pelo telefone digitado (compara só os dígitos finais).
+    let clienteVinculado = clienteNovaConversa
+    if (!clienteVinculado) {
+      const ddNum = numeroLimpo.slice(-11)
+      const { data: candidatos } = await supabase
+        .from('clientes')
+        .select('id,nome,telefone')
+        .ilike('telefone', `%${ddNum.slice(-9)}%`)
+        .limit(10)
+      clienteVinculado = (candidatos || []).find((c: any) => {
+        const t = (c.telefone || '').replace(/\D/g,'')
+        return t.endsWith(ddNum) || ddNum.endsWith(t.slice(-10))
+      }) || null
+    }
+
+    const novaConv = { remoto_jid:jid, remoto_numero:numeroLimpo, remoto_nome:clienteVinculado?.nome||novaNomeBusca||numeroLimpo, cliente_id:clienteVinculado?.id||null, clientes:clienteVinculado?{nome:clienteVinculado.nome}:null, conteudo:'', created_at:new Date().toISOString(), nao_lidas:0 }
     setConversas(prev=>[novaConv,...prev]); setConversa(novaConv); setMensagens([])
     setModalNovaConversa(false); setNovoNumero(''); setNovaNomeBusca(''); setClienteNovaConversa(null); setIniciando(false)
   }
@@ -581,11 +639,22 @@ export default function WhatsAppPage() {
               )}
             </div>
 
-            <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+            <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:6}}>
               <button onClick={()=>{setModalNovaConversa(true);setNovoNumero('');setNovaNomeBusca('');setClienteNovaConversa(null);setClientesBusca([])}}
                 style={{width:'100%',padding:'7px',borderRadius:8,fontSize:12,cursor:'pointer',border:'1px solid rgba(201,168,76,0.3)',background:'rgba(201,168,76,0.06)',color:'var(--gold)',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
                 ✉️ Nova Conversa
               </button>
+              {(() => {
+                const total = Object.keys(intervencoes).length
+                return (
+                  <button onClick={()=>setFiltroIntervencao(v=>!v)}
+                    title="Mostrar somente conversas em que o agente IA solicitou intervenção humana"
+                    style={{width:'100%',padding:'7px',borderRadius:8,fontSize:12,cursor:'pointer',border:`1px solid ${filtroIntervencao?'var(--red)':'rgba(224,82,82,0.3)'}`,background:filtroIntervencao?'rgba(224,82,82,0.18)':'rgba(224,82,82,0.06)',color:'var(--red)',fontFamily:'Open Sans,sans-serif',fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                    🆘 Solicitado intervenção humana {total>0 && <span style={{background:'var(--red)',color:'#fff',borderRadius:10,padding:'1px 7px',fontSize:10}}>{total}</span>}
+                    {filtroIntervencao && <span style={{fontSize:10,opacity:0.8}}>(ativo)</span>}
+                  </button>
+                )
+              })()}
             </div>
 
             {instancia.status==='qrcode'&&instancia.qrcode&&(
@@ -597,14 +666,17 @@ export default function WhatsAppPage() {
             )}
 
             <div style={{flex:1,overflowY:'auto',minHeight:0}}>
-              {conversas.length===0&&<div style={{padding:20,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>{instancia.status==='connected'?'Nenhuma conversa ainda':'Conecte o WhatsApp'}</div>}
-              {conversas.map(conv=>(
+              {(() => {
+                const lista = filtroIntervencao ? conversas.filter(c => intervencoes[c.remoto_jid]) : conversas
+                if (lista.length===0) return <div style={{padding:20,textAlign:'center',color:'var(--text-muted)',fontSize:13}}>{filtroIntervencao ? 'Nenhuma conversa com intervenção solicitada' : (instancia.status==='connected'?'Nenhuma conversa ainda':'Conecte o WhatsApp')}</div>
+                return lista.map(conv=>(
                 <div key={conv.remoto_jid} onClick={()=>selecionarConversa(conv)}
-                  style={{padding:'12px 16px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.04)',background:conversa?.remoto_jid===conv.remoto_jid?'rgba(201,168,76,0.08)':'transparent',transition:'background 0.15s'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
+                  style={{padding:'12px 16px',cursor:'pointer',borderBottom:'1px solid rgba(255,255,255,0.04)',background:conversa?.remoto_jid===conv.remoto_jid?'rgba(201,168,76,0.08)':(intervencoes[conv.remoto_jid]?'rgba(224,82,82,0.06)':'transparent'),borderLeft:intervencoes[conv.remoto_jid]?'3px solid var(--red)':'3px solid transparent',transition:'background 0.15s'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3,gap:6}}>
                     <div style={{fontWeight:500,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>
                       {rotuloContato(conv)}
                     </div>
+                    {intervencoes[conv.remoto_jid] && <span title="Agente IA solicitou intervenção humana" style={{background:'var(--red)',color:'#fff',fontSize:9,fontWeight:700,borderRadius:10,padding:'1px 6px',flexShrink:0}}>🆘 HUMANO</span>}
                     {conv.nao_lidas>0&&<span style={{background:'var(--teal)',color:'#fff',fontSize:10,fontWeight:700,borderRadius:10,padding:'1px 6px',flexShrink:0}}>{conv.nao_lidas}</span>}
                   </div>
                   {formatarTelefone(conv.remoto_numero) && rotuloContato(conv) !== formatarTelefone(conv.remoto_numero) && (
@@ -613,7 +685,8 @@ export default function WhatsAppPage() {
                   <div style={{fontSize:11,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.conteudo}</div>
                   <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>{new Date(conv.created_at).toLocaleDateString('pt-BR')}</div>
                 </div>
-              ))}
+              ))
+              })()}
             </div>
           </div>
 
@@ -712,11 +785,30 @@ export default function WhatsAppPage() {
                   )
                 })()}
 
+                {(intervencoes[conversa.remoto_jid] || convAgenteCfg?.intervencao_solicitada) && (
+                  <div style={{padding:'8px 20px',borderBottom:'1px solid var(--border)',background:'rgba(224,82,82,0.08)',display:'flex',alignItems:'center',gap:12}}>
+                    <div style={{fontSize:12,color:'var(--red)',fontWeight:600,flex:1}}>
+                      🆘 Agente IA solicitou intervenção humana nesta conversa. O cliente NÃO foi notificado — atenda manualmente.
+                    </div>
+                    <button onClick={resolverIntervencao}
+                      style={{fontSize:11,background:'rgba(28,181,160,0.1)',border:'1px solid rgba(28,181,160,0.3)',color:'var(--teal)',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontFamily:'Open Sans,sans-serif',fontWeight:600}}>
+                      ✓ Marcar como resolvido
+                    </button>
+                  </div>
+                )}
                 {/* Mensagens */}
                 <div ref={msgScrollRef}
                   onScroll={(e)=>{ const el = e.currentTarget; stickToBottomRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80 }}
                   style={{flex:1,overflowY:'auto',padding:'16px 20px',display:'flex',flexDirection:'column',gap:8,minHeight:0}} onClick={()=>{setShowEmojis(false);setShowStickers(false)}}>
                   {mensagens.map(m=>(
+                    m.tipo === 'sistema' ? (
+                      <div key={m.id} style={{display:'flex',justifyContent:'center'}}>
+                        <div style={{maxWidth:'80%',padding:'8px 14px',borderRadius:12,background:'rgba(224,82,82,0.12)',border:'1px dashed var(--red)',color:'var(--red)',fontSize:12,fontWeight:600,textAlign:'center'}}>
+                          {m.conteudo}
+                          <div style={{fontSize:10,opacity:0.7,marginTop:2,fontWeight:400}}>{new Date(m.created_at).toLocaleString('pt-BR')} · visível apenas no CRM</div>
+                        </div>
+                      </div>
+                    ) : (
                     <div key={m.id} style={{display:'flex',justifyContent:m.direcao==='enviada'?'flex-end':'flex-start'}}>
                       <div style={{maxWidth:'70%',padding:'8px 12px',borderRadius:m.direcao==='enviada'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.direcao==='enviada'?'#dcf8c6':'#ffffff',color:'#1a1a2e',border:`1px solid ${m.direcao==='enviada'?'#bcdc99':'#e5e7eb'}`,boxShadow:'0 1px 1px rgba(0,0,0,0.06)'}}>
                         <MidiaMensagem m={m} />
@@ -729,6 +821,7 @@ export default function WhatsAppPage() {
                         </div>
                       </div>
                     </div>
+                    )
                   ))}
                   <div ref={msgFimRef}/>
                 </div>
@@ -845,8 +938,11 @@ export default function WhatsAppPage() {
             )}
             <div style={{marginBottom:20}}>
               <label style={{fontSize:12,color:'var(--text-muted)',display:'block',marginBottom:4}}>Número do WhatsApp *</label>
-              <input value={novoNumero} onChange={e=>setNovoNumero(e.target.value)} placeholder="5511999999999" style={inp} />
-              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Formato: 55 + DDD + número</div>
+              <input value={novoNumero}
+                onChange={e=>setNovoNumero(e.target.value)}
+                onBlur={e=>{ const n = normalizarTelefoneBR(e.target.value); if (n && n !== e.target.value.replace(/\D/g,'')) setNovoNumero(n) }}
+                placeholder="11978222350" style={inp} />
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>Aceita DDD + número (ex: 11978222350) ou com 55 na frente. Se o número estiver cadastrado em um cliente, o vínculo é feito automaticamente.</div>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn-secondary" onClick={()=>setModalNovaConversa(false)}>Cancelar</button>
