@@ -20,7 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import type { Database } from '@/lib/supabase/database.types'
 import { chamarChatGPT } from '@/lib/openai'
-import { enviarTextoEvo, numeroParaJid } from '@/lib/whatsapp-evo'
+import { enviarTextoEvo, enviarTextoEvoDetalhado, numeroParaJid } from '@/lib/whatsapp-evo'
 import { horarioUtilAdd, dentroDaJanelaUtil } from '@/lib/horario-util'
 
 export const dynamic = 'force-dynamic'
@@ -246,10 +246,11 @@ async function processarInitsDoFluxo(fluxo: Fluxo): Promise<{ processados: numbe
         continue
       }
 
-      const enviado = await enviarTextoEvo(cfgEvo, ctxCard.jid, mensagem)
-      if (!enviado) {
+      const env = await enviarTextoEvoDetalhado(cfgEvo, ctxCard.jid, mensagem)
+      if (!env.ok) {
+        const detalhe = env.erro ? `erro=${env.erro}` : `HTTP ${env.status}: ${(env.body || '').slice(0,180)}`
         await supabase.from('negocios_suhai_state').update({
-          motivo: 'Falha ao enviar primeira mensagem (Evolution API)',
+          motivo: `Falha 1ª mensagem (Evolution) → jid=${ctxCard.jid} ${detalhe}`,
         }).eq('negocio_id', negocio.id)
         falhas++
         continue
