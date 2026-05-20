@@ -627,7 +627,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <CelebracaoVenda />
       <MetaPixel />
       <BoasVindasLider visivel={profile?.role === 'lider' && pathname !== '/dashboard/gestao-equipe'} />
-      <AlertaMetasLider visivel={profile?.role === 'lider' || profile?.role === 'admin'} />
+      <AlertaMetasLider />
 
       {/* Toasts de tarefas vencendo agora */}
       {toasts.length > 0 && (

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-const STORAGE_KEY = 'cm_alerta_metas_lider_dia'
+const STORAGE_KEY = 'cm_alerta_metas_sessao'
 
 type Abaixo = {
   user_id: string
@@ -10,6 +10,16 @@ type Abaixo = {
   meta: number
   esperado: number
   atual: number
+}
+
+type Dados = {
+  role: string
+  nomeUsuario: string
+  esperadoUser: number
+  atualUser: number
+  esperadoEquipe?: number
+  atualEquipe?: number
+  abaixo: Abaixo[]
 }
 
 function calcEsperado(periodoIni: string, periodoFim: string, valorMeta: number): number {
@@ -23,136 +33,216 @@ function calcEsperado(periodoIni: string, periodoFim: string, valorMeta: number)
   return (valorMeta / totalDias) * Math.min(diasPassados, totalDias)
 }
 
-export default function AlertaMetasLider({ visivel }: { visivel: boolean }) {
+const fmt = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+export default function AlertaMetasLider() {
   const supabase = createClient()
   const [aberto, setAberto] = useState(false)
-  const [abaixo, setAbaixo] = useState<Abaixo[]>([])
+  const [dados, setDados] = useState<Dados | null>(null)
 
   useEffect(() => {
-    if (!visivel) return
-    const hoje = new Date().toISOString().slice(0, 10)
-    try { if (localStorage.getItem(STORAGE_KEY) === hoje) return } catch {}
+    try { if (sessionStorage.getItem(STORAGE_KEY) === '1') return } catch {}
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: prof } = await supabase.from('users').select('id,role').eq('id', user.id).single()
-      if (!prof || (prof.role !== 'lider' && prof.role !== 'admin')) return
+      const { data: prof } = await supabase.from('users').select('id,nome,role').eq('id', user.id).single()
+      if (!prof) return
 
-      // Membros visíveis: admin vê todos vendedores; líder vê membros das equipes que lidera
-      let memberIds: string[] = []
-      if (prof.role === 'admin') {
-        const { data: us } = await supabase.from('users').select('id').neq('role', 'admin')
-        memberIds = (us || []).map((u: any) => u.id)
-      } else {
-        const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', user.id)
-        const eqIds = (eqs || []).map((e: any) => e.id)
-        if (eqIds.length) {
-          const { data: mems } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eqIds)
-          memberIds = (mems || []).map((m: any) => m.user_id)
-        }
-      }
-      if (!memberIds.length) return
+      const ehLider = prof.role === 'lider' || prof.role === 'admin'
 
-      const { data: metas } = await supabase
+      // Mês corrente para somar produção realizada
+      const hoje = new Date()
+      const mesIni = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10)
+      const mesFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10) + 'T23:59:59'
+
+      // Metas próprias (premio) ativas + premio realizado próprio
+      const { data: metasProprias } = await supabase
         .from('metas')
-        .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim, tipo, users!metas_user_id_fkey(nome)')
-        .eq('status', 'ativa')
-        .eq('tipo', 'premio')
-        .in('user_id', memberIds)
+        .select('valor_meta, valor_atual, periodo_inicio, periodo_fim')
+        .eq('status', 'ativa').eq('tipo', 'premio').eq('user_id', prof.id)
 
-      const lista: Abaixo[] = []
-      for (const m of (metas || []) as any[]) {
-        const esperado = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
-        const atual = Number(m.valor_atual || 0)
-        if (atual < esperado) {
-          lista.push({
-            user_id: m.user_id,
-            nome: m['users!metas_user_id_fkey']?.nome || 'Sem nome',
-            meta: Number(m.valor_meta || 0),
-            esperado,
-            atual,
-          })
+      const esperadoUser = (metasProprias || []).reduce(
+        (s: number, m: any) => s + calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0)), 0)
+
+      const { data: vendasProprias } = await supabase
+        .from('negocios').select('premio')
+        .eq('vendedor_id', prof.id).eq('status', 'ganho')
+        .gte('data_fechamento', mesIni).lte('data_fechamento', mesFim)
+      const atualUser = (vendasProprias || []).reduce((s: number, n: any) => s + Number(n.premio || 0), 0)
+
+      const base: Dados = {
+        role: prof.role,
+        nomeUsuario: prof.nome,
+        esperadoUser,
+        atualUser,
+        abaixo: [],
+      }
+
+      if (ehLider) {
+        // Membros visíveis
+        let memberIds: string[] = []
+        if (prof.role === 'admin') {
+          const { data: us } = await supabase.from('users').select('id').neq('role', 'admin')
+          memberIds = (us || []).map((u: any) => u.id)
+        } else {
+          const { data: eqs } = await supabase.from('equipes').select('id').eq('lider_id', user.id)
+          const eqIds = (eqs || []).map((e: any) => e.id)
+          if (eqIds.length) {
+            const { data: mems } = await supabase.from('equipe_membros').select('user_id').in('equipe_id', eqIds)
+            memberIds = (mems || []).map((m: any) => m.user_id)
+          }
+        }
+
+        if (memberIds.length) {
+          const { data: metasEq } = await supabase
+            .from('metas')
+            .select('user_id, valor_meta, valor_atual, periodo_inicio, periodo_fim, users!metas_user_id_fkey(nome)')
+            .eq('status', 'ativa').eq('tipo', 'premio').in('user_id', memberIds)
+
+          const { data: vendasEq } = await supabase
+            .from('negocios').select('vendedor_id, premio')
+            .in('vendedor_id', memberIds).eq('status', 'ganho')
+            .gte('data_fechamento', mesIni).lte('data_fechamento', mesFim)
+
+          const realizadoPorUser: Record<string, number> = {}
+          for (const v of (vendasEq || []) as any[]) {
+            if (!v.vendedor_id) continue
+            realizadoPorUser[v.vendedor_id] = (realizadoPorUser[v.vendedor_id] || 0) + Number(v.premio || 0)
+          }
+
+          const esperadoPorUser: Record<string, { nome: string; esperado: number; meta: number }> = {}
+          for (const m of (metasEq || []) as any[]) {
+            const e = calcEsperado(m.periodo_inicio, m.periodo_fim, Number(m.valor_meta || 0))
+            const entry = esperadoPorUser[m.user_id] || {
+              nome: m['users!metas_user_id_fkey']?.nome || 'Sem nome', esperado: 0, meta: 0,
+            }
+            entry.esperado += e
+            entry.meta += Number(m.valor_meta || 0)
+            esperadoPorUser[m.user_id] = entry
+          }
+
+          const esperadoEquipe = Object.values(esperadoPorUser).reduce((s, x) => s + x.esperado, 0)
+          const atualEquipe = Object.values(realizadoPorUser).reduce((s, x) => s + x, 0)
+          base.esperadoEquipe = esperadoEquipe
+          base.atualEquipe = atualEquipe
+
+          const abaixo: Abaixo[] = []
+          for (const [uid, info] of Object.entries(esperadoPorUser)) {
+            const atual = realizadoPorUser[uid] || 0
+            if (atual < info.esperado) {
+              abaixo.push({ user_id: uid, nome: info.nome, meta: info.meta, esperado: info.esperado, atual })
+            }
+          }
+          abaixo.sort((a, b) => (b.esperado - b.atual) - (a.esperado - a.atual))
+          base.abaixo = abaixo
         }
       }
-      if (lista.length) {
-        lista.sort((a, b) => (a.atual / Math.max(a.esperado, 1)) - (b.atual / Math.max(b.esperado, 1)))
-        setAbaixo(lista)
-        setAberto(true)
-      }
-    })().catch(e => console.error('[AlertaMetasLider]', e))
-  }, [visivel])
+
+      setDados(base)
+      setAberto(true)
+    })().catch(e => console.error('[AlertaMetas]', e))
+  }, [])
 
   function fechar() {
-    try { localStorage.setItem(STORAGE_KEY, new Date().toISOString().slice(0, 10)) } catch {}
+    try { sessionStorage.setItem(STORAGE_KEY, '1') } catch {}
     setAberto(false)
   }
 
-  if (!aberto) return null
+  if (!aberto || !dados) return null
 
-  const fmt = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const diffUser = dados.esperadoUser - dados.atualUser
+  const userAbaixo = diffUser > 0 && dados.esperadoUser > 0
+  const ehLider = dados.role === 'lider' || dados.role === 'admin'
+  const diffEquipe = ehLider && dados.esperadoEquipe !== undefined && dados.atualEquipe !== undefined
+    ? dados.esperadoEquipe - dados.atualEquipe : 0
+  const equipeAbaixo = ehLider && diffEquipe > 0 && (dados.esperadoEquipe || 0) > 0
 
   return (
-    <div onClick={fechar} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
-      zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(4px)',
+      zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg)', border: '1px solid var(--red)', borderRadius: 14,
+      <div style={{
+        background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14,
         width: 'min(640px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 28,
-        fontFamily: 'Open Sans, sans-serif', position: 'relative', boxShadow: 'var(--shadow-lg)',
+        fontFamily: 'Open Sans, sans-serif', boxShadow: 'var(--shadow-lg)',
       }}>
-        <button onClick={fechar} aria-label="Fechar" style={{
-          position: 'absolute', top: 14, right: 14, background: 'none', border: 'none',
-          color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1,
-        }}>✕</button>
-
-        <div style={{ fontSize: 34, marginBottom: 6 }}>⚠️</div>
-        <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: 22, marginBottom: 4, color: 'var(--red)', fontWeight: 700 }}>
-          VENDEDORES ABAIXO DA META
+        <div style={{ fontSize: 30, marginBottom: 6 }}>🎯</div>
+        <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: 22, marginBottom: 4 }}>
+          Olá, {dados.nomeUsuario.split(' ')[0]}!
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>
-          Valor esperado calculado proporcionalmente aos dias decorridos do período da meta.
+          Acompanhamento do seu progresso no mês.
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {abaixo.map(v => {
-            const falta = v.esperado - v.atual
-            return (
-              <div key={v.user_id} style={{
-                border: '1px solid rgba(224,82,82,0.35)', borderRadius: 10,
-                padding: '12px 14px', background: 'rgba(224,82,82,0.06)',
-              }}>
-                <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: 15, marginBottom: 6 }}>
-                  {v.nome}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12 }}>
-                  <div>
-                    <div style={{ color: 'var(--text-muted)' }}>Esperado</div>
-                    <div style={{ fontWeight: 600 }}>{fmt(v.esperado)}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: 'var(--text-muted)' }}>Realizado</div>
-                    <div style={{ fontWeight: 600, color: 'var(--red)' }}>{fmt(v.atual)}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: 'var(--text-muted)' }}>Diferença</div>
-                    <div style={{ fontWeight: 600, color: 'var(--red)' }}>−{fmt(falta)}</div>
-                  </div>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Meta total do período: {fmt(v.meta)}
-                </div>
+        <div style={{
+          border: `1px solid ${userAbaixo ? 'rgba(224,82,82,0.35)' : 'var(--border)'}`,
+          borderRadius: 10, padding: '14px 16px', marginBottom: 14,
+          background: userAbaixo ? 'rgba(224,82,82,0.06)' : 'var(--bg-soft)',
+        }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Sua meta esperada até o dia de hoje é:</div>
+          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 10 }}>{fmt(dados.esperadoUser)}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Sua produção até hoje é:</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: userAbaixo ? 'var(--red)' : 'var(--teal)' }}>{fmt(dados.atualUser)}</div>
+          {userAbaixo && (
+            <div style={{ marginTop: 8, fontSize: 13, color: 'var(--red)', fontWeight: 600 }}>
+              ⚠️ Você está {fmt(diffUser)} abaixo do esperado.
+            </div>
+          )}
+        </div>
+
+        {ehLider && dados.esperadoEquipe !== undefined && (
+          <div style={{
+            border: `1px solid ${equipeAbaixo ? 'rgba(224,82,82,0.35)' : 'var(--border)'}`,
+            borderRadius: 10, padding: '14px 16px', marginBottom: 14,
+            background: equipeAbaixo ? 'rgba(224,82,82,0.06)' : 'var(--bg-soft)',
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--gold)' }}>👥 Equipe</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Meta esperada da equipe até hoje:</div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>{fmt(dados.esperadoEquipe)}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>Produção da equipe até hoje:</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: equipeAbaixo ? 'var(--red)' : 'var(--teal)' }}>{fmt(dados.atualEquipe || 0)}</div>
+            {equipeAbaixo && (
+              <div style={{ marginTop: 8, fontSize: 13, color: 'var(--red)', fontWeight: 600 }}>
+                ⚠️ Equipe está {fmt(diffEquipe)} abaixo do esperado.
               </div>
-            )
-          })}
-        </div>
+            )}
+          </div>
+        )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+        {ehLider && dados.abaixo.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+              VENDEDORES ABAIXO DA META:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {dados.abaixo.map(v => (
+                <div key={v.user_id} style={{
+                  border: '1px solid rgba(224,82,82,0.35)', borderRadius: 8,
+                  padding: '10px 12px', background: 'rgba(224,82,82,0.06)',
+                }}>
+                  <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                    {v.nome}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Esperado: <strong>{fmt(v.esperado)}</strong> · Realizado:{' '}
+                    <strong style={{ color: 'var(--red)' }}>{fmt(v.atual)}</strong> ·{' '}
+                    <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                      Abaixo em {fmt(v.esperado - v.atual)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
           <button onClick={fechar} style={{
-            padding: '10px 18px', borderRadius: 8, border: '1px solid var(--border)',
-            background: 'var(--gold)', color: 'var(--navy)', fontSize: 13, fontWeight: 600,
-            cursor: 'pointer', fontFamily: 'Open Sans, sans-serif',
-          }}>Entendi</button>
+            padding: '12px 40px', borderRadius: 10, border: '1px solid var(--gold)',
+            background: 'var(--gold)', color: 'var(--navy)', fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'Open Sans, sans-serif', letterSpacing: 1,
+          }}>OK</button>
         </div>
       </div>
     </div>
