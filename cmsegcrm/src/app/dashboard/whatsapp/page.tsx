@@ -142,6 +142,7 @@ export default function WhatsAppPage() {
     const interval = setInterval(() => {
       verificarStatus()
       if (conversa) carregarMensagens(conversa.remoto_jid)
+      carregarIntervencoes(instancia.id)
     }, 5000)
     return () => clearInterval(interval)
   }, [instancia, conversa])
@@ -197,6 +198,10 @@ export default function WhatsAppPage() {
       }
     })
     setConversas(Object.values(map))
+    await carregarIntervencoes(instanciaId)
+  }
+
+  async function carregarIntervencoes(instanciaId: string) {
     const { data: cfgs } = await supabase
       .from('whatsapp_conversa_agentes')
       .select('remoto_jid, intervencao_solicitada')
