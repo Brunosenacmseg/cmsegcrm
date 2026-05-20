@@ -2,7 +2,12 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-const STORAGE_KEY = 'cm_alerta_metas_sessao'
+const STORAGE_PREFIX = 'cm_alerta_metas'
+const todayKey = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const storageKeyFor = (userId: string) => `${STORAGE_PREFIX}:${userId}:${todayKey()}`
 
 type Abaixo = {
   user_id: string
@@ -45,14 +50,16 @@ export default function AlertaMetasLider() {
   const supabase = createClient()
   const [aberto, setAberto] = useState(false)
   const [dados, setDados] = useState<Dados | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    try { if (sessionStorage.getItem(STORAGE_KEY) === '1') return } catch {}
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      try { if (localStorage.getItem(storageKeyFor(user.id)) === '1') return } catch {}
       const { data: prof } = await supabase.from('users').select('id,nome,role,email').eq('id', user.id).single()
       if (!prof) return
+      setUserId(user.id)
 
       const ehLider = prof.role === 'lider' || prof.role === 'admin'
 
@@ -194,7 +201,7 @@ export default function AlertaMetasLider() {
   }, [])
 
   function fechar() {
-    try { sessionStorage.setItem(STORAGE_KEY, '1') } catch {}
+    try { if (userId) localStorage.setItem(storageKeyFor(userId), '1') } catch {}
     setAberto(false)
   }
 
